@@ -58,6 +58,8 @@ enablePlugins(
 val betterFilesVersion = "3.9.2"
 val calibanClientVersion = "3.1.1"
 val calibanVersion = "3.1.1"
+// TODO: confirm latest langchain4j version when implementing the ai module (Phase 8)
+val langchain4jVersion = "1.0.0"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val dispatchHttpVersion = "2.0.0"
@@ -120,7 +122,7 @@ lazy val model = project
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name             := "jorlan-model",
-    buildInfoPackage := "missmoneypenny",
+    buildInfoPackage := "jorlan",
     commonSettings,
     libraryDependencies ++= Seq(
       "net.leibman"    % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
@@ -174,7 +176,7 @@ lazy val db = project
   .dependsOn(model)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "missMoneyPenny-db",
+    name := "jorlan-db",
     libraryDependencies ++= Seq(
       // DB
       "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
@@ -215,10 +217,10 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(model, db, analytics)
+  .dependsOn(model, db, ai, analytics)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "missMoneyPenny-server",
+    name := "jorlan-server",
     libraryDependencies ++= Seq(
       // DB
       "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
@@ -267,7 +269,7 @@ lazy val integration = project
   .dependsOn(model, server)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "missMoneyPenny-integration",
+    name := "jorlan-integration",
     libraryDependencies ++= Seq(
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
@@ -286,6 +288,65 @@ lazy val integration = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
 
+////////////////////////////////////////////////////////////////////////////////////
+// AI — LangChain4j wrapped in ZIO (Ollama + cloud model providers)
+
+lazy val ai = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+  )
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-ai",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      // LangChain4j (Java library — added when implementing Phase 8)
+      // "dev.langchain4j" % "langchain4j"        % langchain4jVersion withSources (),
+      // "dev.langchain4j" % "langchain4j-ollama"  % langchain4jVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+  .dependsOn(model)
+
+////////////////////////////////////////////////////////////////////////////////////
+// Shell — CLI client (connects to server via GraphQL)
+
+lazy val shell = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+    JavaAppPackaging,
+  )
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-shell",
+    commonSettings,
+    Compile / mainClass := Some("jorlan.shell.JorlanShell"),
+    libraryDependencies ++= Seq(
+      "dev.zio"                %% "zio"                   % zioVersion withSources (),
+      "dev.zio"                %% "zio-config"            % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-config-magnolia"   % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-config-typesafe"   % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-json"              % zioJsonVersion withSources (),
+      "dev.zio"                %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
+      "com.github.ghostdogpr"  %% "caliban-client"        % calibanClientVersion withSources (),
+      "com.softwaremill.sttp.client4" %% "core"           % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio"            % sttpClient4Version withSources (),
+      "ch.qos.logback"         %  "logback-classic"       % logbackVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+  .dependsOn(model)
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Utility
 lazy val util = project
@@ -293,18 +354,18 @@ lazy val util = project
 
 lazy val debianSettings =
   Seq(
-    Compile / mainClass         := Some("missMoneyPenny.MissMoneyPenny"),
-    Debian / name               := "missMoneyPenny",
-    Debian / packageDescription := "A pattern generating website",
-    Debian / packageSummary     := "A pattern generating website",
+    Compile / mainClass         := Some("jorlan.Jorlan"),
+    Debian / name               := "jorlan",
+    Debian / packageDescription := "Jorlan Secure Agent Runtime",
+    Debian / packageSummary     := "Jorlan Secure Agent Runtime",
     Debian / debianChangelog    := Some(file("debian/changelog")),
     Linux / maintainer          := "Roberto Leibman <roberto@leibman.net>",
-    Linux / daemonUser          := "missMoneyPenny",
-    Linux / daemonGroup         := "missMoneyPenny",
+    Linux / daemonUser          := "jorlan",
+    Linux / daemonGroup         := "jorlan",
     Debian / serverLoading      := Some(ServerLoader.Systemd),
-    // Configure JVM to use logback.xml from /etc/missMoneyPenny-server
+    // Configure JVM to use logback.xml from /etc/jorlan-server
     Universal / javaOptions ++= Seq(
-      "-Dlogback.configurationFile=/etc/missMoneyPenny-server/logback.xml",
+      "-Dlogback.configurationFile=/etc/jorlan-server/logback.xml",
     ),
     // Map application.conf template
     Universal / mappings += {
@@ -318,7 +379,7 @@ lazy val debianSettings =
       val logback = src / "templates" / "logback.xml"
       logback -> "conf/logback.xml"
     },
-    // Map the entire dist directory to /data/www/app.missMoneyPenny.com/html
+    // Map the entire dist directory to /data/www/app.jorlan.com/html
     Universal / mappings ++= {
       val distDir = (ThisBuild / baseDirectory).value / "dist"
       if (distDir.exists()) {
@@ -334,19 +395,19 @@ lazy val debianSettings =
       val distDir = (ThisBuild / baseDirectory).value / "dist"
       packageMapping(
         (distDir.allPaths --- distDir).get.map { f =>
-          f -> s"/data/www/app.missMoneyPenny.com/html/${Path.relativeTo(distDir)(f).get}"
+          f -> s"/data/www/app.jorlan.com/html/${Path.relativeTo(distDir)(f).get}"
         }: _*,
-      ).withUser("missMoneyPenny").withGroup("missMoneyPenny")
+      ).withUser("jorlan").withGroup("jorlan")
     },
-    // Install configuration files to /etc/missMoneyPenny-server/ for easy editing
+    // Install configuration files to /etc/jorlan-server/ for easy editing
     Debian / linuxPackageMappings += {
       val src = sourceDirectory.value
       val confFile = src / "templates" / "application.conf"
       val logbackFile = src / "templates" / "logback.xml"
       packageMapping(
-        confFile    -> "/etc/missMoneyPenny-server/application.conf",
-        logbackFile -> "/etc/missMoneyPenny-server/logback.xml",
-      ).withUser("missMoneyPenny").withGroup("missMoneyPenny").withPerms("0644").withConfig()
+        confFile    -> "/etc/jorlan-server/application.conf",
+        logbackFile -> "/etc/jorlan-server/logback.xml",
+      ).withUser("jorlan").withGroup("jorlan").withPerms("0644").withConfig()
     },
     // Add custom maintainer scripts to create log directory
     Debian / maintainerScripts := {
@@ -355,11 +416,11 @@ lazy val debianSettings =
 
       // Add log directory creation before chown commands
       val updatedPostinst: Seq[String] = postinst.map { line =>
-        if (line.contains("chown missMoneyPenny:missMoneyPenny '/var/log/missMoneyPenny-server'")) {
+        if (line.contains("chown jorlan:jorlan '/var/log/jorlan-server'")) {
           Seq(
-            "mkdir -p '/var/log/missMoneyPenny-server'",
-            "chown -R missMoneyPenny:missMoneyPenny '/var/log/missMoneyPenny-server'",
-            "chmod 755 '/var/log/missMoneyPenny-server'",
+            "mkdir -p '/var/log/jorlan-server'",
+            "chown -R jorlan:jorlan '/var/log/jorlan-server'",
+            "chmod 755 '/var/log/jorlan-server'",
           ).mkString("\n")
         } else {
           line
@@ -376,11 +437,16 @@ lazy val root = project
   .in(file("."))
   .aggregate(
     model,
-    server,
     db,
+    ai,
+    server,
+    shell,
+    analytics,
+    integration,
+    util,
   )
   .settings(
-    name           := "missMoneyPenny",
+    name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
     headerLicense := Some(

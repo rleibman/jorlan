@@ -1,0 +1,2 @@
+-- Jorlan baseline migration
+-- Full schema is built up in subsequent migrations (Phase 2)
