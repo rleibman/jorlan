@@ -1,0 +1,397 @@
+////////////////////////////////////////////////////////////////////////////////////
+// Common Stuff
+
+import org.apache.commons.io.FileUtils
+
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+
+lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time of build").withRank(KeyRanks.Invisible)
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Global stuff
+ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
+
+lazy val SCALA = "3.8.3"
+Global / onChangedBuildSource := ReloadOnSourceChanges
+scalaVersion                  := SCALA
+Global / scalaVersion         := SCALA
+
+import scala.concurrent.duration.*
+Global / watchAntiEntropy := 1.second
+
+ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Shared settings
+
+lazy val start = TaskKey[Unit]("start")
+lazy val dist = TaskKey[File]("dist")
+lazy val debugDist = TaskKey[File]("debugDist")
+
+lazy val scala3Opts = Seq(
+  "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s",
+  "-deprecation", // Emit warning and location for usages of deprecated APIs.
+  "-no-indent", // scala3
+  "-old-syntax", // I hate space sensitive languages!
+  "-encoding",
+  "utf-8", // Specify character encoding used by source files.
+  "-feature", // Emit warning and location for usages of features that should be imported explicitly.
+  "-language:existentials", // Existential types (besides wildcard types) can be written and inferred
+  "-language:implicitConversions",
+  "-language:higherKinds", // Allow higher-kinded types
+  //  "-language:strictEquality", //This is cool, but super noisy
+  "-unchecked", // Enable additional warnings where generated code depends on assumptions.
+  //  "-Wsafe-init", //Great idea, breaks compile though.
+  "-Xmax-inlines",
+  "128",
+  //  "-explain-types", // Explain type errors in more detail.
+  //  "-explain",
+  "-Yexplicit-nulls", // Make reference types non-nullable. Nullable types can be expressed with unions: e.g. String|Null.
+  "-Yretain-trees", // Retain trees for debugging.,
+)
+
+enablePlugins(
+  com.github.sbt.git.GitVersioning,
+)
+
+val betterFilesVersion = "3.9.2"
+val calibanClientVersion = "3.1.1"
+val calibanVersion = "3.1.1"
+val commonsCodecVersion = "1.21.0"
+val courierVersion = "4.0.0-RC1"
+val dispatchHttpVersion = "2.0.0"
+val flywayVersion = "12.6.2"
+val izumiReflectVersion = "3.0.9"
+val jaxbApiVersion = "2.3.1"
+val jsoniterVersion = "2.38.9"
+val justSemverCoreVersion = "1.3.0"
+val jwtCirceVersion = "11.0.4"
+val jwtZioJsonVersion = "11.0.4"
+val logbackVersion = "1.5.32"
+val mariadbVersion = "3.5.8"
+val openPdfVersion = "3.0.3"
+val qdrantVersion = "1.21.4"
+val quillVersion = "4.8.6"
+val scalablytypedRuntimeVersion = "2.4.2"
+val scalacssVersion = "1.0.0"
+val scalaJavaTimeVersion = "2.6.0"
+val sttpClient4Version = "4.0.24"
+val testContainerVersion = "0.44.1"
+val zioAuth = "3.1.2"
+val zioCacheVersion = "0.2.8"
+val zioConfigVersion = "4.0.7"
+val zioHttpVersion = "3.11.2"
+val zioJsonVersion = "0.9.2"
+val zioLoggingSlf4j2Version = "2.5.3"
+val zioNioVersion = "2.0.2"
+val zioPreludeVersion = "1.0.0-RC47"
+val zioProcessVersion = "0.8.0"
+val zioVersion = "2.1.26"
+val zxingVersion = "3.5.4"
+
+lazy val commonSettings = Seq(
+  organization     := "net.leibman",
+  startYear        := Some(2024),
+  organizationName := "Roberto Leibman",
+  headerLicense := Some(
+    HeaderLicense.Custom(
+      """Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+        |
+        |This source code is protected under international copyright law.  All rights
+        |reserved and protected by the copyright holders.
+        |This file is confidential and only available to authorized individuals with the
+        |permission of the copyright holders.  If you encounter this file and do not have
+        |permission, please contact the copyright holders and delete this file.""".stripMargin,
+    ),
+  ),
+  resolvers += Resolver.mavenLocal,
+)
+
+////////////////////////////////////////////////////////////////////////////////////
+// Model
+
+lazy val model = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+    BuildInfoPlugin,
+  )
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name             := "jorlan-model",
+    buildInfoPackage := "missmoneypenny",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "net.leibman"    % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
+    ),
+    libraryDependencies ++= Seq(
+      "dev.zio"     %% "zio"                 % zioVersion withSources (),
+      "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
+      "dev.zio"     %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
+      "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
+      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
+      "io.getquill" %% "quill-jdbc-zio"      % quillVersion withSources (),
+      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+      )
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Analytics
+
+lazy val analytics = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+  )
+  .settings(scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-analytics",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
+    ),
+    libraryDependencies ++= Seq(
+      "dev.zio"     %% "zio"                 % zioVersion withSources (),
+      "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
+      "dev.zio"     %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
+      "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
+      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
+      "io.getquill" %% "quill-jdbc-zio"      % quillVersion withSources (),
+      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+    ),
+  )
+  .dependsOn(model)
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Server
+lazy val db = project
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(model)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "missMoneyPenny-db",
+    libraryDependencies ++= Seq(
+      // DB
+      "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
+      "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
+      "org.flywaydb"     % "flyway-core"         % flywayVersion withSources (),
+      "org.flywaydb"     % "flyway-mysql"        % flywayVersion withSources (),
+      // Log
+      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
+      // ZIO
+      "dev.zio"                %% "zio"                   % zioVersion withSources (),
+      "dev.zio"                %% "zio-nio"               % zioNioVersion withSources (),
+      "dev.zio"                %% "zio-cache"             % zioCacheVersion withSources (),
+      "dev.zio"                %% "zio-config"            % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-config-derivation" % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-config-magnolia"   % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-config-typesafe"   % zioConfigVersion withSources (),
+      "dev.zio"                %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
+      "dev.zio"                %% "izumi-reflect"         % izumiReflectVersion withSources (),
+      "dev.zio"                %% "zio-json"              % zioJsonVersion withSources (),
+      // Other random utilities
+      "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+  )
+
+lazy val server = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+    LinuxPlugin,
+    DebianPlugin,
+    DebianDeployPlugin,
+    JavaServerAppPackaging,
+    SystemloaderPlugin,
+    SystemdPlugin,
+    CalibanPlugin,
+  )
+  .settings(debianSettings, commonSettings)
+  .dependsOn(model, db, analytics)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "missMoneyPenny-server",
+    libraryDependencies ++= Seq(
+      // DB
+      "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
+      "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
+      // Log
+      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
+      // ZIO
+      "dev.zio"                       %% "zio"                   % zioVersion withSources (),
+      "dev.zio"                       %% "zio-nio"               % zioNioVersion withSources (),
+      "dev.zio"                       %% "zio-cache"             % zioCacheVersion withSources (),
+      "dev.zio"                       %% "zio-config"            % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-derivation" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-magnolia"   % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-typesafe"   % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
+      "dev.zio"                       %% "izumi-reflect"         % izumiReflectVersion withSources (),
+      "com.github.ghostdogpr"         %% "caliban"               % calibanVersion withSources (),
+      "com.github.ghostdogpr"         %% "caliban-quick"         % calibanVersion withSources (),
+      "dev.zio"                       %% "zio-http"              % zioHttpVersion withSources (),
+      "com.github.jwt-scala"          %% "jwt-circe"             % jwtCirceVersion withSources (),
+      "com.github.jwt-scala"          %% "jwt-zio-json"          % jwtZioJsonVersion withSources (),
+      "dev.zio"                       %% "zio-json"              % zioJsonVersion withSources (),
+      "dev.zio"                       %% "zio-process"           % zioProcessVersion withSources (),
+      "com.softwaremill.sttp.client4" %% "core"                  % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio"                   % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio-json"              % sttpClient4Version withSources (),
+      // Other random utilities
+      "com.github.daddykotex" %% "courier"                      % courierVersion withSources (),
+      "com.dimafeng"          %% "testcontainers-scala-mariadb" % testContainerVersion withSources (),
+
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Integration Tests
+lazy val integration = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+  )
+  .settings(commonSettings)
+  .dependsOn(model, server)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "missMoneyPenny-integration",
+    libraryDependencies ++= Seq(
+      // Log
+      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
+      // ZIO
+      "dev.zio" %% "zio"                 % zioVersion withSources (),
+      "dev.zio" %% "zio-nio"             % zioNioVersion withSources (),
+      "dev.zio" %% "zio-config"          % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-json"            % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    // Integration tests are only in the Test configuration
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Utility
+lazy val util = project
+  .settings(commonSettings, scalacOptions ++= scala3Opts :+ "-Werror")
+
+lazy val debianSettings =
+  Seq(
+    Compile / mainClass         := Some("missMoneyPenny.MissMoneyPenny"),
+    Debian / name               := "missMoneyPenny",
+    Debian / packageDescription := "A pattern generating website",
+    Debian / packageSummary     := "A pattern generating website",
+    Debian / debianChangelog    := Some(file("debian/changelog")),
+    Linux / maintainer          := "Roberto Leibman <roberto@leibman.net>",
+    Linux / daemonUser          := "missMoneyPenny",
+    Linux / daemonGroup         := "missMoneyPenny",
+    Debian / serverLoading      := Some(ServerLoader.Systemd),
+    // Configure JVM to use logback.xml from /etc/missMoneyPenny-server
+    Universal / javaOptions ++= Seq(
+      "-Dlogback.configurationFile=/etc/missMoneyPenny-server/logback.xml",
+    ),
+    // Map application.conf template
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      val conf = src / "templates" / "application.conf"
+      conf -> "conf/application.conf"
+    },
+    // Map logback.xml template
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      val logback = src / "templates" / "logback.xml"
+      logback -> "conf/logback.xml"
+    },
+    // Map the entire dist directory to /data/www/app.missMoneyPenny.com/html
+    Universal / mappings ++= {
+      val distDir = (ThisBuild / baseDirectory).value / "dist"
+      if (distDir.exists()) {
+        (distDir.allPaths --- distDir) pair Path.rebase(distDir, "www/")
+      } else {
+        Seq.empty
+      }
+    },
+    // Install www content to the web directory
+    Linux / defaultLinuxInstallLocation := "/opt",
+    // Additional package mapping for www content
+    Debian / linuxPackageMappings += {
+      val distDir = (ThisBuild / baseDirectory).value / "dist"
+      packageMapping(
+        (distDir.allPaths --- distDir).get.map { f =>
+          f -> s"/data/www/app.missMoneyPenny.com/html/${Path.relativeTo(distDir)(f).get}"
+        }: _*,
+      ).withUser("missMoneyPenny").withGroup("missMoneyPenny")
+    },
+    // Install configuration files to /etc/missMoneyPenny-server/ for easy editing
+    Debian / linuxPackageMappings += {
+      val src = sourceDirectory.value
+      val confFile = src / "templates" / "application.conf"
+      val logbackFile = src / "templates" / "logback.xml"
+      packageMapping(
+        confFile    -> "/etc/missMoneyPenny-server/application.conf",
+        logbackFile -> "/etc/missMoneyPenny-server/logback.xml",
+      ).withUser("missMoneyPenny").withGroup("missMoneyPenny").withPerms("0644").withConfig()
+    },
+    // Add custom maintainer scripts to create log directory
+    Debian / maintainerScripts := {
+      val scripts:  Map[String, Seq[String]] = (Debian / maintainerScripts).value
+      val postinst: Seq[String] = scripts.getOrElse("postinst", Seq.empty)
+
+      // Add log directory creation before chown commands
+      val updatedPostinst: Seq[String] = postinst.map { line =>
+        if (line.contains("chown missMoneyPenny:missMoneyPenny '/var/log/missMoneyPenny-server'")) {
+          Seq(
+            "mkdir -p '/var/log/missMoneyPenny-server'",
+            "chown -R missMoneyPenny:missMoneyPenny '/var/log/missMoneyPenny-server'",
+            "chmod 755 '/var/log/missMoneyPenny-server'",
+          ).mkString("\n")
+        } else {
+          line
+        }
+      }
+
+      scripts + ("postinst" -> updatedPostinst)
+    },
+  )
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// Root project
+lazy val root = project
+  .in(file("."))
+  .aggregate(
+    model,
+    server,
+    db,
+  )
+  .settings(
+    name           := "missMoneyPenny",
+    publish / skip := true,
+    version        := "0.1.0",
+    headerLicense := Some(
+      HeaderLicense.Custom(
+        """Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+          |
+          |This source code is protected under international copyright law.  All rights
+          |reserved and protected by the copyright holders.
+          |This file is confidential and only available to authorized individuals with the
+          |permission of the copyright holders.  If you encounter this file and do not have
+          |permission, please contact the copyright holders and delete this file.""".stripMargin,
+      ),
+    ),
+  )

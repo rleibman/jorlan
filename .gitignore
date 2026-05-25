@@ -1,0 +1,66 @@
+# sbt
+lib_managed
+project/project
+target
+.bsp
+
+# Worksheets (Eclipse or IntelliJ)
+*.sc
+
+# Eclipse
+.cache*
+.classpath
+.project
+.scala_dependencies
+.settings
+.target
+.worksheet
+
+# IntelliJ
+.idea
+
+#vscode
+.vscode
+
+# ENSIME
+.ensime
+.ensime_lucene
+.ensime_cache
+
+# Mac
+.DS_Store
+
+# Akka
+ddata*
+journal
+snapshots
+
+npm
+*.lock
+
+# Log files
+*.log
+bad.txt
+good.txt
+badurl.txt
+urlImport.csv
+
+*.lock
+
+dist
+debugDist
+dist
+/.env
+/.deploy-config
+/.bloop/
+/.metals/
+/project/metals.sbt
+/project/.bloop/
+
+/tree.txt
+/bespokedraft-stLib
+/temp
+/fileStore
+*.deb
+/stLib/node_modules/.yarn-integrity
+/landing/build/
