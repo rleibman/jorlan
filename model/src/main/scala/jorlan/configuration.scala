@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
  *
  * This source code is protected under international copyright law.  All rights
  * reserved and protected by the copyright holders.
@@ -80,11 +80,15 @@ object AppConfig {
 
 }
 
-sealed abstract class ConfigurationError(message: String, cause: Throwable | Null = null)
-  extends Exception(message, cause)
+sealed abstract class ConfigurationError(
+  message: String,
+  cause:   Throwable | Null = null,
+) extends Exception(message, cause)
 
-case class ConfigLoadError(msg: String, rootCause: Throwable | Null = null)
-  extends ConfigurationError(msg, rootCause)
+case class ConfigLoadError(
+  msg:       String,
+  rootCause: Throwable | Null = null,
+) extends ConfigurationError(msg, rootCause)
 
 trait ConfigurationService {
 

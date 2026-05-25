@@ -98,7 +98,7 @@ lazy val commonSettings = Seq(
   organizationName := "Roberto Leibman",
   headerLicense := Some(
     HeaderLicense.Custom(
-      """Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+      """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
         |
         |This source code is protected under international copyright law.  All rights
         |reserved and protected by the copyright holders.
@@ -266,11 +266,18 @@ lazy val integration = project
     com.github.sbt.git.GitVersioning,
   )
   .settings(commonSettings)
-  .dependsOn(model, server)
+  .dependsOn(model, db, server)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-integration",
+    // Pull SQL migrations from server resources so Flyway can find them in tests
+    Test / unmanagedResourceDirectories += (server / Compile / resourceDirectory).value,
     libraryDependencies ++= Seq(
+      // DB
+      "org.mariadb.jdbc" % "mariadb-java-client"           % mariadbVersion withSources (),
+      "org.flywaydb"     % "flyway-core"                   % flywayVersion withSources (),
+      "org.flywaydb"     % "flyway-mysql"                  % flywayVersion withSources (),
+      "com.dimafeng"    %% "testcontainers-scala-mariadb"  % testContainerVersion withSources (),
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
       // ZIO
@@ -451,7 +458,7 @@ lazy val root = project
     version        := "0.1.0",
     headerLicense := Some(
       HeaderLicense.Custom(
-        """Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+        """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
           |
           |This source code is protected under international copyright law.  All rights
           |reserved and protected by the copyright holders.
