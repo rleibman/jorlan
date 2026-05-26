@@ -27,10 +27,20 @@ ALTER TABLE `memoryEmbedding`
 
 -- Event log: replace separate resourceType + resourceId columns with a single typed JSON resource column
 ALTER TABLE `eventLog`
-    DROP COLUMN `resourceType`,
-    DROP COLUMN `resourceId`,
     ADD COLUMN `resource` JSON NULL AFTER `sessionId`,
     MODIFY `payloadJson` JSON NULL;
+
+UPDATE `eventLog`
+SET `resource` = JSON_OBJECT(
+    'type', `resourceType`,
+    'id', `resourceId`
+)
+WHERE `resource` IS NULL
+  AND (`resourceType` IS NOT NULL OR `resourceId` IS NOT NULL);
+
+ALTER TABLE `eventLog`
+    DROP COLUMN `resourceType`,
+    DROP COLUMN `resourceId`;
 
 -- Artifact metadata
 ALTER TABLE `artifact`
