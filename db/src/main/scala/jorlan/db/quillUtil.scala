@@ -118,12 +118,17 @@ given MappedEncoding[EmbeddingModelId, String] = MappedEncoding(_.value)
 /** Quill `MappedEncoding`s for external library types stored as `VARCHAR`/`TEXT` in MariaDB. */
 given MappedEncoding[Json, String] = MappedEncoding(_.toJson)
 given MappedEncoding[String, Json] =
-  MappedEncoding(s => s.fromJson[Json].fold(error => throw new RuntimeException(s"Invalid JSON value: $error"), identity))
+  MappedEncoding(s =>
+    s.fromJson[Json].fold(error => throw new RuntimeException(s"Invalid JSON value: $error"), identity),
+  )
 
 given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
 given MappedEncoding[String, Vector[Float]] =
   MappedEncoding(s =>
-    s.fromJson[Vector[Float]].fold(error => throw new RuntimeException(s"Invalid Vector[Float] JSON value: $error"), identity)
+    s.fromJson[Vector[Float]].fold(
+        error => throw new RuntimeException(s"Invalid Vector[Float] JSON value: $error"),
+        identity,
+      ),
   )
 
 given MappedEncoding[URI, String] = MappedEncoding(_.toString)

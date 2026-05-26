@@ -21,8 +21,9 @@ import zio.test.Assertion.*
 
 object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
 
-  private val serviceLayer =
-    JorlanContainer.repositoryLayer >>> EventLogServiceImpl.live
+  // >+> keeps all repository services AND adds EventLogService from the same container
+  private val appLayer =
+    JorlanContainer.repositoryLayer >+> EventLogServiceImpl.live
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("EventLogService integration")(
@@ -90,6 +91,6 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
           }
         } yield assertTrue(cid.contains(corrId))
       },
-    ).provideLayerShared(serviceLayer ++ JorlanContainer.repositoryLayer)
+    ).provideLayerShared(appLayer)
 
 }

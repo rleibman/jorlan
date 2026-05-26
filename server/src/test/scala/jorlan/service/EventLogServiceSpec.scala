@@ -40,21 +40,35 @@ object EventLogServiceSpec extends ZIOSpecDefault {
               JsonEncoder[R].toJsonAST(r).map(Some(_)),
             ),
           ).mapError(msg => RepositoryError(msg))
-        _ <- store.update(saved.copy(resource = asJson) :: _)
+        storable = EventLog[Json](
+          id = saved.id,
+          eventType = saved.eventType,
+          actorId = saved.actorId,
+          agentId = saved.agentId,
+          sessionId = saved.sessionId,
+          resource = asJson,
+          payloadJson = saved.payloadJson,
+          occurredAt = saved.occurredAt,
+        )
+        _ <- store.update(storable :: _)
       } yield saved
 
     override def search(filter: EventLogFilter): RepositoryTask[List[EventLog[Json]]] =
       store.get.map { events =>
-        val ascending = filter.sorts.headOption.exists(_.direction == OrderDirection.Asc)
-        events
+        val filtered = events
           .filter(e => filter.eventType.forall(_ == e.eventType))
           .filter(e => filter.agentId.forall(id => e.agentId.contains(id)))
           .filter(e => filter.sessionId.forall(sid => e.sessionId.contains(sid)))
           .filter(e => filter.from.forall(f => !e.occurredAt.isBefore(f)))
           .filter(e => filter.to.forall(t => !e.occurredAt.isAfter(t)))
-          .sortBy(_.occurredAt)(if (ascending) Ordering[Instant] else Ordering[Instant].reverse)
-          .drop(filter.page * filter.pageSize)
-          .take(filter.pageSize)
+        val sorted = filter.sorts.headOption match {
+          case Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Asc))  => filtered.sortBy(_.occurredAt)
+          case Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Desc)) => filtered.sortBy(_.occurredAt).reverse
+          case Some(Sort(EventLogOrder.Id, OrderDirection.Asc))          => filtered.sortBy(_.id.value)
+          case Some(Sort(EventLogOrder.Id, OrderDirection.Desc))         => filtered.sortBy(_.id.value).reverse
+          case _                                                         => filtered.sortBy(_.occurredAt).reverse
+        }
+        sorted.drop(filter.page * filter.pageSize).take(filter.pageSize)
       }
 
     override def replaySession(sessionId: AgentSessionId): RepositoryTask[List[EventLog[Json]]] =
@@ -95,12 +109,13 @@ object EventLogServiceSpec extends ZIOSpecDefault {
       } yield assertTrue(saved.id.value > 0L, saved.eventType == EventType.AgentStarted)
     }.provide(freshServiceLayer),
     test("log fails when resource encoding fails") {
-      // We test this via the InMemoryRepo which now propagates encoding errors
+      case class BadResource(v: Int)
+      given JsonEncoder[BadResource] =
+        JsonEncoder[String].contramap(_ => throw new RuntimeException("deliberate encoding failure"))
       for {
-        svc <- ZIO.service[EventLogService]
-        // SkillId encodes fine — just verifying the success path is type-safe
-        saved <- svc.log(testEvent[SkillId](EventType.SkillInvoked, Some(SkillId(1L))))
-      } yield assertTrue(saved.id.value > 0L)
+        svc    <- ZIO.service[EventLogService]
+        result <- svc.log(testEvent[BadResource](EventType.SkillInvoked, Some(BadResource(1)))).exit
+      } yield assertTrue(result.isFailure)
     }.provide(freshServiceLayer),
     test("query filters by event type") {
       for {
