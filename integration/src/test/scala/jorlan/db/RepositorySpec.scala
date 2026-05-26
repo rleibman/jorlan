@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
  *
  * This source code is protected under international copyright law.  All rights
  * reserved and protected by the copyright holders.
@@ -37,41 +37,48 @@ object RepositorySpec extends ZIOSpecDefault {
   private val userSuite = suite("UserRepository")(
     test("upsert and retrieve a user") {
       for {
-        repo <- ZIO.service[UserRepository]
+        repo <- ZIO.service[UserZIORepository]
         user = User(UserId.empty, "Alice", now, now, active = true)
         saved    <- repo.upsert(user)
         fetched  <- repo.getById(saved.id)
         allUsers <- repo.getAll
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(fetched.isDefined) &&
-        assertTrue(fetched.get.displayName == "Alice") &&
-        assertTrue(allUsers.exists(_.id == saved.id))
+        assertTrue(
+          saved.id.value > 0,
+          fetched.isDefined,
+          fetched.exists(_.displayName == "Alice"),
+          allUsers.exists(_.id == saved.id),
+        )
       }
     },
     test("deactivate a user") {
       for {
-        repo    <- ZIO.service[UserRepository]
+        repo    <- ZIO.service[UserZIORepository]
         user    <- repo.upsert(User(UserId.empty, "Bob", now, now))
-        _       <- repo.deactivate(user.id)
+        count   <- repo.deactivate(user.id)
         fetched <- repo.getById(user.id)
         all     <- repo.getAll
-      } yield assertTrue(fetched.exists(!_.active)) &&
-        assertTrue(!all.exists(_.id == user.id))
+      } yield assertTrue(
+        count == 1L,
+        fetched.exists(!_.active),
+        !all.exists(_.id == user.id),
+      )
     },
     test("channel identities") {
       for {
-        repo <- ZIO.service[UserRepository]
+        repo <- ZIO.service[UserZIORepository]
         user <- repo.upsert(User(UserId.empty, "Carol", now, now))
-        ci = ChannelIdentity(UserId.empty, user.id, ChannelType.Telegram, "@carol", verified = false, now)
+        ci = ChannelIdentity(ChannelIdentityId.empty, user.id, ChannelType.Telegram, "@carol", verified = false, now)
         saved  <- repo.upsertChannelIdentity(ci)
         loaded <- repo.getChannelIdentities(user.id)
         _      <- repo.deleteChannelIdentity(saved.id)
         after  <- repo.getChannelIdentities(user.id)
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(loaded.length == 1) &&
-        assertTrue(after.isEmpty)
+        assertTrue(
+          saved.id.value > 0,
+          loaded.length == 1,
+          after.isEmpty,
+        )
       }
     },
   )
@@ -81,21 +88,23 @@ object RepositorySpec extends ZIOSpecDefault {
   private val agentSuite = suite("AgentRepository")(
     test("upsert and retrieve an agent") {
       for {
-        repo <- ZIO.service[AgentRepository]
+        repo <- ZIO.service[AgentZIORepository]
         agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some("claude-3"), 1, now)
         saved   <- repo.upsert(agent)
         fetched <- repo.getById(saved.id)
         all     <- repo.getAll
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(fetched.isDefined) &&
-        assertTrue(all.exists(_.id == saved.id))
+        assertTrue(
+          saved.id.value > 0,
+          fetched.isDefined,
+          all.exists(_.id == saved.id),
+        )
       }
     },
     test("agent sessions") {
       for {
-        agentRepo <- ZIO.service[AgentRepository]
-        userRepo  <- ZIO.service[UserRepository]
+        agentRepo <- ZIO.service[AgentZIORepository]
+        userRepo  <- ZIO.service[UserZIORepository]
         user      <- userRepo.upsert(User(UserId.empty, "SessionUser", now, now))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, now))
         session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, now, now)
@@ -103,9 +112,11 @@ object RepositorySpec extends ZIOSpecDefault {
         fetched  <- agentRepo.getSession(saved.id)
         sessions <- agentRepo.getSessionsForAgent(agent.id)
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(fetched.isDefined) &&
-        assertTrue(sessions.exists(_.id == saved.id))
+        assertTrue(
+          saved.id.value > 0,
+          fetched.isDefined,
+          sessions.exists(_.id == saved.id),
+        )
       }
     },
   )
@@ -115,9 +126,9 @@ object RepositorySpec extends ZIOSpecDefault {
   private val conversationSuite = suite("ConversationRepository")(
     test("create conversation and add messages") {
       for {
-        convRepo  <- ZIO.service[ConversationRepository]
-        agentRepo <- ZIO.service[AgentRepository]
-        userRepo  <- ZIO.service[UserRepository]
+        convRepo  <- ZIO.service[ConversationZIORepository]
+        agentRepo <- ZIO.service[AgentZIORepository]
+        userRepo  <- ZIO.service[UserZIORepository]
         user      <- userRepo.upsert(User(UserId.empty, "ConvUser", now, now))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, now))
         session <- agentRepo.upsertSession(
@@ -129,9 +140,11 @@ object RepositorySpec extends ZIOSpecDefault {
         messages <- convRepo.getMessages(conv.id)
         convs    <- convRepo.getBySession(session.id)
       } yield {
-        assertTrue(conv.id.value > 0) &&
-        assertTrue(messages.length == 2) &&
-        assertTrue(convs.exists(_.id == conv.id))
+        assertTrue(
+          conv.id.value > 0,
+          messages.length == 2,
+          convs.exists(_.id == conv.id),
+        )
       }
     },
   )
@@ -141,30 +154,34 @@ object RepositorySpec extends ZIOSpecDefault {
   private val skillSuite = suite("SkillRepository")(
     test("upsert skill and versions") {
       for {
-        repo <- ZIO.service[SkillRepository]
+        repo <- ZIO.service[SkillZIORepository]
         skill = Skill(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, now)
         saved <- repo.upsert(skill)
         sv <- repo.upsertVersion(SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", "{}", SkillStatus.Active, now))
         versions <- repo.getVersions(saved.id)
         fetched  <- repo.getById(saved.id)
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(sv.id.value > 0) &&
-        assertTrue(versions.length == 1) &&
-        assertTrue(fetched.isDefined)
+        assertTrue(
+          saved.id.value > 0,
+          sv.id.value > 0,
+          versions.length == 1,
+          fetched.isDefined,
+        )
       }
     },
     test("connector instance CRUD") {
       for {
-        repo <- ZIO.service[SkillRepository]
+        repo <- ZIO.service[SkillZIORepository]
         ci = ConnectorInstance(ConnectorInstanceId.empty, ConnectorType.Telegram, "my-bot", "{}", "active", now)
         saved  <- repo.upsertConnector(ci)
         all    <- repo.getAllConnectors
         loaded <- repo.getConnector(saved.id)
       } yield {
-        assertTrue(saved.id.value > 0) &&
-        assertTrue(all.exists(_.id == saved.id)) &&
-        assertTrue(loaded.isDefined)
+        assertTrue(
+          saved.id.value > 0,
+          all.exists(_.id == saved.id),
+          loaded.isDefined,
+        )
       }
     },
   )
@@ -174,8 +191,8 @@ object RepositorySpec extends ZIOSpecDefault {
   private val memorySuite = suite("MemoryRepository")(
     test("upsert and search memory records") {
       for {
-        memRepo  <- ZIO.service[MemoryRepository]
-        userRepo <- ZIO.service[UserRepository]
+        memRepo  <- ZIO.service[MemoryZIORepository]
+        userRepo <- ZIO.service[UserZIORepository]
         user     <- userRepo.upsert(User(UserId.empty, "MemUser", now, now))
         record1 <- memRepo.upsert(
           MemoryRecord(
@@ -210,10 +227,12 @@ object RepositorySpec extends ZIOSpecDefault {
         _        <- memRepo.delete(record1.id)
         afterDel <- memRepo.getById(record1.id)
       } yield {
-        assertTrue(record1.id.value > 0) &&
-        assertTrue(byUser.exists(_.id == record1.id)) &&
-        assertTrue(shared.exists(_.key == "system.version")) &&
-        assertTrue(afterDel.isEmpty)
+        assertTrue(
+          record1.id.value > 0,
+          byUser.exists(_.id == record1.id),
+          shared.exists(_.recordKey == "system.version"),
+          afterDel.isEmpty,
+        )
       }
     },
   )
@@ -223,7 +242,7 @@ object RepositorySpec extends ZIOSpecDefault {
   private val eventLogSuite = suite("EventLogRepository")(
     test("append and search events") {
       for {
-        repo <- ZIO.service[EventLogRepository]
+        repo <- ZIO.service[EventLogZIORepository]
         e1   <- repo.append(EventLog(EventLogId.empty, EventType.AgentStarted, None, None, None, None, None, None, now))
         e2 <- repo.append(
           EventLog(EventLogId.empty, EventType.SkillInvoked, None, None, None, Some("skill"), None, None, now),
@@ -231,9 +250,11 @@ object RepositorySpec extends ZIOSpecDefault {
         all   <- repo.search(None, None, None, None, 100)
         typed <- repo.search(Some(EventType.AgentStarted), None, None, None, 10)
       } yield {
-        assertTrue(e1.id.value > 0) &&
-        assertTrue(all.length >= 2) &&
-        assertTrue(typed.forall(_.eventType == EventType.AgentStarted))
+        assertTrue(
+          e1.id.value > 0,
+          all.length >= 2,
+          typed.forall(_.eventType == EventType.AgentStarted),
+        )
       }
     },
   )

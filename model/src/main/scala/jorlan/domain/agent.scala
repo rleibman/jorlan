@@ -10,25 +10,25 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-enum SessionStatus {
+/** Lifecycle state of an [[AgentSession]]. */
+enum SessionStatus derives JsonEncoder, JsonDecoder {
 
   case Created, Active, Paused, Blocked, Completed, Failed, Cancelled
 
 }
-object SessionStatus {
 
-  given JsonEncoder[SessionStatus] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[SessionStatus] =
-    JsonDecoder[String].mapOrFail { s =>
-      SessionStatus.values.find(_.toString == s).toRight(s"Unknown SessionStatus: $s")
-    }
-
-}
-
+/** An autonomous program definition that can invoke skills on behalf of users.
+  *
+  * @param defaultModel
+  *   LLM model identifier to use when no model is specified at invocation time (e.g. `llama3`).
+  * @param trustLevel
+  *   0 = fully untrusted (default for agent-authored skills); higher values unlock additional capabilities without
+  *   explicit approval. Controlled by an administrator.
+  */
 case class Agent(
   id:           AgentId,
   name:         String,
@@ -36,14 +36,11 @@ case class Agent(
   defaultModel: Option[String],
   trustLevel:   Int = 0,
   createdAt:    Instant,
-)
-object Agent {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[Agent] = DeriveJsonEncoder.gen[Agent]
-  given JsonDecoder[Agent] = DeriveJsonDecoder.gen[Agent]
-
-}
-
+/** A single runtime instance of an [[Agent]] executing on behalf of a [[jorlan.domain.User]]. Each session maintains
+  * its own conversation context window and execution state.
+  */
 case class AgentSession(
   id:          AgentSessionId,
   agentId:     AgentId,
@@ -52,10 +49,4 @@ case class AgentSession(
   status:      SessionStatus,
   createdAt:   Instant,
   updatedAt:   Instant,
-)
-object AgentSession {
-
-  given JsonEncoder[AgentSession] = DeriveJsonEncoder.gen[AgentSession]
-  given JsonDecoder[AgentSession] = DeriveJsonDecoder.gen[AgentSession]
-
-}
+) derives JsonEncoder, JsonDecoder

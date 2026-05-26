@@ -10,50 +10,41 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-enum ChannelType {
+/** Identifies the external communication channel through which a user interacts with the system. */
+enum ChannelType derives JsonEncoder, JsonDecoder {
 
   case Shell, Telegram, Slack, Email, WhatsApp, Sms, GraphQL
 
 }
-object ChannelType {
 
-  given JsonEncoder[ChannelType] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[ChannelType] =
-    JsonDecoder[String].mapOrFail { s =>
-      ChannelType.values.find(_.toString == s).toRight(s"Unknown ChannelType: $s")
-    }
-
-}
-
+/** A canonical platform user. All inbound messages from any connector are resolved to a `User` before agent execution
+  * begins.
+  */
 case class User(
   id:          UserId,
   displayName: String,
   createdAt:   Instant,
   updatedAt:   Instant,
   active:      Boolean = true,
-)
-object User {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[User] = DeriveJsonEncoder.gen[User]
-  given JsonDecoder[User] = DeriveJsonDecoder.gen[User]
-
-}
-
+/** Links a [[User]] to their identity on a specific external channel (e.g. a Telegram chat ID or Slack member ID). One
+  * user may have multiple identities across different channels.
+  *
+  * @param channelUserId
+  *   The channel-native user identifier (e.g. Telegram numeric ID, Slack `UXXXXXXX`).
+  * @param verified
+  *   `true` once the user has proved ownership of the channel identity.
+  */
 case class ChannelIdentity(
-  id:            UserId, // reuse UserId as PK for this row
+  id:            ChannelIdentityId,
   userId:        UserId,
   channelType:   ChannelType,
   channelUserId: String,
   verified:      Boolean = false,
   createdAt:     Instant,
-)
-object ChannelIdentity {
-
-  given JsonEncoder[ChannelIdentity] = DeriveJsonEncoder.gen[ChannelIdentity]
-  given JsonDecoder[ChannelIdentity] = DeriveJsonDecoder.gen[ChannelIdentity]
-
-}
+) derives JsonEncoder, JsonDecoder

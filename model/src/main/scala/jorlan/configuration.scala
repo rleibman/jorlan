@@ -11,13 +11,13 @@
 package jorlan
 
 import com.typesafe.config.Config as TypesafeConfig
-import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
 import zio.{IO, UIO, ZIO}
 
 import scala.language.unsafeNulls
 
+/** JDBC connection-pool settings, mapped directly from `application.conf`. */
 case class DataSourceConfig(
   driver:                  String,
   url:                     String,
@@ -30,13 +30,20 @@ case class DataSourceConfig(
 
 case class DatabaseConfig(dataSource: DataSourceConfig)
 
+/** Flyway schema-migration settings.
+  *
+  * @param target
+  *   If set, Flyway will migrate only up to this version (useful for partial rollout). `None` means migrate to latest.
+  * @param cleanDisabled
+  *   `true` by default — prevents accidental `flyway.clean()` in production.
+  */
 case class FlywayConfig(
   locations:           List[String] = List("classpath:sql"),
   enabled:             Boolean = true,
   cleanDisabled:       Boolean = true,
   validateOnMigrate:   Boolean = true,
   mixed:               Boolean = false,
-  target:              String = "",
+  target:              Option[String] = None,
   baselineOnMigrate:   Boolean = true,
   baselineVersion:     String = "0",
   baselineDescription: String = "Initial",
@@ -53,25 +60,14 @@ case class JorlanConfig(
   http:   HttpConfig = HttpConfig(),
 )
 
-case class AppConfig(jorlan: JorlanConfig) {
-
-  lazy val dataSource: HikariDataSource = {
-    val hc = new HikariConfig()
-    hc.setDriverClassName(jorlan.db.dataSource.driver)
-    hc.setJdbcUrl(jorlan.db.dataSource.url)
-    hc.setUsername(jorlan.db.dataSource.user)
-    hc.setPassword(jorlan.db.dataSource.password)
-    hc.setMaximumPoolSize(jorlan.db.dataSource.maximumPoolSize)
-    hc.setMinimumIdle(jorlan.db.dataSource.minimumIdle)
-    hc.setConnectionTimeout(jorlan.db.dataSource.connectionTimeoutMillis)
-    hc.setAutoCommit(true)
-    new HikariDataSource(hc)
-  }
-
-}
+/** Root application configuration. Wraps all subsystem configs. The connection pool is created in the `db` module. */
+case class AppConfig(jorlan: JorlanConfig)
 
 object AppConfig {
 
+  /** Derives an [[AppConfig]] from a Typesafe `Config` tree using `zio-config-magnolia`. Any derivation failure is
+    * treated as an unrecoverable defect (`orDie`).
+    */
   def read(typesafeConfig: TypesafeConfig): UIO[AppConfig] =
     TypesafeConfigProvider
       .fromTypesafeConfig(typesafeConfig)
@@ -80,16 +76,20 @@ object AppConfig {
 
 }
 
+/** Base error type for configuration loading failures. */
 sealed abstract class ConfigurationError(
-  message: String,
-  cause:   Throwable | Null = null,
-) extends Exception(message, cause)
+  override val msg:   String,
+  override val cause: Option[Throwable] = None,
+) extends JorlanError(msg, cause)
 
 case class ConfigLoadError(
-  msg:       String,
-  rootCause: Throwable | Null = null,
-) extends ConfigurationError(msg, rootCause)
+  override val msg:   String,
+  override val cause: Option[Throwable] = None,
+) extends ConfigurationError(msg, cause)
 
+/** ZIO service that provides the resolved [[AppConfig]]. Implementations may load from the classpath, environment
+  * variables, or a test fixture.
+  */
 trait ConfigurationService {
 
   def appConfig: IO[ConfigurationError, AppConfig]

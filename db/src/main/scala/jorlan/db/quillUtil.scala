@@ -10,19 +10,52 @@
 
 package jorlan.db
 
+import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
+import jorlan.{AppConfig, DataSourceConfig}
 import jorlan.domain.*
 
 import java.time.{Instant, LocalDateTime, ZoneOffset}
+import scala.language.unsafeNulls
 
+/** Constructs a [[HikariDataSource]] from [[AppConfig]].
+  *
+  * Kept in the `db` module so `model` does not depend on HikariCP. The pool is unmanaged — callers are responsible for
+  * closing it on shutdown.
+  */
+def makeDataSource(config: AppConfig): HikariDataSource = {
+  val c = config.jorlan.db.dataSource
+  val hc = new HikariConfig()
+  hc.setDriverClassName(c.driver)
+  hc.setJdbcUrl(c.url)
+  hc.setUsername(c.user)
+  hc.setPassword(c.password)
+  hc.setMaximumPoolSize(c.maximumPoolSize)
+  hc.setMinimumIdle(c.minimumIdle)
+  hc.setConnectionTimeout(c.connectionTimeoutMillis)
+  hc.setAutoCommit(true)
+  new HikariDataSource(hc)
+}
+
+/** Quill / MariaDB utility: `Ordering[Instant]` is not provided by the standard library. Required for in-memory
+  * post-filter comparisons in queries that Quill cannot translate directly.
+  */
 given Ordering[Instant] = Ordering.by(_.toEpochMilli)
 
-// Instant ↔ LocalDateTime (Quill / MariaDB stores DATETIME as LocalDateTime)
+/** Quill column mappings between `java.time.Instant` and `java.time.LocalDateTime`.
+  *
+  * MariaDB `DATETIME` columns are surfaced by the JDBC driver as `LocalDateTime`; these `MappedEncoding`s teach Quill
+  * how to convert transparently, always treating times as UTC.
+  */
 given MappedEncoding[LocalDateTime, Instant] = MappedEncoding[LocalDateTime, Instant](_.toInstant(ZoneOffset.UTC))
 given MappedEncoding[Instant, LocalDateTime] =
   MappedEncoding[Instant, LocalDateTime](LocalDateTime.ofInstant(_, ZoneOffset.UTC))
 
-// Opaque ID encodings
+/** Quill `MappedEncoding`s for the 19 opaque `Long`-backed ID types.
+  *
+  * All opaque types in `ids.scala` erase to `Long` at runtime, so a pair of encodings (read and write) is needed for
+  * each.
+  */
 given MappedEncoding[Long, UserId] = MappedEncoding(UserId.apply)
 given MappedEncoding[UserId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, RoleId] = MappedEncoding(RoleId.apply)
@@ -63,8 +96,14 @@ given MappedEncoding[Long, WorkspaceId] = MappedEncoding(WorkspaceId.apply)
 given MappedEncoding[WorkspaceId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, OrchestratorId] = MappedEncoding(OrchestratorId.apply)
 given MappedEncoding[OrchestratorId, Long] = MappedEncoding(_.value)
+given MappedEncoding[Long, PermissionId] = MappedEncoding(PermissionId.apply)
+given MappedEncoding[PermissionId, Long] = MappedEncoding(_.value)
+given MappedEncoding[Long, ChannelIdentityId] = MappedEncoding(ChannelIdentityId.apply)
+given MappedEncoding[ChannelIdentityId, Long] = MappedEncoding(_.value)
 
-// Enum encodings (stored as VARCHAR in DB)
+/** Quill `MappedEncoding`s for the 12 domain enums stored as `VARCHAR` in MariaDB. Encoding uses `toString` (stored
+  * name); decoding uses `valueOf` (case-sensitive).
+  */
 given MappedEncoding[String, ChannelType] = MappedEncoding(ChannelType.valueOf)
 given MappedEncoding[ChannelType, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, SessionStatus] = MappedEncoding(SessionStatus.valueOf)

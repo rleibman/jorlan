@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
  *
  * This source code is protected under international copyright law.  All rights
  * reserved and protected by the copyright holders.
@@ -15,8 +15,18 @@ import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{EnvironmentTag, Runtime, Scope, ZIO, ZIOApp, ZIOAppArgs, ZLayer}
 
+/** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration
 
+/** Main entry point for the Jorlan server.
+  *
+  * Startup sequence:
+  *   1. Resolve configuration from `application.conf`.
+  *   2. Run Flyway schema migrations.
+  *   3. Start the zio-http server on the configured port.
+  *
+  * A `GET /health` route is always registered; additional routes will be added as subsystems are wired in.
+  */
 object Jorlan extends ZIOApp {
 
   override type Environment = JorlanEnvironment

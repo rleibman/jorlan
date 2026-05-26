@@ -10,10 +10,21 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
+/** Identity record for a remote orchestrator participating in the federation protocol.
+  *
+  * Jorlan can receive work requests from external orchestrators (e.g. a Paperclip-style planner). This record stores
+  * their registered identity and the trust level they have been granted by an administrator.
+  *
+  * @param publicKeyPem
+  *   PEM-encoded RSA/EC public key used to verify signed inter-orchestrator requests. `None` means the orchestrator is
+  *   authenticated by other means (e.g. shared secret or JWT).
+  * @param trustLevel
+  *   Governs which capabilities the orchestrator may invoke without additional user approval.
+  */
 case class OrchestratorIdentity(
   id:           OrchestratorId,
   name:         String,
@@ -22,10 +33,4 @@ case class OrchestratorIdentity(
   trustLevel:   Int = 0,
   createdAt:    Instant,
   updatedAt:    Instant,
-)
-object OrchestratorIdentity {
-
-  given JsonEncoder[OrchestratorIdentity] = DeriveJsonEncoder.gen[OrchestratorIdentity]
-  given JsonDecoder[OrchestratorIdentity] = DeriveJsonDecoder.gen[OrchestratorIdentity]
-
-}
+) derives JsonEncoder, JsonDecoder

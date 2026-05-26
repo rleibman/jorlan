@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
  *
  * This source code is protected under international copyright law.  All rights
  * reserved and protected by the copyright holders.
@@ -10,14 +10,19 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
+/** Trust tier of a skill — lower level = more trusted, higher level = more restricted.
+  *
+  * Tiers determine the approval requirements and sandbox constraints when a skill is executed. Only an administrator
+  * can promote a skill to a lower tier.
+  */
 enum SkillTier(
   val level:       Int,
   val description: String,
-) {
+) derives JsonEncoder, JsonDecoder {
 
   case BuiltIn extends SkillTier(0, "Built-in native Scala skill")
   case Plugin extends SkillTier(1, "Installed native Scala plugin skill")
@@ -27,61 +32,43 @@ enum SkillTier(
   case AgentDraft extends SkillTier(5, "Agent-authored draft skill")
 
 }
-object SkillTier {
 
-  given JsonEncoder[SkillTier] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[SkillTier] =
-    JsonDecoder[String].mapOrFail { s =>
-      SkillTier.values.find(_.toString == s).toRight(s"Unknown SkillTier: $s")
-    }
-
-}
-
-enum SkillStatus {
+/** Lifecycle gate for a [[SkillVersion]]. Versions must advance through all intermediate states before becoming
+  * `Active`. `Revoked` is terminal.
+  */
+enum SkillStatus derives JsonEncoder, JsonDecoder {
 
   case Draft, Validated, PermissionReviewed, SandboxTested, AwaitingApproval, Active, Deprecated, Revoked
 
 }
-object SkillStatus {
 
-  given JsonEncoder[SkillStatus] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[SkillStatus] =
-    JsonDecoder[String].mapOrFail { s =>
-      SkillStatus.values.find(_.toString == s).toRight(s"Unknown SkillStatus: $s")
-    }
-
-}
-
-enum ConnectorType {
+/** The external system a [[ConnectorInstance]] bridges to. */
+enum ConnectorType derives JsonEncoder, JsonDecoder {
 
   case Shell, GraphQL, Telegram, Slack, Email, WhatsApp, Sms, Lyrion, MarketData, WebSearch
 
 }
-object ConnectorType {
 
-  given JsonEncoder[ConnectorType] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[ConnectorType] =
-    JsonDecoder[String].mapOrFail { s =>
-      ConnectorType.values.find(_.toString == s).toRight(s"Unknown ConnectorType: $s")
-    }
-
-}
-
-// Raw JSON string containing the full skill manifest (input schema, output schema, capabilities, etc.)
+/** The canonical registry entry for a skill. Immutable versions are stored in [[SkillVersion]]; this record carries
+  * only the identity and the pointer to the active version.
+  *
+  * @param currentVersion
+  *   The semver string of the currently `Active` version, or `None` if no version is active yet.
+  */
 case class Skill(
   id:             SkillId,
   name:           String,
   currentVersion: Option[String],
   tier:           SkillTier,
   createdAt:      Instant,
-)
-object Skill {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[Skill] = DeriveJsonEncoder.gen[Skill]
-  given JsonDecoder[Skill] = DeriveJsonDecoder.gen[Skill]
-
-}
-
+/** An immutable snapshot of a [[Skill]] at a specific semver version.
+  *
+  * @param manifestJson
+  *   Full JSON skill manifest: input/output JSON schema, required capabilities, description, and any connector-specific
+  *   execution metadata.
+  */
 case class SkillVersion(
   id:           SkillVersionId,
   skillId:      SkillId,
@@ -89,14 +76,16 @@ case class SkillVersion(
   manifestJson: String, // Full JSON manifest (input/output schema, required capabilities, etc.)
   status:       SkillStatus,
   createdAt:    Instant,
-)
-object SkillVersion {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[SkillVersion] = DeriveJsonEncoder.gen[SkillVersion]
-  given JsonDecoder[SkillVersion] = DeriveJsonDecoder.gen[SkillVersion]
-
-}
-
+/** A configured and named instance of a connector to an external system.
+  *
+  * @param configJson
+  *   Connector-specific configuration (credentials, endpoints, timeouts). Must be treated as sensitive — never logged
+  *   or returned to unprivileged callers.
+  * @param status
+  *   Free-form runtime status string (e.g. `"connected"`, `"error: auth failed"`).
+  */
 case class ConnectorInstance(
   id:            ConnectorInstanceId,
   connectorType: ConnectorType,
@@ -104,10 +93,4 @@ case class ConnectorInstance(
   configJson:    String,
   status:        String,
   createdAt:     Instant,
-)
-object ConnectorInstance {
-
-  given JsonEncoder[ConnectorInstance] = DeriveJsonEncoder.gen[ConnectorInstance]
-  given JsonDecoder[ConnectorInstance] = DeriveJsonDecoder.gen[ConnectorInstance]
-
-}
+) derives JsonEncoder, JsonDecoder

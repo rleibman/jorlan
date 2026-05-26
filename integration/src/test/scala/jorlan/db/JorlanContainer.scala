@@ -12,16 +12,16 @@ package jorlan.db
 
 import com.dimafeng.testcontainers.MariaDBContainer
 import jorlan.db.repository.{
-  AgentRepository,
-  ArtifactRepository,
-  ConversationRepository,
-  EventLogRepository,
-  MemoryRepository,
-  PermissionRepository,
+  AgentZIORepository,
+  ArtifactZIORepository,
+  ConversationZIORepository,
+  EventLogZIORepository,
+  MemoryZIORepository,
+  PermissionZIORepository,
   QuillRepositories,
-  SchedulerRepository,
-  SkillRepository,
-  UserRepository,
+  SchedulerZIORepository,
+  SkillZIORepository,
+  UserZIORepository,
 }
 import jorlan.{
   AppConfig,
@@ -36,18 +36,18 @@ import jorlan.{
 import org.flywaydb.core.Flyway
 import zio.*
 
-import scala.jdk.CollectionConverters.*
 import scala.language.unsafeNulls
 
 object JorlanContainer {
 
-  private val containerLayer: TaskLayer[MariaDBContainer] = ZLayer.fromZIO(
-    ZIO.attemptBlocking {
-      val c = MariaDBContainer()
-      c.container.setPortBindings(List("3308:3306").asJava)
-      c.container.start()
-      c
-    },
+  private val containerLayer: TaskLayer[MariaDBContainer] = ZLayer.scoped(
+    ZIO.acquireRelease(
+      ZIO.attemptBlocking {
+        val c = MariaDBContainer()
+        c.container.start()
+        c
+      },
+    )(c => ZIO.attemptBlocking(c.container.stop()).orDie),
   )
 
   private def migrateWithFlyway(container: MariaDBContainer): Task[Unit] =
@@ -82,8 +82,8 @@ object JorlanContainer {
       ),
     )
 
-  val configLayer: TaskLayer[ConfigurationService] = ZLayer
-    .fromZIO(
+  private val configFromContainerLayer: ZLayer[MariaDBContainer, Throwable, ConfigurationService] =
+    ZLayer.fromZIO(
       ZIO.serviceWithZIO[MariaDBContainer] { container =>
         migrateWithFlyway(container).map { _ =>
           val config = makeConfig(container)
@@ -92,12 +92,14 @@ object JorlanContainer {
           }
         }
       },
-    ).provideSome[Any](containerLayer)
+    )
+
+  val configLayer: TaskLayer[ConfigurationService] = containerLayer >>> configFromContainerLayer
 
   val repositoryLayer: TaskLayer[
-    UserRepository & AgentRepository & ConversationRepository & SkillRepository & MemoryRepository &
-      EventLogRepository & SchedulerRepository & ArtifactRepository & PermissionRepository,
+    UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
+      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository,
   ] =
-    configLayer >>> QuillRepositories.live.orDie
+    configLayer >>> QuillRepositories.live
 
 }

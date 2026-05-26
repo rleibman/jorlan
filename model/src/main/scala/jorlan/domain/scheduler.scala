@@ -10,40 +10,33 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-enum JobStatus {
+/** Lifecycle state of a [[SchedulerJob]] execution run. */
+enum JobStatus derives JsonEncoder, JsonDecoder {
 
   case Pending, Running, Succeeded, Failed, Cancelled
 
 }
-object JobStatus {
 
-  given JsonEncoder[JobStatus] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[JobStatus] =
-    JsonDecoder[String].mapOrFail { s =>
-      JobStatus.values.find(_.toString == s).toRight(s"Unknown JobStatus: $s")
-    }
-
-}
-
-enum TriggerType {
+/** Determines how a [[SchedulerTrigger]] fires its associated [[SchedulerJob]]. */
+enum TriggerType derives JsonEncoder, JsonDecoder {
 
   case Cron, Interval, OneShot, Event
 
 }
-object TriggerType {
 
-  given JsonEncoder[TriggerType] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[TriggerType] =
-    JsonDecoder[String].mapOrFail { s =>
-      TriggerType.values.find(_.toString == s).toRight(s"Unknown TriggerType: $s")
-    }
-
-}
-
+/** A deferred or recurring agent invocation managed by the scheduler.
+  *
+  * @param inputJson
+  *   JSON payload passed to the skill when the job fires; `None` means no input.
+  * @param scheduledAt
+  *   The next (or only) intended execution time as of the last scheduler tick.
+  * @param resultJson
+  *   JSON output of the last run; populated after `status` reaches `Succeeded` or `Failed`.
+  */
 case class SchedulerJob(
   id:          SchedulerJobId,
   agentId:     AgentId,
@@ -56,14 +49,14 @@ case class SchedulerJob(
   finishedAt:  Option[Instant],
   resultJson:  Option[String],
   createdAt:   Instant,
-)
-object SchedulerJob {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[SchedulerJob] = DeriveJsonEncoder.gen[SchedulerJob]
-  given JsonDecoder[SchedulerJob] = DeriveJsonDecoder.gen[SchedulerJob]
-
-}
-
+/** A schedule rule that fires a [[SchedulerJob]].
+  *
+  * @param expression
+  *   Interpretation depends on `triggerType`: a cron expression (e.g. `"0 9 * * 1-5"`), an ISO 8601 duration (e.g.
+  *   `"PT15M"`), or an event name for `Event`-type triggers.
+  */
 case class SchedulerTrigger(
   id:          SchedulerTriggerId,
   jobId:       SchedulerJobId,
@@ -71,10 +64,4 @@ case class SchedulerTrigger(
   expression:  String, // cron expression, ISO duration, or event name
   enabled:     Boolean = true,
   createdAt:   Instant,
-)
-object SchedulerTrigger {
-
-  given JsonEncoder[SchedulerTrigger] = DeriveJsonEncoder.gen[SchedulerTrigger]
-  given JsonDecoder[SchedulerTrigger] = DeriveJsonDecoder.gen[SchedulerTrigger]
-
-}
+) derives JsonEncoder, JsonDecoder

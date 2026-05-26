@@ -10,54 +10,56 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-enum MemoryScope {
+/** Visibility boundary for a [[MemoryRecord]].
+  *
+  *   - `User` — visible only to the owning user.
+  *   - `Shared` — visible to all users in the system (use carefully).
+  *   - `Workspace` — visible to all members of the associated workspace.
+  *   - `Private` — visible only to the specific agent that created it.
+  */
+enum MemoryScope derives JsonEncoder, JsonDecoder {
 
   case User, Shared, Workspace, Private
 
 }
-object MemoryScope {
 
-  given JsonEncoder[MemoryScope] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[MemoryScope] =
-    JsonDecoder[String].mapOrFail { s =>
-      MemoryScope.values.find(_.toString == s).toRight(s"Unknown MemoryScope: $s")
-    }
-
-}
-
+/** A key-value memory entry that an agent can store and later retrieve.
+  *
+  * @param recordKey
+  *   Application-defined key identifying this memory within its scope (e.g. `"user.preference.timezone"`).
+  * @param value
+  *   The stored content — free-form text or JSON.
+  * @param ttl
+  *   If set, the record is eligible for automatic purging after this instant.
+  */
 case class MemoryRecord(
   id:          MemoryRecordId,
   scope:       MemoryScope,
   userId:      Option[UserId],
   workspaceId: Option[WorkspaceId],
   agentId:     Option[AgentId],
-  key:         String,
+  recordKey:   String,
   value:       String,
   ttl:         Option[Instant],
   createdAt:   Instant,
   updatedAt:   Instant,
-)
-object MemoryRecord {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[MemoryRecord] = DeriveJsonEncoder.gen[MemoryRecord]
-  given JsonDecoder[MemoryRecord] = DeriveJsonDecoder.gen[MemoryRecord]
-
-}
-
+/** A vector embedding of a [[MemoryRecord]], used for semantic (similarity) search.
+  *
+  * @param model
+  *   Embedding model identifier that produced this vector (e.g. `"nomic-embed-text"`).
+  * @param vector
+  *   JSON-serialized `float[]`. The embedding dimension is implicit in the model identifier.
+  */
 case class MemoryEmbedding(
   id:             MemoryEmbeddingId,
   memoryRecordId: MemoryRecordId,
   model:          String,
   vector:         String, // JSON-serialized float array
   createdAt:      Instant,
-)
-object MemoryEmbedding {
-
-  given JsonEncoder[MemoryEmbedding] = DeriveJsonEncoder.gen[MemoryEmbedding]
-  given JsonDecoder[MemoryEmbedding] = DeriveJsonDecoder.gen[MemoryEmbedding]
-
-}
+) derives JsonEncoder, JsonDecoder

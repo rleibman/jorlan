@@ -10,121 +10,38 @@
 
 package jorlan.db.repository
 
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 
-import java.sql.SQLException
+import java.sql.{SQLNonTransientException, SQLTransientException}
 
-type RepositoryTask[A] = IO[SQLException, A]
+/** Effect alias used by all ZIO repository implementations: `IO` with `RepositoryError`. */
+type RepositoryTask[A] = IO[RepositoryError, A]
 
-trait UserRepository {
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[UserRepository]]. */
+trait UserZIORepository extends UserRepository[RepositoryTask]
 
-  def getById(id:                  UserId):          RepositoryTask[Option[User]]
-  def getAll:                                        RepositoryTask[List[User]]
-  def upsert(user:                 User):            RepositoryTask[User]
-  def deactivate(id:               UserId):          RepositoryTask[Unit]
-  def getChannelIdentities(userId: UserId):          RepositoryTask[List[ChannelIdentity]]
-  def upsertChannelIdentity(ci:    ChannelIdentity): RepositoryTask[ChannelIdentity]
-  def deleteChannelIdentity(id:    UserId):          RepositoryTask[Unit]
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[AgentRepository]]. */
 
-}
+trait AgentZIORepository extends AgentRepository[RepositoryTask]
 
-trait AgentRepository {
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[ConversationRepository]]. */
+trait ConversationZIORepository extends ConversationRepository[RepositoryTask]
 
-  def getById(id:                  AgentId):        RepositoryTask[Option[Agent]]
-  def getAll:                                       RepositoryTask[List[Agent]]
-  def upsert(agent:                Agent):          RepositoryTask[Agent]
-  def delete(id:                   AgentId):        RepositoryTask[Unit]
-  def getSession(id:               AgentSessionId): RepositoryTask[Option[AgentSession]]
-  def getSessionsForAgent(agentId: AgentId):        RepositoryTask[List[AgentSession]]
-  def upsertSession(session:       AgentSession):   RepositoryTask[AgentSession]
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[SkillRepository]]. */
+trait SkillZIORepository extends SkillRepository[RepositoryTask]
 
-}
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[MemoryRepository]]. */
+trait MemoryZIORepository extends MemoryRepository[RepositoryTask]
 
-trait ConversationRepository {
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[EventLogRepository]]. */
+trait EventLogZIORepository extends EventLogRepository[RepositoryTask]
 
-  def getById(id:                 ConversationId): RepositoryTask[Option[Conversation]]
-  def getBySession(sessionId:     AgentSessionId): RepositoryTask[List[Conversation]]
-  def create(conversation:        Conversation):   RepositoryTask[Conversation]
-  def getMessages(conversationId: ConversationId): RepositoryTask[List[Message]]
-  def addMessage(message:         Message):        RepositoryTask[Message]
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[SchedulerRepository]]. */
+trait SchedulerZIORepository extends SchedulerRepository[RepositoryTask]
 
-}
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[ArtifactRepository]]. */
+trait ArtifactZIORepository extends ArtifactRepository[RepositoryTask]
 
-trait SkillRepository {
-
-  def getById(id:          SkillId):             RepositoryTask[Option[Skill]]
-  def getAll:                                    RepositoryTask[List[Skill]]
-  def upsert(skill:        Skill):               RepositoryTask[Skill]
-  def getVersion(id:       SkillVersionId):      RepositoryTask[Option[SkillVersion]]
-  def getVersions(skillId: SkillId):             RepositoryTask[List[SkillVersion]]
-  def upsertVersion(v:     SkillVersion):        RepositoryTask[SkillVersion]
-  def getConnector(id:     ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]]
-  def getAllConnectors:                          RepositoryTask[List[ConnectorInstance]]
-  def upsertConnector(ci:  ConnectorInstance):   RepositoryTask[ConnectorInstance]
-
-}
-
-trait MemoryRepository {
-
-  def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]]
-  def search(
-    scope:       MemoryScope,
-    userId:      Option[UserId],
-    workspaceId: Option[WorkspaceId],
-    agentId:     Option[AgentId],
-    key:         Option[String],
-  ):                                  RepositoryTask[List[MemoryRecord]]
-  def upsert(record: MemoryRecord):   RepositoryTask[MemoryRecord]
-  def delete(id:     MemoryRecordId): RepositoryTask[Unit]
-  def purgeExpired:                   RepositoryTask[Long]
-
-}
-
-trait EventLogRepository {
-
-  def append(event: EventLog): RepositoryTask[EventLog]
-  def search(
-    eventType: Option[EventType],
-    agentId:   Option[AgentId],
-    from:      Option[java.time.Instant],
-    to:        Option[java.time.Instant],
-    limit:     Int,
-  ): RepositoryTask[List[EventLog]]
-
-}
-
-trait SchedulerRepository {
-
-  def getJob(id:             SchedulerJobId):   RepositoryTask[Option[SchedulerJob]]
-  def getPendingJobs:                           RepositoryTask[List[SchedulerJob]]
-  def upsertJob(job:         SchedulerJob):     RepositoryTask[SchedulerJob]
-  def getTriggers(jobId:     SchedulerJobId):   RepositoryTask[List[SchedulerTrigger]]
-  def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger]
-
-}
-
-trait ArtifactRepository {
-
-  def getById(id:                 ArtifactId):  RepositoryTask[Option[Artifact]]
-  def getByWorkspace(workspaceId: WorkspaceId): RepositoryTask[List[Artifact]]
-  def upsert(artifact:            Artifact):    RepositoryTask[Artifact]
-  def delete(id:                  ArtifactId):  RepositoryTask[Unit]
-  def getWorkspace(id:            WorkspaceId): RepositoryTask[Option[Workspace]]
-  def getAllWorkspaces(ownerId:   UserId):      RepositoryTask[List[Workspace]]
-  def upsertWorkspace(ws:         Workspace):   RepositoryTask[Workspace]
-
-}
-
-trait PermissionRepository {
-
-  def getRolesForUser(userId:          UserId):            RepositoryTask[List[Role]]
-  def getPermissionsForRole(roleId:    RoleId):            RepositoryTask[List[Permission]]
-  def getPermissionsForUser(userId:    UserId):            RepositoryTask[List[Permission]]
-  def upsertCapabilityGrant(grant:     CapabilityGrant):   RepositoryTask[CapabilityGrant]
-  def getGrantsForUser(userId:         UserId):            RepositoryTask[List[CapabilityGrant]]
-  def createApprovalRequest(req:       ApprovalRequest):   RepositoryTask[ApprovalRequest]
-  def recordApprovalDecision(decision: ApprovalDecision):  RepositoryTask[ApprovalDecision]
-  def getApprovalRequest(id:           ApprovalRequestId): RepositoryTask[Option[ApprovalRequest]]
-
-}
+/** ZIO-specific repository trait — fixes `F = RepositoryTask` for [[PermissionRepository]]. */
+trait PermissionZIORepository extends PermissionRepository[RepositoryTask]

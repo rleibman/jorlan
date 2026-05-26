@@ -10,37 +10,31 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-enum MessageRole {
+/** The role of the author of a [[Message]] — mirrors the LLM chat-completion role vocabulary. */
+enum MessageRole derives JsonEncoder, JsonDecoder {
 
   case User, Assistant, System, Tool
 
 }
-object MessageRole {
 
-  given JsonEncoder[MessageRole] = JsonEncoder[String].contramap(_.toString)
-  given JsonDecoder[MessageRole] =
-    JsonDecoder[String].mapOrFail { s =>
-      MessageRole.values.find(_.toString == s).toRight(s"Unknown MessageRole: $s")
-    }
-
-}
-
+/** An ordered thread of [[Message]]s within an [[AgentSession]]. A session may contain multiple conversations (e.g.
+  * after context-window truncation and restart).
+  */
 case class Conversation(
   id:        ConversationId,
   sessionId: AgentSessionId,
   startedAt: Instant,
-)
-object Conversation {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[Conversation] = DeriveJsonEncoder.gen[Conversation]
-  given JsonDecoder[Conversation] = DeriveJsonDecoder.gen[Conversation]
-
-}
-
+/** One LLM exchange unit within a [[Conversation]].
+  *
+  * @param metadataJson
+  *   Optional JSON carrying provider-specific metadata (e.g. token counts, finish reason, tool call IDs).
+  */
 case class Message(
   id:             MessageId,
   conversationId: ConversationId,
@@ -48,10 +42,4 @@ case class Message(
   content:        String,
   metadataJson:   Option[String],
   createdAt:      Instant,
-)
-object Message {
-
-  given JsonEncoder[Message] = DeriveJsonEncoder.gen[Message]
-  given JsonDecoder[Message] = DeriveJsonDecoder.gen[Message]
-
-}
+) derives JsonEncoder, JsonDecoder

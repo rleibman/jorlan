@@ -10,10 +10,12 @@
 
 package jorlan.domain
 
-import zio.json.{DeriveJsonDecoder, DeriveJsonEncoder, JsonDecoder, JsonEncoder}
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
+/** A shared collaboration area that groups artifacts, memory, and agent sessions for a team or project.
+  */
 case class Workspace(
   id:          WorkspaceId,
   ownerId:     UserId,
@@ -21,14 +23,15 @@ case class Workspace(
   description: Option[String],
   createdAt:   Instant,
   updatedAt:   Instant,
-)
-object Workspace {
+) derives JsonEncoder, JsonDecoder
 
-  given JsonEncoder[Workspace] = DeriveJsonEncoder.gen[Workspace]
-  given JsonDecoder[Workspace] = DeriveJsonDecoder.gen[Workspace]
-
-}
-
+/** A file or document produced or consumed during an agent session.
+  *
+  * @param storageUri
+  *   Content-addressed or path-based URI (scheme depends on the configured storage backend).
+  * @param metadataJson
+  *   Optional JSON carrying artifact-specific metadata (e.g. page count, image dimensions).
+  */
 case class Artifact(
   id:           ArtifactId,
   workspaceId:  Option[WorkspaceId],
@@ -39,10 +42,4 @@ case class Artifact(
   storageUri:   String,
   metadataJson: Option[String],
   createdAt:    Instant,
-)
-object Artifact {
-
-  given JsonEncoder[Artifact] = DeriveJsonEncoder.gen[Artifact]
-  given JsonDecoder[Artifact] = DeriveJsonDecoder.gen[Artifact]
-
-}
+) derives JsonEncoder, JsonDecoder

@@ -18,7 +18,7 @@ Check off items as they are completed. Each phase has a **Goal** statement descr
 - [x] `build.sbt` fully cleaned up (all `missMoneyPenny` references replaced, `ai` and `shell` modules added)
 - [x] Source directory structure created for all modules (`model`, `db`, `ai`, `server`, `shell`, `analytics`, `integration`, `util`)
 - [x] Application config loading (`zio-config` with HOCON) in `server`
-- [ ] DB connection pool setup (Quill `DataContext`) in `db`
+- [x] DB connection pool setup (Quill `DataContext`) in `db`
 - [x] Flyway baseline migration runs (empty schema, version table only)
 - [x] `jorlan.Jorlan` main entry point: starts ZIO runtime, connects to DB, logs startup, handles shutdown signal cleanly
 - [x] `logback.xml` and `application.conf` templates in `server/src/main/templates/`
@@ -31,7 +31,7 @@ Check off items as they are completed. Each phase has a **Goal** statement descr
 
 **Goal:** All major domain types are defined in `model` as pure Scala — no persistence, no I/O, just the types and their JSON codecs.
 
-- [ ] **Identity and access types**
+- [x] **Identity and access types**
   - `User` (id, displayName, createdAt, active)
   - `ChannelIdentity` (userId, channel type enum, channelUserId, verified)
   - `Role` (id, name, description)
@@ -39,34 +39,32 @@ Check off items as they are completed. Each phase has a **Goal** statement descr
   - `CapabilityGrant` (id, capability, scope, grantee, grantor, approvalMode, expiresAt)
   - `ApprovalMode` enum: `Denied | PerInvocation | Once | Session | Timed | Persistent`
   - `ApprovalRequest` / `ApprovalDecision` types
-- [ ] **Agent and session types**
+- [x] **Agent and session types**
   - `Agent` (id, name, description, defaultModel, trustLevel)
   - `AgentSession` (id, agentId, userId, workspaceId, status, createdAt)
   - `SessionStatus` enum: `Created | Active | Paused | Blocked | Completed | Failed | Cancelled`
   - `Conversation` (id, sessionId, startedAt)
   - `Message` (id, conversationId, role enum, content, timestamp)
-- [ ] **Skill types**
+- [x] **Skill types** *(note: SkillManifest folded into `SkillVersion.manifestJson` field)*
   - `SkillTier` enum (0–5 as per design)
-  - `SkillManifest` (id, name, version, tier, description, inputSchema, outputSchema, requiredCapabilities)
   - `SkillVersion` (skillId, version as SemVer, manifestJson, status enum)
   - `SkillStatus` enum: `Draft | Validated | PermissionReviewed | SandboxTested | AwaitingApproval | Active | Deprecated | Revoked`
-- [ ] **Memory types**
+- [x] **Memory types** *(note: MemoryCheckpoint deferred — not yet implemented)*
   - `MemoryRecord` (id, userId|Null, scope: `User | Shared | Workspace | Private`, workspaceId|Null, content, embeddingId|Null, createdAt)
-  - `MemoryCheckpoint` (sessionId, triggeredBy, summary, createdAt)
-- [ ] **Scheduler types**
-  - `SchedulerJob` (id, name, payload, status, nextRunAt, createdBy)
-  - `JobStatus` enum: `Pending | Running | Paused | Completed | Failed | Cancelled`
-  - `SchedulerTrigger` (jobId, triggerType enum, triggerConfig JSON)
-  - `TriggerType` enum: `OneShot | Cron | Event | Message | Webhook | Condition`
-- [ ] **Event log types**
-  - `EventLog` (id, timestamp, eventType, actorId, userId|Null, sessionId|Null, correlationId, payload JSON)
-  - Sealed `EventType` hierarchy covering: AgentEvent, PermissionEvent, SkillEvent, SchedulerEvent, ConnectorEvent, ModelEvent, SystemEvent
-- [ ] **Other types**
-  - `Artifact` (id, sessionId|Null, name, mediaType, storageUri, createdAt)
-  - `Workspace` (id, name, rootPath, ownerId)
+  - `MemoryEmbedding` (memoryRecordId, model, vector JSON)
+- [x] **Scheduler types**
+  - `SchedulerJob` (id, agentId, skillId, name, inputJson, status, scheduledAt, startedAt, finishedAt, resultJson)
+  - `JobStatus` enum: `Pending | Running | Succeeded | Failed | Cancelled`
+  - `SchedulerTrigger` (jobId, triggerType enum, expression)
+  - `TriggerType` enum: `Cron | Interval | OneShot | Event`
+- [x] **Event log types** *(note: flat `EventType` enum rather than sealed hierarchy)*
+  - `EventLog` (id, eventType, actorId, agentId, sessionId, resourceType, resourceId, payloadJson, occurredAt)
+- [x] **Other types**
+  - `Artifact` (id, sessionId|Null, workspaceId|Null, name, mimeType, sizeBytes, storageUri, createdAt)
+  - `Workspace` (id, ownerId, name, description)
   - `ConnectorInstance` (id, connectorType enum, config JSON, status)
-  - `OrchestratorIdentity` (id, name, allowedUsers, allowedWorkspaces, allowedCapabilities)
-- [ ] `zio-json` codecs for all types (derive where possible, manual where needed)
+  - `OrchestratorIdentity` (id, name, publicKeyPem, trustLevel)
+- [x] `zio-json` codecs for all types (derive where possible, manual where needed)
 - [ ] Unit tests: construction, JSON round-trips, enum coverage
 
 ---
@@ -75,28 +73,38 @@ Check off items as they are completed. Each phase has a **Goal** statement descr
 
 **Goal:** Full DB schema via Flyway, Quill repositories for all major entities, passing Testcontainers integration tests.
 
-- [ ] Testcontainers MariaDB fixture shared across all repo tests
-- [ ] **Flyway migrations** (one file per logical group, numbered `V001__` onwards)
+- [x] Testcontainers MariaDB fixture shared across all repo tests
+- [x] **Flyway migrations** (V001–V009 created)
   - `V001`: users, channel_identities
   - `V002`: roles, permissions, capability_grants, approval_requests, approval_decisions
   - `V003`: agents, agent_sessions, conversations, messages
   - `V004`: skills, skill_versions, connector_instances
-  - `V005`: memory_records (single table, `scope` discriminator column), memory_embeddings
-  - `V006`: scheduler_jobs, scheduler_triggers
-  - `V007`: event_log (append-only; no UPDATE/DELETE in application code)
-  - `V008`: artifacts, workspace_metadata
-- [ ] Quill `DataContext` ZIO layer (connection pool from config)
-- [ ] Repository trait pattern: `trait Repository[K, V]` with `get`, `create`, `update`, `delete`, `list`
-- [ ] `UserRepository` + `ChannelIdentityRepository`
-- [ ] `RoleRepository` + `PermissionRepository` + `CapabilityGrantRepository`
-- [ ] `ApprovalRepository` (requests + decisions)
-- [ ] `AgentRepository` + `AgentSessionRepository` + `ConversationRepository` + `MessageRepository`
-- [ ] `SkillRepository` + `SkillVersionRepository`
-- [ ] `EventLogRepository` (insert only + query by type/actor/session/correlationId)
-- [ ] `MemoryRepository` (insert, query by scope/userId/workspaceId, full-text search)
-- [ ] `SchedulerRepository` (jobs + triggers; includes claim/release for locking)
-- [ ] `ArtifactRepository` + `WorkspaceRepository`
-- [ ] Integration tests for all repositories (>80% coverage)
+  - `V005`: scheduler_jobs, scheduler_triggers
+  - `V006`: event_log (append-only; no UPDATE/DELETE in application code)
+  - `V007`: memory_records + memory_embeddings
+  - `V008`: artifacts, workspaces
+  - `V009`: orchestrator_identities
+- [x] Quill `DataContext` ZIO layer (connection pool from config) — `MysqlZioJdbcContext` in `QuillRepositories`; `makeDataSource` factory extracted to `db` (HikariCP no longer in `model`)
+- [x] Repository trait pattern: `trait XxxRepository[F[_]]` in `model`; `trait XxxZIORepository extends XxxRepository[RepositoryTask]` in `db`
+- [x] `UserRepository` (users + channel identities) — `delete`/`deactivate` now return `F[Long]`
+- [x] `PermissionRepository` (roles, permissions, capability grants, approval requests + decisions) — `revokeGrant`, `cancelApprovalRequest` added
+- [x] `AgentRepository` (agents + sessions)
+- [x] `ConversationRepository` (conversations + messages)
+- [x] `SkillRepository` (skills, skill versions, connector instances)
+- [x] `EventLogRepository` (insert only + search by type/actor/time range) — date filter bug fixed
+- [x] `MemoryRepository` (upsert, search by scope/userId/workspaceId, purge expired)
+- [x] `SchedulerRepository` (jobs + triggers) — `deleteJob`, `deleteTrigger` added; `getPendingJobs` filters `scheduledAt <= now`
+- [x] `ArtifactRepository` (artifacts + workspaces)
+- [x] `JorlanError` base class added; `ConfigurationError` and `RepositoryError` extend it
+- [x] `PermissionId` and `ChannelIdentityId` opaque types added; all mistyped IDs corrected
+- [x] `FlywayMigration.migrate` now returns `Task[Unit]` — startup aborts on migration failure
+- [x] `FlywayConfig.target` changed from `String` to `Option[String]`
+- [x] `ApprovalStatus.Denied` renamed to `ApprovalStatus.Rejected` (no longer shadows `ApprovalMode.Denied`)
+- [x] `ConfigurationServiceImpl` file I/O wrapped in `ZIO.attempt`; dev-only fallback path removed
+- [x] `testcontainers-scala-mariadb` scoped to `% Test` in `db` and `server` modules
+- [x] Test container lifecycle uses `ZIO.acquireRelease` for proper cleanup
+- [x] All `assertTrue(a) && assertTrue(b)` patterns fixed to `assertTrue(a, b)` in integration tests
+- [ ] Integration tests for all repositories (>80% coverage) — partial (6 suites, 10 tests; Scheduler/Artifact/Permission suites missing)
 
 ---
 

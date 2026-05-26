@@ -58,8 +58,6 @@ enablePlugins(
 val betterFilesVersion = "3.9.2"
 val calibanClientVersion = "3.1.1"
 val calibanVersion = "3.1.1"
-// TODO: confirm latest langchain4j version when implementing the ai module (Phase 8)
-val langchain4jVersion = "1.0.0"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val dispatchHttpVersion = "2.0.0"
@@ -70,6 +68,9 @@ val jsoniterVersion = "2.38.9"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
+val langchain4jOllamaVersion = "1.15.0"
+val langchainCoreVersion = "1.15.0"
+val langchainLibrariesVersion = "1.15.0-beta25"
 val logbackVersion = "1.5.32"
 val mariadbVersion = "3.5.8"
 val openPdfVersion = "3.0.3"
@@ -196,11 +197,10 @@ lazy val db = project
       "dev.zio"                %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
       "dev.zio"                %% "izumi-reflect"         % izumiReflectVersion withSources (),
       "dev.zio"                %% "zio-json"              % zioJsonVersion withSources (),
-      // Other random utilities
-      "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion withSources (),
       // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+      "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion % "test" withSources (),
+      "dev.zio"      %% "zio-test"                     % zioVersion           % "test" withSources (),
+      "dev.zio"      %% "zio-test-sbt"                 % zioVersion           % "test" withSources (),
     ),
   )
 
@@ -248,12 +248,11 @@ lazy val server = project
       "com.softwaremill.sttp.client4" %% "zio"                   % sttpClient4Version withSources (),
       "com.softwaremill.sttp.client4" %% "zio-json"              % sttpClient4Version withSources (),
       // Other random utilities
-      "com.github.daddykotex" %% "courier"                      % courierVersion withSources (),
-      "com.dimafeng"          %% "testcontainers-scala-mariadb" % testContainerVersion withSources (),
-
+      "com.github.daddykotex" %% "courier" % courierVersion withSources (),
       // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+      "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion % "test" withSources (),
+      "dev.zio"      %% "zio-test"                     % zioVersion           % "test" withSources (),
+      "dev.zio"      %% "zio-test-sbt"                 % zioVersion           % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
@@ -294,32 +293,6 @@ lazy val integration = project
     // Integration tests are only in the Test configuration
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
-
-////////////////////////////////////////////////////////////////////////////////////
-// AI — LangChain4j wrapped in ZIO (Ollama + cloud model providers)
-
-lazy val ai = project
-  .enablePlugins(
-    AutomateHeaderPlugin,
-    com.github.sbt.git.GitVersioning,
-  )
-  .settings(
-    scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "jorlan-ai",
-    commonSettings,
-    libraryDependencies ++= Seq(
-      "dev.zio" %% "zio"      % zioVersion withSources (),
-      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-      // LangChain4j (Java library — added when implementing Phase 8)
-      // "dev.langchain4j" % "langchain4j"        % langchain4jVersion withSources (),
-      // "dev.langchain4j" % "langchain4j-ollama"  % langchain4jVersion withSources (),
-      // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-    ),
-    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-  )
-  .dependsOn(model)
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Shell — CLI client (connects to server via GraphQL)
@@ -437,6 +410,35 @@ lazy val debianSettings =
       scripts + ("postinst" -> updatedPostinst)
     },
   )
+
+////////////////////////////////////////////////////////////////////////////////////
+// AI — LangChain4j wrapped in ZIO (Ollama + cloud model providers)
+
+lazy val ai = project
+  .enablePlugins(
+    AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+  )
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-ai",
+    commonSettings,
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "org.testcontainers" % "qdrant"                    % qdrantVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-core"          % langchainCoreVersion withSources (),
+      "dev.langchain4j"    % "langchain4j"               % langchainCoreVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-ollama"        % langchain4jOllamaVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-easy-rag"      % langchainLibrariesVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-qdrant"        % langchainLibrariesVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+  .dependsOn(model)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Root project

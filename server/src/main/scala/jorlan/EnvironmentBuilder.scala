@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Roberto Leibman - All Rights Reserved
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
  *
  * This source code is protected under international copyright law.  All rights
  * reserved and protected by the copyright holders.
@@ -13,6 +13,11 @@ package jorlan
 import jorlan.db.{ConfigurationServiceImpl, FlywayMigration}
 import zio.{ULayer, ZLayer}
 
+/** Assembles the production ZIO environment layer for the [[Jorlan]] application.
+  *
+  * Add new service layers here as additional subsystems are introduced. The `ZLayer.make` macro resolves the dependency
+  * graph and will fail at compile time if any layer is missing.
+  */
 object EnvironmentBuilder {
 
   val live: ULayer[JorlanEnvironment] =

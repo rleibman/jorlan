@@ -11,30 +11,31 @@
 package jorlan.db
 
 import com.typesafe.config.ConfigFactory
-import jorlan.{AppConfig, ConfigurationError, ConfigurationService}
-import zio.{IO, ULayer, ZLayer}
+import jorlan.{AppConfig, ConfigLoadError, ConfigurationError, ConfigurationService}
+import zio.{IO, ULayer, ZIO, ZLayer}
 
 import java.io.File
 import scala.language.unsafeNulls
 
+/** Production [[ConfigurationService]] that reads from a Typesafe Config file.
+  *
+  * The config file path is resolved from the `application.conf` system property; if absent, classpath defaults via
+  * `ConfigFactory.load()` are used. Config is merged with `ConfigFactory.load()` so environment-variable overrides
+  * still apply.
+  */
 object ConfigurationServiceImpl {
 
   val live: ULayer[ConfigurationService] = ZLayer.succeed(new ConfigurationService {
 
-    lazy override val appConfig: IO[ConfigurationError, AppConfig] = {
-      val confFileName =
-        Option(System.getProperty("application.conf"))
-          .getOrElse("./src/main/resources/application.conf")
-      val confFile = new File(confFileName)
-      // AppConfig.read calls .orDie internally so config errors become defects,
-      // keeping the return type compatible with IO[ConfigurationError, AppConfig].
-      AppConfig.read(
-        ConfigFactory
-          .parseFile(confFile)
-          .withFallback(ConfigFactory.load())
-          .resolve(),
-      )
-    }
+    override val appConfig: IO[ConfigurationError, AppConfig] =
+      ZIO
+        .attempt {
+          Option(System.getProperty("application.conf"))
+            .map(path => ConfigFactory.parseFile(new File(path)).withFallback(ConfigFactory.load()).resolve())
+            .getOrElse(ConfigFactory.load().resolve())
+        }
+        .mapError(e => ConfigLoadError(e.getMessage.nn, Some(e)))
+        .flatMap(AppConfig.read)
 
   })
 
