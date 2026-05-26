@@ -1,9 +1,11 @@
-# Phase 3 Code Review — EventLogService & CorrelationId
+# Phase 3 Code Review — EventLogService & CorrelationId (Historical Pre-Fix Review)
 
 **Reviewed by**: Multi-agent review (Functional Scala, Pattern Recognition, Code Simplicity, Test Coverage)
 **Date**: 2026-05-26
 **Branch**: `phase-3/graphql-api`
 **Scope**: `EventLogService` ZIO layer, `CorrelationId` propagation, in-memory and integration tests
+
+**Note**: This document captures the review state at the time of review. Some findings below were identified before subsequent fixes in this branch and should be read as historical review notes unless explicitly reconfirmed against the current code.
 
 ---
 
@@ -11,15 +13,15 @@
 
 Phase 3 delivers a clean, well-structured `EventLogService` with idiomatic ZIO layering and a correct `CorrelationId` implementation. The service abstraction is solid and the two-tier testing strategy (in-memory unit + Testcontainers integration) is the right approach.
 
-However, three issues undermine correctness and must be resolved before this code is relied upon:
+During review, three issues were identified as undermining correctness and requiring follow-up:
 
-1. **`from`/`to` date filters are applied in-memory after the SQL `LIMIT`** — a correctness bug that silently returns wrong results under common filter combinations.
-2. **The scaladoc on `EventLogService.log` falsely claims correlation ID is persisted** — it is not; the `correlationId` field does not exist on `EventLog`, and `EventLogServiceImpl.log` never reads the fiber annotation.
-3. **The shared-state test harness produces order-dependent tests** that may pass or fail depending on execution order.
+1. **`from`/`to` date filters were applied in-memory after the SQL `LIMIT`** — a correctness bug that could silently return wrong results under common filter combinations.
+2. **The scaladoc on `EventLogService.log` claimed correlation ID is persisted** — the reviewed implementation and model did not match that claim.
+3. **The shared-state test harness produced order-dependent tests** that could pass or fail depending on execution order.
 
-Test coverage for the `from`/`to` filter path is zero at every layer, meaning the correctness bug has no safety net.
+At review time, coverage for the `from`/`to` filter path was identified as missing, leaving that correctness path without a direct safety net.
 
-Overall health: **Needs Attention** — the design foundation is sound but these three items must be resolved before Phase 4 builds on top of it.
+Overall health at review time: **Needs Attention** — the design foundation is sound, but the findings below were called out for resolution before Phase 4 builds on top of this work.
 
 ---
 
