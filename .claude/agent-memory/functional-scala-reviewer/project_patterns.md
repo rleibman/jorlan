@@ -16,6 +16,17 @@ type: project
 - `AppConfig.dataSource` is a `lazy val` that constructs HikariCP — a deliberate side-effecting lazy initialisation in a config carrier. Documented but see known issues.
 - `FlywayMigration.migrate/validate/info` all return `UIO[Unit]` by swallowing errors via `foldCauseZIO` — intentional design choice.
 
+## Phase 3 EventLog Patterns (confirmed 2026-05-26)
+
+- `EventLogService` uses `CorrelationId.withNew` / `withId` for fiber-local correlation via ZIO log annotations — clean, idiomatic.
+- `EventLogServiceImpl` is a thin delegation layer; `replay` re-sorts ascending after the DB returns descending — intentional design, documented in prompt.
+- `EventLogServiceImpl.live` uses `ZLayer.fromFunction` correctly.
+- `RepositoryError extends JorlanError` — so `IO[RepositoryError, A]` is assignable to `IO[JorlanError, A]` via subtype variance. This is why `mapError(identity)` is a no-op (correctly removed by scalafmt).
+- `InMemoryEventLogRepo` in the unit test uses `AtomicLong` + `mutable.ArrayBuffer` + `synchronized` blocks — acceptable in test code but worth being consistent about whether test doubles should be functional.
+- `EventLogFilter` uses a default `limit = 100` — this default is not validated anywhere; a zero or negative limit would be silently forwarded to the DB layer.
+- Integration test `EventLogServiceIntegrationSpec` uses `provideLayerShared` correctly (no per-test DB setup pollution).
+- The "correlation id propagates through log call" integration test only verifies the annotation is visible from the test fiber, not that it was actually persisted on the `EventLog` record — the correlation ID is NOT stored in the DB row; it lives only in ZIO log annotations.
+
 ## Known Issues Found (first review, 2026-05-25)
 
 - `ChannelIdentity.id` typed as `UserId` (a PK reuse), which is confusing and weakens type safety; no dedicated `ChannelIdentityId` type.
