@@ -519,6 +519,7 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
   override def search(
     eventType: Option[EventType],
     agentId:   Option[AgentId],
+    sessionId: Option[AgentSessionId],
     from:      Option[Instant],
     to:        Option[Instant],
     limit:     Int,
@@ -529,6 +530,7 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
           qEventLogs
             .filter(e => lift(eventType).forall(t => e.eventType == t))
             .filter(e => lift(agentId).forall(id => e.agentId.contains(id)))
+            .filter(e => lift(sessionId).forall(sid => e.sessionId.contains(sid)))
             .sortBy(_.occurredAt)(Ord.desc),
         ).map { rows =>
           rows

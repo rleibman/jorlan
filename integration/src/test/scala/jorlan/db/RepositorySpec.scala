@@ -252,8 +252,8 @@ object RepositorySpec extends ZIOSpecDefault {
         e2 <- repo.append(
           EventLog[SkillId](EventLogId.empty, EventType.SkillInvoked, None, None, None, None, None, now),
         )
-        all   <- repo.search(None, None, None, None, 100)
-        typed <- repo.search(Some(EventType.AgentStarted), None, None, None, 10)
+        all   <- repo.search(None, None, None, None, None, 100)
+        typed <- repo.search(Some(EventType.AgentStarted), None, None, None, None, 10)
       } yield {
         assertTrue(
           e1.id.value > 0,
@@ -261,6 +261,41 @@ object RepositorySpec extends ZIOSpecDefault {
           typed.forall(_.eventType == EventType.AgentStarted),
         )
       }
+    },
+    test("filter events by session id") {
+      for {
+        repo <- ZIO.service[EventLogZIORepository]
+        sid = AgentSessionId(777L)
+        _ <- repo.append(
+          EventLog[AgentId](EventLogId.empty, EventType.AgentStarted, None, None, Some(sid), None, None, now),
+        )
+        _ <- repo.append(
+          EventLog[AgentId](EventLogId.empty, EventType.AgentCompleted, None, None, None, None, None, now),
+        )
+        bySid <- repo.search(None, None, Some(sid), None, None, 100)
+      } yield assertTrue(bySid.nonEmpty, bySid.forall(_.sessionId.contains(sid)))
+    },
+    test("filter events by agent id") {
+      for {
+        repo <- ZIO.service[EventLogZIORepository]
+        aid = AgentId(888L)
+        _ <- repo.append(
+          EventLog[AgentId](EventLogId.empty, EventType.AgentStarted, None, Some(aid), None, None, None, now),
+        )
+        _ <- repo.append(
+          EventLog[AgentId](EventLogId.empty, EventType.AgentCompleted, None, None, None, None, None, now),
+        )
+        byAid <- repo.search(None, Some(aid), None, None, None, 100)
+      } yield assertTrue(byAid.nonEmpty, byAid.forall(_.agentId.contains(aid)))
+    },
+    test("limit caps the result set") {
+      for {
+        repo <- ZIO.service[EventLogZIORepository]
+        _ <- ZIO.foreach(1 to 5) { _ =>
+          repo.append(EventLog[AgentId](EventLogId.empty, EventType.SystemAlert, None, None, None, None, None, now))
+        }
+        limited <- repo.search(Some(EventType.SystemAlert), None, None, None, None, 2)
+      } yield assertTrue(limited.length <= 2)
     },
   )
 

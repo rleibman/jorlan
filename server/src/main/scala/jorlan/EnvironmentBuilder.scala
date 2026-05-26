@@ -10,7 +10,9 @@
 
 package jorlan
 
+import jorlan.db.repository.QuillRepositories
 import jorlan.db.{ConfigurationServiceImpl, FlywayMigration}
+import jorlan.service.{EventLogService, EventLogServiceImpl}
 import zio.{ULayer, ZLayer}
 
 /** Assembles the production ZIO environment layer for the [[Jorlan]] application.
@@ -24,6 +26,8 @@ object EnvironmentBuilder {
     ZLayer.make[JorlanEnvironment](
       ConfigurationServiceImpl.live,
       FlywayMigration.live,
+      QuillRepositories.live,
+      EventLogServiceImpl.live,
     )
 
 }

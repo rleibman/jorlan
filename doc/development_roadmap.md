@@ -112,10 +112,10 @@ Check off items as they are completed. Each phase has a **Goal** statement descr
 
 **Goal:** A working, append-only `EventLog` service usable from any other subsystem via a ZIO layer.
 
-- [ ] `EventLogService` ZIO layer: `log(event)`, `query(filter)`, `replay(sessionId)`
-- [ ] Correlation ID propagation via `ZIO.FiberRef` or similar
+- [x] `EventLogService` ZIO layer: `log(event)`, `query(filter)`, `replay(sessionId)` — in `model` (trait) + `server` (impl)
+- [x] Correlation ID propagation via `ZIO.logAnnotate` / `CorrelationId` helper (`withNew`, `withId`, `get`) in `model`
 - [ ] At least one event written for every significant action from Phase 2 onwards
-- [ ] Unit tests (mock repository) + integration tests
+- [x] Unit tests (mock repository, 7 tests in `server`) + integration tests (3 tests in `integration`)
 
 ---
 

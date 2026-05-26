@@ -16,6 +16,8 @@ import zio.json.ast.Json
 
 import java.time.Instant
 
+//TODO searches should all use a search object
+
 /** Abstract repository interfaces parameterised by effect type `F[_]`.
   *
   * Keeping these traits in `model` rather than `db` means any module — including a GraphQL client or an in-memory test
@@ -111,6 +113,7 @@ trait EventLogRepository[F[_]] {
   def search(
     eventType: Option[EventType],
     agentId:   Option[AgentId],
+    sessionId: Option[AgentSessionId],
     from:      Option[Instant],
     to:        Option[Instant],
     limit:     Int,
