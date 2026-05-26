@@ -11,6 +11,8 @@
 package jorlan
 
 import jorlan.domain.*
+import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -99,17 +101,20 @@ trait MemoryRepository[F[_]] {
 
 /** Append-only repository for [[jorlan.domain.EventLog]] records. No update or delete operations are defined — the
   * event log must remain immutable for audit purposes.
+  *
+  * `append` is generic on the resource type `R` so callers can record typed entity references. `search` returns
+  * `EventLog[Json]` since rows from different event types carry heterogeneous resource types.
   */
 trait EventLogRepository[F[_]] {
 
-  def append(event: EventLog): F[EventLog]
+  def append[R: JsonEncoder](event: EventLog[R]): F[EventLog[R]]
   def search(
     eventType: Option[EventType],
     agentId:   Option[AgentId],
     from:      Option[Instant],
     to:        Option[Instant],
     limit:     Int,
-  ): F[List[EventLog]]
+  ): F[List[EventLog[Json]]]
 
 }
 
@@ -156,5 +161,20 @@ trait PermissionRepository[F[_]] {
   def cancelApprovalRequest(id:        ApprovalRequestId): F[Long]
   def recordApprovalDecision(decision: ApprovalDecision):  F[ApprovalDecision]
   def getApprovalRequest(id:           ApprovalRequestId): F[Option[ApprovalRequest]]
+
+}
+
+/** Aggregate of all repositories, for convenient injection into application services. */
+trait Repositories[F[_]] {
+
+  def users:         UserRepository[F]
+  def agents:        AgentRepository[F]
+  def conversations: ConversationRepository[F]
+  def skills:        SkillRepository[F]
+  def memory:        MemoryRepository[F]
+  def eventLog:      EventLogRepository[F]
+  def scheduler:     SchedulerRepository[F]
+  def artifacts:     ArtifactRepository[F]
+  def permissions:   PermissionRepository[F]
 
 }

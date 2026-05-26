@@ -10,8 +10,12 @@
 
 package jorlan.domain
 
+import jorlan.Codecs.given
+import zio.http.MediaType
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
+import java.net.URI
 import java.time.Instant
 
 /** A shared collaboration area that groups artifacts, memory, and agent sessions for a team or project.
@@ -37,9 +41,9 @@ case class Artifact(
   workspaceId:  Option[WorkspaceId],
   sessionId:    Option[AgentSessionId],
   name:         String,
-  mimeType:     String,
+  mimeType:     MediaType,
   sizeBytes:    Long,
-  storageUri:   String,
-  metadataJson: Option[String],
+  storageUri:   URI,
+  metadataJson: Option[Json],
   createdAt:    Instant,
 ) derives JsonEncoder, JsonDecoder

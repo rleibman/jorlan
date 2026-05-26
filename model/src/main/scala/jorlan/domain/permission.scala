@@ -10,7 +10,9 @@
 
 package jorlan.domain
 
+import jorlan.Codecs.given
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -32,7 +34,7 @@ case class Permission(
   userId:   Option[UserId],
   resource: String,
   action:   String,
-  scope:    Option[String],
+  scope:    Option[Json],
 ) derives JsonEncoder, JsonDecoder
 
 /** Controls how strictly an agent must seek user approval before using a capability.

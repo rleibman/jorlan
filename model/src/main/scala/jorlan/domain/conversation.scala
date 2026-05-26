@@ -11,6 +11,7 @@
 package jorlan.domain
 
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -40,6 +41,6 @@ case class Message(
   conversationId: ConversationId,
   role:           MessageRole,
   content:        String,
-  metadataJson:   Option[String],
+  metadataJson:   Option[Json],
   createdAt:      Instant,
 ) derives JsonEncoder, JsonDecoder

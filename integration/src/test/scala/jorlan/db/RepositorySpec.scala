@@ -13,6 +13,7 @@ package jorlan.db
 import jorlan.db.repository.*
 import jorlan.domain.*
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 import zio.test.Assertion.*
 
@@ -89,7 +90,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("upsert and retrieve an agent") {
       for {
         repo <- ZIO.service[AgentZIORepository]
-        agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some("claude-3"), 1, now)
+        agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some(ModelId("claude-3")), 1, now)
         saved   <- repo.upsert(agent)
         fetched <- repo.getById(saved.id)
         all     <- repo.getAll
@@ -157,7 +158,9 @@ object RepositorySpec extends ZIOSpecDefault {
         repo <- ZIO.service[SkillZIORepository]
         skill = Skill(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, now)
         saved <- repo.upsert(skill)
-        sv <- repo.upsertVersion(SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", "{}", SkillStatus.Active, now))
+        sv <- repo.upsertVersion(
+          SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", Json.Obj(), SkillStatus.Active, now),
+        )
         versions <- repo.getVersions(saved.id)
         fetched  <- repo.getById(saved.id)
       } yield {
@@ -172,7 +175,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("connector instance CRUD") {
       for {
         repo <- ZIO.service[SkillZIORepository]
-        ci = ConnectorInstance(ConnectorInstanceId.empty, ConnectorType.Telegram, "my-bot", "{}", "active", now)
+        ci = ConnectorInstance(ConnectorInstanceId.empty, ConnectorType.Telegram, "my-bot", Json.Obj(), "active", now)
         saved  <- repo.upsertConnector(ci)
         all    <- repo.getAllConnectors
         loaded <- repo.getConnector(saved.id)
@@ -202,7 +205,7 @@ object RepositorySpec extends ZIOSpecDefault {
             None,
             None,
             "pref.theme",
-            "dark",
+            Json.Str("dark"),
             None,
             now,
             now,
@@ -216,7 +219,7 @@ object RepositorySpec extends ZIOSpecDefault {
             None,
             None,
             "system.version",
-            "1.0",
+            Json.Str("1.0"),
             None,
             now,
             now,
@@ -243,9 +246,11 @@ object RepositorySpec extends ZIOSpecDefault {
     test("append and search events") {
       for {
         repo <- ZIO.service[EventLogZIORepository]
-        e1   <- repo.append(EventLog(EventLogId.empty, EventType.AgentStarted, None, None, None, None, None, None, now))
+        e1 <- repo.append(
+          EventLog[AgentId](EventLogId.empty, EventType.AgentStarted, None, None, None, None, None, now),
+        )
         e2 <- repo.append(
-          EventLog(EventLogId.empty, EventType.SkillInvoked, None, None, None, Some("skill"), None, None, now),
+          EventLog[SkillId](EventLogId.empty, EventType.SkillInvoked, None, None, None, None, None, now),
         )
         all   <- repo.search(None, None, None, None, 100)
         typed <- repo.search(Some(EventType.AgentStarted), None, None, None, 10)

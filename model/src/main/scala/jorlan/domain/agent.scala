@@ -33,7 +33,7 @@ case class Agent(
   id:           AgentId,
   name:         String,
   description:  Option[String],
-  defaultModel: Option[String],
+  defaultModel: Option[ModelId],
   trustLevel:   Int = 0,
   createdAt:    Instant,
 ) derives JsonEncoder, JsonDecoder

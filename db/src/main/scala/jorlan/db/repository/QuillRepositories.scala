@@ -16,6 +16,8 @@ import jorlan.db.{*, given}
 import jorlan.domain.*
 import jorlan.{AppConfig, ConfigurationService}
 import zio.*
+import zio.json.JsonEncoder
+import zio.json.ast.Json
 
 import java.time.Instant
 import javax.sql.DataSource
@@ -56,7 +58,17 @@ object JorlanSchema {
 
   inline def qMemoryEmbeddings = quote(querySchema[MemoryEmbedding]("memoryEmbedding"))
 
-  inline def qEventLogs = quote(querySchema[EventLog]("eventLog"))
+  case class EventLogRow(
+    id:          EventLogId,
+    eventType:   EventType,
+    actorId:     Option[UserId],
+    agentId:     Option[AgentId],
+    sessionId:   Option[AgentSessionId],
+    resource:    Option[Json],
+    payloadJson: Option[Json],
+    occurredAt:  Instant,
+  )
+  inline def qEventLogs = quote(querySchema[EventLogRow]("eventLog"))
 
   inline def qSchedulerJobs = quote(querySchema[SchedulerJob]("schedulerJob"))
 
@@ -464,18 +476,45 @@ private class QuillMemoryRepository(qc: QuillCtx) extends MemoryZIORepository {
 private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepository {
 
   import JorlanSchema.*
+  import JorlanSchema.EventLogRow
   import qc.ctx.*
   private val ds = qc.dataSourceLayer
 
   private def exec[A](q: ZIO[DataSource, Throwable, A]): RepositoryTask[A] =
     q.provideLayer(ds).mapError(RepositoryError(_))
 
-  override def append(event: EventLog): RepositoryTask[EventLog] =
+  private def toRow[R: JsonEncoder](event: EventLog[R]): EventLogRow =
+    EventLogRow(
+      event.id,
+      event.eventType,
+      event.actorId,
+      event.agentId,
+      event.sessionId,
+      event.resource.flatMap(r => JsonEncoder[R].toJsonAST(r).toOption),
+      event.payloadJson,
+      event.occurredAt,
+    )
+
+  private def fromRow(row: EventLogRow): EventLog[Json] =
+    EventLog(
+      row.id,
+      row.eventType,
+      row.actorId,
+      row.agentId,
+      row.sessionId,
+      row.resource,
+      row.payloadJson,
+      row.occurredAt,
+    )
+
+  override def append[R: JsonEncoder](event: EventLog[R]): RepositoryTask[EventLog[R]] = {
+    val row = toRow(event)
     exec(
       qc.ctx
-        .run(qEventLogs.insertValue(lift(event)).returningGenerated(_.id))
+        .run(qEventLogs.insertValue(lift(row)).returningGenerated(_.id))
         .map(id => event.copy(id = id)),
     )
+  }
 
   override def search(
     eventType: Option[EventType],
@@ -483,7 +522,7 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
     from:      Option[Instant],
     to:        Option[Instant],
     limit:     Int,
-  ): RepositoryTask[List[EventLog]] =
+  ): RepositoryTask[List[EventLog[Json]]] =
     exec(
       qc.ctx
         .run(
@@ -496,6 +535,7 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
             .filter(e => from.forall(f => !e.occurredAt.isBefore(f)))
             .filter(e => to.forall(t => !e.occurredAt.isAfter(t)))
             .take(limit)
+            .map(fromRow)
         },
     )
 

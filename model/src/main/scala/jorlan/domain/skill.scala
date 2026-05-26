@@ -10,7 +10,10 @@
 
 package jorlan.domain
 
+import jorlan.Codecs.given
+import just.semver.SemVer
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -58,7 +61,7 @@ enum ConnectorType derives JsonEncoder, JsonDecoder {
 case class Skill(
   id:             SkillId,
   name:           String,
-  currentVersion: Option[String],
+  currentVersion: Option[SemVer],
   tier:           SkillTier,
   createdAt:      Instant,
 ) derives JsonEncoder, JsonDecoder
@@ -73,7 +76,7 @@ case class SkillVersion(
   id:           SkillVersionId,
   skillId:      SkillId,
   version:      String,
-  manifestJson: String, // Full JSON manifest (input/output schema, required capabilities, etc.)
+  manifestJson: Json,
   status:       SkillStatus,
   createdAt:    Instant,
 ) derives JsonEncoder, JsonDecoder
@@ -90,7 +93,11 @@ case class ConnectorInstance(
   id:            ConnectorInstanceId,
   connectorType: ConnectorType,
   name:          String,
-  configJson:    String,
+  configJson:    Json,
   status:        String,
   createdAt:     Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonEncoder, JsonDecoder {
+
+  override def toString: String = s"ConnectorInstance($id, $connectorType, $name, [redacted], $status, $createdAt)"
+
+}
