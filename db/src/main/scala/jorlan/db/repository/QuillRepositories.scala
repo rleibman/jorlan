@@ -888,37 +888,70 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
   override def search(filter: EventLogFilter): RepositoryTask[List[EventLog[Json]]] = {
     val offset = filter.page * filter.pageSize
     val ps = filter.pageSize
-    val ascending = filter.sorts.headOption.exists(_.direction == OrderDirection.Asc)
-    if (ascending) {
-      exec(
-        qc.ctx
-          .run(
-            qEventLogs
-              .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
-              .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
-              .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
-              .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
-              .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
-              .sortBy(_.occurredAt)(Ord.asc)
-              .drop(lift(offset))
-              .take(lift(ps)),
-          ).map(_.map(fromRow)),
-      )
-    } else {
-      exec(
-        qc.ctx
-          .run(
-            qEventLogs
-              .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
-              .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
-              .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
-              .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
-              .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
-              .sortBy(_.occurredAt)(Ord.desc)
-              .drop(lift(offset))
-              .take(lift(ps)),
-          ).map(_.map(fromRow)),
-      )
+    filter.sorts.headOption match {
+      case Some(sort) if sort.orderType == EventLogOrder.OccurredAt && sort.direction == OrderDirection.Asc =>
+        exec(
+          qc.ctx
+            .run(
+              qEventLogs
+                .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+                .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+                .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+                .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+                .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+                .sortBy(_.occurredAt)(Ord.asc)
+                .drop(lift(offset))
+                .take(lift(ps)),
+            ).map(_.map(fromRow)),
+        )
+
+      case Some(sort) if sort.orderType == EventLogOrder.Id && sort.direction == OrderDirection.Asc =>
+        exec(
+          qc.ctx
+            .run(
+              qEventLogs
+                .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+                .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+                .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+                .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+                .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+                .sortBy(_.id)(Ord.asc)
+                .drop(lift(offset))
+                .take(lift(ps)),
+            ).map(_.map(fromRow)),
+        )
+
+      case Some(sort) if sort.orderType == EventLogOrder.Id && sort.direction == OrderDirection.Desc =>
+        exec(
+          qc.ctx
+            .run(
+              qEventLogs
+                .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+                .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+                .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+                .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+                .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+                .sortBy(_.id)(Ord.desc)
+                .drop(lift(offset))
+                .take(lift(ps)),
+            ).map(_.map(fromRow)),
+        )
+
+      case _ =>
+        exec(
+          qc.ctx
+            .run(
+              qEventLogs
+                .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+                .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+                .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+                .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+                .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+                .sortBy(_.occurredAt)(Ord.desc)
+                .drop(lift(offset))
+                .take(lift(ps)),
+            ).map(_.map(fromRow)),
+        )
     }
   }
 
