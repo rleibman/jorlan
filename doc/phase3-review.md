@@ -284,46 +284,46 @@ The co-occurrence of the `from`/`to` bug and its zero test coverage is the most 
 
 Actions are ordered by: severity, then blast radius (how much Phase 4 work will be affected if left unresolved).
 
-1. **[C1] Fix test harness: replace `ArrayBuffer` + `synchronized` + `ZIO.succeed` with `Ref[List[...]]`; isolate per-test state.**
+- [x] 1. **[C1] Fix test harness: replace `ArrayBuffer` + `synchronized` + `ZIO.succeed` with `Ref[List[...]]`; isolate per-test state.**
    Affects `EventLogServiceSpec`. This is a prerequisite for trusting any unit test results.
 
-2. **[M1] Move `from`/`to` date filters into the SQL `WHERE` clause.**
+- [x] 2. **[M1] Move `from`/`to` date filters into the SQL `WHERE` clause.**
    Affects `QuillEventLogRepository`. Add the regression test described in M1 simultaneously.
 
-3. **[M2] Remove the false scaladoc claim about correlation ID persistence; rename the misleading integration test.**
+- [x] 3. **[M2] Remove the false scaladoc claim about correlation ID persistence; rename the misleading integration test.**
    Affects `EventLogService.scala` and `EventLogServiceIntegrationSpec.scala`. Low effort, high confusion-prevention value.
 
-4. **[M3] Replace `Int.MaxValue` sentinel and in-memory sort in `replay` with a named cap constant and an `ORDER BY ASC` repository method.**
+- [x] 4. **[M3] Replace `Int.MaxValue` sentinel and in-memory sort in `replay` with a named cap constant and an `ORDER BY ASC` repository method.**
    Affects `EventLogServiceImpl` and `QuillEventLogRepository`.
 
-5. **[M4] Change `EventLogServiceImpl` constructor to accept the abstract `EventLogRepository[RepositoryTask]`.**
+- [x] 5. **[M4] Change `EventLogServiceImpl` constructor to accept the abstract `EventLogRepository[RepositoryTask]`.**
    Affects service wiring in `server`. Enables the `InMemoryEventLogRepo` in unit tests to stop depending on a `db`-module type.
 
-6. **[m6] Add upper-bound and lower-bound validation to `EventLogFilter.limit`.**
+- [x] 6. **[m6] Add upper-bound and lower-bound validation to `EventLogFilter.limit`.**
    Affects `EventLogFilter`. Must be done before the GraphQL layer exposes this field to external callers.
 
-7. **[m1] Change `append` encoding failures from silent `.toOption` to `ZIO.fail(EncodingError(...))`.**
+- [x] 7. **[m1] Change `append` encoding failures from silent `.toOption` to `ZIO.fail(EncodingError(...))`.**
    Affects `InMemoryEventLogRepo` and `QuillEventLogRepository`.
 
-8. **[m3] Change `EventLogRepository.search` to accept `EventLogFilter` directly; remove manual unpacking in `query`.**
+- [x] 8. **[m3] Change `EventLogRepository.search` to accept `EventLogFilter` directly; remove manual unpacking in `query`.**
    Resolves the existing TODO at `repository.scala` line 19.
 
-9. **[4-gaps] Add missing test coverage (in priority order)**:
-   a. Time-range filter regression test (see M1 — do this with item 2 above).
-   b. `replay` with events inserted in reverse order.
-   c. Combined multi-filter query (agentId AND eventType).
-   d. `query` descending-order assertion.
-   e. `CorrelationId` scope isolation and `withNew` UUID uniqueness.
-   f. Error path: broken `DataSource` → `RepositoryError`.
-   g. `actorId` roundtrip (requires valid `UserId` FK in integration).
-   h. `EventLogService` companion accessor methods.
+- [x] 9. **[4-gaps] Add missing test coverage (in priority order)**:
+   - [x] a. Time-range filter regression test (see M1 — do this with item 2 above).
+   - [x] b. `replay` with events inserted in reverse order.
+   - [x] c. Combined multi-filter query (agentId AND eventType).
+   - [x] d. `query` descending-order assertion.
+   - [x] e. `CorrelationId` scope isolation and `withNew` UUID uniqueness.
+   - [ ] f. Error path: broken `DataSource` → `RepositoryError`.
+   - [x] g. `actorId` roundtrip (requires valid `UserId` FK in integration).
+   - [x] h. `EventLogService` companion accessor methods.
 
-10. **[m4] Add `logCorrelated` helper to `EventLogService` companion** once item 3 (CorrelationId persistence) is resolved.
+- [ ] 10. **[m4] Add `logCorrelated` helper to `EventLogService` companion** once item 3 (CorrelationId persistence) is resolved.
 
-11. **[m5] Extract `testEvent(eventType)` helper** into a shared `TestFixtures` object used by all three test files.
+- [x] 11. **[m5] Extract `testEvent(eventType)` helper** into a shared `TestFixtures` object used by all three test files.
 
-12. **[n1] Replace `Instant.now()` at class-load time** with a fixed `Instant.parse(...)` literal in all test specs.
+- [x] 12. **[n1] No `Instant.now()` anywhere**: ZIO methods get time from ZIO clock; non-ZIO methods have time passed in.
 
-13. **[n2] Strengthen `RepositorySpec` assertions**: descending-order check; `== 2` not `<= 2` for the limit test.
+- [x] 13. **[n2] Strengthen `RepositorySpec` assertions**: descending-order check; `== 2` not `<= 2` for the limit test.
 
-14. **[n3, n4] Clean up minor test style**: use `ZIO.foreachDiscard` for sequential log calls; remove `serviceLayer` dependency from `CorrelationId` tests.
+- [x] 14. **[n3, n4] Clean up minor test style**: use `ZIO.foreachDiscard` for sequential log calls; remove `serviceLayer` dependency from `CorrelationId` tests.

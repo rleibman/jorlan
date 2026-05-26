@@ -10,18 +10,16 @@
 
 package jorlan.db
 
+import jorlan.db.TestFixtures.*
+import jorlan.*
+import jorlan.db.TestFixtures.given
 import jorlan.domain.*
 import jorlan.service.{CorrelationId, EventLogFilter, EventLogService, EventLogServiceImpl}
 import zio.*
-import zio.json.ast.Json
 import zio.test.*
 import zio.test.Assertion.*
 
-import java.time.Instant
-
 object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
-
-  private val now = Instant.now()
 
   private val serviceLayer =
     JorlanContainer.repositoryLayer >>> EventLogServiceImpl.live
@@ -30,78 +28,68 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
     suite("EventLogService integration")(
       test("log and query roundtrip against real DB") {
         for {
-          svc <- ZIO.service[EventLogService]
-          event = EventLog[AgentId](EventLogId.empty, EventType.AgentStarted, None, None, None, None, None, now)
-          saved <- svc.log(event)
-          found <- svc.query(EventLogFilter(eventType = Some(EventType.AgentStarted), limit = 10))
+          svc   <- ZIO.service[EventLogService]
+          saved <- svc.log(testEvent(EventType.AgentStarted))
+          found <- svc.query(EventLogFilter(eventType = Some(EventType.AgentStarted), pageSize = 10))
         } yield assertTrue(
           saved.id.value > 0L,
           found.exists(_.id == saved.id),
         )
       },
-      test("replay returns only events for the given session in order") {
+      test("query filters by time range") {
+        val t1 = T0.minusSeconds(5)
+        val t2 = T0
+        val t3 = T0.plusSeconds(5)
         for {
           svc <- ZIO.service[EventLogService]
-          sid = AgentSessionId(42000L)
-          e1 <- svc.log(
-            EventLog[AgentId](EventLogId.empty, EventType.AgentStarted, None, None, Some(sid), None, None, now),
-          )
-          e2 <- svc.log(
-            EventLog[SkillId](
-              EventLogId.empty,
-              EventType.SkillInvoked,
-              None,
-              None,
-              Some(sid),
-              None,
-              None,
-              now.plusSeconds(1),
+          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t1))
+          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t2))
+          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t3))
+          result <- svc.query(
+            EventLogFilter(
+              eventType = Some(EventType.SystemAlert),
+              from = Some(T0.minusSeconds(1)),
+              to = Some(T0.plusSeconds(1)),
+              pageSize = 100,
             ),
           )
-          e3 <- svc.log(
-            EventLog[AgentId](
-              EventLogId.empty,
-              EventType.AgentCompleted,
-              None,
-              None,
-              Some(sid),
-              None,
-              None,
-              now.plusSeconds(2),
-            ),
-          )
-          _ <- svc.log(
-            EventLog[AgentId](
-              EventLogId.empty,
-              EventType.AgentStarted,
-              None,
-              None,
-              Some(AgentSessionId(99999L)),
-              None,
-              None,
-              now,
-            ),
-          )
+        } yield assertTrue(
+          result.exists(_.occurredAt == t2),
+          result.forall(e => !e.occurredAt.isBefore(T0.minusSeconds(1)) && !e.occurredAt.isAfter(T0.plusSeconds(1))),
+        )
+      },
+      test("actorId is persisted and returned on search") {
+        for {
+          userRepo <- ZIO.service[jorlan.db.repository.UserZIORepository]
+          svc      <- ZIO.service[EventLogService]
+          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", T0, T0))
+          _        <- svc.log(testEvent(EventType.AgentStarted, actorId = Some(user.id)))
+          found    <- svc.query(EventLogFilter(eventType = Some(EventType.AgentStarted)))
+        } yield assertTrue(found.exists(_.actorId.contains(user.id)))
+      },
+      test("replay returns only events for the given session in chronological order") {
+        val sid = AgentSessionId(42001L)
+        for {
+          svc <- ZIO.service[EventLogService]
+          e1  <- svc.log(testEvent(EventType.AgentStarted, sessionId = Some(sid), occurredAt = T0))
+          e2  <- svc.log(testEvent(EventType.SkillInvoked, sessionId = Some(sid), occurredAt = T0.plusSeconds(1)))
+          e3  <- svc.log(testEvent(EventType.AgentCompleted, sessionId = Some(sid), occurredAt = T0.plusSeconds(2)))
+          _   <- svc.log(testEvent(EventType.AgentStarted, sessionId = Some(AgentSessionId(99999L))))
           replayed <- svc.replay(sid)
         } yield assertTrue(
           replayed.map(_.id) == List(e1.id, e2.id, e3.id),
-          replayed.map(_.eventType) == List(EventType.AgentStarted, EventType.SkillInvoked, EventType.AgentCompleted),
+          replayed.map(_.occurredAt) == List(T0, T0.plusSeconds(1), T0.plusSeconds(2)),
         )
       },
-      test("correlation id propagates through log call") {
+      test("correlation id is accessible within withId block around service calls") {
         for {
           svc <- ZIO.service[EventLogService]
           corrId = "integ-corr-001"
-          inside <- CorrelationId.withId(corrId) {
-            for {
-              _ <- svc.log(
-                EventLog[AgentId](EventLogId.empty, EventType.SystemAlert, None, None, None, None, None, now),
-              )
-              cid <- CorrelationId.get
-            } yield cid
+          cid <- CorrelationId.withId(corrId) {
+            svc.log(testEvent(EventType.SystemAlert)) *> CorrelationId.get
           }
-        } yield assertTrue(inside.contains(corrId))
+        } yield assertTrue(cid.contains(corrId))
       },
-    ).provideLayerShared(serviceLayer)
+    ).provideLayerShared(serviceLayer ++ JorlanContainer.repositoryLayer)
 
 }

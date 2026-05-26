@@ -11,9 +11,12 @@
 package jorlan.db.repository
 
 import io.getquill.*
+import io.getquill.extras.InstantOps
 import io.getquill.jdbczio.Quill
 import jorlan.db.{*, given}
 import jorlan.domain.*
+import jorlan.service.{EventLogFilter, EventLogOrder}
+import jorlan.{*, given}
 import jorlan.{AppConfig, ConfigurationService}
 import zio.*
 import zio.json.JsonEncoder
@@ -147,7 +150,66 @@ private class QuillUserRepository(qc: QuillCtx) extends UserZIORepository {
   override def getById(id: UserId): RepositoryTask[Option[User]] =
     exec(qc.ctx.run(qUsers.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getAll: RepositoryTask[List[User]] = exec(qc.ctx.run(qUsers.filter(_.active == lift(true))))
+  override def search(s: UserSearch): RepositoryTask[List[User]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(UserOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(UserOrder.DisplayName, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.displayName)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(UserOrder.DisplayName, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.displayName)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.createdAt)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.createdAt)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qUsers
+              .filter(u => lift(s.active).forall(a => u.active == a)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+    }
+  }
 
   override def upsert(user: User): RepositoryTask[User] =
     exec(
@@ -214,7 +276,24 @@ private class QuillAgentRepository(qc: QuillCtx) extends AgentZIORepository {
   override def getById(id: AgentId): RepositoryTask[Option[Agent]] =
     exec(qc.ctx.run(qAgents.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getAll: RepositoryTask[List[Agent]] = exec(qc.ctx.run(qAgents))
+  override def search(s: AgentSearch): RepositoryTask[List[Agent]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(AgentOrder.Id, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qAgents.sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(AgentOrder.Name, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qAgents.sortBy(_.name)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(AgentOrder.Name, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qAgents.sortBy(_.name)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qAgents.sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qAgents.sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case _ =>
+        exec(qc.ctx.run(qAgents.sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+    }
+  }
 
   override def upsert(agent: Agent): RepositoryTask[Agent] =
     exec(
@@ -249,8 +328,48 @@ private class QuillAgentRepository(qc: QuillCtx) extends AgentZIORepository {
   override def getSession(id: AgentSessionId): RepositoryTask[Option[AgentSession]] =
     exec(qc.ctx.run(qAgentSessions.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getSessionsForAgent(agentId: AgentId): RepositoryTask[List[AgentSession]] =
-    exec(qc.ctx.run(qAgentSessions.filter(_.agentId == lift(agentId))))
+  override def searchSessions(s: AgentSessionSearch): RepositoryTask[List[AgentSession]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(AgentSessionOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qAgentSessions
+              .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)).sortBy(_.id)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qAgentSessions
+              .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)).sortBy(_.createdAt)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qAgentSessions
+              .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)).sortBy(_.createdAt)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qAgentSessions
+              .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)).sortBy(_.id)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def upsertSession(session: AgentSession): RepositoryTask[AgentSession] =
     exec(
@@ -288,8 +407,40 @@ private class QuillConversationRepository(qc: QuillCtx) extends ConversationZIOR
   override def getById(id: ConversationId): RepositoryTask[Option[Conversation]] =
     exec(qc.ctx.run(qConversations.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getBySession(sessionId: AgentSessionId): RepositoryTask[List[Conversation]] =
-    exec(qc.ctx.run(qConversations.filter(_.sessionId == lift(sessionId))))
+  override def search(s: ConversationSearch): RepositoryTask[List[Conversation]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(ConversationOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qConversations
+              .filter(_.sessionId == lift(s.sessionId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qConversations
+              .filter(_.sessionId == lift(s.sessionId)).sortBy(_.startedAt)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qConversations
+              .filter(_.sessionId == lift(s.sessionId)).sortBy(_.startedAt)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qConversations
+              .filter(_.sessionId == lift(s.sessionId)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def create(conversation: Conversation): RepositoryTask[Conversation] =
     exec(
@@ -298,8 +449,48 @@ private class QuillConversationRepository(qc: QuillCtx) extends ConversationZIOR
         .map(id => conversation.copy(id = id)),
     )
 
-  override def getMessages(conversationId: ConversationId): RepositoryTask[List[Message]] =
-    exec(qc.ctx.run(qMessages.filter(_.conversationId == lift(conversationId)).sortBy(_.createdAt)))
+  override def searchMessages(s: MessageSearch): RepositoryTask[List[Message]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(MessageOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMessages
+              .filter(_.conversationId == lift(s.conversationId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qMessages
+              .filter(_.conversationId == lift(s.conversationId)).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMessages
+              .filter(_.conversationId == lift(s.conversationId)).sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qMessages
+              .filter(_.conversationId == lift(s.conversationId)).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+    }
+  }
 
   override def addMessage(message: Message): RepositoryTask[Message] =
     exec(
@@ -324,7 +515,28 @@ private class QuillSkillRepository(qc: QuillCtx) extends SkillZIORepository {
   override def getById(id: SkillId): RepositoryTask[Option[Skill]] =
     exec(qc.ctx.run(qSkills.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getAll: RepositoryTask[List[Skill]] = exec(qc.ctx.run(qSkills))
+  override def search(s: SkillSearch): RepositoryTask[List[Skill]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(SkillOrder.Id, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.Name, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.name)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.Name, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.name)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.Tier, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.tier)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.Tier, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.tier)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qSkills.sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case _ =>
+        exec(qc.ctx.run(qSkills.sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+    }
+  }
 
   override def upsert(skill: Skill): RepositoryTask[Skill] =
     exec(
@@ -353,8 +565,53 @@ private class QuillSkillRepository(qc: QuillCtx) extends SkillZIORepository {
   override def getVersion(id: SkillVersionId): RepositoryTask[Option[SkillVersion]] =
     exec(qc.ctx.run(qSkillVersions.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getVersions(skillId: SkillId): RepositoryTask[List[SkillVersion]] =
-    exec(qc.ctx.run(qSkillVersions.filter(_.skillId == lift(skillId)).sortBy(_.version)))
+  override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions.filter(_.skillId == lift(s.skillId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions
+              .filter(_.skillId == lift(s.skillId)).sortBy(_.version)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions
+              .filter(_.skillId == lift(s.skillId)).sortBy(_.version)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions
+              .filter(_.skillId == lift(s.skillId)).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions
+              .filter(_.skillId == lift(s.skillId)).sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qSkillVersions
+              .filter(_.skillId == lift(s.skillId)).sortBy(_.version)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def upsertVersion(v: SkillVersion): RepositoryTask[SkillVersion] =
     exec(
@@ -379,7 +636,24 @@ private class QuillSkillRepository(qc: QuillCtx) extends SkillZIORepository {
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getAllConnectors: RepositoryTask[List[ConnectorInstance]] = exec(qc.ctx.run(qConnectorInstances))
+  override def searchConnectors(s: ConnectorSearch): RepositoryTask[List[ConnectorInstance]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(ConnectorOrder.Id, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.name)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.name)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Asc)) =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.connectorType)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Desc)) =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.connectorType)(Ord.desc).drop(lift(offset)).take(lift(ps))))
+      case _ =>
+        exec(qc.ctx.run(qConnectorInstances.sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps))))
+    }
+  }
 
   override def upsertConnector(ci: ConnectorInstance): RepositoryTask[ConnectorInstance] =
     exec(
@@ -421,23 +695,116 @@ private class QuillMemoryRepository(qc: QuillCtx) extends MemoryZIORepository {
   override def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]] =
     exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id))).map(_.headOption))
 
-  override def search(
-    scope:       MemoryScope,
-    userId:      Option[UserId],
-    workspaceId: Option[WorkspaceId],
-    agentId:     Option[AgentId],
-    key:         Option[String],
-  ): RepositoryTask[List[MemoryRecord]] =
-    exec(
-      qc.ctx.run(
-        qMemoryRecords
-          .filter(r => r.scope == lift(scope))
-          .filter(r => lift(userId).forall(uid => r.userId.contains(uid)))
-          .filter(r => lift(workspaceId).forall(wid => r.workspaceId.contains(wid)))
-          .filter(r => lift(agentId).forall(aid => r.agentId.contains(aid)))
-          .filter(r => lift(key).forall(k => r.recordKey == k)),
-      ),
-    )
+  override def search(s: MemorySearch): RepositoryTask[List[MemoryRecord]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(MemoryOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.recordKey)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.recordKey)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.createdAt)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.createdAt)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.updatedAt)(Ord.asc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.updatedAt)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qMemoryRecords
+              .filter(r => r.scope == lift(s.scope)).filter(r =>
+                lift(s.userId).forall(uid => r.userId.contains(uid)),
+              ).filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid))).filter(r =>
+                lift(s.agentId).forall(aid => r.agentId.contains(aid)),
+              ).filter(r => lift(s.key).forall(k => r.recordKey == k)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+    }
+  }
 
   override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
     exec(
@@ -483,17 +850,8 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
   private def exec[A](q: ZIO[DataSource, Throwable, A]): RepositoryTask[A] =
     q.provideLayer(ds).mapError(RepositoryError(_))
 
-  private def toRow[R: JsonEncoder](event: EventLog[R]): EventLogRow =
-    EventLogRow(
-      event.id,
-      event.eventType,
-      event.actorId,
-      event.agentId,
-      event.sessionId,
-      event.resource.flatMap(r => JsonEncoder[R].toJsonAST(r).toOption),
-      event.payloadJson,
-      event.occurredAt,
-    )
+  private def encodeResource[R: JsonEncoder](resource: Option[R]): Either[String, Option[Json]] =
+    resource.fold[Either[String, Option[Json]]](Right(None))(r => JsonEncoder[R].toJsonAST(r).map(Some(_)))
 
   private def fromRow(row: EventLogRow): EventLog[Json] =
     EventLog(
@@ -507,38 +865,71 @@ private class QuillEventLogRepository(qc: QuillCtx) extends EventLogZIORepositor
       row.occurredAt,
     )
 
-  override def append[R: JsonEncoder](event: EventLog[R]): RepositoryTask[EventLog[R]] = {
-    val row = toRow(event)
-    exec(
-      qc.ctx
-        .run(qEventLogs.insertValue(lift(row)).returningGenerated(_.id))
-        .map(id => event.copy(id = id)),
-    )
+  override def append[R: JsonEncoder](event: EventLog[R]): RepositoryTask[EventLog[R]] =
+    for {
+      resourceJson <- ZIO
+        .fromEither(encodeResource(event.resource))
+        .mapError(msg => RepositoryError(s"Resource encoding failed: $msg"))
+      row = EventLogRow(
+        event.id,
+        event.eventType,
+        event.actorId,
+        event.agentId,
+        event.sessionId,
+        resourceJson,
+        event.payloadJson,
+        event.occurredAt,
+      )
+      saved <- exec(
+        qc.ctx.run(qEventLogs.insertValue(lift(row)).returningGenerated(_.id)).map(id => event.copy(id = id)),
+      )
+    } yield saved
+
+  override def search(filter: EventLogFilter): RepositoryTask[List[EventLog[Json]]] = {
+    val offset = filter.page * filter.pageSize
+    val ps = filter.pageSize
+    val ascending = filter.sorts.headOption.exists(_.direction == OrderDirection.Asc)
+    if (ascending) {
+      exec(
+        qc.ctx
+          .run(
+            qEventLogs
+              .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+              .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+              .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+              .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+              .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+              .sortBy(_.occurredAt)(Ord.asc)
+              .drop(lift(offset))
+              .take(lift(ps)),
+          ).map(_.map(fromRow)),
+      )
+    } else {
+      exec(
+        qc.ctx
+          .run(
+            qEventLogs
+              .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
+              .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
+              .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
+              .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
+              .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
+              .sortBy(_.occurredAt)(Ord.desc)
+              .drop(lift(offset))
+              .take(lift(ps)),
+          ).map(_.map(fromRow)),
+      )
+    }
   }
 
-  override def search(
-    eventType: Option[EventType],
-    agentId:   Option[AgentId],
-    sessionId: Option[AgentSessionId],
-    from:      Option[Instant],
-    to:        Option[Instant],
-    limit:     Int,
-  ): RepositoryTask[List[EventLog[Json]]] =
+  override def replaySession(sessionId: AgentSessionId): RepositoryTask[List[EventLog[Json]]] =
     exec(
       qc.ctx
         .run(
           qEventLogs
-            .filter(e => lift(eventType).forall(t => e.eventType == t))
-            .filter(e => lift(agentId).forall(id => e.agentId.contains(id)))
-            .filter(e => lift(sessionId).forall(sid => e.sessionId.contains(sid)))
-            .sortBy(_.occurredAt)(Ord.desc),
-        ).map { rows =>
-          rows
-            .filter(e => from.forall(f => !e.occurredAt.isBefore(f)))
-            .filter(e => to.forall(t => !e.occurredAt.isAfter(t)))
-            .take(limit)
-            .map(fromRow)
-        },
+            .filter(e => e.sessionId.contains(lift(sessionId)))
+            .sortBy(_.occurredAt)(Ord.asc),
+        ).map(_.map(fromRow)),
     )
 
 }
@@ -557,17 +948,18 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends SchedulerZIOReposit
   override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getPendingJobs: RepositoryTask[List[SchedulerJob]] = {
-    val now = Instant.now()
-    exec(
-      qc.ctx
-        .run(
-          qSchedulerJobs
-            .filter(_.status == lift(JobStatus.Pending))
-            .sortBy(_.scheduledAt),
-        ).map(_.filter(j => !j.scheduledAt.isAfter(now))),
-    )
-  }
+  override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =
+    for {
+      now <- Clock.instant
+      result <- exec(
+        qc.ctx
+          .run(
+            qSchedulerJobs
+              .filter(_.status == lift(JobStatus.Pending))
+              .sortBy(_.scheduledAt),
+          ).map(_.filter(j => !j.scheduledAt.isAfter(now))),
+      )
+    } yield result
 
   override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] =
     exec(
@@ -600,8 +992,24 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends SchedulerZIOReposit
   override def deleteJob(id: SchedulerJobId): RepositoryTask[Long] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).delete))
 
-  override def getTriggers(jobId: SchedulerJobId): RepositoryTask[List[SchedulerTrigger]] =
-    exec(qc.ctx.run(qSchedulerTriggers.filter(_.jobId == lift(jobId))))
+  override def searchTriggers(s: TriggerSearch): RepositoryTask[List[SchedulerTrigger]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(TriggerOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qSchedulerTriggers.filter(_.jobId == lift(s.jobId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qSchedulerTriggers.filter(_.jobId == lift(s.jobId)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger] =
     exec(
@@ -642,8 +1050,66 @@ private class QuillArtifactRepository(qc: QuillCtx) extends ArtifactZIORepositor
   override def getById(id: ArtifactId): RepositoryTask[Option[Artifact]] =
     exec(qc.ctx.run(qArtifacts.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getByWorkspace(workspaceId: WorkspaceId): RepositoryTask[List[Artifact]] =
-    exec(qc.ctx.run(qArtifacts.filter(_.workspaceId.contains(lift(workspaceId)))))
+  override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.name)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.name)(Ord.desc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.createdAt)(Ord.desc).drop(
+                lift(offset),
+              ).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qArtifacts
+              .filter(_.workspaceId.contains(lift(s.workspaceId))).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(
+                lift(ps),
+              ),
+          ),
+        )
+    }
+  }
 
   override def upsert(artifact: Artifact): RepositoryTask[Artifact] =
     exec(
@@ -683,8 +1149,50 @@ private class QuillArtifactRepository(qc: QuillCtx) extends ArtifactZIORepositor
   override def getWorkspace(id: WorkspaceId): RepositoryTask[Option[Workspace]] =
     exec(qc.ctx.run(qWorkspaces.filter(_.id == lift(id))).map(_.headOption))
 
-  override def getAllWorkspaces(ownerId: UserId): RepositoryTask[List[Workspace]] =
-    exec(qc.ctx.run(qWorkspaces.filter(_.ownerId == lift(ownerId))))
+  override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(WorkspaceOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces.filter(_.ownerId == lift(s.ownerId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces.filter(_.ownerId == lift(s.ownerId)).sortBy(_.name)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces.filter(_.ownerId == lift(s.ownerId)).sortBy(_.name)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces
+              .filter(_.ownerId == lift(s.ownerId)).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces
+              .filter(_.ownerId == lift(s.ownerId)).sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qWorkspaces.filter(_.ownerId == lift(s.ownerId)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] =
     exec(
@@ -723,21 +1231,109 @@ private class QuillPermissionRepository(qc: QuillCtx) extends PermissionZIORepos
   private def exec[A](q: ZIO[DataSource, Throwable, A]): RepositoryTask[A] =
     q.provideLayer(ds).mapError(RepositoryError(_))
 
-  override def getRolesForUser(userId: UserId): RepositoryTask[List[Role]] =
-    exec(
-      qc.ctx.run(
-        for {
-          ur   <- qUserRoles.filter(_.userId == lift(userId))
-          role <- qRoles.join(_.id == ur.roleId)
-        } yield role,
-      ),
-    )
+  override def searchRoles(s: RoleSearch): RepositoryTask[List[Role]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(RoleOrder.Name, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            (for {
+              ur   <- qUserRoles.filter(_.userId == lift(s.userId))
+              role <- qRoles.join(_.id == ur.roleId)
+            } yield role).sortBy(_.name)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(RoleOrder.Name, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            (for {
+              ur   <- qUserRoles.filter(_.userId == lift(s.userId))
+              role <- qRoles.join(_.id == ur.roleId)
+            } yield role).sortBy(_.name)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(RoleOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            (for {
+              ur   <- qUserRoles.filter(_.userId == lift(s.userId))
+              role <- qRoles.join(_.id == ur.roleId)
+            } yield role).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            (for {
+              ur   <- qUserRoles.filter(_.userId == lift(s.userId))
+              role <- qRoles.join(_.id == ur.roleId)
+            } yield role).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
-  override def getPermissionsForRole(roleId: RoleId): RepositoryTask[List[Permission]] =
-    exec(qc.ctx.run(qPermissions.filter(_.roleId.contains(lift(roleId)))))
-
-  override def getPermissionsForUser(userId: UserId): RepositoryTask[List[Permission]] =
-    exec(qc.ctx.run(qPermissions.filter(_.userId.contains(lift(userId)))))
+  override def searchPermissions(s: PermissionSearch): RepositoryTask[List[Permission]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(PermissionOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(PermissionOrder.Resource, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.resource)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(PermissionOrder.Resource, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.resource)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(PermissionOrder.Action, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.action)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(PermissionOrder.Action, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.action)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qPermissions
+              .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid))).filter(p =>
+                lift(s.userId).forall(uid => p.userId.contains(uid)),
+              ).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def upsertCapabilityGrant(grant: CapabilityGrant): RepositoryTask[CapabilityGrant] =
     exec(
@@ -766,8 +1362,40 @@ private class QuillPermissionRepository(qc: QuillCtx) extends PermissionZIORepos
   override def revokeGrant(id: CapabilityGrantId): RepositoryTask[Long] =
     exec(qc.ctx.run(qCapabilityGrants.filter(_.id == lift(id)).delete))
 
-  override def getGrantsForUser(userId: UserId): RepositoryTask[List[CapabilityGrant]] =
-    exec(qc.ctx.run(qCapabilityGrants.filter(_.granteeId == lift(userId))))
+  override def searchGrants(s: GrantSearch): RepositoryTask[List[CapabilityGrant]] = {
+    val offset = s.page * s.pageSize
+    val ps = s.pageSize
+    s.sorts.headOption match {
+      case Some(Sort(GrantOrder.Id, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qCapabilityGrants
+              .filter(_.granteeId == lift(s.userId)).sortBy(_.id)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc)) =>
+        exec(
+          qc.ctx.run(
+            qCapabilityGrants
+              .filter(_.granteeId == lift(s.userId)).sortBy(_.createdAt)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) =>
+        exec(
+          qc.ctx.run(
+            qCapabilityGrants
+              .filter(_.granteeId == lift(s.userId)).sortBy(_.createdAt)(Ord.desc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+      case _ =>
+        exec(
+          qc.ctx.run(
+            qCapabilityGrants
+              .filter(_.granteeId == lift(s.userId)).sortBy(_.id)(Ord.asc).drop(lift(offset)).take(lift(ps)),
+          ),
+        )
+    }
+  }
 
   override def createApprovalRequest(req: ApprovalRequest): RepositoryTask[ApprovalRequest] =
     exec(

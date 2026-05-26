@@ -11,12 +11,158 @@
 package jorlan
 
 import jorlan.domain.*
+import jorlan.service.EventLogFilter
 import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
 
 import java.time.Instant
 
-//TODO searches should all use a search object
+// ─── Search infrastructure ────────────────────────────────────────────────────
+
+enum OrderDirection {
+
+  case Asc, Desc
+
+}
+
+case class Sort[OrderType](
+  orderType: OrderType,
+  direction: OrderDirection,
+)
+
+trait Search[OrderType] {
+
+  def page:     Int
+  def pageSize: Int
+  def sorts:    List[Sort[OrderType]]
+
+}
+
+// ─── Per-entity search types ──────────────────────────────────────────────────
+
+enum UserOrder { case Id, DisplayName, CreatedAt }
+case class UserSearch(
+  active:   Option[Boolean] = None,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[UserOrder]] = List.empty,
+) extends Search[UserOrder]
+
+enum AgentOrder { case Id, Name, CreatedAt }
+case class AgentSearch(
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[AgentOrder]] = List.empty,
+) extends Search[AgentOrder]
+
+enum AgentSessionOrder { case Id, CreatedAt }
+case class AgentSessionSearch(
+  agentId:  Option[AgentId] = None,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[AgentSessionOrder]] = List.empty,
+) extends Search[AgentSessionOrder]
+
+enum ConversationOrder { case Id, StartedAt }
+case class ConversationSearch(
+  sessionId: AgentSessionId,
+  page:      Int = 0,
+  pageSize:  Int = 20,
+  sorts:     List[Sort[ConversationOrder]] = List.empty,
+) extends Search[ConversationOrder]
+
+enum MessageOrder { case Id, CreatedAt }
+case class MessageSearch(
+  conversationId: ConversationId,
+  page:           Int = 0,
+  pageSize:       Int = 20,
+  sorts:          List[Sort[MessageOrder]] = List.empty,
+) extends Search[MessageOrder]
+
+enum SkillOrder { case Id, Name, Tier, CreatedAt }
+case class SkillSearch(
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[SkillOrder]] = List.empty,
+) extends Search[SkillOrder]
+
+enum SkillVersionOrder { case Id, Version, CreatedAt }
+case class SkillVersionSearch(
+  skillId:  SkillId,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[SkillVersionOrder]] = List.empty,
+) extends Search[SkillVersionOrder]
+
+enum ConnectorOrder { case Id, ConnectorType, Name }
+case class ConnectorSearch(
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[ConnectorOrder]] = List.empty,
+) extends Search[ConnectorOrder]
+
+enum MemoryOrder { case Id, RecordKey, CreatedAt, UpdatedAt }
+case class MemorySearch(
+  scope:       MemoryScope,
+  userId:      Option[UserId] = None,
+  workspaceId: Option[WorkspaceId] = None,
+  agentId:     Option[AgentId] = None,
+  key:         Option[String] = None,
+  page:        Int = 0,
+  pageSize:    Int = 20,
+  sorts:       List[Sort[MemoryOrder]] = List.empty,
+) extends Search[MemoryOrder]
+
+enum ArtifactOrder { case Id, Name, CreatedAt }
+case class ArtifactSearch(
+  workspaceId: WorkspaceId,
+  page:        Int = 0,
+  pageSize:    Int = 20,
+  sorts:       List[Sort[ArtifactOrder]] = List.empty,
+) extends Search[ArtifactOrder]
+
+enum WorkspaceOrder { case Id, Name, CreatedAt }
+case class WorkspaceSearch(
+  ownerId:  UserId,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[WorkspaceOrder]] = List.empty,
+) extends Search[WorkspaceOrder]
+
+enum RoleOrder { case Id, Name }
+case class RoleSearch(
+  userId:   UserId,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[RoleOrder]] = List.empty,
+) extends Search[RoleOrder]
+
+enum PermissionOrder { case Id, Resource, Action }
+case class PermissionSearch(
+  roleId:   Option[RoleId] = None,
+  userId:   Option[UserId] = None,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[PermissionOrder]] = List.empty,
+) extends Search[PermissionOrder]
+
+enum GrantOrder { case Id, GrantedAt }
+case class GrantSearch(
+  userId:   UserId,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[GrantOrder]] = List.empty,
+) extends Search[GrantOrder]
+
+enum TriggerOrder { case Id }
+case class TriggerSearch(
+  jobId:    SchedulerJobId,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    List[Sort[TriggerOrder]] = List.empty,
+) extends Search[TriggerOrder]
+
+// ─── Repository interfaces ────────────────────────────────────────────────────
 
 /** Abstract repository interfaces parameterised by effect type `F[_]`.
   *
@@ -29,7 +175,7 @@ import java.time.Instant
 trait UserRepository[F[_]] {
 
   def getById(id:                  UserId):            F[Option[User]]
-  def getAll:                                          F[List[User]]
+  def search(s:                    UserSearch):        F[List[User]]
   def upsert(user:                 User):              F[User]
   def deactivate(id:               UserId):            F[Long]
   def getChannelIdentities(userId: UserId):            F[List[ChannelIdentity]]
@@ -42,24 +188,24 @@ trait UserRepository[F[_]] {
   */
 trait AgentRepository[F[_]] {
 
-  def getById(id:                  AgentId):        F[Option[Agent]]
-  def getAll:                                       F[List[Agent]]
-  def upsert(agent:                Agent):          F[Agent]
-  def delete(id:                   AgentId):        F[Long]
-  def getSession(id:               AgentSessionId): F[Option[AgentSession]]
-  def getSessionsForAgent(agentId: AgentId):        F[List[AgentSession]]
-  def upsertSession(session:       AgentSession):   F[AgentSession]
+  def getById(id:            AgentId):            F[Option[Agent]]
+  def search(s:              AgentSearch):        F[List[Agent]]
+  def upsert(agent:          Agent):              F[Agent]
+  def delete(id:             AgentId):            F[Long]
+  def getSession(id:         AgentSessionId):     F[Option[AgentSession]]
+  def searchSessions(s:      AgentSessionSearch): F[List[AgentSession]]
+  def upsertSession(session: AgentSession):       F[AgentSession]
 
 }
 
 /** Repository for [[jorlan.domain.Conversation]] threads and [[jorlan.domain.Message]] records. */
 trait ConversationRepository[F[_]] {
 
-  def getById(id:                 ConversationId): F[Option[Conversation]]
-  def getBySession(sessionId:     AgentSessionId): F[List[Conversation]]
-  def create(conversation:        Conversation):   F[Conversation]
-  def getMessages(conversationId: ConversationId): F[List[Message]]
-  def addMessage(message:         Message):        F[Message]
+  def getById(id:          ConversationId):     F[Option[Conversation]]
+  def search(s:            ConversationSearch): F[List[Conversation]]
+  def create(conversation: Conversation):       F[Conversation]
+  def searchMessages(s:    MessageSearch):      F[List[Message]]
+  def addMessage(message:  Message):            F[Message]
 
 }
 
@@ -68,15 +214,15 @@ trait ConversationRepository[F[_]] {
   */
 trait SkillRepository[F[_]] {
 
-  def getById(id:          SkillId):             F[Option[Skill]]
-  def getAll:                                    F[List[Skill]]
-  def upsert(skill:        Skill):               F[Skill]
-  def getVersion(id:       SkillVersionId):      F[Option[SkillVersion]]
-  def getVersions(skillId: SkillId):             F[List[SkillVersion]]
-  def upsertVersion(v:     SkillVersion):        F[SkillVersion]
-  def getConnector(id:     ConnectorInstanceId): F[Option[ConnectorInstance]]
-  def getAllConnectors:                          F[List[ConnectorInstance]]
-  def upsertConnector(ci:  ConnectorInstance):   F[ConnectorInstance]
+  def getById(id:         SkillId):             F[Option[Skill]]
+  def search(s:           SkillSearch):         F[List[Skill]]
+  def upsert(skill:       Skill):               F[Skill]
+  def getVersion(id:      SkillVersionId):      F[Option[SkillVersion]]
+  def searchVersions(s:   SkillVersionSearch):  F[List[SkillVersion]]
+  def upsertVersion(v:    SkillVersion):        F[SkillVersion]
+  def getConnector(id:    ConnectorInstanceId): F[Option[ConnectorInstance]]
+  def searchConnectors(s: ConnectorSearch):     F[List[ConnectorInstance]]
+  def upsertConnector(ci: ConnectorInstance):   F[ConnectorInstance]
 
 }
 
@@ -87,14 +233,8 @@ trait SkillRepository[F[_]] {
   */
 trait MemoryRepository[F[_]] {
 
-  def getById(id: MemoryRecordId): F[Option[MemoryRecord]]
-  def search(
-    scope:       MemoryScope,
-    userId:      Option[UserId],
-    workspaceId: Option[WorkspaceId],
-    agentId:     Option[AgentId],
-    key:         Option[String],
-  ):                                  F[List[MemoryRecord]]
+  def getById(id:    MemoryRecordId): F[Option[MemoryRecord]]
+  def search(s:      MemorySearch):   F[List[MemoryRecord]]
   def upsert(record: MemoryRecord):   F[MemoryRecord]
   def delete(id:     MemoryRecordId): F[Long]
   def purgeExpired:                   F[Long]
@@ -109,15 +249,9 @@ trait MemoryRepository[F[_]] {
   */
 trait EventLogRepository[F[_]] {
 
-  def append[R: JsonEncoder](event: EventLog[R]): F[EventLog[R]]
-  def search(
-    eventType: Option[EventType],
-    agentId:   Option[AgentId],
-    sessionId: Option[AgentSessionId],
-    from:      Option[Instant],
-    to:        Option[Instant],
-    limit:     Int,
-  ): F[List[EventLog[Json]]]
+  def append[R: JsonEncoder](event: EventLog[R]):    F[EventLog[R]]
+  def search(filter:                EventLogFilter): F[List[EventLog[Json]]]
+  def replaySession(sessionId:      AgentSessionId): F[List[EventLog[Json]]]
 
 }
 
@@ -130,7 +264,7 @@ trait SchedulerRepository[F[_]] {
   def getPendingJobs:                             F[List[SchedulerJob]]
   def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
   def deleteJob(id:          SchedulerJobId):     F[Long]
-  def getTriggers(jobId:     SchedulerJobId):     F[List[SchedulerTrigger]]
+  def searchTriggers(s:      TriggerSearch):      F[List[SchedulerTrigger]]
   def upsertTrigger(trigger: SchedulerTrigger):   F[SchedulerTrigger]
   def deleteTrigger(id:      SchedulerTriggerId): F[Long]
 
@@ -139,13 +273,13 @@ trait SchedulerRepository[F[_]] {
 /** Repository for [[jorlan.domain.Artifact]] files and [[jorlan.domain.Workspace]] records. */
 trait ArtifactRepository[F[_]] {
 
-  def getById(id:                 ArtifactId):  F[Option[Artifact]]
-  def getByWorkspace(workspaceId: WorkspaceId): F[List[Artifact]]
-  def upsert(artifact:            Artifact):    F[Artifact]
-  def delete(id:                  ArtifactId):  F[Long]
-  def getWorkspace(id:            WorkspaceId): F[Option[Workspace]]
-  def getAllWorkspaces(ownerId:   UserId):      F[List[Workspace]]
-  def upsertWorkspace(ws:         Workspace):   F[Workspace]
+  def getById(id:         ArtifactId):      F[Option[Artifact]]
+  def search(s:           ArtifactSearch):  F[List[Artifact]]
+  def upsert(artifact:    Artifact):        F[Artifact]
+  def delete(id:          ArtifactId):      F[Long]
+  def getWorkspace(id:    WorkspaceId):     F[Option[Workspace]]
+  def searchWorkspaces(s: WorkspaceSearch): F[List[Workspace]]
+  def upsertWorkspace(ws: Workspace):       F[Workspace]
 
 }
 
@@ -154,12 +288,11 @@ trait ArtifactRepository[F[_]] {
   */
 trait PermissionRepository[F[_]] {
 
-  def getRolesForUser(userId:          UserId):            F[List[Role]]
-  def getPermissionsForRole(roleId:    RoleId):            F[List[Permission]]
-  def getPermissionsForUser(userId:    UserId):            F[List[Permission]]
+  def searchRoles(s:                   RoleSearch):        F[List[Role]]
+  def searchPermissions(s:             PermissionSearch):  F[List[Permission]]
   def upsertCapabilityGrant(grant:     CapabilityGrant):   F[CapabilityGrant]
   def revokeGrant(id:                  CapabilityGrantId): F[Long]
-  def getGrantsForUser(userId:         UserId):            F[List[CapabilityGrant]]
+  def searchGrants(s:                  GrantSearch):       F[List[CapabilityGrant]]
   def createApprovalRequest(req:       ApprovalRequest):   F[ApprovalRequest]
   def cancelApprovalRequest(id:        ApprovalRequestId): F[Long]
   def recordApprovalDecision(decision: ApprovalDecision):  F[ApprovalDecision]

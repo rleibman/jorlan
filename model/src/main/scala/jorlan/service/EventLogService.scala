@@ -18,9 +18,12 @@ import zio.json.ast.Json
 
 import java.time.Instant
 
+enum EventLogOrder { case Id, OccurredAt }
+
 /** Query parameters for searching the event log.
   *
-  * All filters are optional — omitting them returns all events up to `limit`.
+  * All filters are optional — omitting them returns all events up to `pageSize`. `pageSize` must be between 1 and
+  * [[EventLogFilter.MaxLimit]]; values outside that range are rejected by the service.
   */
 case class EventLogFilter(
   eventType: Option[EventType] = None,
@@ -28,8 +31,16 @@ case class EventLogFilter(
   sessionId: Option[AgentSessionId] = None,
   from:      Option[Instant] = None,
   to:        Option[Instant] = None,
-  limit:     Int = 100,
-)
+  page:      Int = 0,
+  pageSize:  Int = 100,
+  sorts:     List[Sort[EventLogOrder]] = List.empty,
+) extends Search[EventLogOrder]
+
+object EventLogFilter {
+
+  val MaxLimit: Int = 10_000
+
+}
 
 /** Append-only service for platform event logging.
   *
@@ -38,17 +49,19 @@ case class EventLogFilter(
   *
   * Callers should surround logical units of work with [[CorrelationId.withNew]] so all events from that unit share a
   * correlation ID in the ZIO log annotations.
+  *
+  * TODO: Once `EventLog` gains a `correlationId` column and a Flyway migration is added, `log` should automatically
+  * capture [[CorrelationId.get]] and persist it. See phase3-review.md M2.
   */
 trait EventLogService {
 
-  /** Append a new event to the log.
-    *
-    * The returned `EventLog` is identical to the input but with a generated `id`. The correlation ID is automatically
-    * captured from the current ZIO log annotations if present.
-    */
+  /** Append a new event to the log. The returned `EventLog` is identical to the input but with a generated `id`. */
   def log[R: JsonEncoder](event: EventLog[R]): IO[JorlanError, EventLog[R]]
 
-  /** Query the event log with the given filter. Results are ordered by `occurredAt` descending. */
+  /** Query the event log. Results are ordered by `occurredAt` descending by default.
+    *
+    * Fails with [[JorlanError]] if `filter.pageSize` is outside `[1, EventLogFilter.MaxLimit]`.
+    */
   def query(filter: EventLogFilter): IO[JorlanError, List[EventLog[Json]]]
 
   /** Replay all events for a specific agent session, ordered by `occurredAt` ascending. */
