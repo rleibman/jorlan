@@ -19,13 +19,13 @@ type: project
 ## Phase 3 EventLog Patterns (confirmed 2026-05-26)
 
 - `EventLogService` uses `CorrelationId.withNew` / `withId` for fiber-local correlation via ZIO log annotations — clean, idiomatic.
-- `EventLogServiceImpl` is a thin delegation layer; `replay` re-sorts ascending after the DB returns descending — intentional design, documented in prompt.
+- `EventLogServiceImpl` remains a thin delegation layer; replay ordering now follows the repository contract directly (`replaySession` queries ascending), rather than fetching DESC and re-sorting in the service.
 - `EventLogServiceImpl.live` uses `ZLayer.fromFunction` correctly.
 - `RepositoryError extends JorlanError` — so `IO[RepositoryError, A]` is assignable to `IO[JorlanError, A]` via subtype variance. This is why `mapError(identity)` is a no-op (correctly removed by scalafmt).
-- `InMemoryEventLogRepo` in the unit test uses `AtomicLong` + `mutable.ArrayBuffer` + `synchronized` blocks — acceptable in test code but worth being consistent about whether test doubles should be functional.
+- `InMemoryEventLogRepo` in unit tests is Ref-based rather than `AtomicLong`/`mutable.ArrayBuffer`/`synchronized`; this is more consistent with the rest of the functional test style.
 - `EventLogFilter` uses a default `limit = 100` — this default is not validated anywhere; a zero or negative limit would be silently forwarded to the DB layer.
-- Integration test `EventLogServiceIntegrationSpec` uses `provideLayerShared` correctly (no per-test DB setup pollution).
-- The "correlation id propagates through log call" integration test only verifies the annotation is visible from the test fiber, not that it was actually persisted on the `EventLog` record — the correlation ID is NOT stored in the DB row; it lives only in ZIO log annotations.
+- Integration coverage around `EventLogServiceIntegrationSpec` currently has composition/wiring issues; do not treat the layer assembly there as a confirmed-good reference pattern.
+- The "correlation id propagates through log call" integration test is only evidence about correlation visibility in the logging context/test path, not that a correlation ID was persisted on the `EventLog` row — the correlation ID lives in ZIO log annotations, not in the stored event record.
 
 ## Known Issues Found (first review, 2026-05-25)
 
