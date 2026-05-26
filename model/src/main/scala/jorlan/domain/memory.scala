@@ -11,6 +11,7 @@
 package jorlan.domain
 
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -32,7 +33,7 @@ enum MemoryScope derives JsonEncoder, JsonDecoder {
   * @param recordKey
   *   Application-defined key identifying this memory within its scope (e.g. `"user.preference.timezone"`).
   * @param value
-  *   The stored content — free-form text or JSON.
+  *   The stored content — free-form text or structured JSON.
   * @param ttl
   *   If set, the record is eligible for automatic purging after this instant.
   */
@@ -43,7 +44,7 @@ case class MemoryRecord(
   workspaceId: Option[WorkspaceId],
   agentId:     Option[AgentId],
   recordKey:   String,
-  value:       String,
+  value:       Json,
   ttl:         Option[Instant],
   createdAt:   Instant,
   updatedAt:   Instant,
@@ -54,12 +55,12 @@ case class MemoryRecord(
   * @param model
   *   Embedding model identifier that produced this vector (e.g. `"nomic-embed-text"`).
   * @param vector
-  *   JSON-serialized `float[]`. The embedding dimension is implicit in the model identifier.
+  *   Native float array; serialised as a JSON number array for storage.
   */
 case class MemoryEmbedding(
   id:             MemoryEmbeddingId,
   memoryRecordId: MemoryRecordId,
-  model:          String,
-  vector:         String, // JSON-serialized float array
+  model:          EmbeddingModelId,
+  vector:         Vector[Float],
   createdAt:      Instant,
 ) derives JsonEncoder, JsonDecoder

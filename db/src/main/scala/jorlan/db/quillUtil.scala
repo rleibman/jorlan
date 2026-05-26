@@ -14,8 +14,16 @@ import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
 import jorlan.{AppConfig, DataSourceConfig}
 import jorlan.domain.*
+import just.semver.{ParseError, SemVer}
+import zio.http.MediaType
+import zio.json.*
+import zio.json.ast.Json
 
+import java.net.URI
+import java.security.{KeyFactory, PublicKey}
+import java.security.spec.X509EncodedKeySpec
 import java.time.{Instant, LocalDateTime, ZoneOffset}
+import java.util.Base64
 import scala.language.unsafeNulls
 
 /** Constructs a [[HikariDataSource]] from [[AppConfig]].
@@ -100,6 +108,63 @@ given MappedEncoding[Long, PermissionId] = MappedEncoding(PermissionId.apply)
 given MappedEncoding[PermissionId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, ChannelIdentityId] = MappedEncoding(ChannelIdentityId.apply)
 given MappedEncoding[ChannelIdentityId, Long] = MappedEncoding(_.value)
+
+/** Quill `MappedEncoding`s for string-backed opaque value types. */
+given MappedEncoding[String, ModelId] = MappedEncoding(ModelId.apply)
+given MappedEncoding[ModelId, String] = MappedEncoding(_.value)
+given MappedEncoding[String, EmbeddingModelId] = MappedEncoding(EmbeddingModelId.apply)
+given MappedEncoding[EmbeddingModelId, String] = MappedEncoding(_.value)
+
+/** Quill `MappedEncoding`s for external library types stored as `VARCHAR`/`TEXT` in MariaDB. */
+given MappedEncoding[Json, String] = MappedEncoding(_.toJson)
+given MappedEncoding[String, Json] =
+  MappedEncoding(s =>
+    s.fromJson[Json].fold(error => throw new RuntimeException(s"Invalid JSON value: $error"), identity),
+  )
+
+given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
+given MappedEncoding[String, Vector[Float]] =
+  MappedEncoding(s =>
+    s.fromJson[Vector[Float]].fold(
+        error => throw new RuntimeException(s"Invalid Vector[Float] JSON value: $error"),
+        identity,
+      ),
+  )
+
+given MappedEncoding[URI, String] = MappedEncoding(_.toString)
+given MappedEncoding[String, URI] = MappedEncoding(s => URI.create(s))
+
+given MappedEncoding[SemVer, String] = MappedEncoding(_.render)
+given MappedEncoding[String, SemVer] =
+  MappedEncoding(s => SemVer.parse(s).fold(e => throw new RuntimeException(ParseError.render(e)), identity))
+
+given MappedEncoding[MediaType, String] = MappedEncoding(_.fullType)
+given MappedEncoding[String, MediaType] =
+  MappedEncoding { s =>
+    MediaType
+      .forContentType(s)
+      .orElse(MediaType.parseCustomMediaType(s))
+      .getOrElse(throw new RuntimeException(s"Unrecognised MediaType: $s"))
+  }
+
+given MappedEncoding[PublicKey, String] =
+  MappedEncoding { key =>
+    val b64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(key.getEncoded).nn
+    s"-----BEGIN PUBLIC KEY-----\n$b64\n-----END PUBLIC KEY-----"
+  }
+given MappedEncoding[String, PublicKey] =
+  MappedEncoding { pem =>
+    val cleaned = pem.replaceAll("-----[^-]+-----", "").replaceAll("\\s+", "")
+    val bytes = Base64.getDecoder.decode(cleaned.nn)
+    val spec = new X509EncodedKeySpec(bytes)
+    List("RSA", "EC", "Ed25519").iterator
+      .flatMap { alg =>
+        try Some(KeyFactory.getInstance(alg).generatePublic(spec))
+        catch { case _: Exception => None }
+      }
+      .nextOption()
+      .getOrElse(throw new RuntimeException("Could not parse public key: unknown algorithm"))
+  }
 
 /** Quill `MappedEncoding`s for the 12 domain enums stored as `VARCHAR` in MariaDB. Encoding uses `toString` (stored
   * name); decoding uses `valueOf` (case-sensitive).

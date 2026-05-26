@@ -20,6 +20,6 @@ addSbtPlugin("io.spray" % "sbt-revolver" % "0.10.0")
 ////////////////////////////////////////////////////////////////////////////////////
 // Testing
 //addSbtPlugin("io.stryker-mutator" % "sbt-stryker4s" % "0.19.1")
-//addSbtPlugin("org.scoverage"      % "sbt-scoverage" % "2.4.4")
+addSbtPlugin("org.scoverage"      % "sbt-scoverage" % "2.4.4")
 
 libraryDependencies ++= Seq("org.eclipse.jgit" % "org.eclipse.jgit" % "7.6.0.202603022253-r")

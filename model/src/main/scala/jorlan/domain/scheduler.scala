@@ -61,7 +61,7 @@ case class SchedulerTrigger(
   id:          SchedulerTriggerId,
   jobId:       SchedulerJobId,
   triggerType: TriggerType,
-  expression:  String, // cron expression, ISO duration, or event name
-  enabled:     Boolean = true,
-  createdAt:   Instant,
+  expression: String, // cron expression, ISO duration, or event name. Is there a library or type we can use for this instead of a raw string?
+  enabled:   Boolean = true,
+  createdAt: Instant,
 ) derives JsonEncoder, JsonDecoder

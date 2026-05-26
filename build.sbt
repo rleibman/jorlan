@@ -11,6 +11,13 @@ lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time o
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Global stuff
 ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
+ThisBuild / resolvers += "GitHub Packages rleibman" at "https://maven.pkg.github.com/rleibman/zio-auth"
+ThisBuild / credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  sys.env.getOrElse("GITHUB_ACTOR", "rleibman"),
+  sys.env.getOrElse("GITHUB_TOKEN", ""),
+)
 
 lazy val SCALA = "3.8.3"
 Global / onChangedBuildSource := ReloadOnSourceChanges
@@ -81,7 +88,7 @@ val scalacssVersion = "1.0.0"
 val scalaJavaTimeVersion = "2.6.0"
 val sttpClient4Version = "4.0.24"
 val testContainerVersion = "0.44.1"
-val zioAuth = "3.1.2"
+val zioAuth = "3.1.5"
 val zioCacheVersion = "0.2.8"
 val zioConfigVersion = "4.0.7"
 val zioHttpVersion = "3.11.2"

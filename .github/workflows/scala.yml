@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build:
@@ -30,5 +31,8 @@ jobs:
     - name: Setup sbt
       uses: sbt/setup-sbt@v1
     - name: Run tests
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
       run:
         sbt test;

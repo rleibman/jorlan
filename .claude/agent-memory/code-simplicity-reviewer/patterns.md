@@ -26,6 +26,13 @@ type: project
 - `EventLogRepository.search` applies `from`/`to` filters in-memory after SQL `take(limit)` — this means date filtering happens on an already-truncated result set; the limit applies before the date filter (potential correctness bug)
 - `ConfigurationServiceImpl.appConfig` is a `lazy val` on a `new ConfigurationService { ... }` — calling `.appConfig` twice returns the same cached `IO`, which is fine since `orDie` makes it a `UIO` internally but the declared type is `IO[ConfigurationError, AppConfig]`
 
+## Phase 3 EventLog Observations (2026-05-26)
+- `InMemoryEventLogRepo` in unit tests intentionally mirrors the current `QuillEventLogRepository.search` semantics so unit tests exercise the same filter/order/limit behavior as production code without hitting the database. The duplication is acceptable but worth watching if search parameters expand.
+- `EventLogServiceImpl.replay` now relies on the repository's search ordering/filters rather than performing an additional in-memory re-sort. The important contract to keep documented is the ordering returned by `repo.search`, since `replay` depends on that behavior.
+- Correlation ID is stored only in ZIO log annotations (fibre-local); it is NOT persisted to the EventLog row, even though the service scaladoc implies it is captured. This is a documented gap — no `correlationId` column in EventLogRow, no `correlation_id` in the DB schema.
+- `EventLogServiceSpec` and `EventLogServiceIntegrationSpec` each declare `private val now = Instant.now()` at class level, evaluated once at spec construction. Tests that share the same `now` across parallel runs are not affected since the value is frozen. Pattern is fine.
+- All five test files in the EventLog suite use positional `EventLog[T](EventLogId.empty, …, None, None, None, None, None, now)` constructors with 6 explicit `None`s. A test helper `def emptyEvent[R](eventType, resource)` would reduce noise significantly.
+
 ## Simplification Patterns Applied / Suggested
 - Shared `runQ` helper in a base Quill repo class would reduce per-method boilerplate significantly
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders

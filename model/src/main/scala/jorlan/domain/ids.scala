@@ -330,3 +330,28 @@ object ChannelIdentityId {
   given JsonDecoder[ChannelIdentityId] = JsonDecoder[Long].map(ChannelIdentityId(_))
 
 }
+
+/** Identifies an LLM model (e.g. `"llama3"`, `"gpt-4o"`). Kept opaque to prevent accidental confusion with other
+  * string-typed fields.
+  */
+opaque type ModelId = String
+object ModelId {
+
+  def apply(v:   String): ModelId = v
+  extension (id: ModelId) { def value: String = id }
+  given JsonEncoder[ModelId] = JsonEncoder[String].contramap(_.value)
+  given JsonDecoder[ModelId] = JsonDecoder[String].map(ModelId(_))
+
+}
+
+/** Identifies the embedding model that produced a [[jorlan.domain.MemoryEmbedding]] vector (e.g. `"nomic-embed-text"`).
+  */
+opaque type EmbeddingModelId = String
+object EmbeddingModelId {
+
+  def apply(v:   String): EmbeddingModelId = v
+  extension (id: EmbeddingModelId) { def value: String = id }
+  given JsonEncoder[EmbeddingModelId] = JsonEncoder[String].contramap(_.value)
+  given JsonDecoder[EmbeddingModelId] = JsonDecoder[String].map(EmbeddingModelId(_))
+
+}

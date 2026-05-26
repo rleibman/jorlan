@@ -11,12 +11,13 @@
 package jorlan
 
 import jorlan.db.FlywayMigration
+import jorlan.service.EventLogService
 import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{EnvironmentTag, Runtime, Scope, ZIO, ZIOApp, ZIOAppArgs, ZLayer}
 
 /** ZIO environment type required by the main application. */
-type JorlanEnvironment = ConfigurationService & FlywayMigration
+type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService
 
 /** Main entry point for the Jorlan server.
   *

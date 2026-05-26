@@ -11,6 +11,7 @@
 package jorlan.domain
 
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.ast.Json
 
 import java.time.Instant
 
@@ -30,21 +31,19 @@ enum EventType derives JsonEncoder, JsonDecoder {
 
 /** An append-only audit record. Rows are never updated or deleted by application code.
   *
-  * @param resourceType
-  *   Name of the domain entity affected (e.g. `"Skill"`, `"MemoryRecord"`), if applicable.
-  * @param resourceId
-  *   Raw `Long` PK of the affected entity, independent of which opaque ID type it belongs to.
+  * @param resource
+  *   The typed domain entity affected by this event. Callers provide the concrete ID type (e.g. `AgentId`,
+  *   `SkillVersionId`) when appending; the repository stores it as JSON and returns it as raw `Json` on reads.
   * @param payloadJson
-  *   Event-specific detail JSON (e.g. input/output summary, error message, diff).
+  *   Event-specific detail (e.g. input/output summary, error message, diff).
   */
-case class EventLog(
-  id:           EventLogId,
-  eventType:    EventType,
-  actorId:      Option[UserId],
-  agentId:      Option[AgentId],
-  sessionId:    Option[AgentSessionId],
-  resourceType: Option[String],
-  resourceId:   Option[Long],
-  payloadJson:  Option[String],
-  occurredAt:   Instant,
+case class EventLog[R](
+  id:          EventLogId,
+  eventType:   EventType,
+  actorId:     Option[UserId],
+  agentId:     Option[AgentId],
+  sessionId:   Option[AgentSessionId],
+  resource:    Option[R],
+  payloadJson: Option[Json],
+  occurredAt:  Instant,
 ) derives JsonEncoder, JsonDecoder
