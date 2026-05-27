@@ -34,7 +34,7 @@ trait Search[OrderType] {
 
   def page:     Int
   def pageSize: Int
-  def sorts:    List[Sort[OrderType]]
+  def sorts:    Option[Sort[OrderType]]
 
 }
 
@@ -45,14 +45,14 @@ case class UserSearch(
   active:   Option[Boolean] = None,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[UserOrder]] = List.empty,
+  sorts:    Option[Sort[UserOrder]] = None,
 ) extends Search[UserOrder]
 
 enum AgentOrder { case Id, Name, CreatedAt }
 case class AgentSearch(
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[AgentOrder]] = List.empty,
+  sorts:    Option[Sort[AgentOrder]] = None,
 ) extends Search[AgentOrder]
 
 enum AgentSessionOrder { case Id, CreatedAt }
@@ -60,7 +60,7 @@ case class AgentSessionSearch(
   agentId:  Option[AgentId] = None,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[AgentSessionOrder]] = List.empty,
+  sorts:    Option[Sort[AgentSessionOrder]] = None,
 ) extends Search[AgentSessionOrder]
 
 enum ConversationOrder { case Id, StartedAt }
@@ -68,7 +68,7 @@ case class ConversationSearch(
   sessionId: AgentSessionId,
   page:      Int = 0,
   pageSize:  Int = 20,
-  sorts:     List[Sort[ConversationOrder]] = List.empty,
+  sorts:     Option[Sort[ConversationOrder]] = None,
 ) extends Search[ConversationOrder]
 
 enum MessageOrder { case Id, CreatedAt }
@@ -76,14 +76,14 @@ case class MessageSearch(
   conversationId: ConversationId,
   page:           Int = 0,
   pageSize:       Int = 20,
-  sorts:          List[Sort[MessageOrder]] = List.empty,
+  sorts:          Option[Sort[MessageOrder]] = None,
 ) extends Search[MessageOrder]
 
 enum SkillOrder { case Id, Name, Tier, CreatedAt }
 case class SkillSearch(
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[SkillOrder]] = List.empty,
+  sorts:    Option[Sort[SkillOrder]] = None,
 ) extends Search[SkillOrder]
 
 enum SkillVersionOrder { case Id, Version, CreatedAt }
@@ -91,14 +91,14 @@ case class SkillVersionSearch(
   skillId:  SkillId,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[SkillVersionOrder]] = List.empty,
+  sorts:    Option[Sort[SkillVersionOrder]] = None,
 ) extends Search[SkillVersionOrder]
 
 enum ConnectorOrder { case Id, ConnectorType, Name }
 case class ConnectorSearch(
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[ConnectorOrder]] = List.empty,
+  sorts:    Option[Sort[ConnectorOrder]] = None,
 ) extends Search[ConnectorOrder]
 
 enum MemoryOrder { case Id, RecordKey, CreatedAt, UpdatedAt }
@@ -110,7 +110,7 @@ case class MemorySearch(
   key:         Option[String] = None,
   page:        Int = 0,
   pageSize:    Int = 20,
-  sorts:       List[Sort[MemoryOrder]] = List.empty,
+  sorts:       Option[Sort[MemoryOrder]] = None,
 ) extends Search[MemoryOrder]
 
 enum ArtifactOrder { case Id, Name, CreatedAt }
@@ -118,7 +118,7 @@ case class ArtifactSearch(
   workspaceId: WorkspaceId,
   page:        Int = 0,
   pageSize:    Int = 20,
-  sorts:       List[Sort[ArtifactOrder]] = List.empty,
+  sorts:       Option[Sort[ArtifactOrder]] = None,
 ) extends Search[ArtifactOrder]
 
 enum WorkspaceOrder { case Id, Name, CreatedAt }
@@ -126,7 +126,7 @@ case class WorkspaceSearch(
   ownerId:  UserId,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[WorkspaceOrder]] = List.empty,
+  sorts:    Option[Sort[WorkspaceOrder]] = None,
 ) extends Search[WorkspaceOrder]
 
 enum RoleOrder { case Id, Name }
@@ -134,7 +134,7 @@ case class RoleSearch(
   userId:   UserId,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[RoleOrder]] = List.empty,
+  sorts:    Option[Sort[RoleOrder]] = None,
 ) extends Search[RoleOrder]
 
 enum PermissionOrder { case Id, Resource, Action }
@@ -143,7 +143,7 @@ case class PermissionSearch(
   userId:   Option[UserId] = None,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[PermissionOrder]] = List.empty,
+  sorts:    Option[Sort[PermissionOrder]] = None,
 ) extends Search[PermissionOrder]
 
 enum GrantOrder { case Id, GrantedAt }
@@ -151,7 +151,7 @@ case class GrantSearch(
   userId:   UserId,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[GrantOrder]] = List.empty,
+  sorts:    Option[Sort[GrantOrder]] = None,
 ) extends Search[GrantOrder]
 
 enum TriggerOrder { case Id }
@@ -159,7 +159,7 @@ case class TriggerSearch(
   jobId:    SchedulerJobId,
   page:     Int = 0,
   pageSize: Int = 20,
-  sorts:    List[Sort[TriggerOrder]] = List.empty,
+  sorts:    Option[Sort[TriggerOrder]] = None,
 ) extends Search[TriggerOrder]
 
 // ─── Repository interfaces ────────────────────────────────────────────────────
@@ -181,6 +181,27 @@ trait UserRepository[F[_]] {
   def getChannelIdentities(userId: UserId):            F[List[ChannelIdentity]]
   def upsertChannelIdentity(ci:    ChannelIdentity):   F[ChannelIdentity]
   def deleteChannelIdentity(id:    ChannelIdentityId): F[Long]
+
+  /** Verify credentials via `SHA2(password, 512)` comparison in SQL. Returns the user if active and credentials match,
+    * `None` otherwise. The plain-text password never leaves this method.
+    */
+  def login(
+    email:    String,
+    password: String,
+  ): F[Option[User]]
+
+  def userByEmail(email: String): F[Option[User]]
+
+  def changePassword(
+    id:          UserId,
+    newPassword: String,
+  ): F[Unit]
+
+  /** Look up the user linked to a specific OAuth provider identity. */
+  def userByChannelIdentity(
+    channelType:   ChannelType,
+    channelUserId: String,
+  ): F[Option[User]]
 
 }
 
@@ -251,7 +272,10 @@ trait EventLogRepository[F[_]] {
 
   def append[R: JsonEncoder](event: EventLog[R]):    F[EventLog[R]]
   def search(filter:                EventLogFilter): F[List[EventLog[Json]]]
-  def replaySession(sessionId:      AgentSessionId): F[List[EventLog[Json]]]
+  def replaySession(
+    sessionId: AgentSessionId,
+    limit:     Int = 1000,
+  ): F[List[EventLog[Json]]]
 
 }
 
@@ -288,8 +312,20 @@ trait ArtifactRepository[F[_]] {
   */
 trait PermissionRepository[F[_]] {
 
-  def searchRoles(s:                   RoleSearch):        F[List[Role]]
+  def searchRoles(s:   RoleSearch): F[List[Role]]
+  def upsertRole(role: Role):       F[Role]
+  def deleteRole(id:   RoleId):     F[Long]
+  def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): F[Unit]
+  def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ):                                                       F[Unit]
   def searchPermissions(s:             PermissionSearch):  F[List[Permission]]
+  def upsertPermission(permission:     Permission):        F[Permission]
+  def deletePermission(id:             PermissionId):      F[Long]
   def upsertCapabilityGrant(grant:     CapabilityGrant):   F[CapabilityGrant]
   def revokeGrant(id:                  CapabilityGrantId): F[Long]
   def searchGrants(s:                  GrantSearch):       F[List[CapabilityGrant]]
@@ -297,6 +333,7 @@ trait PermissionRepository[F[_]] {
   def cancelApprovalRequest(id:        ApprovalRequestId): F[Long]
   def recordApprovalDecision(decision: ApprovalDecision):  F[ApprovalDecision]
   def getApprovalRequest(id:           ApprovalRequestId): F[Option[ApprovalRequest]]
+  def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
 
 }
 

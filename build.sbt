@@ -142,9 +142,8 @@ lazy val model = project
       "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
       "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
       "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
-      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
-      "io.getquill" %% "quill-jdbc-zio"      % quillVersion withSources (),
-      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+      "dev.zio"     %% "zio-http"         % zioHttpVersion withSources (),
+      "io.kevinlee" %% "just-semver-core" % justSemverCoreVersion withSources (),
       )
     )
 
@@ -299,6 +298,7 @@ lazy val integration = project
     ),
     // Integration tests are only in the Test configuration
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / parallelExecution := false,
   )
 
 ////////////////////////////////////////////////////////////////////////////////////

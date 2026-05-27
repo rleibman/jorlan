@@ -10,24 +10,20 @@
 
 package jorlan
 
+import _root_.auth.{AuthConfig, AuthError, AuthServer, ExpiredToken, InvalidToken, Session}
+import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.db.FlywayMigration
+import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.service.EventLogService
+import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
-import zio.{EnvironmentTag, Runtime, Scope, ZIO, ZIOApp, ZIOAppArgs, ZLayer}
 
 /** ZIO environment type required by the main application. */
-type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService
+type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
+  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore
 
-/** Main entry point for the Jorlan server.
-  *
-  * Startup sequence:
-  *   1. Resolve configuration from `application.conf`.
-  *   2. Run Flyway schema migrations.
-  *   3. Start the zio-http server on the configured port.
-  *
-  * A `GET /health` route is always registered; additional routes will be added as subsystems are wired in.
-  */
+/** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
 
   override type Environment = JorlanEnvironment
@@ -37,18 +33,36 @@ object Jorlan extends ZIOApp {
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> EnvironmentBuilder.live
 
-  private val healthRoutes: Routes[Any, Response] = Routes(
+  private val healthRoutes: Routes[Any, Nothing] = Routes(
     Method.GET / "health" -> Handler.ok,
   )
 
-  override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
+  override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {
+    val zapp = for {
+      authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      authR      <- authServer.authRoutes
+      unauthR    <- authServer.unauthRoutes
+    } yield {
+      ((healthRoutes ++ authR) @@ authServer.bearerSessionProvider ++ unauthR)
+        .handleErrorCause { cause =>
+          cause.squash match {
+            case ExpiredToken(msg, _) => Response.unauthorized(msg)
+            case InvalidToken(msg, _) => Response.unauthorized(msg)
+            case e: AuthError => Response.internalServerError(Option(e.getMessage).getOrElse("Authentication error"))
+            case e => Response.internalServerError(Option(e.getMessage).getOrElse("Internal server error"))
+          }
+        }
+    }
+
     for {
       config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
       _      <- FlywayMigration.runMigrations
       _      <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
+      app    <- zapp
       _ <- Server
-        .serve(healthRoutes)
+        .serve(app)
         .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
     } yield ()
+  }
 
 }

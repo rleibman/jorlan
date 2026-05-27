@@ -33,7 +33,7 @@ case class EventLogFilter(
   to:        Option[Instant] = None,
   page:      Int = 0,
   pageSize:  Int = 100,
-  sorts:     List[Sort[EventLogOrder]] = List.empty,
+  sorts:     Option[Sort[EventLogOrder]] = None,
 ) extends Search[EventLogOrder]
 
 object EventLogFilter {

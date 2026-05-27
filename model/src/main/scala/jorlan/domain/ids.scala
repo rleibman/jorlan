@@ -11,6 +11,10 @@
 package jorlan.domain
 
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.{UIO, ZIO}
+
+import java.util.UUID
+import scala.util.Try
 
 /** Opaque primary-key types, one per entity.
   *
@@ -353,5 +357,24 @@ object EmbeddingModelId {
   extension (id: EmbeddingModelId) { def value: String = id }
   given JsonEncoder[EmbeddingModelId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[EmbeddingModelId] = JsonDecoder[String].map(EmbeddingModelId(_))
+
+}
+
+/** Identifies a client connection (browser tab, API client, etc.) within an authenticated session.
+  *
+  * Backed by a UUID string so it can be generated client-side or server-side without coordination.
+  */
+opaque type ConnectionId = UUID
+object ConnectionId {
+
+  def apply(s:   UUID): ConnectionId = s
+  def unsafeRandom:     ConnectionId = java.util.UUID.randomUUID()
+  val randomZIO:        UIO[ConnectionId] = ZIO.randomWith(_.nextUUID.map(u => ConnectionId(u)))
+  extension (id: ConnectionId) { def value: UUID = id }
+  given JsonEncoder[ConnectionId] = JsonEncoder[String].contramap(_.value.toString)
+  given JsonDecoder[ConnectionId] =
+    JsonDecoder[String].mapOrFail(s =>
+      Try(ConnectionId(UUID.fromString(s))).toEither.left.map(t => s"Invalid ConnectionId UUID string: ${t.getMessage}"),
+    )
 
 }

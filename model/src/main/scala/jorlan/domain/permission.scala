@@ -16,6 +16,21 @@ import zio.json.ast.Json
 
 import java.time.Instant
 
+/** Dot-separated capability name, e.g. `shell.execute` or `memory.write`.
+  *
+  * Wrapping this in an opaque type prevents silent typos at call sites creating dead grants that will never match a
+  * real capability check.
+  */
+opaque type CapabilityName = String
+object CapabilityName {
+
+  def apply(s:   String): CapabilityName = s
+  extension (cn: CapabilityName) { def value: String = cn }
+  given JsonEncoder[CapabilityName] = JsonEncoder[String].contramap(_.value)
+  given JsonDecoder[CapabilityName] = JsonDecoder[String].map(CapabilityName(_))
+
+}
+
 /** A named bundle of permissions that can be assigned to users. */
 case class Role(
   id:          RoleId,
@@ -65,7 +80,7 @@ enum ApprovalMode derives JsonEncoder, JsonDecoder {
   */
 case class CapabilityGrant(
   id:                  CapabilityGrantId,
-  capability:          String,
+  capability:          CapabilityName,
   scopeJson:           Option[String],
   granteeId:           UserId,
   grantorId:           Option[UserId],
@@ -92,7 +107,7 @@ enum ApprovalStatus derives JsonEncoder, JsonDecoder {
   */
 case class ApprovalRequest(
   id:              ApprovalRequestId,
-  capability:      String,
+  capability:      CapabilityName,
   scopeJson:       Option[String],
   agentId:         Option[AgentId],
   requestorUserId: UserId,

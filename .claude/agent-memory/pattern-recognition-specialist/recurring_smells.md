@@ -13,8 +13,8 @@ type: project
 - Enum valueOf decode in `quillUtil.scala` will throw `IllegalArgumentException` on unknown values from DB — should be wrapped in `Try` or caught
 - `RepositoryError.apply(cause)` falls through to a bare `cause.getMessage.nn` catch-all for non-SQL exceptions — swallows non-JDBC transience classification
 - `ConfigurationServiceImpl.live` hardcodes `"./src/main/resources/application.conf"` as fallback path — breaks when running from an installed package
-- `PermissionRepository` missing: `deleteRole`, `deletePermission`, `revokeGrant`, `cancelApprovalRequest`, `getExpiredApprovalRequests`
-- `SchedulerRepository` missing: `deleteJob`, `deleteTrigger` — no way to clean up completed/stale jobs
+- `PermissionRepository` missing: `deleteRole`, `deletePermission`, `getExpiredApprovalRequests` (revokeGrant and cancelApprovalRequest now exist)
+- `SchedulerRepository` now has `deleteJob`/`deleteTrigger` (corrected)
 - `testcontainers-scala-mariadb` appears as a compile (not test-scoped) dependency in both `db` and `server` modules
 - `integration` module depends on `server` — but the tests only use `db`-level repositories; server dependency pulls in heavy transitive deps unnecessarily
 

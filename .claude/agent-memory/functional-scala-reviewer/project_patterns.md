@@ -16,6 +16,19 @@ type: project
 - `AppConfig.dataSource` is a `lazy val` that constructs HikariCP — a deliberate side-effecting lazy initialisation in a config carrier. Documented but see known issues.
 - `FlywayMigration.migrate/validate/info` all return `UIO[Unit]` by swallowing errors via `foldCauseZIO` — intentional design choice.
 
+## Review Pass: 2026-05-27 (QuillRepositories + repository.scala + server)
+
+- `makeDataSource` in `quillUtil.scala:34` is a bare function returning `HikariDataSource` — side-effecting, unmanaged, no `ZIO.acquireRelease`. This is the primary purity issue in the DB layer.
+- `QuillCtx.hds` at line 99 is a `private val` that eagerly calls `makeDataSource`, creating a HikariCP pool at class instantiation time — an unmanaged side effect at construction.
+- `quillUtil.scala` lines 122-123, 128-130, 139, 147-148, 166 — `throw new RuntimeException(...)` inside `MappedEncoding` lambdas. These are inside Quill's decode path and cannot be lifted to ZIO; they follow the Quill interop pattern. Documented as known exceptions to the no-throw rule.
+- `ConnectionId.random` at `ids.scala:367` is a `def` (not `val`) that calls `java.util.UUID.randomUUID()` — pure-looking call site, but generates side effects. Callers should use `ZIO.succeed(ConnectionId.random)` or wrap; leaving as-is given this is in model not business logic.
+- `QuillSchedulerRepository.getPendingJobs` (line 1042-1052) correctly accesses `Clock.instant` via ZIO. This is fine and idiomatic.
+- `upsertSession`/`upsertJob`/`upsertWorkspace`/`upsertTrigger`/`upsertCapabilityGrant` use `if (id.value == 0L)` to decide insert-vs-update. This is the project's agreed sentinel pattern (`empty = 0L`). Consistent and documented.
+- `QuillUserRepository.search` (lines 157-216) dispatches sort permutations via `s.sorts.headOption match` — only first sort is honoured; multi-sort silently ignored. Same pattern in every repository. Tech debt, not a correctness violation.
+- `EventLogRepository.search` (lines 945-1013) only matches on 3 sort cases for a 2-field sort enum; the `_` wildcard defaults to `occurredAt DESC`. All sort cases covered by intent.
+- `ArtifactSearch.workspaceId` typed as `WorkspaceId` (non-Option) at `repository.scala:119` — caller must always supply a workspace, no global search. Intentional narrowing.
+- `EnvironmentBuilder.live` at line 61 is a `ULayer` that calls `.orDie` internally (via `appConfig`). Errors in layer construction become defects. Acceptable for startup but not surfacing config errors gracefully.
+
 ## Phase 3 EventLog Patterns (confirmed 2026-05-26)
 
 - `EventLogService` uses `CorrelationId.withNew` / `withId` for fiber-local correlation via ZIO log annotations — clean, idiomatic.

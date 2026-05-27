@@ -10,17 +10,53 @@
 
 package jorlan
 
+import _root_.auth.{AuthConfig, AuthServer, SecretKey}
+import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
+import jorlan.auth.JorlanAuthServer
+import zio.durationInt
 import jorlan.db.repository.QuillRepositories
 import jorlan.db.{ConfigurationServiceImpl, FlywayMigration}
+import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.service.{EventLogService, EventLogServiceImpl}
-import zio.{ULayer, ZLayer}
+import zio.{ULayer, ZIO, ZLayer}
 
-/** Assembles the production ZIO environment layer for the [[Jorlan]] application.
-  *
-  * Add new service layers here as additional subsystems are introduced. The `ZLayer.make` macro resolves the dependency
-  * graph and will fail at compile time if any layer is missing.
-  */
 object EnvironmentBuilder {
+
+  private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
+    ZLayer.fromZIO(
+      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+        val a = cfg.jorlan.auth
+        AuthConfig(
+          secretKey = SecretKey(a.secretKey),
+          accessTTL = a.accessTtlMinutes.minutes,
+          refreshTTL = a.refreshTtlDays.days,
+        )
+      },
+    )
+
+  private def toProviderConfig(s: OAuthProviderSettings): OAuthProviderConfig =
+    OAuthProviderConfig(
+      clientId = s.clientId,
+      clientSecret = s.clientSecret,
+      authorizationUri = s.authorizationUri,
+      tokenUri = s.tokenUri,
+      userInfoUri = s.userInfoUri,
+      redirectUri = s.redirectUri,
+      scopes = s.scopes,
+    )
+
+  private val oauthServiceLayer: ZLayer[ConfigurationService, Nothing, OAuthService] =
+    ZLayer
+      .fromZIO(
+        ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+          val a = cfg.jorlan.auth
+          OAuthService.live(
+            googleConfig = a.google.map(toProviderConfig),
+            githubConfig = a.github.map(toProviderConfig),
+            discordConfig = a.discord.map(toProviderConfig),
+          )
+        },
+      ).flatten
 
   val live: ULayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
@@ -28,6 +64,10 @@ object EnvironmentBuilder {
       FlywayMigration.live,
       QuillRepositories.live,
       EventLogServiceImpl.live,
+      JorlanAuthServer.live,
+      authConfigLayer,
+      oauthServiceLayer,
+      OAuthStateStore.live(),
     )
 
 }

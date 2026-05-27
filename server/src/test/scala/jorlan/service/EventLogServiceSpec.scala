@@ -71,11 +71,15 @@ object EventLogServiceSpec extends ZIOSpecDefault {
         sorted.drop(filter.page * filter.pageSize).take(filter.pageSize)
       }
 
-    override def replaySession(sessionId: AgentSessionId): RepositoryTask[List[EventLog[Json]]] =
+    override def replaySession(
+      sessionId: AgentSessionId,
+      limit:     Int = 1000,
+    ): RepositoryTask[List[EventLog[Json]]] =
       store.get.map { events =>
         events
           .filter(_.sessionId.contains(sessionId))
           .sortBy(_.occurredAt)
+          .take(limit)
       }
 
   }
