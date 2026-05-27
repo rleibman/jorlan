@@ -62,7 +62,7 @@ object JorlanAuthServer {
           ): IO[AuthError, Option[User]] =
             ChannelType.fromProvider(provider) match {
               case Some(channelType) => repo.userByChannelIdentity(channelType, providerId).mapError(AuthError(_))
-              case None              => ZIO.succeed(None)
+              case None              => ZIO.none
             }
 
           override def createOAuthUser(

@@ -13,7 +13,7 @@ package jorlan
 import com.typesafe.config.Config as TypesafeConfig
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
-import zio.{IO, UIO, ZIO}
+import zio.{IO, UIO}
 
 import scala.language.unsafeNulls
 

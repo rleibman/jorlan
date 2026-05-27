@@ -24,12 +24,14 @@ trait PermissionService {
   def upsertRole(role: Role):       IO[JorlanError, Role]
   def deleteRole(id:   RoleId):     IO[JorlanError, Long]
   def assignRole(
-    userId: UserId,
-    roleId: RoleId,
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId] = None,
   ): IO[JorlanError, Unit]
   def removeRole(
-    userId: UserId,
-    roleId: RoleId,
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId] = None,
   ):                                                  IO[JorlanError, Unit]
   def searchPermissions(s:         PermissionSearch): IO[JorlanError, List[Permission]]
   def upsertPermission(permission: Permission):       IO[JorlanError, Permission]
@@ -47,7 +49,23 @@ trait PermissionService {
 
   def cancelApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Long]
 
+  /** Mark a pending [[ApprovalRequest]] as [[ApprovalStatus.Expired]]. */
+  def expireApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Long]
+
+  /** Mark all `Pending` [[ApprovalRequest]] rows whose `expiresAt` has passed as `Expired` in a single bulk update. */
+  def expireAllStaleApprovalRequests(): IO[JorlanError, Long]
+
   def getApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Option[ApprovalRequest]]
+
+  /** Return all `Pending` [[ApprovalRequest]] rows whose `expiresAt` has passed. */
+  def getExpiredApprovalRequests: IO[JorlanError, List[ApprovalRequest]]
+
+  /** Find an already-approved [[ApprovalRequest]] for a capability + user, optionally scoped to a session. */
+  def findApprovedRequest(
+    capability: CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[AgentSessionId],
+  ): IO[JorlanError, Option[ApprovalRequest]]
 
   /** Record an approval decision. Writes [[EventType.ApprovalGranted]] or [[EventType.ApprovalDenied]] event. */
   def recordApprovalDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision]
@@ -66,14 +84,18 @@ object PermissionService {
     ZIO.serviceWithZIO[PermissionService](_.deleteRole(id))
 
   def assignRole(
-    userId: UserId,
-    roleId: RoleId,
-  ): ZIO[PermissionService, JorlanError, Unit] = ZIO.serviceWithZIO[PermissionService](_.assignRole(userId, roleId))
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId] = None,
+  ): ZIO[PermissionService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[PermissionService](_.assignRole(userId, roleId, actorId))
 
   def removeRole(
-    userId: UserId,
-    roleId: RoleId,
-  ): ZIO[PermissionService, JorlanError, Unit] = ZIO.serviceWithZIO[PermissionService](_.removeRole(userId, roleId))
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId] = None,
+  ): ZIO[PermissionService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[PermissionService](_.removeRole(userId, roleId, actorId))
 
   def searchPermissions(s: PermissionSearch): ZIO[PermissionService, JorlanError, List[Permission]] =
     ZIO.serviceWithZIO[PermissionService](_.searchPermissions(s))
@@ -102,8 +124,24 @@ object PermissionService {
   def cancelApprovalRequest(id: ApprovalRequestId): ZIO[PermissionService, JorlanError, Long] =
     ZIO.serviceWithZIO[PermissionService](_.cancelApprovalRequest(id))
 
+  def expireApprovalRequest(id: ApprovalRequestId): ZIO[PermissionService, JorlanError, Long] =
+    ZIO.serviceWithZIO[PermissionService](_.expireApprovalRequest(id))
+
+  def expireAllStaleApprovalRequests(): ZIO[PermissionService, JorlanError, Long] =
+    ZIO.serviceWithZIO[PermissionService](_.expireAllStaleApprovalRequests())
+
   def getApprovalRequest(id: ApprovalRequestId): ZIO[PermissionService, JorlanError, Option[ApprovalRequest]] =
     ZIO.serviceWithZIO[PermissionService](_.getApprovalRequest(id))
+
+  def getExpiredApprovalRequests: ZIO[PermissionService, JorlanError, List[ApprovalRequest]] =
+    ZIO.serviceWithZIO[PermissionService](_.getExpiredApprovalRequests)
+
+  def findApprovedRequest(
+    capability: CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[AgentSessionId],
+  ): ZIO[PermissionService, JorlanError, Option[ApprovalRequest]] =
+    ZIO.serviceWithZIO[PermissionService](_.findApprovedRequest(capability, userId, sessionId))
 
   def recordApprovalDecision(decision: ApprovalDecision): ZIO[PermissionService, JorlanError, ApprovalDecision] =
     ZIO.serviceWithZIO[PermissionService](_.recordApprovalDecision(decision))

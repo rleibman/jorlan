@@ -9,7 +9,7 @@
  */
 
 package ai
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 
 case class LangChainConfig(
   enabled:          Boolean = false,
@@ -19,4 +19,4 @@ case class LangChainConfig(
   qdrantRPCPort:    Int = 6334,
   maxDND5eMonsters: Option[Int] = None, // Some(0) will disable reading of monsters, None will be the same as no limit
 )
-// $COVERAGE-ON
+// $COVERAGE-ON$

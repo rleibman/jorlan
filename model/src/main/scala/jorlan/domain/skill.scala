@@ -12,8 +12,8 @@ package jorlan.domain
 
 import jorlan.Codecs.given
 import just.semver.SemVer
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 

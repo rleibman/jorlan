@@ -11,8 +11,8 @@
 package jorlan.domain
 
 import jorlan.Codecs.given
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -101,7 +101,7 @@ enum ApprovalStatus derives JsonEncoder, JsonDecoder {
   * `ApprovalMode` is not `Persistent` or `Denied`.
   *
   * @param riskClass
-  *   0–5 risk classification; higher means more dangerous. Influences required approval mode.
+  *   Risk classification; higher means more dangerous. Influences required approval mode.
   * @param status
   *   Mutable; transitions through `Pending → Approved | Denied | Expired | Cancelled`.
   */
@@ -112,7 +112,7 @@ case class ApprovalRequest(
   agentId:         Option[AgentId],
   requestorUserId: UserId,
   sessionId:       Option[AgentSessionId],
-  riskClass:       Int,
+  riskClass:       RiskClass,
   status:          ApprovalStatus,
   createdAt:       Instant,
   expiresAt:       Option[Instant],

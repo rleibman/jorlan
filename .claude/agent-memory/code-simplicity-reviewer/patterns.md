@@ -40,6 +40,17 @@ type: project
 - `EventLogServiceSpec` and `EventLogServiceIntegrationSpec` each declare `private val now = Instant.now()` at class level, evaluated once at spec construction. Tests that share the same `now` across parallel runs are not affected since the value is frozen. Pattern is fine.
 - All five test files in the EventLog suite use positional `EventLog[T](EventLogId.empty, …, None, None, None, None, None, now)` constructors with 6 explicit `None`s. A test helper `def emptyEvent[R](eventType, resource)` would reduce noise significantly.
 
+## Phase 5 Capability Kernel Observations (2026-05-27)
+- `CapabilityEvaluatorImpl.evaluate` uses 3-level nested `if/else` inside a for-comprehension; can be flattened with a recursive helper or short-circuit ZIO chain.
+- `ApprovalPolicyEngineImpl.decide` has 4 `-> AuthorizationResult.Allowed` cases in a row; grouping them saves 3 lines and signals intent more clearly.
+- `ApprovalPolicyEngineImpl` uses `isInstanceOf[AuthorizationResult.Denied]` in test assertions — use `==` or pattern match for exhaustive safety.
+- `CapabilityKernelSpec`: `new RiskClassifierImpl` instantiated 18 times in separate tests; should be a `val` shared in `riskClassifierSuite` scope.
+- `CapabilityKernelSpec`: 7 `PendingApproval` tests use identical `result match { case PendingApproval(_, Mode) => true; case _ => false }` pattern; `assertTrue(result.isInstanceOf[...])` is insufficient (doesn't check mode); a helper `assertPending(mode)` would deduplicate.
+- `ApprovalServiceImpl.expireStaleRequests` fetches all expired requests then maps over them sequentially; `ZIO.foreachPar` or a bulk-expire DB method would be more efficient for large sets.
+- `ApprovalServiceImpl.live` ZLayer uses explicit lambda instead of `ZLayer.derive` — acceptable but verbose.
+- `RiskClassifierImpl.classify` uses `Option.get(_._2)` via `.map(_._2)` after `.find`; idiom is correct and readable.
+- `loadExistingApprovals` uses `grant.approvalMode == ApprovalMode.Once || grant.approvalMode == ApprovalMode.Session` — a named helper `requiresPreload` on `ApprovalMode` or a `Set` membership check would be cleaner.
+
 ## Simplification Patterns Applied / Suggested
 - Shared `runQ` helper in a base Quill repo class would reduce per-method boilerplate significantly
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders

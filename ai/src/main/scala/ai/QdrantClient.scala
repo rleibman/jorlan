@@ -9,7 +9,7 @@
  */
 
 package ai
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 
 import io.qdrant.client.grpc.Collections
 import io.qdrant.client.grpc.Common.Filter
@@ -71,4 +71,4 @@ case class QdrantClient(jclient: JavaQdrantClient) {
   }
 
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$

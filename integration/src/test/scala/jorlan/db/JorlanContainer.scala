@@ -68,7 +68,7 @@ object JorlanContainer {
   private val configFromContainerLayer: ZLayer[MariaDBContainer, Throwable, ConfigurationService] =
     ZLayer.fromZIO(
       ZIO.serviceWithZIO[MariaDBContainer] { container =>
-        migrateWithFlyway(container).map { _ =>
+        migrateWithFlyway(container).as {
           val config = makeConfig(container)
           new ConfigurationService {
             override val appConfig: IO[ConfigurationError, AppConfig] = ZIO.succeed(config)

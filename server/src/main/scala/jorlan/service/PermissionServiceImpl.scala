@@ -27,8 +27,9 @@ private class PermissionServiceImpl(
   override def deleteRole(id: RoleId): IO[JorlanError, Long] = repo.deleteRole(id)
 
   override def assignRole(
-    userId: UserId,
-    roleId: RoleId,
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId],
   ): IO[JorlanError, Unit] =
     for {
       now <- Clock.instant
@@ -37,7 +38,7 @@ private class PermissionServiceImpl(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.RoleAssigned,
-          actorId = None,
+          actorId = actorId,
           agentId = None,
           sessionId = None,
           resource = Some(roleId),
@@ -48,8 +49,9 @@ private class PermissionServiceImpl(
     } yield ()
 
   override def removeRole(
-    userId: UserId,
-    roleId: RoleId,
+    userId:  UserId,
+    roleId:  RoleId,
+    actorId: Option[UserId],
   ): IO[JorlanError, Unit] =
     for {
       now <- Clock.instant
@@ -58,7 +60,7 @@ private class PermissionServiceImpl(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.RoleRevoked,
-          actorId = None,
+          actorId = actorId,
           agentId = None,
           sessionId = None,
           resource = Some(roleId),
@@ -70,14 +72,77 @@ private class PermissionServiceImpl(
 
   override def searchPermissions(s: PermissionSearch): IO[JorlanError, List[Permission]] = repo.searchPermissions(s)
 
-  override def upsertPermission(permission: Permission): IO[JorlanError, Permission] = repo.upsertPermission(permission)
+  override def upsertPermission(permission: Permission): IO[JorlanError, Permission] =
+    for {
+      now   <- Clock.instant
+      saved <- repo.upsertPermission(permission)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.PermissionGranted,
+          actorId = None,
+          agentId = None,
+          sessionId = None,
+          resource = Some(saved.id),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield saved
 
-  override def deletePermission(id: PermissionId): IO[JorlanError, Long] = repo.deletePermission(id)
+  override def deletePermission(id: PermissionId): IO[JorlanError, Long] =
+    for {
+      now   <- Clock.instant
+      count <- repo.deletePermission(id)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.PermissionRevoked,
+          actorId = None,
+          agentId = None,
+          sessionId = None,
+          resource = Some(id),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield count
 
   override def upsertCapabilityGrant(grant: CapabilityGrant): IO[JorlanError, CapabilityGrant] =
-    repo.upsertCapabilityGrant(grant)
+    for {
+      now   <- Clock.instant
+      saved <- repo.upsertCapabilityGrant(grant)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.CapabilityGranted,
+          actorId = saved.grantorId,
+          agentId = None,
+          sessionId = None,
+          resource = Some(saved.id),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield saved
 
-  override def revokeGrant(id: CapabilityGrantId): IO[JorlanError, Long] = repo.revokeGrant(id)
+  override def revokeGrant(id: CapabilityGrantId): IO[JorlanError, Long] =
+    for {
+      now   <- Clock.instant
+      count <- repo.revokeGrant(id)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.CapabilityRevoked,
+          actorId = None,
+          agentId = None,
+          sessionId = None,
+          resource = Some(id),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield count
 
   override def searchGrants(s: GrantSearch): IO[JorlanError, List[CapabilityGrant]] = repo.searchGrants(s)
 
@@ -104,16 +169,30 @@ private class PermissionServiceImpl(
 
   override def cancelApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Long] = repo.cancelApprovalRequest(id)
 
+  override def expireApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Long] = repo.expireApprovalRequest(id)
+
+  override def expireAllStaleApprovalRequests(): IO[JorlanError, Long] = repo.expireAllStaleApprovalRequests()
+
   override def getApprovalRequest(id: ApprovalRequestId): IO[JorlanError, Option[ApprovalRequest]] =
     repo.getApprovalRequest(id)
+
+  override def getExpiredApprovalRequests: IO[JorlanError, List[ApprovalRequest]] = repo.getExpiredApprovalRequests
+
+  override def findApprovedRequest(
+    capability: CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[AgentSessionId],
+  ): IO[JorlanError, Option[ApprovalRequest]] = repo.findApprovedRequest(capability, userId, sessionId)
 
   override def recordApprovalDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
     for {
       now   <- Clock.instant
       saved <- repo.recordApprovalDecision(decision)
-      eventType =
-        if (saved.decision == ApprovalStatus.Approved) EventType.ApprovalGranted
-        else EventType.ApprovalDenied
+      eventType = saved.decision match {
+        case ApprovalStatus.Approved => EventType.ApprovalGranted
+        case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled | ApprovalStatus.Pending =>
+          EventType.ApprovalDenied
+      }
       _ <- eventLog.log(
         EventLog(
           id = EventLogId.empty,

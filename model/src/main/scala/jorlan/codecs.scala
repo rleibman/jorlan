@@ -15,8 +15,8 @@ import zio.http.MediaType
 import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.net.URI
-import java.security.{KeyFactory, PublicKey}
 import java.security.spec.X509EncodedKeySpec
+import java.security.{KeyFactory, PublicKey}
 import java.util.Base64
 import scala.language.unsafeNulls
 

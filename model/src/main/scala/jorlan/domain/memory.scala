@@ -10,8 +10,8 @@
 
 package jorlan.domain
 
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 

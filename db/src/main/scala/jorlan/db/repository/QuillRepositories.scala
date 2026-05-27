@@ -1062,6 +1062,87 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
       ),
     )
 
+  override def expireApprovalRequest(id: ApprovalRequestId): RepositoryTask[Long] =
+    exec(
+      qc.ctx.run(
+        qApprovalRequests
+          .filter(_.id == lift(id))
+          .update(_.status -> lift(ApprovalStatus.Expired)),
+      ),
+    )
+
+  override def getGrantsForCapability(
+    userId:     UserId,
+    capability: CapabilityName,
+  ): RepositoryTask[List[CapabilityGrant]] =
+    for {
+      now <- Clock.instant
+      grants <- exec(
+        qc.ctx.run(
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(userId) &&
+              g.capability == lift(capability) &&
+              (g.approvalMode == lift(ApprovalMode.Denied) ||
+                g.expiresAt.isEmpty ||
+                g.expiresAt.exists(_ > lift(now))),
+          ),
+        ),
+      )
+    } yield grants
+
+  override def hasDirectPermission(
+    userId:   UserId,
+    resource: String,
+    action:   String,
+  ): RepositoryTask[Boolean] =
+    exec(
+      qc.ctx.run(
+        qPermissions
+          .filter(p =>
+            p.resource == lift(resource) &&
+              p.action == lift(action) &&
+              p.userId.contains(lift(userId)),
+          )
+          .nonEmpty,
+      ),
+    )
+
+  override def hasRolePermission(
+    userId:   UserId,
+    resource: String,
+    action:   String,
+  ): RepositoryTask[Boolean] =
+    exec(
+      qc.ctx.run(
+        (for {
+          ur <- qUserRoles.filter(_.userId == lift(userId))
+          p <- qPermissions.join(p =>
+            p.roleId.contains(ur.roleId) &&
+              p.resource == lift(resource) &&
+              p.action == lift(action),
+          )
+        } yield p).nonEmpty,
+      ),
+    )
+
+  override def findApprovedRequest(
+    capability: CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[AgentSessionId],
+  ): RepositoryTask[Option[ApprovalRequest]] =
+    exec(
+      qc.ctx
+        .run(
+          qApprovalRequests
+            .filter(r =>
+              r.capability == lift(capability) &&
+                r.requestorUserId == lift(userId) &&
+                r.status == lift(ApprovalStatus.Approved) &&
+                lift(sessionId).forall(sid => r.sessionId.contains(sid)),
+            ),
+        ).map(_.headOption),
+    )
+
   override def recordApprovalDecision(decision: ApprovalDecision): RepositoryTask[ApprovalDecision] =
     exec(
       qc.ctx
@@ -1076,6 +1157,18 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
 
   override def deletePermission(id: PermissionId): RepositoryTask[Long] =
     exec(qc.ctx.run(qPermissions.filter(_.id == lift(id)).delete))
+
+  override def expireAllStaleApprovalRequests(): RepositoryTask[Long] =
+    for {
+      now <- Clock.instant
+      count <- exec(
+        qc.ctx.run(
+          qApprovalRequests
+            .filter(r => r.status == lift(ApprovalStatus.Pending) && r.expiresAt.exists(_ <= lift(now)))
+            .update(_.status -> lift(ApprovalStatus.Expired)),
+        ),
+      )
+    } yield count
 
   override def getExpiredApprovalRequests: RepositoryTask[List[ApprovalRequest]] =
     for {

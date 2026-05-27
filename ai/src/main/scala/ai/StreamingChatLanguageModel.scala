@@ -9,7 +9,7 @@
  */
 
 package ai
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 
 import dev.langchain4j.agent.tool.ToolSpecification
 import dev.langchain4j.data.message.{AiMessage, ChatMessage, UserMessage}
@@ -119,4 +119,4 @@ trait StreamingChatLanguageModel {
   }
 
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$
