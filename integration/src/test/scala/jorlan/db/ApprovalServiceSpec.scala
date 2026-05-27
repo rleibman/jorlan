@@ -17,7 +17,6 @@ import jorlan.domain.*
 import jorlan.service.*
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.time.Instant
 
@@ -128,6 +127,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       },
       test("expireStaleRequests returns count of expired requests") {
         for {
+          _        <- TestClock.setTime(T0)
           userRepo <- ZIO.service[UserZIORepository]
           permRepo <- ZIO.service[PermissionZIORepository]
           svc      <- ZIO.service[ApprovalService]
