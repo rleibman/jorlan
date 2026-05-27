@@ -12,8 +12,8 @@ package jorlan
 
 import jorlan.domain.*
 import jorlan.service.EventLogFilter
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -331,9 +331,40 @@ trait PermissionRepository[F[_]] {
   def searchGrants(s:                  GrantSearch):       F[List[CapabilityGrant]]
   def createApprovalRequest(req:       ApprovalRequest):   F[ApprovalRequest]
   def cancelApprovalRequest(id:        ApprovalRequestId): F[Long]
+  def expireApprovalRequest(id:        ApprovalRequestId): F[Long]
+  def expireAllStaleApprovalRequests():                    F[Long]
   def recordApprovalDecision(decision: ApprovalDecision):  F[ApprovalDecision]
   def getApprovalRequest(id:           ApprovalRequestId): F[Option[ApprovalRequest]]
   def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
+
+  /** All non-denied, non-expired [[CapabilityGrant]] rows for a user + capability, used by the evaluator. */
+  def getGrantsForCapability(
+    userId:     UserId,
+    capability: domain.CapabilityName,
+  ): F[List[domain.CapabilityGrant]]
+
+  /** Returns `true` if the user has a direct (user-scoped) [[Permission]] row matching `resource` and `action`. */
+  def hasDirectPermission(
+    userId:   UserId,
+    resource: String,
+    action:   String,
+  ): F[Boolean]
+
+  /** Returns `true` if any role assigned to the user has a [[Permission]] row matching `resource` and `action`. */
+  def hasRolePermission(
+    userId:   UserId,
+    resource: String,
+    action:   String,
+  ): F[Boolean]
+
+  /** Finds an already-approved [[ApprovalRequest]] for the given capability + user, optionally scoped to a session
+    * (used for `Session` and `Once` approval modes).
+    */
+  def findApprovedRequest(
+    capability: domain.CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[domain.AgentSessionId],
+  ): F[Option[domain.ApprovalRequest]]
 
 }
 

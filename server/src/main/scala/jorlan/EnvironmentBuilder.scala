@@ -10,15 +10,14 @@
 
 package jorlan
 
-import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
+import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import jorlan.auth.JorlanAuthServer
-import zio.durationInt
 import jorlan.db.repository.QuillRepositories
 import jorlan.db.{ConfigurationServiceImpl, FlywayMigration}
 import jorlan.domain.{ConnectionId, User, UserId}
-import jorlan.service.{EventLogService, EventLogServiceImpl}
-import zio.{ULayer, ZIO, ZLayer}
+import jorlan.service.*
+import zio.{ULayer, ZIO, ZLayer, durationInt}
 
 object EnvironmentBuilder {
 
@@ -64,6 +63,11 @@ object EnvironmentBuilder {
       FlywayMigration.live,
       QuillRepositories.live,
       EventLogServiceImpl.live,
+      PermissionServiceImpl.live,
+      RiskClassifierImpl.live,
+      CapabilityEvaluatorImpl.live,
+      ApprovalPolicyEngineImpl.live,
+      ApprovalServiceImpl.live,
       JorlanAuthServer.live,
       authConfigLayer,
       oauthServiceLayer,

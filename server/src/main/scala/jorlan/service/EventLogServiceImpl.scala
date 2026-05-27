@@ -13,7 +13,6 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.{EventLogZIORepository, RepositoryTask}
 import jorlan.domain.*
-import jorlan.EventLogRepository
 import zio.*
 import zio.json.JsonEncoder
 import zio.json.ast.Json

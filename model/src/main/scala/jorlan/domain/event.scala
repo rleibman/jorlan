@@ -10,8 +10,8 @@
 
 package jorlan.domain
 
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -26,6 +26,9 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case UserConnected, UserDisconnected
   case MemoryWritten, MemoryExpired
   case RoleAssigned, RoleRevoked
+  case CapabilityAllowed, CapabilityDenied
+  case CapabilityGranted, CapabilityRevoked
+  case PermissionGranted, PermissionRevoked
   case SystemAlert
 
 }

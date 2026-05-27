@@ -10,8 +10,8 @@
 
 package jorlan
 
-import _root_.auth.{AuthConfig, AuthError, AuthServer, ExpiredToken, InvalidToken, Session}
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import _root_.auth.*
 import jorlan.db.FlywayMigration
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.service.EventLogService
@@ -21,7 +21,7 @@ import zio.logging.backend.SLF4J
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
-  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore
+  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & jorlan.service.ApprovalService
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {

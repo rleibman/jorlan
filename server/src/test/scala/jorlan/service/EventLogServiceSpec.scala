@@ -61,7 +61,7 @@ object EventLogServiceSpec extends ZIOSpecDefault {
           .filter(e => filter.sessionId.forall(sid => e.sessionId.contains(sid)))
           .filter(e => filter.from.forall(f => !e.occurredAt.isBefore(f)))
           .filter(e => filter.to.forall(t => !e.occurredAt.isAfter(t)))
-        val sorted = filter.sorts.headOption match {
+        val sorted = filter.sorts match {
           case Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Asc))  => filtered.sortBy(_.occurredAt)
           case Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Desc)) => filtered.sortBy(_.occurredAt).reverse
           case Some(Sort(EventLogOrder.Id, OrderDirection.Asc))          => filtered.sortBy(_.id.value)

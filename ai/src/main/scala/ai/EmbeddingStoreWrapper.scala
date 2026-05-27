@@ -10,6 +10,7 @@
 
 package ai
 
+// $COVERAGE-OFF$
 import dev.langchain4j.store.embedding.qdrant.QdrantEmbeddingStore
 import zio.*
 
@@ -44,4 +45,4 @@ object EmbeddingStoreWrapper {
     } yield ret
 
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$

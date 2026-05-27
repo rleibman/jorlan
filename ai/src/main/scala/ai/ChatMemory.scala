@@ -9,7 +9,7 @@
  */
 
 package ai
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 
 import dev.langchain4j.data.message.ChatMessage
 
@@ -84,4 +84,4 @@ trait ChatMemory {
   def clear(): Unit
 
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$

@@ -15,8 +15,6 @@ import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 
-import java.time.Instant
-
 /** Application service for agent and session lifecycle.
   *
   * All session-state mutations (start, complete, fail) write to the event log so every agent execution is auditable.

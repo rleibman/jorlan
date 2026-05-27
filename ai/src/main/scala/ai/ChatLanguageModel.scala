@@ -10,7 +10,7 @@
 
 package ai
 
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 import dev.langchain4j.data.message.{AiMessage, ChatMessage}
 import dev.langchain4j.model.chat.response.ChatResponse
 import dev.langchain4j.model.output.Response
@@ -37,4 +37,4 @@ trait ChatLanguageModel {
   def chat(messages: util.List[ChatMessage]): ChatResponse
 
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$

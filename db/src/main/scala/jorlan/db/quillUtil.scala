@@ -213,3 +213,9 @@ given MappedEncoding[String, ApprovalMode] = MappedEncoding(ApprovalMode.valueOf
 given MappedEncoding[ApprovalMode, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, ApprovalStatus] = MappedEncoding(ApprovalStatus.valueOf)
 given MappedEncoding[ApprovalStatus, String] = MappedEncoding(_.toString)
+given MappedEncoding[Int, RiskClass] =
+  MappedEncoding(level =>
+    // Quill interop: throw is required — see note above.
+    RiskClass.fromLevel(level).getOrElse(throw new IllegalArgumentException(s"Unknown RiskClass level: $level")),
+  )
+given MappedEncoding[RiskClass, Int] = MappedEncoding(_.level)

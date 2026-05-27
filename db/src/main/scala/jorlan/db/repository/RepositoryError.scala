@@ -15,10 +15,6 @@ import jorlan.JorlanError
 import java.sql.{SQLNonTransientException, SQLTransientException}
 
 /** Typed error returned by all ZIO repository operations.
-  *
-  * @param isTransient
-  *   `true` when the underlying SQL exception is transient (e.g. deadlock, timeout) and the caller may safely retry;
-  *   `false` for permanent failures (e.g. constraint violation).
   */
 object RepositoryError {
 

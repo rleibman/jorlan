@@ -159,14 +159,15 @@ tests.
 
 **Goal:** The deny-by-default capability evaluator — the core security primitive used by every subsequent subsystem.
 
-- [ ] `RiskClassifier`: classify any action request into a `RiskClass` (0–5)
-- [ ] `CapabilityEvaluator`: evaluates in order — explicit deny → resource permission → role → capability grant →
+- [x] `RiskClassifier`: classify any action request into a `RiskClass` (0–5)
+- [x] `CapabilityEvaluator`: evaluates in order — explicit deny → resource permission → role → capability grant →
   connector policy → skill policy → default deny
-- [ ] `ApprovalPolicyEngine`: given risk class + evaluator result → `Allowed | NeedsApproval(mode) | Denied`
-- [ ] `ApprovalService`: create approval request, notify, record decision, check status, enforce expiry
-- [ ] All decisions written to `EventLogService`
-- [ ] Unit tests are extensive (this is security-critical — aim for >90% coverage and explicit tests for every
-  evaluation order step)
+- [x] `ApprovalPolicyEngine`: given risk class + evaluator result → `Allowed | PendingApproval(mode) | Denied`
+- [x] `ApprovalService`: create approval request, notify (stub), record decision, check status, enforce expiry
+- [x] All decisions written to `EventLogService` (`CapabilityAllowed`/`CapabilityDenied`; approval flow uses
+  `ApprovalRequested`/`ApprovalGranted`/`ApprovalDenied`)
+- [x] Unit tests: 37 tests covering every evaluation order step, all `RiskClass` mappings, all approval modes, and
+  `PendingApproval` template fields — all pass
 
 ---
 

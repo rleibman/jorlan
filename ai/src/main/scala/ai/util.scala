@@ -9,7 +9,7 @@
  */
 
 package ai
-// $COVERAGE-OFF
+// $COVERAGE-OFF$
 
 import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.data.segment.TextSegment
@@ -187,4 +187,4 @@ def chat(
     res   <- ZIO.attemptBlocking(model.chat(request).aiMessage().text())
   } yield res
 }
-// $COVERAGE-ON
+// $COVERAGE-ON$
