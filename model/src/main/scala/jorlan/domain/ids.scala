@@ -355,3 +355,18 @@ object EmbeddingModelId {
   given JsonDecoder[EmbeddingModelId] = JsonDecoder[String].map(EmbeddingModelId(_))
 
 }
+
+/** Identifies a client connection (browser tab, API client, etc.) within an authenticated session.
+  *
+  * Backed by a UUID string so it can be generated client-side or server-side without coordination.
+  */
+opaque type ConnectionId = String
+object ConnectionId {
+
+  def apply(s:   String): ConnectionId = s
+  def random:             ConnectionId = java.util.UUID.randomUUID().toString
+  extension (id: ConnectionId) { def value: String = id }
+  given JsonEncoder[ConnectionId] = JsonEncoder[String].contramap(_.value)
+  given JsonDecoder[ConnectionId] = JsonDecoder[String].map(ConnectionId(_))
+
+}

@@ -182,6 +182,27 @@ trait UserRepository[F[_]] {
   def upsertChannelIdentity(ci:    ChannelIdentity):   F[ChannelIdentity]
   def deleteChannelIdentity(id:    ChannelIdentityId): F[Long]
 
+  /** Verify credentials via `SHA2(password, 512)` comparison in SQL. Returns the user if active and credentials match,
+    * `None` otherwise. The plain-text password never leaves this method.
+    */
+  def login(
+    email:    String,
+    password: String,
+  ): F[Option[User]]
+
+  def userByEmail(email: String): F[Option[User]]
+
+  def changePassword(
+    id:          UserId,
+    newPassword: String,
+  ): F[Unit]
+
+  /** Look up the user linked to a specific OAuth provider identity. */
+  def userByChannelIdentity(
+    channelType:   ChannelType,
+    channelUserId: String,
+  ): F[Option[User]]
+
 }
 
 /** Repository for [[jorlan.domain.Agent]] definitions and [[jorlan.domain.AgentSession]] runtime records.

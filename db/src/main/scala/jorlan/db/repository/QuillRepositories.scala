@@ -225,6 +225,10 @@ private class QuillUserRepository(qc: QuillCtx) extends UserZIORepository {
               (
                 t,
                 e,
+              ) => t.email -> e.email,
+              (
+                t,
+                e,
               ) => t.active -> e.active,
               (
                 t,
@@ -252,10 +256,60 @@ private class QuillUserRepository(qc: QuillCtx) extends UserZIORepository {
                 t,
                 e,
               ) => t.verified -> e.verified,
+              (
+                t,
+                e,
+              ) => t.providerData -> e.providerData,
             )
             .returningGenerated(_.id),
         ).map(id => ci.copy(id = id)),
     )
+
+  override def login(
+    email:    String,
+    password: String,
+  ): RepositoryTask[Option[User]] = {
+    inline def sql =
+      quote(
+        infix"SELECT id FROM `user` WHERE email = ${lift(email)} AND hashedPassword = SHA2(${lift(password)}, 512) AND active = 1 LIMIT 1"
+          .as[Query[Long]],
+      )
+    for {
+      ids  <- exec(qc.ctx.run(sql))
+      user <- ids.headOption.fold(ZIO.succeed(None: Option[User]))(id => getById(UserId(id)))
+    } yield user
+  }
+
+  override def userByEmail(email: String): RepositoryTask[Option[User]] =
+    exec(qc.ctx.run(qUsers.filter(_.email.contains(lift(email))).take(1))).map(_.headOption)
+
+  override def changePassword(
+    id:          UserId,
+    newPassword: String,
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx.run(
+        quote(
+          infix"UPDATE `user` SET hashedPassword = SHA2(${lift(newPassword)}, 512) WHERE id = ${lift(id)}"
+            .as[Update[Long]],
+        ),
+      ),
+    ).unit
+
+  override def userByChannelIdentity(
+    channelType:   ChannelType,
+    channelUserId: String,
+  ): RepositoryTask[Option[User]] =
+    exec(
+      qc.ctx.run(
+        (for {
+          ci <- qChannelIdentities.filter(ci =>
+            ci.channelType == lift(channelType) && ci.channelUserId == lift(channelUserId),
+          )
+          user <- qUsers.join(_.id == ci.userId)
+        } yield user).take(1),
+      ),
+    ).map(_.headOption)
 
   override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
     exec(qc.ctx.run(qChannelIdentities.filter(_.id == lift(id)).delete))

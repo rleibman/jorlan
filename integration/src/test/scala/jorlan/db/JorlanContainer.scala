@@ -25,6 +25,7 @@ import jorlan.db.repository.{
 }
 import jorlan.{
   AppConfig,
+  AuthSettings,
   ConfigurationError,
   ConfigurationService,
   DataSourceConfig,
@@ -79,6 +80,7 @@ object JorlanContainer {
         ),
         flyway = FlywayConfig(enabled = false),
         http = HttpConfig(),
+        auth = AuthSettings(secretKey = "test-secret-key-for-integration-tests"),
       ),
     )
 

@@ -54,10 +54,34 @@ case class HttpConfig(
   port: Int = 8080,
 )
 
+/** Raw config for a single OAuth 2.0 provider, read from `application.conf`. Converted to
+  * `auth.oauth.OAuthProviderConfig` during environment assembly.
+  */
+case class OAuthProviderSettings(
+  clientId:         String,
+  clientSecret:     String,
+  authorizationUri: String,
+  tokenUri:         String,
+  userInfoUri:      String,
+  redirectUri:      String,
+  scopes:           List[String],
+)
+
+/** Authentication and session configuration. */
+case class AuthSettings(
+  secretKey:        String,
+  accessTtlMinutes: Int = 60,
+  refreshTtlDays:   Int = 30,
+  google:           Option[OAuthProviderSettings] = None,
+  github:           Option[OAuthProviderSettings] = None,
+  discord:          Option[OAuthProviderSettings] = None,
+)
+
 case class JorlanConfig(
   db:     DatabaseConfig,
   flyway: FlywayConfig = FlywayConfig(),
   http:   HttpConfig = HttpConfig(),
+  auth:   AuthSettings,
 )
 
 /** Root application configuration. Wraps all subsystem configs. The connection pool is created in the `db` module. */
