@@ -17,6 +17,7 @@ import zio.test.*
 import zio.test.Assertion.*
 
 import java.time.Instant
+import java.util.UUID
 
 object DomainSpec extends ZIOSpecDefault {
 
@@ -166,15 +167,15 @@ object DomainSpec extends ZIOSpecDefault {
 
   private val connectionIdSuite = suite("ConnectionId")(
     test("apply and value roundtrip") {
-      val id = ConnectionId("abc-123")
-      assertTrue(id.value == "abc-123")
+      val id = ConnectionId(UUID.fromString("6a1fb8f4-a9ae-4bf2-9c79-5931488d6bf8"))
+      assertTrue(id.value.toString == "6a1fb8f4-a9ae-4bf2-9c79-5931488d6bf8")
     },
     test("unsafeRandom generates a non-empty UUID string") {
       val id = ConnectionId.unsafeRandom
-      assertTrue(id.value.length == 36)
+      assertTrue(id.value.toString.length == 36)
     },
     test("JSON roundtrip") {
-      val id = ConnectionId("my-conn")
+      val id = ConnectionId.unsafeRandom
       assertTrue(id.toJson.fromJson[ConnectionId].contains(id))
     },
   )

@@ -48,8 +48,8 @@ object Jorlan extends ZIOApp {
           cause.squash match {
             case ExpiredToken(msg, _) => Response.unauthorized(msg)
             case InvalidToken(msg, _) => Response.unauthorized(msg)
-            case e: AuthError => Response.internalServerError(e.getMessage)
-            case e => Response.internalServerError(e.getMessage)
+            case e: AuthError => Response.internalServerError(Option(e.getMessage).getOrElse("Authentication error"))
+            case e => Response.internalServerError(Option(e.getMessage).getOrElse("Internal server error"))
           }
         }
     }

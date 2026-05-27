@@ -13,6 +13,9 @@ package jorlan.domain
 import zio.json.{JsonDecoder, JsonEncoder}
 import zio.{UIO, ZIO}
 
+import java.util.UUID
+import scala.util.Try
+
 /** Opaque primary-key types, one per entity.
   *
   * Each type is backed by a `Long` (MariaDB auto-increment) and is zero-cost at runtime. The companion provides `apply`
@@ -361,14 +364,17 @@ object EmbeddingModelId {
   *
   * Backed by a UUID string so it can be generated client-side or server-side without coordination.
   */
-opaque type ConnectionId = String // TODO ConnectionId should wrap a UUID, not a string
+opaque type ConnectionId = UUID
 object ConnectionId {
 
-  def apply(s:   String): ConnectionId = s
-  def unsafeRandom:       ConnectionId = java.util.UUID.randomUUID().toString
-  val randomZIO:          UIO[ConnectionId] = ZIO.randomWith(_.nextUUID.map(u => ConnectionId(u.toString)))
-  extension (id: ConnectionId) { def value: String = id }
-  given JsonEncoder[ConnectionId] = JsonEncoder[String].contramap(_.value)
-  given JsonDecoder[ConnectionId] = JsonDecoder[String].map(ConnectionId(_))
+  def apply(s:   UUID): ConnectionId = s
+  def unsafeRandom:     ConnectionId = java.util.UUID.randomUUID()
+  val randomZIO:        UIO[ConnectionId] = ZIO.randomWith(_.nextUUID.map(u => ConnectionId(u)))
+  extension (id: ConnectionId) { def value: UUID = id }
+  given JsonEncoder[ConnectionId] = JsonEncoder[String].contramap(_.value.toString)
+  given JsonDecoder[ConnectionId] =
+    JsonDecoder[String].mapOrFail(s =>
+      Try(ConnectionId(UUID.fromString(s))).toEither.left.map(t => s"Invalid ConnectionId UUID string: ${t.getMessage}"),
+    )
 
 }

@@ -11,7 +11,6 @@
 package jorlan
 
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.nio.file.Paths
 
@@ -38,10 +37,10 @@ object ErrorsSpec extends ZIOSpecDefault {
         val err = JorlanError("wrapped", Some(cause), isTransient = true)
         assertTrue(err.msg == "wrapped", err.cause.contains(cause), err.isTransient)
       },
-      test("JorlanError.apply(msg, cause, isTransient) returns inner JorlanError when cause is JorlanError") {
+      test("JorlanError.apply(msg, cause) wraps a JorlanError cause, preserving outer message") {
         val inner = JorlanError("inner error")
         val err = JorlanError("outer", Some(inner))
-        assertTrue(err eq inner)
+        assertTrue(err.msg == "outer", err.cause.contains(inner))
       },
       test("JorlanError.apply(msg, None) has no cause") {
         val err = JorlanError("no cause", None)

@@ -22,7 +22,57 @@ private class PermissionServiceImpl(
 
   override def searchRoles(s: RoleSearch): IO[JorlanError, List[Role]] = repo.searchRoles(s)
 
+  override def upsertRole(role: Role): IO[JorlanError, Role] = repo.upsertRole(role)
+
+  override def deleteRole(id: RoleId): IO[JorlanError, Long] = repo.deleteRole(id)
+
+  override def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): IO[JorlanError, Unit] =
+    for {
+      now <- Clock.instant
+      _   <- repo.assignRole(userId, roleId)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.RoleAssigned,
+          actorId = None,
+          agentId = None,
+          sessionId = None,
+          resource = Some(roleId),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield ()
+
+  override def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): IO[JorlanError, Unit] =
+    for {
+      now <- Clock.instant
+      _   <- repo.removeRole(userId, roleId)
+      _ <- eventLog.log(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.RoleRevoked,
+          actorId = None,
+          agentId = None,
+          sessionId = None,
+          resource = Some(roleId),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield ()
+
   override def searchPermissions(s: PermissionSearch): IO[JorlanError, List[Permission]] = repo.searchPermissions(s)
+
+  override def upsertPermission(permission: Permission): IO[JorlanError, Permission] = repo.upsertPermission(permission)
+
+  override def deletePermission(id: PermissionId): IO[JorlanError, Long] = repo.deletePermission(id)
 
   override def upsertCapabilityGrant(grant: CapabilityGrant): IO[JorlanError, CapabilityGrant] =
     repo.upsertCapabilityGrant(grant)

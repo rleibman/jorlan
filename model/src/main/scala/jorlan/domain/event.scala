@@ -25,6 +25,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case ApprovalRequested, ApprovalGranted, ApprovalDenied
   case UserConnected, UserDisconnected
   case MemoryWritten, MemoryExpired
+  case RoleAssigned, RoleRevoked
   case SystemAlert
 
 }

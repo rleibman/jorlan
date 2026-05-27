@@ -161,16 +161,17 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with U
   override def search(s: UserSearch): RepositoryTask[List[User]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qUsers.filter(u => lift(s.active).forall(a => u.active == a))
-    inline def run(q: Query[User]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(UserOrder.Id, OrderDirection.Desc))          => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(UserOrder.DisplayName, OrderDirection.Asc))  => run(base.sortBy(_.displayName)(Ord.asc))
-      case Some(Sort(UserOrder.DisplayName, OrderDirection.Desc)) => run(base.sortBy(_.displayName)(Ord.desc))
-      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Asc))    => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Desc))   => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                      => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qUsers.filter(u => lift(s.active).forall(a => u.active == a)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[User]] = s.sorts match {
+      case Some(Sort(UserOrder.Id, OrderDirection.Desc))          => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(UserOrder.DisplayName, OrderDirection.Asc))  => quote(limited.sortBy(_.displayName)(Ord.asc))
+      case Some(Sort(UserOrder.DisplayName, OrderDirection.Desc)) => quote(limited.sortBy(_.displayName)(Ord.desc))
+      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Asc))    => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(UserOrder.CreatedAt, OrderDirection.Desc))   => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                      => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsert(user: User): RepositoryTask[User] =
@@ -288,16 +289,17 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def search(s: AgentSearch): RepositoryTask[List[Agent]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qAgents
-    inline def run(q: Query[Agent]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(AgentOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(AgentOrder.Name, OrderDirection.Asc))       => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(AgentOrder.Name, OrderDirection.Desc))      => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                     => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qAgents)
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Agent]] = s.sorts match {
+      case Some(Sort(AgentOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(AgentOrder.Name, OrderDirection.Asc))       => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(AgentOrder.Name, OrderDirection.Desc))      => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(AgentOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsert(agent: Agent): RepositoryTask[Agent] =
@@ -336,14 +338,15 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchSessions(s: AgentSessionSearch): RepositoryTask[List[AgentSession]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qAgentSessions.filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid))
-    inline def run(q: Query[AgentSession]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(AgentSessionOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                            => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qAgentSessions.filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[AgentSession]] = s.sorts match {
+      case Some(Sort(AgentSessionOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                            => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertSession(session: AgentSession): RepositoryTask[AgentSession] =
@@ -380,14 +383,15 @@ private class QuillConversationRepository(qc: QuillCtx) extends QuillRepoBase(qc
   override def search(s: ConversationSearch): RepositoryTask[List[Conversation]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qConversations.filter(_.sessionId == lift(s.sessionId))
-    inline def run(q: Query[Conversation]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(ConversationOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Asc))  => run(base.sortBy(_.startedAt)(Ord.asc))
-      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Desc)) => run(base.sortBy(_.startedAt)(Ord.desc))
-      case _                                                            => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qConversations.filter(_.sessionId == lift(s.sessionId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Conversation]] = s.sorts match {
+      case Some(Sort(ConversationOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.startedAt)(Ord.asc))
+      case Some(Sort(ConversationOrder.StartedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.startedAt)(Ord.desc))
+      case _                                                            => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def create(conversation: Conversation): RepositoryTask[Conversation] =
@@ -400,14 +404,15 @@ private class QuillConversationRepository(qc: QuillCtx) extends QuillRepoBase(qc
   override def searchMessages(s: MessageSearch): RepositoryTask[List[Message]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qMessages.filter(_.conversationId == lift(s.conversationId))
-    inline def run(q: Query[Message]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(MessageOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                       => run(base.sortBy(_.createdAt)(Ord.asc))
+    val base = quote(qMessages.filter(_.conversationId == lift(s.conversationId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Message]] = s.sorts match {
+      case Some(Sort(MessageOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(MessageOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                       => quote(limited.sortBy(_.createdAt)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def addMessage(message: Message): RepositoryTask[Message] =
@@ -432,18 +437,19 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def search(s: SkillSearch): RepositoryTask[List[Skill]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qSkills
-    inline def run(q: Query[Skill]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(SkillOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(SkillOrder.Name, OrderDirection.Asc))       => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(SkillOrder.Name, OrderDirection.Desc))      => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(SkillOrder.Tier, OrderDirection.Asc))       => run(base.sortBy(_.tier)(Ord.asc))
-      case Some(Sort(SkillOrder.Tier, OrderDirection.Desc))      => run(base.sortBy(_.tier)(Ord.desc))
-      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                     => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qSkills)
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Skill]] = s.sorts match {
+      case Some(Sort(SkillOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(SkillOrder.Name, OrderDirection.Asc))       => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(SkillOrder.Name, OrderDirection.Desc))      => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(SkillOrder.Tier, OrderDirection.Asc))       => quote(limited.sortBy(_.tier)(Ord.asc))
+      case Some(Sort(SkillOrder.Tier, OrderDirection.Desc))      => quote(limited.sortBy(_.tier)(Ord.desc))
+      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(SkillOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsert(skill: Skill): RepositoryTask[Skill] =
@@ -476,16 +482,17 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qSkillVersions.filter(_.skillId == lift(s.skillId))
-    inline def run(q: Query[SkillVersion]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Asc))    => run(base.sortBy(_.version)(Ord.asc))
-      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Desc))   => run(base.sortBy(_.version)(Ord.desc))
-      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                            => run(base.sortBy(_.version)(Ord.asc))
+    val base = quote(qSkillVersions.filter(_.skillId == lift(s.skillId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[SkillVersion]] = s.sorts match {
+      case Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Asc))    => quote(limited.sortBy(_.version)(Ord.asc))
+      case Some(Sort(SkillVersionOrder.Version, OrderDirection.Desc))   => quote(limited.sortBy(_.version)(Ord.desc))
+      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                            => quote(limited.sortBy(_.version)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertVersion(v: SkillVersion): RepositoryTask[SkillVersion] =
@@ -514,16 +521,19 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchConnectors(s: ConnectorSearch): RepositoryTask[List[ConnectorInstance]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qConnectorInstances
-    inline def run(q: Query[ConnectorInstance]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(ConnectorOrder.Id, OrderDirection.Desc))            => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(ConnectorOrder.Name, OrderDirection.Asc))           => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(ConnectorOrder.Name, OrderDirection.Desc))          => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Asc))  => run(base.sortBy(_.connectorType)(Ord.asc))
-      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Desc)) => run(base.sortBy(_.connectorType)(Ord.desc))
-      case _                                                             => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qConnectorInstances)
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[ConnectorInstance]] = s.sorts match {
+      case Some(Sort(ConnectorOrder.Id, OrderDirection.Desc))   => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Asc))  => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Desc)) => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Asc)) =>
+        quote(limited.sortBy(_.connectorType)(Ord.asc))
+      case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Desc)) =>
+        quote(limited.sortBy(_.connectorType)(Ord.desc))
+      case _ => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertConnector(ci: ConnectorInstance): RepositoryTask[ConnectorInstance] =
@@ -565,24 +575,26 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
   override def search(s: MemorySearch): RepositoryTask[List[MemoryRecord]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base =
+    val base = quote(
       qMemoryRecords
         .filter(r => r.scope == lift(s.scope))
         .filter(r => lift(s.userId).forall(uid => r.userId.contains(uid)))
         .filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid)))
         .filter(r => lift(s.agentId).forall(aid => r.agentId.contains(aid)))
-        .filter(r => lift(s.key).forall(k => r.recordKey == k))
-    inline def run(q: Query[MemoryRecord]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(MemoryOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Asc))  => run(base.sortBy(_.recordKey)(Ord.asc))
-      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Desc)) => run(base.sortBy(_.recordKey)(Ord.desc))
-      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Asc))  => run(base.sortBy(_.updatedAt)(Ord.asc))
-      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) => run(base.sortBy(_.updatedAt)(Ord.desc))
-      case _                                                      => run(base.sortBy(_.id)(Ord.asc))
+        .filter(r => lift(s.key).forall(k => r.recordKey == k)),
+    )
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[MemoryRecord]] = s.sorts match {
+      case Some(Sort(MemoryOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Asc))  => quote(limited.sortBy(_.recordKey)(Ord.asc))
+      case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Desc)) => quote(limited.sortBy(_.recordKey)(Ord.desc))
+      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.updatedAt)(Ord.asc))
+      case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.updatedAt)(Ord.desc))
+      case _                                                      => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
@@ -663,23 +675,22 @@ private class QuillEventLogRepository(qc: QuillCtx) extends QuillRepoBase(qc) wi
   override def search(filter: EventLogFilter): RepositoryTask[List[EventLog[Json]]] = {
     val offset = filter.page * filter.pageSize
     val ps = filter.pageSize
-    inline def base =
+    val base = quote(
       qEventLogs
         .filter(e => lift(filter.eventType).forall(t => e.eventType == t))
         .filter(e => lift(filter.agentId).forall(id => e.agentId.contains(id)))
         .filter(e => lift(filter.sessionId).forall(sid => e.sessionId.contains(sid)))
         .filter(e => lift(filter.from).forall(f => e.occurredAt >= f))
-        .filter(e => lift(filter.to).forall(t => e.occurredAt <= t))
-    inline def run(q: Query[EventLogRow]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))).map(_.map(fromRow)))
-    filter.sorts match {
-      case Some(sort) if sort.orderType == EventLogOrder.OccurredAt && sort.direction == OrderDirection.Asc =>
-        run(base.sortBy(_.occurredAt)(Ord.asc))
-      case Some(sort) if sort.orderType == EventLogOrder.Id && sort.direction == OrderDirection.Asc =>
-        run(base.sortBy(_.id)(Ord.asc))
-      case Some(sort) if sort.orderType == EventLogOrder.Id && sort.direction == OrderDirection.Desc =>
-        run(base.sortBy(_.id)(Ord.desc))
-      case _ => run(base.sortBy(_.occurredAt)(Ord.desc))
+        .filter(e => lift(filter.to).forall(t => e.occurredAt <= t)),
+    )
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[EventLogRow]] = filter.sorts match {
+      case Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Asc)) => quote(limited.sortBy(_.occurredAt)(Ord.asc))
+      case Some(Sort(EventLogOrder.Id, OrderDirection.Asc))         => quote(limited.sortBy(_.id)(Ord.asc))
+      case Some(Sort(EventLogOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case _                                                        => quote(limited.sortBy(_.occurredAt)(Ord.desc))
     }
+    exec(qc.ctx.run(sorted).map(_.map(fromRow)))
   }
 
   override def replaySession(
@@ -747,12 +758,13 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
   override def searchTriggers(s: TriggerSearch): RepositoryTask[List[SchedulerTrigger]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qSchedulerTriggers.filter(_.jobId == lift(s.jobId))
-    inline def run(q: Query[SchedulerTrigger]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(TriggerOrder.Id, OrderDirection.Desc)) => run(base.sortBy(_.id)(Ord.desc))
-      case _                                                => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qSchedulerTriggers.filter(_.jobId == lift(s.jobId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[SchedulerTrigger]] = s.sorts match {
+      case Some(Sort(TriggerOrder.Id, OrderDirection.Desc)) => quote(limited.sortBy(_.id)(Ord.desc))
+      case _                                                => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger] =
@@ -793,16 +805,17 @@ private class QuillArtifactRepository(qc: QuillCtx) extends QuillRepoBase(qc) wi
   override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qArtifacts.filter(_.workspaceId.contains(lift(s.workspaceId)))
-    inline def run(q: Query[Artifact]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))       => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc))      => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                        => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qArtifacts.filter(_.workspaceId.contains(lift(s.workspaceId))))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Artifact]] = s.sorts match {
+      case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))       => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc))      => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                        => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsert(artifact: Artifact): RepositoryTask[Artifact] =
@@ -846,16 +859,17 @@ private class QuillArtifactRepository(qc: QuillCtx) extends QuillRepoBase(qc) wi
   override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qWorkspaces.filter(_.ownerId == lift(s.ownerId))
-    inline def run(q: Query[Workspace]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(WorkspaceOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Asc))       => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Desc))      => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                         => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qWorkspaces.filter(_.ownerId == lift(s.ownerId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Workspace]] = s.sorts match {
+      case Some(Sort(WorkspaceOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Asc))       => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(WorkspaceOrder.Name, OrderDirection.Desc))      => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(WorkspaceOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                         => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] =
@@ -890,36 +904,109 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def searchRoles(s: RoleSearch): RepositoryTask[List[Role]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base =
-      for {
-        ur   <- qUserRoles.filter(_.userId == lift(s.userId))
-        role <- qRoles.join(_.id == ur.roleId)
-      } yield role
-    inline def run(q: Query[Role]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(RoleOrder.Name, OrderDirection.Asc))  => run(base.sortBy(_.name)(Ord.asc))
-      case Some(Sort(RoleOrder.Name, OrderDirection.Desc)) => run(base.sortBy(_.name)(Ord.desc))
-      case Some(Sort(RoleOrder.Id, OrderDirection.Desc))   => run(base.sortBy(_.id)(Ord.desc))
-      case _                                               => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(for {
+      ur   <- qUserRoles.filter(_.userId == lift(s.userId))
+      role <- qRoles.join(_.id == ur.roleId)
+    } yield role)
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Role]] = s.sorts match {
+      case Some(Sort(RoleOrder.Name, OrderDirection.Asc))  => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(RoleOrder.Name, OrderDirection.Desc)) => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(RoleOrder.Id, OrderDirection.Desc))   => quote(limited.sortBy(_.id)(Ord.desc))
+      case _                                               => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
+
+  override def upsertRole(role: Role): RepositoryTask[Role] =
+    if (role.id.value == 0L) {
+      exec(
+        qc.ctx
+          .run(qRoles.insertValue(lift(role)).returningGenerated(_.id))
+          .map(id => role.copy(id = id)),
+      )
+    } else {
+      exec(
+        qc.ctx
+          .run(
+            qRoles
+              .filter(_.id == lift(role.id))
+              .update(
+                _.name        -> lift(role.name),
+                _.description -> lift(role.description),
+              ),
+          ).as(role),
+      )
+    }
+
+  override def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qUserRoles
+            .insertValue(lift(UserRoleRow(userId, roleId)))
+            .onConflictIgnore,
+        ).unit,
+    )
+
+  override def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qUserRoles
+            .filter(r => r.userId == lift(userId) && r.roleId == lift(roleId))
+            .delete,
+        ).unit,
+    )
+
+  override def upsertPermission(permission: Permission): RepositoryTask[Permission] =
+    if (permission.id.value == 0L) {
+      exec(
+        qc.ctx
+          .run(qPermissions.insertValue(lift(permission)).returningGenerated(_.id))
+          .map(id => permission.copy(id = id)),
+      )
+    } else {
+      exec(
+        qc.ctx
+          .run(
+            qPermissions
+              .filter(_.id == lift(permission.id))
+              .update(
+                _.roleId   -> lift(permission.roleId),
+                _.userId   -> lift(permission.userId),
+                _.resource -> lift(permission.resource),
+                _.action   -> lift(permission.action),
+                _.scope    -> lift(permission.scope),
+              ),
+          ).as(permission),
+      )
+    }
 
   override def searchPermissions(s: PermissionSearch): RepositoryTask[List[Permission]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base =
+    val base = quote(
       qPermissions
         .filter(p => lift(s.roleId).forall(rid => p.roleId.contains(rid)))
-        .filter(p => lift(s.userId).forall(uid => p.userId.contains(uid)))
-    inline def run(q: Query[Permission]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(PermissionOrder.Id, OrderDirection.Desc))       => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(PermissionOrder.Resource, OrderDirection.Asc))  => run(base.sortBy(_.resource)(Ord.asc))
-      case Some(Sort(PermissionOrder.Resource, OrderDirection.Desc)) => run(base.sortBy(_.resource)(Ord.desc))
-      case Some(Sort(PermissionOrder.Action, OrderDirection.Asc))    => run(base.sortBy(_.action)(Ord.asc))
-      case Some(Sort(PermissionOrder.Action, OrderDirection.Desc))   => run(base.sortBy(_.action)(Ord.desc))
-      case _                                                         => run(base.sortBy(_.id)(Ord.asc))
+        .filter(p => lift(s.userId).forall(uid => p.userId.contains(uid))),
+    )
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[Permission]] = s.sorts match {
+      case Some(Sort(PermissionOrder.Id, OrderDirection.Desc))       => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(PermissionOrder.Resource, OrderDirection.Asc))  => quote(limited.sortBy(_.resource)(Ord.asc))
+      case Some(Sort(PermissionOrder.Resource, OrderDirection.Desc)) => quote(limited.sortBy(_.resource)(Ord.desc))
+      case Some(Sort(PermissionOrder.Action, OrderDirection.Asc))    => quote(limited.sortBy(_.action)(Ord.asc))
+      case Some(Sort(PermissionOrder.Action, OrderDirection.Desc))   => quote(limited.sortBy(_.action)(Ord.desc))
+      case _                                                         => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def upsertCapabilityGrant(grant: CapabilityGrant): RepositoryTask[CapabilityGrant] =
@@ -948,14 +1035,15 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def searchGrants(s: GrantSearch): RepositoryTask[List[CapabilityGrant]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    inline def base = qCapabilityGrants.filter(_.granteeId == lift(s.userId))
-    inline def run(q: Query[CapabilityGrant]) = exec(qc.ctx.run(q.drop(lift(offset)).take(lift(ps))))
-    s.sorts match {
-      case Some(Sort(GrantOrder.Id, OrderDirection.Desc))        => run(base.sortBy(_.id)(Ord.desc))
-      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc))  => run(base.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) => run(base.sortBy(_.createdAt)(Ord.desc))
-      case _                                                     => run(base.sortBy(_.id)(Ord.asc))
+    val base = quote(qCapabilityGrants.filter(_.granteeId == lift(s.userId)))
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
+      case Some(Sort(GrantOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+      case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
     }
+    exec(qc.ctx.run(sorted))
   }
 
   override def createApprovalRequest(req: ApprovalRequest): RepositoryTask[ApprovalRequest] =

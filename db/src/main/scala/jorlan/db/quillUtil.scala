@@ -28,8 +28,8 @@ import scala.language.unsafeNulls
 
 /** Constructs an unmanaged [[HikariDataSource]] from [[AppConfig]].
   *
-  * This allocates a datasource and may throw during configuration or initialization. Prefer
-  * [[managedDataSource]] when a scoped, lifecycle-safe API is needed.
+  * This allocates a datasource and may throw during configuration or initialization. Prefer [[managedDataSource]] when
+  * a scoped, lifecycle-safe API is needed.
   */
 def makeDataSource(config: AppConfig): HikariDataSource = {
   val c = config.jorlan.db.dataSource
@@ -41,8 +41,8 @@ def makeDataSource(config: AppConfig): HikariDataSource = {
   hc.setMaximumPoolSize(c.maximumPoolSize)
   hc.setMinimumIdle(c.minimumIdle)
   hc.setConnectionTimeout(c.connectionTimeoutMillis)
-  hc.setIdleTimeout(600000) // TODO move this to config, default is fine
-  hc.setKeepaliveTime(300000) // TODO move this to config, default is fine
+  hc.setIdleTimeout(c.idleTimeoutMillis)
+  hc.setKeepaliveTime(c.keepaliveTimeMillis)
   hc.setAutoCommit(true)
   new HikariDataSource(hc)
 }

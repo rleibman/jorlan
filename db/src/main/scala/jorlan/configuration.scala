@@ -26,6 +26,8 @@ case class DataSourceConfig(
   maximumPoolSize:         Int = 10,
   minimumIdle:             Int = 2,
   connectionTimeoutMillis: Long = 30000,
+  idleTimeoutMillis:       Long = 600000,
+  keepaliveTimeMillis:     Long = 300000,
 )
 
 case class DatabaseConfig(dataSource: DataSourceConfig)

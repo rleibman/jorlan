@@ -312,9 +312,19 @@ trait ArtifactRepository[F[_]] {
   */
 trait PermissionRepository[F[_]] {
 
-  def searchRoles(s:                   RoleSearch):        F[List[Role]]
+  def searchRoles(s:   RoleSearch): F[List[Role]]
+  def upsertRole(role: Role):       F[Role]
+  def deleteRole(id:   RoleId):     F[Long]
+  def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): F[Unit]
+  def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ):                                                       F[Unit]
   def searchPermissions(s:             PermissionSearch):  F[List[Permission]]
-  def deleteRole(id:                   RoleId):            F[Long]
+  def upsertPermission(permission:     Permission):        F[Permission]
   def deletePermission(id:             PermissionId):      F[Long]
   def upsertCapabilityGrant(grant:     CapabilityGrant):   F[CapabilityGrant]
   def revokeGrant(id:                  CapabilityGrantId): F[Long]

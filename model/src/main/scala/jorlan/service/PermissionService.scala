@@ -20,8 +20,20 @@ import zio.*
   */
 trait PermissionService {
 
-  def searchRoles(s:       RoleSearch):       IO[JorlanError, List[Role]]
-  def searchPermissions(s: PermissionSearch): IO[JorlanError, List[Permission]]
+  def searchRoles(s:   RoleSearch): IO[JorlanError, List[Role]]
+  def upsertRole(role: Role):       IO[JorlanError, Role]
+  def deleteRole(id:   RoleId):     IO[JorlanError, Long]
+  def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): IO[JorlanError, Unit]
+  def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ):                                                  IO[JorlanError, Unit]
+  def searchPermissions(s:         PermissionSearch): IO[JorlanError, List[Permission]]
+  def upsertPermission(permission: Permission):       IO[JorlanError, Permission]
+  def deletePermission(id:         PermissionId):     IO[JorlanError, Long]
 
   def upsertCapabilityGrant(grant: CapabilityGrant):   IO[JorlanError, CapabilityGrant]
   def revokeGrant(id:              CapabilityGrantId): IO[JorlanError, Long]
@@ -47,8 +59,30 @@ object PermissionService {
   def searchRoles(s: RoleSearch): ZIO[PermissionService, JorlanError, List[Role]] =
     ZIO.serviceWithZIO[PermissionService](_.searchRoles(s))
 
+  def upsertRole(role: Role): ZIO[PermissionService, JorlanError, Role] =
+    ZIO.serviceWithZIO[PermissionService](_.upsertRole(role))
+
+  def deleteRole(id: RoleId): ZIO[PermissionService, JorlanError, Long] =
+    ZIO.serviceWithZIO[PermissionService](_.deleteRole(id))
+
+  def assignRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): ZIO[PermissionService, JorlanError, Unit] = ZIO.serviceWithZIO[PermissionService](_.assignRole(userId, roleId))
+
+  def removeRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): ZIO[PermissionService, JorlanError, Unit] = ZIO.serviceWithZIO[PermissionService](_.removeRole(userId, roleId))
+
   def searchPermissions(s: PermissionSearch): ZIO[PermissionService, JorlanError, List[Permission]] =
     ZIO.serviceWithZIO[PermissionService](_.searchPermissions(s))
+
+  def upsertPermission(permission: Permission): ZIO[PermissionService, JorlanError, Permission] =
+    ZIO.serviceWithZIO[PermissionService](_.upsertPermission(permission))
+
+  def deletePermission(id: PermissionId): ZIO[PermissionService, JorlanError, Long] =
+    ZIO.serviceWithZIO[PermissionService](_.deletePermission(id))
 
   def upsertCapabilityGrant(grant: CapabilityGrant): ZIO[PermissionService, JorlanError, CapabilityGrant] =
     ZIO.serviceWithZIO[PermissionService](_.upsertCapabilityGrant(grant))
