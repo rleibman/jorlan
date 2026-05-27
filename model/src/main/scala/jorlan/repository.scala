@@ -337,7 +337,10 @@ trait PermissionRepository[F[_]] {
   def getApprovalRequest(id:           ApprovalRequestId): F[Option[ApprovalRequest]]
   def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
 
-  /** All non-denied, non-expired [[CapabilityGrant]] rows for a user + capability, used by the evaluator. */
+  /** All [[CapabilityGrant]] rows for a user + capability that are relevant to the evaluator: `Denied` grants are
+    * always included (they drive [[jorlan.domain.EvaluationResult.ExplicitDeny]]); non-`Denied` grants are filtered to
+    * those that have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
+    */
   def getGrantsForCapability(
     userId:     UserId,
     capability: domain.CapabilityName,

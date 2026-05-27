@@ -189,11 +189,9 @@ private class PermissionServiceImpl(
       now   <- Clock.instant
       saved <- repo.recordApprovalDecision(decision)
       eventType = saved.decision match {
-        case ApprovalStatus.Approved  => EventType.ApprovalGranted
-        case ApprovalStatus.Rejected  => EventType.ApprovalDenied
-        case ApprovalStatus.Expired   => EventType.ApprovalDenied
-        case ApprovalStatus.Cancelled => EventType.ApprovalDenied
-        case ApprovalStatus.Pending   => EventType.ApprovalDenied
+        case ApprovalStatus.Approved => EventType.ApprovalGranted
+        case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled | ApprovalStatus.Pending =>
+          EventType.ApprovalDenied
       }
       _ <- eventLog.log(
         EventLog(

@@ -1075,12 +1075,20 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
     userId:     UserId,
     capability: CapabilityName,
   ): RepositoryTask[List[CapabilityGrant]] =
-    exec(
-      qc.ctx.run(
-        qCapabilityGrants
-          .filter(g => g.granteeId == lift(userId) && g.capability == lift(capability)),
-      ),
-    )
+    for {
+      now <- Clock.instant
+      grants <- exec(
+        qc.ctx.run(
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(userId) &&
+              g.capability == lift(capability) &&
+              (g.approvalMode == lift(ApprovalMode.Denied) ||
+                g.expiresAt.isEmpty ||
+                g.expiresAt.exists(_ > lift(now))),
+          ),
+        ),
+      )
+    } yield grants
 
   override def hasDirectPermission(
     userId:   UserId,

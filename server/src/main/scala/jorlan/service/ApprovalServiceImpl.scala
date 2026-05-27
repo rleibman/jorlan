@@ -66,11 +66,16 @@ private class ApprovalServiceImpl(
     evaluation: EvaluationResult,
   ): IO[JorlanError, List[ApprovalRequest]] =
     evaluation match {
+      case EvaluationResult.CapabilityGrantAllows(grant) if grant.approvalMode == ApprovalMode.Once =>
+        permissionService
+          .findApprovedRequest(request.capability, request.requestorId, None)
+          .map(_.toList)
       case EvaluationResult.CapabilityGrantAllows(grant)
-          if grant.approvalMode == ApprovalMode.Once || grant.approvalMode == ApprovalMode.Session =>
+          if grant.approvalMode == ApprovalMode.Session && request.sessionId.isDefined =>
         permissionService
           .findApprovedRequest(request.capability, request.requestorId, request.sessionId)
           .map(_.toList)
+      // Session mode with no sessionId: policy engine will deny anyway; skip the DB round-trip.
       case _ => ZIO.succeed(Nil)
     }
 
