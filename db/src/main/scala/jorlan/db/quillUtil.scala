@@ -26,7 +26,11 @@ import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.Base64
 import scala.language.unsafeNulls
 
-/** Constructs a [[HikariDataSource]] from [[AppConfig]]. Pure function — no resource tracking. */
+/** Constructs an unmanaged [[HikariDataSource]] from [[AppConfig]].
+  *
+  * This allocates a datasource and may throw during configuration or initialization. Prefer
+  * [[managedDataSource]] when a scoped, lifecycle-safe API is needed.
+  */
 def makeDataSource(config: AppConfig): HikariDataSource = {
   val c = config.jorlan.db.dataSource
   val hc = new HikariConfig()
