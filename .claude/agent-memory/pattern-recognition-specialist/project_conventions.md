@@ -31,11 +31,13 @@ type: project
 - `EnvironmentBuilder.live` uses `ZLayer.make` macro for compile-time graph resolution
 - `FlywayMigration.live` takes `ConfigurationService`, creates Flyway, wraps in `UIO` (swallows errors as log output)
 
-## Known Technical Debt
-- `EventLogRepository.search` does date filtering in-memory after fetching `limit` rows from DB — breaks pagination semantics
-- `model/configuration.scala` imports HikariCP and Quill — couples the domain layer to DB infrastructure
-- `AppConfig.dataSource` is a mutable `lazy val` creating a HikariDataSource — lifecycle not managed by ZIO
-- `PermissionRepository` has no `deleteRole`, `deletePermission`, `revokeGrant`, `getExpiredApprovalRequests` — incomplete for access revocation lifecycle
-- `SchedulerRepository` has no `deleteJob`/`deleteTrigger` — no cleanup path for completed jobs
-- `Permission.id` field is typed as `RoleId` rather than a dedicated `PermissionId` — misleading
-- `ChannelIdentity.id` field is typed as `UserId` — same reuse-of-wrong-type issue
+## Known Technical Debt (updated 2026-05-27)
+- `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
+- `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module
+- `QuillCtx.hds` is a raw `DataSource` created eagerly — pool lifecycle not managed by ZIO acquire/release
+- `PermissionRepository` has `revokeGrant`, `cancelApprovalRequest` — but no `deleteRole`, `deletePermission`, `getExpiredApprovalRequests`
+- `SchedulerRepository` now has `deleteJob`/`deleteTrigger` (corrected from prior notes)
+- No GraphQL API yet (phase-3 branch); `Jorlan.scala` only mounts health + auth routes
+- `EventLogService` exists but nothing calls it — no application service layer wires event logging
+- `CorrelationId` is implemented but has no call sites
+- Sort handling in every repository handles only `sorts.headOption`; secondary sorts silently ignored

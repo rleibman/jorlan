@@ -31,12 +31,7 @@ object JorlanError {
     msg:         String,
     cause:       Option[Throwable] = None,
     isTransient: Boolean = false,
-  ): JorlanError = {
-    cause match {
-      case Some(e: JorlanError) => e
-      case e                    => new JorlanError(msg, e, isTransient)
-    }
-  }
+  ): JorlanError = new JorlanError(msg, cause, isTransient)
 
 }
 

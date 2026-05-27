@@ -11,6 +11,7 @@
 package jorlan.domain
 
 import zio.json.{JsonDecoder, JsonEncoder}
+import zio.{UIO, ZIO}
 
 /** Opaque primary-key types, one per entity.
   *
@@ -360,11 +361,12 @@ object EmbeddingModelId {
   *
   * Backed by a UUID string so it can be generated client-side or server-side without coordination.
   */
-opaque type ConnectionId = String
+opaque type ConnectionId = String // TODO ConnectionId should wrap a UUID, not a string
 object ConnectionId {
 
   def apply(s:   String): ConnectionId = s
-  def random:             ConnectionId = java.util.UUID.randomUUID().toString
+  def unsafeRandom:       ConnectionId = java.util.UUID.randomUUID().toString
+  val randomZIO:          UIO[ConnectionId] = ZIO.randomWith(_.nextUUID.map(u => ConnectionId(u.toString)))
   extension (id: ConnectionId) { def value: String = id }
   given JsonEncoder[ConnectionId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[ConnectionId] = JsonDecoder[String].map(ConnectionId(_))

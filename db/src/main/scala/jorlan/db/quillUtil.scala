@@ -26,11 +26,7 @@ import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.Base64
 import scala.language.unsafeNulls
 
-/** Constructs a [[HikariDataSource]] from [[AppConfig]].
-  *
-  * Kept in the `db` module so `model` does not depend on HikariCP. The pool is unmanaged — callers are responsible for
-  * closing it on shutdown.
-  */
+/** Constructs a [[HikariDataSource]] from [[AppConfig]]. Pure function — no resource tracking. */
 def makeDataSource(config: AppConfig): HikariDataSource = {
   val c = config.jorlan.db.dataSource
   val hc = new HikariConfig()
@@ -41,9 +37,17 @@ def makeDataSource(config: AppConfig): HikariDataSource = {
   hc.setMaximumPoolSize(c.maximumPoolSize)
   hc.setMinimumIdle(c.minimumIdle)
   hc.setConnectionTimeout(c.connectionTimeoutMillis)
+  hc.setIdleTimeout(600000) // TODO move this to config, default is fine
+  hc.setKeepaliveTime(300000) // TODO move this to config, default is fine
   hc.setAutoCommit(true)
   new HikariDataSource(hc)
 }
+
+/** Constructs a [[HikariDataSource]] as a scoped resource — the pool is closed when the scope is released. */
+def managedDataSource(config: AppConfig): zio.ZIO[zio.Scope, Nothing, HikariDataSource] =
+  zio.ZIO.acquireRelease(
+    zio.ZIO.attempt(makeDataSource(config)).orDie,
+  )(ds => zio.ZIO.succeed(ds.close()))
 
 /** Quill / MariaDB utility: `Ordering[Instant]` is not provided by the standard library. Required for in-memory
   * post-filter comparisons in queries that Quill cannot translate directly.
@@ -114,17 +118,26 @@ given MappedEncoding[String, ModelId] = MappedEncoding(ModelId.apply)
 given MappedEncoding[ModelId, String] = MappedEncoding(_.value)
 given MappedEncoding[String, EmbeddingModelId] = MappedEncoding(EmbeddingModelId.apply)
 given MappedEncoding[EmbeddingModelId, String] = MappedEncoding(_.value)
+given MappedEncoding[String, CapabilityName] = MappedEncoding(CapabilityName.apply)
+given MappedEncoding[CapabilityName, String] = MappedEncoding(_.value)
 
-/** Quill `MappedEncoding`s for external library types stored as `VARCHAR`/`TEXT` in MariaDB. */
+/** Quill `MappedEncoding`s for external library types stored as `VARCHAR`/`TEXT` in MariaDB.
+  *
+  * Quill interop note: `MappedEncoding` has no typed-error variant — the decode function must either return a value or
+  * throw. All `throw` sites below are intentional and are caught by the `exec { ... }.mapError(RepositoryError(_))`
+  * boundary that wraps every query. Do not replace these with `Option` or `Either` returns — Quill will not compile.
+  */
 given MappedEncoding[Json, String] = MappedEncoding(_.toJson)
 given MappedEncoding[String, Json] =
   MappedEncoding(s =>
+    // Quill interop: throw is required — see note above.
     s.fromJson[Json].fold(error => throw new RuntimeException(s"Invalid JSON value: $error"), identity),
   )
 
 given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
 given MappedEncoding[String, Vector[Float]] =
   MappedEncoding(s =>
+    // Quill interop: throw is required — see note above.
     s.fromJson[Vector[Float]].fold(
         error => throw new RuntimeException(s"Invalid Vector[Float] JSON value: $error"),
         identity,
@@ -136,10 +149,12 @@ given MappedEncoding[String, URI] = MappedEncoding(s => URI.create(s))
 
 given MappedEncoding[SemVer, String] = MappedEncoding(_.render)
 given MappedEncoding[String, SemVer] =
+  // Quill interop: throw is required — see note above.
   MappedEncoding(s => SemVer.parse(s).fold(e => throw new RuntimeException(ParseError.render(e)), identity))
 
 given MappedEncoding[MediaType, String] = MappedEncoding(_.fullType)
 given MappedEncoding[String, MediaType] =
+  // Quill interop: throw is required — see note above.
   MappedEncoding { s =>
     MediaType
       .forContentType(s)
@@ -153,6 +168,7 @@ given MappedEncoding[PublicKey, String] =
     s"-----BEGIN PUBLIC KEY-----\n$b64\n-----END PUBLIC KEY-----"
   }
 given MappedEncoding[String, PublicKey] =
+  // Quill interop: throw is required — see note above.
   MappedEncoding { pem =>
     val cleaned = pem.replaceAll("-----[^-]+-----", "").replaceAll("\\s+", "")
     val bytes = Base64.getDecoder.decode(cleaned.nn)

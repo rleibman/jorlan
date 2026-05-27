@@ -48,10 +48,10 @@ object ChannelType {
 case class User(
   id:          UserId,
   displayName: String,
-  email:       Option[String] = None,
-  createdAt:   Instant,
-  updatedAt:   Instant,
-  active:      Boolean = true,
+  email: Option[String] = None, // TODO I know, big change, but make email required if we can get the email from oauth providers.
+  createdAt: Instant,
+  updatedAt: Instant,
+  active:    Boolean = true,
 ) derives JsonEncoder, JsonDecoder
 
 /** Links a [[User]] to their identity on a specific external channel (e.g. a Telegram chat ID or Slack member ID). One

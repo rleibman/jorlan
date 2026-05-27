@@ -31,7 +31,7 @@ object RepositorySpec extends ZIOSpecDefault {
       skillSuite,
       memorySuite,
       eventLogSuite,
-    ).provideLayerShared(JorlanContainer.repositoryLayer)
+    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
 
   // ─── User ────────────────────────────────────────────────────────────────
 

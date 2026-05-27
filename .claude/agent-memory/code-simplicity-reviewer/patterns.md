@@ -26,6 +26,13 @@ type: project
 - `EventLogRepository.search` applies `from`/`to` filters in-memory after SQL `take(limit)` — this means date filtering happens on an already-truncated result set; the limit applies before the date filter (potential correctness bug)
 - `ConfigurationServiceImpl.appConfig` is a `lazy val` on a `new ConfigurationService { ... }` — calling `.appConfig` twice returns the same cached `IO`, which is fine since `orDie` makes it a `UIO` internally but the declared type is `IO[ConfigurationError, AppConfig]`
 
+## Phase 3 GraphQL API Branch Observations (2026-05-27)
+- `QuillRepositories.scala` (~1500 lines): the dominant complexity driver is the `search` method duplication — each of the 9 repos has a sort-dispatch match block that repeats the full filtered query per case. The base query (filters + pagination) is identical within each repo; only the `.sortBy` call differs. This is the single highest-impact refactoring opportunity.
+- `getPendingJobs` in `QuillSchedulerRepository` (line 1041): the `scheduledAt <= now` check is done in-memory after SQL fetch. The Quill query already fetches only `Pending` jobs, but `now` is filtered in Scala after the result set is returned. This means all pending jobs are fetched from DB regardless of count. For large job tables this is a scalability issue; the filter should be pushed to SQL.
+- `upsertSession`, `upsertJob`, `upsertTrigger`, `upsertWorkspace`, `upsertCapabilityGrant` all share the same insert-vs-update dispatch: `if (x.id.value == 0L)`. This pattern is repeated 5 times. A named helper or a typeclass `HasId` approach could unify it.
+- `private def exec[A]` is copy-pasted identically into all 9 Quill repo classes (9 duplicates of 2 lines each).
+- EventLogRepository.search (line 945): the `from`/`to` Instant range filters are pushed to SQL correctly via `.filter`, unlike in some earlier reviews. No in-memory truncation issue here (previous concern was resolved).
+
 ## Phase 3 EventLog Observations (2026-05-26)
 - `InMemoryEventLogRepo` in unit tests intentionally mirrors the current `QuillEventLogRepository.search` semantics so unit tests exercise the same filter/order/limit behavior as production code without hitting the database. The duplication is acceptable but worth watching if search parameters expand.
 - `EventLogServiceImpl.replay` now relies on the repository's search ordering/filters rather than performing an additional in-memory re-sort. The important contract to keep documented is the ordering returned by `repo.search`, since `replay` depends on that behavior.

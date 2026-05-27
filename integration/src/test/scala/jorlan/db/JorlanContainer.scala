@@ -11,29 +11,8 @@
 package jorlan.db
 
 import com.dimafeng.testcontainers.MariaDBContainer
-import jorlan.db.repository.{
-  AgentZIORepository,
-  ArtifactZIORepository,
-  ConversationZIORepository,
-  EventLogZIORepository,
-  MemoryZIORepository,
-  PermissionZIORepository,
-  QuillRepositories,
-  SchedulerZIORepository,
-  SkillZIORepository,
-  UserZIORepository,
-}
-import jorlan.{
-  AppConfig,
-  AuthSettings,
-  ConfigurationError,
-  ConfigurationService,
-  DataSourceConfig,
-  DatabaseConfig,
-  FlywayConfig,
-  HttpConfig,
-  JorlanConfig,
-}
+import jorlan.db.repository.*
+import jorlan.*
 import org.flywaydb.core.Flyway
 import zio.*
 
@@ -76,6 +55,8 @@ object JorlanContainer {
             url = container.container.getJdbcUrl,
             user = container.container.getUsername,
             password = container.container.getPassword,
+            maximumPoolSize = 3,
+            minimumIdle = 1,
           ),
         ),
         flyway = FlywayConfig(enabled = false),
