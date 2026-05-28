@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+## Phase 6 GraphQL API — Coverage Gaps (added 2026-05-27)
+See dedicated section below.
+
 ## Package Coverage Summary (2026-05-27)
 - jorlan (model/domain): 34.72% — 265 statements
 - jorlan.auth: 0% — 59 statements (JorlanAuthServer.scala entirely untested)
@@ -84,6 +87,56 @@ metadata:
 - `recordDecision` delegates to permissionService.recordApprovalDecision
 - `expireStaleRequests` sums expired counts across multiple records
 - `expireStaleRequests` with empty result set → returns 0
+
+## Phase 6 GraphQL API Coverage Gaps
+
+### Queries — coverage
+- `users` — COVERED (test: "users query includes the seeded server user")
+- `user(id)` happy path — COVERED (test: "user(value) query returns a specific user")
+- `user(id)` NOT FOUND path — NOT TESTED (None result path)
+- `roles(userId)` — COVERED indirectly (test: "assignRole and roles(value) round-trip")
+- `role(id)` happy path — COVERED (test: "role(value) returns a specific role by id")
+- `role(id)` NOT FOUND path — NOT TESTED
+- `permissions(userId)` — COVERED (test: "grantPermission and permissions(value) round-trip")
+- `permissions(userId)` empty / no permissions — covered only via revokePermission test
+
+### Mutations — coverage
+- `createUser` — COVERED
+- `updateUser` — NOT TESTED (no test whatsoever)
+- `createRole` — COVERED
+- `assignRole` — COVERED
+- `revokeRole` — NOT TESTED (no test whatsoever)
+- `grantPermission` — COVERED
+- `revokePermission` — COVERED
+
+### Subscriptions
+- `approvalNotifications` — NOT TESTED (stub ZStream.empty; low priority until Phase 8)
+- `eventLogTail` — NOT TESTED (stub ZStream.empty; low priority until Phase 8)
+
+### Schema validation
+- Schema render sanity check — COVERED (test: "schema renders with expected types")
+
+### getRole (repository + service)
+- `PermissionRepository.getRole` — COVERED via role(id) GraphQL test and indirectly
+- `PermissionServiceImpl.getRole` — COVERED via role(id) GraphQL test
+- `getRole` NOT FOUND branch — NOT TESTED (only happy path tested)
+
+### Untested error paths (GraphQL layer)
+- `user(id)` for non-existent ID — None is returned but no test asserts this
+- `role(id)` for non-existent ID — None is returned but no test asserts this
+- `createUser` with duplicate email — no constraint violation test
+- `revokePermission(id)` for non-existent id — delete returns 0 but not asserted
+
+### JorlanRoutes.scala
+- HTTP route bindings: NOT TESTED via HTTP (all GraphQL tests bypass HTTP, use interpreter directly)
+- WebSocket subscription route: NOT TESTED
+- GraphiQL route: NOT TESTED
+
+### SchemaGen.scala
+- `main()` method: NOT TESTED (trivially calls render; low priority)
+
+### Jorlan.scala (server wiring)
+- Server startup + GraphQL route integration: NOT TESTED via HTTP end-to-end
 
 ## Patterns
 - No error-path tests anywhere in integration layer (constraint violations, duplicate keys, etc.)

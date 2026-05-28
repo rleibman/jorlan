@@ -7,6 +7,7 @@ type: project
 ## Critical
 - `model` module declares `quill-jdbc-zio`, `zio-http`, `zio-config-typesafe` as compile dependencies — violates module isolation; model should only need ZIO core and zio-json
 - `AppConfig.dataSource` is a `lazy val` creating a `HikariDataSource` — not managed by ZIO resource lifecycle; pool is never explicitly closed
+- Keep `JorlanAPI` environment types constrained to service-level abstractions (`UserService`, `PermissionService`, `CapabilityEvaluator`) and avoid reintroducing `db`-layer repository types into the GraphQL schema module
 
 ## Warnings
 - `EventLogRepository.search`: date range (`from`/`to`) filtered in-memory AFTER taking `limit` rows; if all `limit` rows fall outside the date range the caller gets empty results. Needs raw SQL or two-pass approach.

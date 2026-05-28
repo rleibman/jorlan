@@ -51,6 +51,12 @@ type: project
 - `RiskClassifierImpl.classify` uses `Option.get(_._2)` via `.map(_._2)` after `.find`; idiom is correct and readable.
 - `loadExistingApprovals` uses `grant.approvalMode == ApprovalMode.Once || grant.approvalMode == ApprovalMode.Session` — a named helper `requiresPreload` on `ApprovalMode` or a `Set` membership check would be cleaner.
 
+## Phase 6 GraphQL API Observations (2026-05-27)
+- `JorlanAPI`: User-repo queries use `.mapError(JorlanError(_))` while PermissionService queries use `.mapError(identity)` — inconsistent wrapping because `PermissionService` already returns `IO[JorlanError, _]` but `UserZIORepository` returns `IO[RepositoryError, _]`. The `JorlanError(_)` call is actually redundant in the user case because `RepositoryError extends JorlanError` — `.mapError(identity)` would compile and unify the error type without the wrapping. Worth verifying; if confirmed, all `.mapError(JorlanError(_))` calls in JorlanAPI can be changed to `.mapError(identity)`.
+- `JorlanAPI`: `createUser` and `updateUser` both call `Clock.instant` + `upsert` in a for-comprehension; only 2 lines each so no extraction needed, but the `now` timestamp passed to upsert for `updatedAt` is wrong on create — both `createdAt` and `updatedAt` are set to `now`, which is fine, but on update the `createdAt` is also overwritten with `now` which is likely a bug (see finding).
+- `JorlanAPI`: `ArgBuilder` for `Long`-parameter queries/mutations (e.g. `user: Long => ...`) uses Caliban's flattened-argument convention, not a wrapper `input:` type. The scaladoc in `GraphQLApiSpec` correctly explains this. No issue, but worth preserving the comment.
+- `Jorlan.scala`: Error handler in `handleErrorCause` has an `e: AuthError` catch-all branch before the final `case e` branch; the final `case e` is still needed for non-AuthError throwables, so this is correct, not dead code.
+
 ## Simplification Patterns Applied / Suggested
 - Shared `runQ` helper in a base Quill repo class would reduce per-method boilerplate significantly
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders

@@ -14,14 +14,16 @@ import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.*
 import jorlan.db.FlywayMigration
 import jorlan.domain.{ConnectionId, User, UserId}
-import jorlan.service.EventLogService
+import jorlan.graphql.JorlanRoutes
+import jorlan.service.{CapabilityEvaluator, EventLogService, PermissionService, UserService}
 import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
-  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & jorlan.service.ApprovalService
+  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore &
+  jorlan.service.ApprovalService & UserService & PermissionService & CapabilityEvaluator
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -42,8 +44,9 @@ object Jorlan extends ZIOApp {
       authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
       authR      <- authServer.authRoutes
       unauthR    <- authServer.unauthRoutes
+      graphqlR   <- JorlanRoutes.routes.orDie
     } yield {
-      ((healthRoutes ++ authR) @@ authServer.bearerSessionProvider ++ unauthR)
+      ((healthRoutes ++ authR ++ graphqlR) @@ authServer.bearerSessionProvider ++ unauthR)
         .handleErrorCause { cause =>
           cause.squash match {
             case ExpiredToken(msg, _) => Response.unauthorized(msg)

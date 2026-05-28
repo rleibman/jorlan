@@ -63,6 +63,7 @@ object EnvironmentBuilder {
       FlywayMigration.live,
       QuillRepositories.live,
       EventLogServiceImpl.live,
+      UserServiceImpl.live,
       PermissionServiceImpl.live,
       RiskClassifierImpl.live,
       CapabilityEvaluatorImpl.live,

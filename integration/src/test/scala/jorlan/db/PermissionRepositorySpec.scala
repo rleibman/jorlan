@@ -330,6 +330,12 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           byActionDesc.isEmpty,
         )
       },
+      test("getRole returns None for non-existent id") {
+        for {
+          repo   <- ZIO.service[PermissionZIORepository]
+          result <- repo.getRole(RoleId(999999L))
+        } yield assertTrue(result.isEmpty)
+      },
       test("searchRoles with sort variants returns empty gracefully") {
         for {
           userRepo <- ZIO.service[UserZIORepository]
