@@ -16,5 +16,5 @@ metadata:
 ### actorId not propagated from session context
 Several mutations that do write to the event log pass `actorId = None` rather than extracting the calling user's ID from `JorlanSession`. Pattern: check every event log write for proper actor attribution.
 
-### Authorization enforcement absent at resolver layer
-The capability kernel (Phase 5) exists but is not wired into GraphQL resolvers. There is no permission check before any mutation executes. The `bearerSessionProvider` establishes identity but does not enforce authorization. This is the most critical class of recurring issue to watch for.
+### Authorization enforcement at resolver layer must be preserved
+GraphQL mutations now enforce capability checks, so this is no longer an open gap in the current branch. Future reviews should verify that new or modified resolvers continue to authorize actions consistently and do not regress to relying on `bearerSessionProvider` for identity without an explicit capability check.

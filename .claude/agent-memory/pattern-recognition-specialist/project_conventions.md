@@ -41,7 +41,7 @@ type: project
 - `EventLogService` now wired in `PermissionServiceImpl` for role/permission mutations — partially resolved
 - `CorrelationId` is implemented but has no call sites
 - Sort handling in every repository handles only `sorts.headOption`; secondary sorts silently ignored
-- `JorlanAPI` bypasses service layer for user CRUD — uses `UserZIORepository` directly (no `UserService` yet)
-- `JorlanSession` is in GraphQL env type but never accessed in resolvers — authorization not yet enforced
+- `JorlanAPI` user CRUD now depends on `UserService` rather than calling `UserZIORepository` directly (previously flagged — now resolved)
+- Mutation resolvers do read `JorlanSession` for capability checks; authorization wiring exists, though broader coverage may still need review
 - `QuickAdapter(interp)` instantiated twice in `JorlanRoutes` (once per handler call) — minor inefficiency
 - `extractLongField` in `GraphQLApiSpec` uses regex on JSON strings — fragile; breaks on field reordering

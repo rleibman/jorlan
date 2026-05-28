@@ -249,8 +249,8 @@ object JorlanAPI {
           grantPermission = input =>
             for {
               _ <- ZIO
-                .unless(input.userId.isDefined || input.roleId.isDefined)(
-                  ZIO.fail(JorlanError("A permission must target either a userId or a roleId")),
+                .unless(input.userId.isDefined != input.roleId.isDefined)(
+                  ZIO.fail(JorlanError("A permission must target exactly one of userId or roleId")),
                 )
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.grant", actorId)
