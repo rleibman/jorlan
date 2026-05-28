@@ -27,6 +27,7 @@ private class UserServiceImpl(
   override def createUser(
     displayName: String,
     email:       Option[String],
+    actorId:     Option[UserId] = None,
   ): IO[JorlanError, User] =
     for {
       now  <- Clock.instant
@@ -35,7 +36,7 @@ private class UserServiceImpl(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.UserCreated,
-          actorId = None,
+          actorId = actorId,
           agentId = None,
           sessionId = None,
           resource = Some(user.id),
@@ -50,6 +51,7 @@ private class UserServiceImpl(
     displayName: String,
     email:       Option[String],
     active:      Boolean,
+    actorId:     Option[UserId] = None,
   ): IO[JorlanError, User] =
     for {
       now      <- Clock.instant
@@ -59,7 +61,7 @@ private class UserServiceImpl(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.UserUpdated,
-          actorId = None,
+          actorId = actorId,
           agentId = None,
           sessionId = None,
           resource = Some(user.id),

@@ -208,7 +208,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("user.create", actorId)
-              user    <- ZIO.serviceWithZIO[UserService](_.createUser(input.displayName, input.email))
+              user    <- ZIO.serviceWithZIO[UserService](_.createUser(input.displayName, input.email, Some(actorId)))
             } yield user,
           updateUser = input =>
             for {
@@ -216,7 +216,7 @@ object JorlanAPI {
               _       <- requireCapability("user.update", actorId)
               user <- ZIO
                 .serviceWithZIO[UserService](
-                  _.updateUser(UserId(input.id), input.displayName, input.email, input.active),
+                  _.updateUser(UserId(input.id), input.displayName, input.email, input.active, Some(actorId)),
                 )
             } yield user,
           createRole = input =>

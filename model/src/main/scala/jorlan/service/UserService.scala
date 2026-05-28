@@ -25,12 +25,14 @@ trait UserService {
   def createUser(
     displayName: String,
     email:       Option[String],
+    actorId:     Option[UserId] = None,
   ): IO[JorlanError, User]
   def updateUser(
     id:          UserId,
     displayName: String,
     email:       Option[String],
     active:      Boolean,
+    actorId:     Option[UserId] = None,
   ): IO[JorlanError, User]
 
 }
@@ -44,13 +46,16 @@ object UserService {
   def createUser(
     displayName: String,
     email:       Option[String],
-  ): ZIO[UserService, JorlanError, User] = ZIO.serviceWithZIO[UserService](_.createUser(displayName, email))
+    actorId:     Option[UserId] = None,
+  ): ZIO[UserService, JorlanError, User] = ZIO.serviceWithZIO[UserService](_.createUser(displayName, email, actorId))
 
   def updateUser(
     id:          UserId,
     displayName: String,
     email:       Option[String],
     active:      Boolean,
-  ): ZIO[UserService, JorlanError, User] = ZIO.serviceWithZIO[UserService](_.updateUser(id, displayName, email, active))
+    actorId:     Option[UserId] = None,
+  ): ZIO[UserService, JorlanError, User] =
+    ZIO.serviceWithZIO[UserService](_.updateUser(id, displayName, email, active, actorId))
 
 }
