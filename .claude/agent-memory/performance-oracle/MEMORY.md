@@ -1,0 +1,2 @@
+- [Jorlan Codebase Hotpaths](hotpaths.md) — GraphQL resolvers, permission checks, scheduler poll — known hot paths and their DB index coverage
+- [GraphQL API Performance Findings](graphql_perf.md) — Phase 6 findings: missing pagination args, unindexed columns, N+1 potential, getRole OK

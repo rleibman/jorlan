@@ -23,6 +23,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case AgentStarted, AgentCompleted, AgentFailed
   case SkillInvoked, SkillSucceeded, SkillFailed
   case ApprovalRequested, ApprovalGranted, ApprovalDenied
+  case UserCreated, UserUpdated
   case UserConnected, UserDisconnected
   case MemoryWritten, MemoryExpired
   case RoleAssigned, RoleRevoked

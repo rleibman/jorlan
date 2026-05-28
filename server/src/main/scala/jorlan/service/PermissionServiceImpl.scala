@@ -20,6 +20,8 @@ private class PermissionServiceImpl(
   eventLog: EventLogService,
 ) extends PermissionService {
 
+  override def getRole(id: RoleId): IO[JorlanError, Option[Role]] = repo.getRole(id)
+
   override def searchRoles(s: RoleSearch): IO[JorlanError, List[Role]] = repo.searchRoles(s)
 
   override def upsertRole(role: Role): IO[JorlanError, Role] = repo.upsertRole(role)
@@ -42,7 +44,7 @@ private class PermissionServiceImpl(
           agentId = None,
           sessionId = None,
           resource = Some(roleId),
-          payloadJson = None,
+          payloadJson = Some(zio.json.ast.Json.Obj("userId" -> zio.json.ast.Json.Num(userId.value))),
           occurredAt = now,
         ),
       )
@@ -64,7 +66,7 @@ private class PermissionServiceImpl(
           agentId = None,
           sessionId = None,
           resource = Some(roleId),
-          payloadJson = None,
+          payloadJson = Some(zio.json.ast.Json.Obj("userId" -> zio.json.ast.Json.Num(userId.value))),
           occurredAt = now,
         ),
       )
@@ -188,10 +190,12 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.recordApprovalDecision(decision)
-      eventType = saved.decision match {
-        case ApprovalStatus.Approved => EventType.ApprovalGranted
-        case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled | ApprovalStatus.Pending =>
-          EventType.ApprovalDenied
+      eventType <- saved.decision match {
+        case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
+        case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>
+          ZIO.succeed(EventType.ApprovalDenied)
+        case ApprovalStatus.Pending =>
+          ZIO.fail(JorlanError("recordApprovalDecision called with Pending status — invariant violated"))
       }
       _ <- eventLog.log(
         EventLog(

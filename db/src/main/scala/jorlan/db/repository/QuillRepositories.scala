@@ -901,6 +901,9 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   import JorlanSchema.*
   import qc.ctx.*
 
+  override def getRole(id: RoleId): RepositoryTask[Option[Role]] =
+    exec(qc.ctx.run(qRoles.filter(_.id == lift(id))).map(_.headOption))
+
   override def searchRoles(s: RoleSearch): RepositoryTask[List[Role]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
@@ -1139,7 +1142,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
                 r.requestorUserId == lift(userId) &&
                 r.status == lift(ApprovalStatus.Approved) &&
                 lift(sessionId).forall(sid => r.sessionId.contains(sid)),
-            ),
+            ).take(1),
         ).map(_.headOption),
     )
 

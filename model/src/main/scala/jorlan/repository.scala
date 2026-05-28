@@ -312,6 +312,7 @@ trait ArtifactRepository[F[_]] {
   */
 trait PermissionRepository[F[_]] {
 
+  def getRole(id:      RoleId):     F[Option[Role]]
   def searchRoles(s:   RoleSearch): F[List[Role]]
   def upsertRole(role: Role):       F[Role]
   def deleteRole(id:   RoleId):     F[Long]

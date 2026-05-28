@@ -20,6 +20,7 @@ import zio.*
   */
 trait PermissionService {
 
+  def getRole(id:      RoleId):     IO[JorlanError, Option[Role]]
   def searchRoles(s:   RoleSearch): IO[JorlanError, List[Role]]
   def upsertRole(role: Role):       IO[JorlanError, Role]
   def deleteRole(id:   RoleId):     IO[JorlanError, Long]
@@ -73,6 +74,9 @@ trait PermissionService {
 }
 
 object PermissionService {
+
+  def getRole(id: RoleId): ZIO[PermissionService, JorlanError, Option[Role]] =
+    ZIO.serviceWithZIO[PermissionService](_.getRole(id))
 
   def searchRoles(s: RoleSearch): ZIO[PermissionService, JorlanError, List[Role]] =
     ZIO.serviceWithZIO[PermissionService](_.searchRoles(s))

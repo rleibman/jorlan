@@ -177,17 +177,17 @@ tests.
 GraphQL subscriptions wired (even if no events flow yet). Take a look at how DMscreen implements it's various GraphQL
 APIs for inspiration on structure and best practices.
 
-- [ ] `zio-http` server setup with configurable port and TLS placeholder
-- [ ] Caliban schema derivation and wiring for domain types
-- [ ] JWT authentication middleware (issue token, validate on every request)
-- [ ] **Queries:** `user(id)`, `users`, `role(id)`, `roles`, `permissions(userId)`
-- [ ] **Mutations:** `createUser`, `updateUser`, `createRole`, `assignRole`, `grantPermission`, `revokePermission`
-- [ ] **Subscriptions:** We'll need this for message response streaming, approval notifications, and event log tailing —
+- [x] `zio-http` server setup with configurable port and TLS placeholder
+- [x] Caliban schema derivation and wiring for domain types
+- [x] JWT authentication middleware (issue token, validate on every request)
+- [x] **Queries:** `user(id)`, `users`, `role(id)`, `roles`, `permissions(userId)`
+- [x] **Mutations:** `createUser`, `updateUser`, `createRole`, `assignRole`, `grantPermission`, `revokePermission`
+- [x] **Subscriptions:** We'll need this for message response streaming, approval notifications, and event log tailing —
   set up the infrastructure now
-- [ ] Health check endpoint (`GET /health`)
-- [ ] GraphQL subscription infrastructure (Caliban + WebSocket) — even if no active event sources yet
-- [ ] Integration tests for all endpoints (Testcontainers for DB, zio-http test client)
-- [ ] Write scripts (in ./scripts directory) to generate the graphql schema and graphql client code (see dmscreen for
+- [x] Health check endpoint (`GET /health`)
+- [x] GraphQL subscription infrastructure (Caliban + WebSocket) — even if no active event sources yet
+- [x] Integration tests for all endpoints (Testcontainers for DB, Caliban interpreter — `GraphQLApiSpec`)
+- [x] Write scripts (in ./scripts directory) to generate the graphql schema and graphql client code (see dmscreen for
   example) and document in README
 
 ---
@@ -198,14 +198,22 @@ APIs for inspiration on structure and best practices.
 handles approvals interactively. First deployable artifact beyond the server.
 
 - [ ] `JorlanShell` entry point (ZIO main)
-- [ ] Config: server URL, auth credentials (loaded from `~/.jorlan/config`)
+- [ ] Config: server URL, auth credentials (loaded from `~/.jorlan/config`), or passed in as command arguments, command
+  line arguments take precedence
 - [ ] Caliban-generated GraphQL client (or sttp + hand-rolled queries — decide at implementation time).
+- [ ] I want to use sttp for the http client, with a zio back end (sttp.client4.httpclient.zio.HttpClientZioBackend)
+  you'll need to add those dependencies to the project
 - [ ] Authenticate and obtain JWT on startup
 - [ ] Interactive REPL: prompt → submit message → display streamed or complete response
 - [ ] Session management: start new session, resume existing session by ID
 - [ ] Pending approval display: show approval requests, accept/deny interactively
 - [ ] Graceful exit on `quit` / `exit` / Ctrl-C
 - [ ] Integration tests (mock server responses)
+- [ ] The shell shoud look similar to claude or openclaw (no surprises). The screen is split in half (I'm not quite sure
+  how that's done, you'll have to research a bit). The top section streams responses from the server, the bottom section
+  takes input from the user. You can use /commands to do various things we'll allow plugins to have their own. I'll let
+  you take a first pass at which commands are important.
+  commands, but some will be built in.
 
 ---
 
