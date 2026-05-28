@@ -213,16 +213,24 @@ handles approvals interactively. First deployable artifact beyond the server.
   how that's done, you'll have to research a bit). The top section streams responses from the server, the bottom section
   takes input from the user. You can use /commands to do various things we'll allow plugins to have their own. I'll let
   you take a first pass at which commands are important.
-  commands, but some will be built in.
-
+  commands, but some will be built in. Take a look through https://docs.openclaw.ai/tools/slash-commands#core-built-in-commands
+  Here are some of the commands I'd like to support, we'll distribute these throughout the next phases as possible
 /new  archives the current session and starts a fresh one, will ask a bunch of questions about model, etc
-/configure [x]  Interactively allows configuration of skill/function x
+/configure <name>  Interactively allows configuration of skill/function x
 /exit leaves the shell
 /quit alias for exit
 /model Lets you chose the model and configure various things about the model
 /trace [none, error, warning, debug] Sets trace(log) level
 /models Lists available models
-/help
+/help shows short help summary
+/commands shows all available commands
+/status shows shell and server status and diagnostics
+/about
+/whoami
+/skill <name> runs a skill by name
+/mcp
+/plugins list|inspect|show|get|install|enable|disable
+/restart restarts server
 
 
 
