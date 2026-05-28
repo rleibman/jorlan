@@ -35,9 +35,13 @@ type: project
 - `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
 - `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module
 - `QuillCtx.hds` is a raw `DataSource` created eagerly — pool lifecycle not managed by ZIO acquire/release
-- `PermissionRepository` has `revokeGrant`, `cancelApprovalRequest` — but no `deleteRole`, `deletePermission`, `getExpiredApprovalRequests`
-- `SchedulerRepository` now has `deleteJob`/`deleteTrigger` (corrected from prior notes)
-- No GraphQL API yet (phase-3 branch); `Jorlan.scala` only mounts health + auth routes
-- `EventLogService` exists but nothing calls it — no application service layer wires event logging
+- `PermissionRepository` now has `deleteRole`, `deletePermission`, `getExpiredApprovalRequests` (previously flagged as missing — now resolved)
+- `SchedulerRepository` has `deleteJob`/`deleteTrigger`
+- GraphQL API now implemented (phase-3 branch); `JorlanAPI`, `JorlanRoutes`, `SchemaGen` added in Phase 6
+- `EventLogService` now wired in `PermissionServiceImpl` for role/permission mutations — partially resolved
 - `CorrelationId` is implemented but has no call sites
 - Sort handling in every repository handles only `sorts.headOption`; secondary sorts silently ignored
+- `JorlanAPI` bypasses service layer for user CRUD — uses `UserZIORepository` directly (no `UserService` yet)
+- `JorlanSession` is in GraphQL env type but never accessed in resolvers — authorization not yet enforced
+- `QuickAdapter(interp)` instantiated twice in `JorlanRoutes` (once per handler call) — minor inefficiency
+- `extractLongField` in `GraphQLApiSpec` uses regex on JSON strings — fragile; breaks on field reordering

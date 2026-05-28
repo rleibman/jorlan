@@ -207,7 +207,7 @@ handles approvals interactively. First deployable artifact beyond the server.
 - [ ] Interactive REPL: prompt → submit message → display streamed or complete response
 - [ ] Session management: start new session, resume existing session by ID
 - [ ] Pending approval display: show approval requests, accept/deny interactively
-- [ ] Graceful exit on `quit` / `exit` / Ctrl-C
+- [ ] Graceful exit on `/quit` / `/exit` / Ctrl-C
 - [ ] Integration tests (mock server responses)
 - [ ] The shell shoud look similar to claude or openclaw (no surprises). The screen is split in half (I'm not quite sure
   how that's done, you'll have to research a bit). The top section streams responses from the server, the bottom section
