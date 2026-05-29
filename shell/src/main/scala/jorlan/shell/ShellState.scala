@@ -18,10 +18,13 @@ import zio.*
   */
 class ShellState private (sessionIdRef: Ref[Option[AgentSessionId]]) {
 
+  /** Returns the currently active session ID, or `None` if no session has been started. */
   def getSessionId: UIO[Option[AgentSessionId]] = sessionIdRef.get
 
+  /** Sets the active session ID. Called after a successful `createSession` mutation. */
   def setSessionId(id: AgentSessionId): UIO[Unit] = sessionIdRef.set(Some(id))
 
+  /** Clears the active session ID. Called on session termination or shell reconnect. */
   def clearSessionId: UIO[Unit] = sessionIdRef.set(None)
 
 }

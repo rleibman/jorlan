@@ -20,6 +20,14 @@ import zio.*
   */
 class HumanApprovalNotifier(eventLog: EventLogService) {
 
+  /** Notify that human approval is required for `request`.
+    *
+    * Phase 8 stub — only writes an [[EventType.ApprovalRequested]] event. Real delivery (Telegram, push) is added in
+    * Phase 11.
+    *
+    * @param request
+    *   The approval request that needs human attention.
+    */
   def notifyApprovalRequired(
     request: ApprovalRequest,
   ): IO[JorlanError, Unit] =

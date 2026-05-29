@@ -20,30 +20,57 @@ import java.time.Instant
   */
 enum EventType derives JsonEncoder, JsonDecoder {
 
+  // ─── Agent / session lifecycle ───────────────────────────────────────────────
   case AgentStarted, AgentCompleted, AgentFailed
   case SessionCreated
+
+  // ─── Message and model call cycle ────────────────────────────────────────────
   case UserMessageReceived, AgentResponseCompleted
   case ModelCallStarted, ModelCallCompleted, ModelCallFailed
+
+  // ─── Skill invocations ───────────────────────────────────────────────────────
   case SkillInvoked, SkillSucceeded, SkillFailed
+
+  // ─── Approval lifecycle ──────────────────────────────────────────────────────
   case ApprovalRequested, ApprovalGranted, ApprovalDenied
+
+  // ─── Identity and connectivity ───────────────────────────────────────────────
   case UserCreated, UserUpdated
   case UserConnected, UserDisconnected
+
+  // ─── Memory ──────────────────────────────────────────────────────────────────
   case MemoryWritten, MemoryExpired
+
+  // ─── RBAC and capabilities ───────────────────────────────────────────────────
   case RoleAssigned, RoleRevoked
   case CapabilityAllowed, CapabilityDenied
   case CapabilityGranted, CapabilityRevoked
   case PermissionGranted, PermissionRevoked
+
+  // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
 
 }
 
 /** An append-only audit record. Rows are never updated or deleted by application code.
   *
+  * @param id
+  *   Auto-assigned by the repository on insert; use [[EventLogId.empty]] when constructing new records.
+  * @param eventType
+  *   The kind of event; determines how `resource` and `payloadJson` should be interpreted.
+  * @param actorId
+  *   The human user who triggered this event, if applicable.
+  * @param agentId
+  *   The agent involved in this event, if applicable.
+  * @param sessionId
+  *   The session context, if the event occurred within a session.
   * @param resource
   *   The typed domain entity affected by this event. Callers provide the concrete ID type (e.g. `AgentId`,
   *   `SkillVersionId`) when appending; the repository stores it as JSON and returns it as raw `Json` on reads.
   * @param payloadJson
   *   Event-specific detail (e.g. input/output summary, error message, diff).
+  * @param occurredAt
+  *   Wall-clock time of the event, sourced from ZIO `Clock` (never `Instant.now()`).
   */
 case class EventLog[R](
   id:          EventLogId,

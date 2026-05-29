@@ -21,6 +21,18 @@ import zio.*
   */
 trait AgentRunner {
 
+  /** Submit a user message to the agent for the given session.
+    *
+    * Streams the model response token-by-token through [[SessionHub]], then publishes a `finished=true` sentinel.
+    * Writes [[EventType.UserMessageReceived]] before the model call and [[EventType.AgentResponseCompleted]] after.
+    *
+    * @param sessionId
+    *   The session to route the message to.
+    * @param content
+    *   The user's message text.
+    * @param actorId
+    *   The authenticated user submitting the message; attached to event log entries.
+    */
   def processMessage(
     sessionId: AgentSessionId,
     content:   String,

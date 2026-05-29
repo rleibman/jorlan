@@ -46,8 +46,17 @@ object SubscriptionClient {
 
   private val subscriptionId = "1"
 
-  /** Returns a stream of [[ResponseChunk]] tokens for the given session. The stream completes when the server sends a
-    * `finished=true` chunk or a `complete` frame, and fails with a descriptive string on error.
+  /** Returns a stream of [[ResponseChunk]] tokens for the given session.
+    *
+    * The stream completes when the server sends a `finished=true` chunk or a graphql-ws `complete` frame, and fails
+    * with a descriptive string on protocol or network error.
+    *
+    * @param sessionId
+    *   The session to subscribe to.
+    * @param cfg
+    *   Shell configuration supplying the server URL (converted to `ws://` or `wss://`).
+    * @param auth
+    *   Auth client providing the current Bearer token for the WebSocket handshake.
     */
   def agentResponseStream(
     sessionId: AgentSessionId,

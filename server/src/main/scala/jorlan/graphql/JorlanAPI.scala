@@ -34,19 +34,23 @@ object JorlanAPI {
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
+  /** Input for any query that looks up a single entity by its numeric primary key. */
   case class EntityIdInput(id: Long) derives Schema.SemiAuto, ArgBuilder
 
+  /** Standard pagination input used by list queries. Defaults: `page = 0`, `pageSize = 20`. */
   case class PaginationInput(
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `roles(userId)` — returns roles assigned to the given user. */
   case class RolesForUserInput(
     userId:   Long,
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `permissions(userId)` — returns permissions granted to the given user. */
   case class PermissionsForUserInput(
     userId:   Long,
     page:     Option[Int] = None,
@@ -55,11 +59,13 @@ object JorlanAPI {
 
   // ─── Mutation input types ─────────────────────────────────────────────────────
 
+  /** Input for `createUser`. */
   case class CreateUserInput(
     displayName: String,
     email:       Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `updateUser`. `active = false` soft-deletes the account. */
   case class UpdateUserInput(
     id:          Long,
     displayName: String,
@@ -67,16 +73,19 @@ object JorlanAPI {
     active:      Boolean,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `createRole`. */
   case class CreateRoleInput(
     name:        String,
     description: Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `assignRole` / `revokeRole`. */
   case class AssignRoleInput(
     userId: Long,
     roleId: Long,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `grantPermission`. Exactly one of `userId` or `roleId` must be provided. */
   case class GrantPermissionInput(
     resource: String,
     action:   String,
@@ -84,15 +93,18 @@ object JorlanAPI {
     roleId:   Option[Long],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `createSession`. `modelId = null` uses the agent's configured default model. */
   case class CreateSessionInput(
     modelId: Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `submitMessage` — sends a user message to the active agent session. */
   case class SubmitMessageInput(
     sessionId: Long,
     content:   String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for the `agentResponseStream` subscription. */
   case class AgentResponseStreamInput(
     sessionId: Long,
   ) derives Schema.SemiAuto, ArgBuilder

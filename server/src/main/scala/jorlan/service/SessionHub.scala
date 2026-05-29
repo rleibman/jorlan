@@ -55,6 +55,7 @@ class SessionHub private (hubs: Ref[Map[AgentSessionId, Hub[ResponseChunk]]]) {
       },
     )
 
+  /** Removes the hub for `sessionId`. Called on session termination to release the bounded buffer. */
   def remove(sessionId: AgentSessionId): UIO[Unit] =
     hubs.update(_ - sessionId)
 
