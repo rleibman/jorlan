@@ -66,7 +66,7 @@ object FlywayMigration {
       .baselineVersion(flywayConfig.baselineVersion)
       .baselineDescription(flywayConfig.baselineDescription)
 
-    val withTarget = flywayConfig.target.fold(fb)(t => fb.target(t))
+    val withTarget = flywayConfig.target.filter(_.nonEmpty).fold(fb)(t => fb.target(t))
 
     withTarget.load()
   }

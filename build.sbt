@@ -1,11 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////////
 // Common Stuff
 
-import org.apache.commons.io.FileUtils
-
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
-
 lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time of build").withRank(KeyRanks.Invisible)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -78,7 +73,8 @@ val jwtZioJsonVersion = "11.0.4"
 val langchain4jOllamaVersion = "1.15.0"
 val langchainCoreVersion = "1.15.0"
 val langchainLibrariesVersion = "1.15.0-beta25"
-val logbackVersion = "1.5.32"
+val lanternaVersion = "3.1.5"
+val logbackVersion = "1.5.33"
 val mariadbVersion = "3.5.8"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
@@ -133,7 +129,7 @@ lazy val model = project
     buildInfoPackage := "jorlan",
     commonSettings,
     libraryDependencies ++= Seq(
-      "net.leibman"    % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
+      "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
     ),
     libraryDependencies ++= Seq(
       "dev.zio"     %% "zio"                 % zioVersion withSources (),
@@ -142,10 +138,10 @@ lazy val model = project
       "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
       "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
       "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
-      "dev.zio"     %% "zio-http"         % zioHttpVersion withSources (),
-      "io.kevinlee" %% "just-semver-core" % justSemverCoreVersion withSources (),
-      )
-    )
+      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
+      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+    ),
+  )
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Analytics
@@ -155,7 +151,8 @@ lazy val analytics = project
     AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
   )
-  .settings(scalacOptions ++= scala3Opts :+ "-Werror",
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-analytics",
     commonSettings,
     libraryDependencies ++= Seq(
@@ -193,16 +190,16 @@ lazy val db = project
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
       // ZIO
-      "dev.zio"                %% "zio"                   % zioVersion withSources (),
-      "dev.zio"                %% "zio-nio"               % zioNioVersion withSources (),
-      "dev.zio"                %% "zio-cache"             % zioCacheVersion withSources (),
-      "dev.zio"                %% "zio-config"            % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-config-derivation" % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-config-magnolia"   % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-config-typesafe"   % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
-      "dev.zio"                %% "izumi-reflect"         % izumiReflectVersion withSources (),
-      "dev.zio"                %% "zio-json"              % zioJsonVersion withSources (),
+      "dev.zio" %% "zio"                   % zioVersion withSources (),
+      "dev.zio" %% "zio-nio"               % zioNioVersion withSources (),
+      "dev.zio" %% "zio-cache"             % zioCacheVersion withSources (),
+      "dev.zio" %% "zio-config"            % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-config-derivation" % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-config-magnolia"   % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-config-typesafe"   % zioConfigVersion withSources (),
+      "dev.zio" %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
+      "dev.zio" %% "izumi-reflect"         % izumiReflectVersion withSources (),
+      "dev.zio" %% "zio-json"              % zioJsonVersion withSources (),
       // Testing
       "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion % "test" withSources (),
       "dev.zio"      %% "zio-test"                     % zioVersion           % "test" withSources (),
@@ -279,10 +276,10 @@ lazy val integration = project
     Test / unmanagedResourceDirectories += (server / Compile / resourceDirectory).value,
     libraryDependencies ++= Seq(
       // DB
-      "org.mariadb.jdbc" % "mariadb-java-client"           % mariadbVersion withSources (),
-      "org.flywaydb"     % "flyway-core"                   % flywayVersion withSources (),
-      "org.flywaydb"     % "flyway-mysql"                  % flywayVersion withSources (),
-      "com.dimafeng"    %% "testcontainers-scala-mariadb"  % testContainerVersion withSources (),
+      "org.mariadb.jdbc" % "mariadb-java-client"          % mariadbVersion withSources (),
+      "org.flywaydb"     % "flyway-core"                  % flywayVersion withSources (),
+      "org.flywaydb"     % "flyway-mysql"                 % flywayVersion withSources (),
+      "com.dimafeng"    %% "testcontainers-scala-mariadb" % testContainerVersion withSources (),
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
       // ZIO
@@ -316,21 +313,27 @@ lazy val shell = project
     commonSettings,
     Compile / mainClass := Some("jorlan.shell.JorlanShell"),
     libraryDependencies ++= Seq(
-      "dev.zio"                %% "zio"                   % zioVersion withSources (),
-      "dev.zio"                %% "zio-config"            % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-config-magnolia"   % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-config-typesafe"   % zioConfigVersion withSources (),
-      "dev.zio"                %% "zio-json"              % zioJsonVersion withSources (),
-      "dev.zio"                %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
-      "com.github.ghostdogpr"  %% "caliban-client"        % calibanClientVersion withSources (),
-      "com.softwaremill.sttp.client4" %% "core"           % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.client4" %% "zio"            % sttpClient4Version withSources (),
-      "ch.qos.logback"         %  "logback-classic"       % logbackVersion withSources (),
+      "dev.zio"                       %% "zio"                 % zioVersion withSources (),
+      "dev.zio"                       %% "zio-config"          % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-json"            % zioJsonVersion withSources (),
+      "dev.zio"                       %% "zio-logging-slf4j2"  % zioLoggingSlf4j2Version withSources (),
+      "com.github.ghostdogpr"         %% "caliban-client"      % calibanClientVersion withSources (),
+      "com.softwaremill.sttp.client4" %% "core"                % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio"                 % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio-json"            % sttpClient4Version withSources (),
+      "com.googlecode.lanterna"        % "lanterna"            % lanternaVersion withSources (),
+      "ch.qos.logback"                 % "logback-classic"     % logbackVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    // Fork so the shell process owns the TTY; connectInput passes stdin through
+    // so Lanterna can put the terminal into raw mode and receive keystrokes.
+    run / fork         := true,
+    run / connectInput := true,
   )
   .dependsOn(model)
 
@@ -431,14 +434,14 @@ lazy val ai = project
     name := "jorlan-ai",
     commonSettings,
     libraryDependencies ++= Seq(
-      "dev.zio" %% "zio"      % zioVersion withSources (),
-      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-      "org.testcontainers" % "qdrant"                    % qdrantVersion withSources (),
-      "dev.langchain4j"    % "langchain4j-core"          % langchainCoreVersion withSources (),
-      "dev.langchain4j"    % "langchain4j"               % langchainCoreVersion withSources (),
-      "dev.langchain4j"    % "langchain4j-ollama"        % langchain4jOllamaVersion withSources (),
-      "dev.langchain4j"    % "langchain4j-easy-rag"      % langchainLibrariesVersion withSources (),
-      "dev.langchain4j"    % "langchain4j-qdrant"        % langchainLibrariesVersion withSources (),
+      "dev.zio"           %% "zio"                  % zioVersion withSources (),
+      "dev.zio"           %% "zio-json"             % zioJsonVersion withSources (),
+      "org.testcontainers" % "qdrant"               % qdrantVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-core"     % langchainCoreVersion withSources (),
+      "dev.langchain4j"    % "langchain4j"          % langchainCoreVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-ollama"   % langchain4jOllamaVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-easy-rag" % langchainLibrariesVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-qdrant"   % langchainLibrariesVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),

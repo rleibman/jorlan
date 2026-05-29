@@ -112,15 +112,26 @@ object JorlanAPI {
   )
 
   // ─── Schema instances ─────────────────────────────────────────────────────────
+  // Named scalars so the SDL (and generated client) carry typed IDs rather than
+  // anonymous Long values. Each scalarSchema call registers a distinct GraphQL
+  // scalar name while serialising to/from the underlying Long or String value.
 
-  private given Schema[Any, UserId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, RoleId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, PermissionId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, AgentId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, AgentSessionId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, ApprovalRequestId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, EventLogId] = Schema.longSchema.contramap(_.value)
-  private given Schema[Any, CapabilityName] = Schema.stringSchema.contramap(_.value)
+  private given Schema[Any, UserId] =
+    Schema.scalarSchema("UserId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, RoleId] =
+    Schema.scalarSchema("RoleId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, PermissionId] =
+    Schema.scalarSchema("PermissionId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, AgentId] =
+    Schema.scalarSchema("AgentId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, AgentSessionId] =
+    Schema.scalarSchema("AgentSessionId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, ApprovalRequestId] =
+    Schema.scalarSchema("ApprovalRequestId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, EventLogId] =
+    Schema.scalarSchema("EventLogId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, CapabilityName] =
+    Schema.scalarSchema("CapabilityName", None, None, None, cn => Value.StringValue(cn.value))
   private given Schema[Any, RiskClass] = Schema.stringSchema.contramap(_.toString)
   private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
 
@@ -214,7 +225,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("user.update", actorId)
-              user <- ZIO
+              user    <- ZIO
                 .serviceWithZIO[UserService](
                   _.updateUser(UserId(input.id), input.displayName, input.email, input.active, Some(actorId)),
                 )
@@ -223,7 +234,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.create", actorId)
-              role <- ZIO
+              role    <- ZIO
                 .serviceWithZIO[PermissionService](
                   _.upsertRole(Role(RoleId.empty, input.name, input.description)),
                 )
@@ -232,7 +243,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.assign", actorId)
-              _ <- ZIO
+              _       <- ZIO
                 .serviceWithZIO[PermissionService](
                   _.assignRole(UserId(input.userId), RoleId(input.roleId), Some(actorId)),
                 )
@@ -241,7 +252,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.revoke", actorId)
-              _ <- ZIO
+              _       <- ZIO
                 .serviceWithZIO[PermissionService](
                   _.removeRole(UserId(input.userId), RoleId(input.roleId), Some(actorId)),
                 )
@@ -254,7 +265,7 @@ object JorlanAPI {
                 )
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.grant", actorId)
-              perm <- ZIO
+              perm    <- ZIO
                 .serviceWithZIO[PermissionService](
                   _.upsertPermission(
                     Permission(

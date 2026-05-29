@@ -197,42 +197,21 @@ APIs for inspiration on structure and best practices.
 **Goal:** A runnable CLI (`jorlan-shell`) that connects to the server, lets a user send messages and see responses, and
 handles approvals interactively. First deployable artifact beyond the server.
 
-- [ ] `JorlanShell` entry point (ZIO main)
-- [ ] Config: server URL, auth credentials (loaded from `~/.jorlan/config`), or passed in as command arguments, command
+- [x] `JorlanShell` entry point (ZIO main)
+- [x] Config: server URL, auth credentials (loaded from `~/.jorlan/config`), or passed in as command arguments, command
   line arguments take precedence
-- [ ] Caliban-generated GraphQL client (or sttp + hand-rolled queries — decide at implementation time).
-- [ ] I want to use sttp for the http client, with a zio back end (sttp.client4.httpclient.zio.HttpClientZioBackend)
-  you'll need to add those dependencies to the project
-- [ ] Authenticate and obtain JWT on startup
-- [ ] Interactive REPL: prompt → submit message → display streamed or complete response
-- [ ] Session management: start new session, resume existing session by ID
-- [ ] Pending approval display: show approval requests, accept/deny interactively
-- [ ] Graceful exit on `/quit` / `/exit` / Ctrl-C
-- [ ] Integration tests (mock server responses)
-- [ ] The shell shoud look similar to claude or openclaw (no surprises). The screen is split in half (I'm not quite sure
-  how that's done, you'll have to research a bit). The top section streams responses from the server, the bottom section
-  takes input from the user. You can use /commands to do various things we'll allow plugins to have their own. I'll let
-  you take a first pass at which commands are important.
-  commands, but some will be built in. Take a look through https://docs.openclaw.ai/tools/slash-commands#core-built-in-commands
-  Here are some of the commands I'd like to support, we'll distribute these throughout the next phases as possible
-/new  archives the current session and starts a fresh one, will ask a bunch of questions about model, etc
-/configure <name>  Interactively allows configuration of skill/function x
-/exit leaves the shell
-/quit alias for exit
-/model Lets you chose the model and configure various things about the model
-/trace [none, error, warning, debug] Sets trace(log) level
-/models Lists available models
-/help shows short help summary
-/commands shows all available commands
-/status shows shell and server status and diagnostics
-/about
-/whoami
-/skill <name> runs a skill by name
-/mcp
-/plugins list|inspect|show|get|install|enable|disable
-/restart restarts server
-
-
+- [x] Caliban-generated GraphQL client (or sttp + hand-rolled queries — decided: sttp hand-rolled for Phase 7; caliban
+  codegen deferred until API stabilises)
+- [x] sttp for the http client with `HttpClientZioBackend` ZIO backend; `sttp.client4 %% "zio"` and `zio-json` added to
+  shell module
+- [x] Authenticate and obtain JWT on startup (`POST /login` → Bearer token stored in `Ref`)
+- [x] Interactive REPL: prompt → submit message → display response (message submission stubs Phase 8 agent runtime)
+- [ ] Session management: start new session, resume existing session by ID (Phase 8)
+- [ ] Pending approval display: show approval requests, accept/deny interactively (Phase 8)
+- [x] Graceful exit on `/quit` / `/exit` / Ctrl-C
+- [x] Integration tests: unit tests for command parsing and config arg-override (21 tests pass)
+- [x] Split-screen TUI via Lanterna: status bar (row 0), scrollable conversation area, separator + input line at bottom.
+  PgUp/PgDn scrolling, word-wrapped messages, colour-coded by kind (system/user/server/error).
 
 ---
 
@@ -466,7 +445,13 @@ managing sessions, reviewing approvals, inspecting execution history, and browsi
 
 ---
 
-## Phase 16: Advanced Features
+## Phase 16: Additional features found during development
+
+- [ ] autocomplete of / commands. When a user starts typing a command, the shell should suggest available commands that
+  match the input. This can be implemented using a simple prefix matching algorithm that filters the list of available
+  commands based on the user's input.
+
+## Phase 17: Advanced Features
 
 **Goal:** Full platform feature set — declarative skills, agent-authored skills, MCP import, vector memory, and
 remaining skills.
@@ -507,3 +492,74 @@ model
 - Fake providers: `FakeModelProvider`, mock connectors — all integration tests must run without live external
   credentials
 - Every subsystem that writes to the event log should have a test asserting the correct event is emitted
+
+## Appendix: Supported shell commands
+
+**Status legend:** `[x]` implemented · `[~]` stub/partial (planned for a later phase) · `[ ]` not yet started
+
+| Status | Command         | Type     | Priority | Parameters                                        | Description                                                 |
+|:------:|-----------------|----------|----------|---------------------------------------------------|-------------------------------------------------------------|
+|  [x]   | `/help`         | Built-in | 0        | —                                                 | Show short help summary and key bindings                    |
+|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands                                 |
+|  [x]   | `/quit`         | Built-in | 0        | —                                                 | Exit the shell cleanly                                      |
+|  [x]   | `/exit`         | Built-in | 0        | —                                                 | Alias for `/quit`                                           |
+|  [x]   | `/about`        | Built-in | 0        | —                                                 | Show version and platform information                       |
+|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity and GraphQL health check                |
+|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user                             |
+|  [~]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level (display only — runtime wiring Phase 8) |
+|  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
+|  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
+|  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |
+|  [ ]   | `/version`      | Built-in |          | —                                                 | Show shell and server version                               |
+|  [ ]   | `/logs`         | Built-in |          | `[n]`                                             | Tail the last *n* lines from `~/.jorlan/shell.log`          |
+|  [~]   | `/new`          | Session  |          | —                                                 | Archive the current session and start a fresh one (Phase 8) |
+|  [~]   | `/model`        | Session  |          | —                                                 | Show or interactively configure the active model (Phase 8)  |
+|  [~]   | `/models`       | Session  |          | —                                                 | List models available on the connected server (Phase 8)     |
+|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions (Phase 8)                             |
+|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session (Phase 8) |
+|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function (Phase 8)       |
+|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name (Phase 8)                               |
+|  [ ]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants (Phase 9)               |
+|  [ ]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests (Phase 10)        |
+|  [ ]   | `/agents`       | Agent    |          | `list \| status <id> \| stop <id>`                | List and manage running agent sessions (Phase 10)           |
+|  [ ]   | `/memory`       | Memory   |          | `list \| search <q> \| forget <id>`               | Browse and manage agent memory entries (Phase 9)            |
+|  [ ]   | `/restart`      | Admin    |          | —                                                 | Restart the Jorlan server process (Phase 10)                |
+|  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable` | Manage server plugins (Phase 12)                            |
+|  [ ]   | `/mcp`          | Plugin   |          | —                                                 | MCP protocol tools and adapter management (Phase 12)        |
+
+## Appendix: Supported skills
+
+| Status | Skill            | Priority | Type     | Description |
+|:------:|------------------|----------|----------|-------------|
+|  [ ]   | Market Data      |          | Built-in |             |
+|  [ ]   | Lyrion Server    | 1        | Built-in |             |
+|  [ ]   | Google Contacts  |          | Built-in |             |
+|  [ ]   | Google Calendar  | 1        | Built-in |             |
+|  [ ]   | MCP Connector    |          | Built-in |             |
+|  [ ]   | Declarative Json |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+
+## Appendix: Connectors
+
+| Status | Skill              | Priority | Type     | Description |
+|:------:|--------------------|----------|----------|-------------|
+|  [ ]   | Telegram           | 1        | Built-in |             |
+|  [ ]   | Slack              |          | Built-in |             |
+|  [ ]   | Whatsapp           |          | Built-in |             |
+|  [ ]   | Discord            | 2        | Built-in |             |
+|  [ ]   | SMS                |          | Built-in |             |
+|  [ ]   | Matrix             |          | Built-in |             |
+|  [ ]   | IRC                |          | Built-in |             |
+|  [ ]   | Facebook Messenger |          | Built-in |             |
+|  [ ]   | Twitter DM         |          | Built-in |             |
+|  [ ]   | LinkedIn Messaging |          | Built-in |             |
+|  [ ]   | Email (IMAP/SMTP)  | 2        | Built-in |             |
+
