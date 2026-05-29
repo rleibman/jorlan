@@ -218,7 +218,7 @@ private class LanternaScreen(
       case KeyType.Backspace =>
         inputBuf.update(s => if (s.isEmpty) "" else s.dropRight(1))
       case KeyType.Delete =>
-        inputBuf.update(s => if (s.isEmpty) "" else s.drop(1))
+        ZIO.unit // cursor is always end-of-line; no character to delete forward
       case KeyType.Enter =>
         inputBuf.getAndSet("").flatMap { line =>
           if (line.trim.nonEmpty) inputQueue.offer(line.trim).unit

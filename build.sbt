@@ -332,8 +332,9 @@ lazy val shell = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
     // so Lanterna can put the terminal into raw mode and receive keystrokes.
-    run / fork         := true,
-    run / connectInput := true,
+    run / fork              := true,
+    run / connectInput      := true,
+    coverageExcludedFiles   := ".*JorlanClient.*;.*LanternaScreen.*",
   )
   .dependsOn(model)
 

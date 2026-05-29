@@ -135,15 +135,6 @@ object JorlanAPI {
   private given Schema[Any, RiskClass] = Schema.stringSchema.contramap(_.toString)
   private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
 
-  private given ArgBuilder[UserId] = ArgBuilder.long.map(UserId(_))
-  private given ArgBuilder[RoleId] = ArgBuilder.long.map(RoleId(_))
-  private given ArgBuilder[PermissionId] = ArgBuilder.long.map(PermissionId(_))
-  private given ArgBuilder[AgentId] = ArgBuilder.long.map(AgentId(_))
-  private given ArgBuilder[AgentSessionId] = ArgBuilder.long.map(AgentSessionId(_))
-  private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
-  private given ArgBuilder[EventLogId] = ArgBuilder.long.map(EventLogId(_))
-  private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
-
   private given Schema[Any, ChannelType] = Schema.gen[Any, ChannelType]
   private given Schema[Any, ApprovalStatus] = Schema.gen[Any, ApprovalStatus]
   private given Schema[Any, ApprovalMode] = Schema.gen[Any, ApprovalMode]
