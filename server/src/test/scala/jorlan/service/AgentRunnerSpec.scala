@@ -107,6 +107,31 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val hub = SessionHub.live
         (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       },
+      test("processMessage respects chunkDelay in FakeModelGateway") {
+        val tokens = List("a", "b", "c")
+        val delay = 10.millis
+        for {
+          start    <- Clock.instant
+          received <- runWithSubscription(tokens, "hi").provide(
+            layers(tokens).map { env =>
+              // Replace FakeModelGateway.layer to include delay
+              val fakeGateway = FakeModelGateway.layer(tokens, Some(delay))
+              val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+              val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+              val hub = SessionHub.live
+              (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+            }.flatten,
+          )
+          end <- Clock.instant
+          elapsed = end.minus(start)
+        } yield {
+          val contents = received.toList.filterNot(_.finished).map(_.content)
+          assertTrue(
+            contents == tokens,
+            elapsed.getSeconds * 1000 + elapsed.getNano / 1000000 >= delay.toMillis * tokens.length,
+          )
+        }
+      },
     )
 
 }

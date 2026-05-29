@@ -75,6 +75,31 @@ object SessionHubSpec extends ZIOSpecDefault {
           h2  <- hub.getOrCreate(sid1)
         } yield assertTrue(!(h1 eq h2))
       }.provide(SessionHub.live),
+      test("publish to non-existent session is a no-op (does not fail)") {
+        for {
+          hub <- ZIO.service[SessionHub]
+          _   <- hub.publish(ResponseChunk(AgentSessionId(999L), "test", false))
+        } yield assertTrue(true)
+      }.provide(SessionHub.live),
+      test("subscribe returns chunks in insertion order") {
+        val chunks = List(
+          ResponseChunk(sid2, "first", false),
+          ResponseChunk(sid2, "second", false),
+          ResponseChunk(sid2, "third", false),
+        )
+        ZIO.scoped {
+          for {
+            hub      <- ZIO.service[SessionHub]
+            innerHub <- hub.getOrCreate(sid2)
+            dequeue  <- innerHub.subscribe
+            fiber    <- ZStream.fromQueue(dequeue).runCollect.fork
+            _        <- ZIO.sleep(10.millis) // Give subscribe a moment
+            _        <- ZIO.foreachDiscard(chunks)(hub.publish)
+            _        <- hub.publish(ResponseChunk(sid2, "", true))
+            received <- fiber.join
+          } yield assertTrue(received.toList == chunks :+ ResponseChunk(sid2, "", true))
+        }
+      }.provide(SessionHub.live),
     )
 
 }

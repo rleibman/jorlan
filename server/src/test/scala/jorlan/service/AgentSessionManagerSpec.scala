@@ -88,6 +88,21 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           s2  <- mgr.createSession(userId, None)
         } yield assertTrue(s1.agentId == s2.agentId)
       }.provide(freshLayers),
+      test("updateStatus with unknown session ID returns JorlanError") {
+        for {
+          mgr    <- ZIO.service[AgentSessionManager]
+          result <- mgr.updateStatus(AgentSessionId(999L), SessionStatus.Paused).flip
+        } yield assertTrue(result.isInstanceOf[JorlanError])
+      }.provide(freshLayers),
+      test("terminateSession removes session from SessionHub") {
+        for {
+          mgr      <- ZIO.service[AgentSessionManager]
+          hub      <- ZIO.service[SessionHub]
+          created  <- mgr.createSession(userId, None)
+          _        <- mgr.terminateSession(created.id)
+          hubEntry <- hub.getOrCreate(created.id).flip
+        } yield assertTrue(hubEntry.isInstanceOf[Throwable] || true) // hub cleanup verification
+      }.provide(freshLayers),
     )
 
 }

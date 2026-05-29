@@ -97,6 +97,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       querySuite,
       mutationSuite,
       authSuite,
+      agentSessionSuite,
       subscriptionSuite,
     )
 
@@ -289,6 +290,30 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""{ users { id displayName } }""")
       } yield assertTrue(result.errors.isEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
+  )
+
+  // ─── Agent session mutations ──────────────────────────────────────────────────
+
+  private val agentSessionSuite = suite("Agent Sessions")(
+    test("createSession returns a session with Active status") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { createSession { id status } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("Active"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("submitMessage mutation succeeds with active session") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute("""mutation { createSession { id } }""")
+        sessionId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { submitMessage(sessionId: $sessionId, content: "hello") }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
   )
 
   // ─── Subscription stubs ───────────────────────────────────────────────────────
