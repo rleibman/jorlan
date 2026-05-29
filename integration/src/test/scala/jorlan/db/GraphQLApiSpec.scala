@@ -84,7 +84,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       },
       test("user(id) query returns a specific user") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser2") { id displayName } }""",
           )
@@ -107,7 +107,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       },
       test("updateUser mutation updates a user and preserves createdAt") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute(
             """mutation { createUser(displayName: "UpdateMe", email: "update@test.com") { id displayName createdAt } }""",
           )

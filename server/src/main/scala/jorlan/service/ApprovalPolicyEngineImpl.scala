@@ -50,8 +50,8 @@ class ApprovalPolicyEngineImpl extends ApprovalPolicyEngine {
 
       case EvaluationResult.CapabilityGrantAllows(grant) =>
         grant.approvalMode match {
-          case ApprovalMode.Denied     => AuthorizationResult.Denied("capability grant has ApprovalMode.Denied")
-          case ApprovalMode.Persistent => AuthorizationResult.Allowed
+          case ApprovalMode.Denied        => AuthorizationResult.Denied("capability grant has ApprovalMode.Denied")
+          case ApprovalMode.Persistent    => AuthorizationResult.Allowed
           case ApprovalMode.PerInvocation =>
             AuthorizationResult.PendingApproval(
               buildRequest(request, grant, riskClass, now),
@@ -60,7 +60,7 @@ class ApprovalPolicyEngineImpl extends ApprovalPolicyEngine {
           case ApprovalMode.Timed =>
             grant.expiresAt match {
               case Some(exp) if exp.isAfter(now) => AuthorizationResult.Allowed
-              case _ =>
+              case _                             =>
                 AuthorizationResult.PendingApproval(
                   buildRequest(request, grant, riskClass, now, expiresAt = grant.expiresAt),
                   ApprovalMode.Timed,

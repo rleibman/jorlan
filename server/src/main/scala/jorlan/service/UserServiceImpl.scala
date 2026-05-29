@@ -32,7 +32,7 @@ private class UserServiceImpl(
     for {
       now  <- Clock.instant
       user <- repo.upsert(User(UserId.empty, displayName, email, now, now))
-      _ <- eventLog.log(
+      _    <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.UserCreated,
@@ -57,7 +57,7 @@ private class UserServiceImpl(
       now      <- Clock.instant
       existing <- repo.getById(id).someOrFail(JorlanError(s"User ${id.value} not found"))
       user     <- repo.upsert(User(id, displayName, email, existing.createdAt, now, active))
-      _ <- eventLog.log(
+      _        <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.UserUpdated,

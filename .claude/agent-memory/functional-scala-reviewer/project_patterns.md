@@ -40,6 +40,20 @@ type: project
 - Integration coverage around `EventLogServiceIntegrationSpec` currently has composition/wiring issues; do not treat the layer assembly there as a confirmed-good reference pattern.
 - The "correlation id propagates through log call" integration test is only evidence about correlation visibility in the logging context/test path, not that a correlation ID was persisted on the `EventLog` row — the correlation ID lives in ZIO log annotations, not in the stored event record.
 
+## Phase 7 Shell Module Patterns (reviewed 2026-05-28)
+
+- Shell module uses sttp `HttpClientZioBackend()` as a `private def` (not `val`) — creates a new `ManagedBackend` on every call. In `AuthClientImpl` and `GraphQLClientImpl`, the backend is correctly managed via `ZIO.scoped`, so each call opens and closes its own connection. This is correct but could be optimised to a single shared backend via a `ZLayer`-managed resource.
+- `AuthClientImpl.backend` and `GraphQLClientImpl.backend` are `private def` — they return `ZIO[Scope, Throwable, SttpBackend[...]]`, so each call allocates a fresh backend. Intentional for isolation, but performance-suboptimal.
+- `connectWithRetry` uses `Schedule.exponential(500.millis, 2.0).map(d => if (...) 60.seconds else d)` to cap backoff. The `.map` on exponential output does NOT cap the growth seen by the scheduler — the `Schedule.exponential` output is the delay already applied, so the `.map` just modifies the delay value returned to `tapOutput`. The actual retry interval IS affected, but `Schedule.upTo` or `Schedule.exponential(...).jittered` with `||` (union) would be cleaner and safer. Capping via `.map` on `Schedule` output is unusual.
+- `JorlanShell.run` uses `ZIO.succeed(sys.exit(0))` to force JVM exit. The comment justifies this as an escape from stray threads. However, `ZIO.succeed` is wrong here — `sys.exit` throws `SecurityException` in some environments and performs a system-level side effect that should be wrapped in `ZIO.attempt` at minimum, or deferred to a finalizer.
+- `processLoop` uses `catchAllDefect` to swallow JVM-level defects in the rendering loop. This is intentional to keep the TUI alive, but it discards stack traces silently. A `ZIO.logErrorCause` before `screen.addMessage` would preserve observability.
+- `ShellCommand.parse` uses an explicit `return` keyword on line 33 — a functional purity style violation.
+- `wordWrap` in `JorlanScreen.scala` uses mutable `ArrayBuffer` and `var` — isolated to a private drawing helper with no external visibility, but still a style issue given the project's functional discipline.
+- `addMessage` in `LanternaScreen` calls `LocalTime.now()` directly inside a `UIO[Unit]` — this is a side effect (clock access) not wrapped in a ZIO effect. Should be `Clock.localDateTime` or similar.
+- `handleKey` in `LanternaScreen` checks `ch == null` at line 199 — the project uses `-Yexplicit-nulls`, so this is forced by the Lanterna Java interop but the import `scala.language.unsafeNulls` is at file scope, making ALL null checks implicit. This is acceptable Java interop.
+- `JorlanClient.scala` uses `implicit` keyword (Scala 2 style) instead of `given`/`using` (Scala 3) — this is generated Caliban client code and should not be hand-edited. Not a review issue.
+- `resolveCredentials` throws `new RuntimeException("Cancelled")` via `ZIO.fail` — appropriate for signalling cancellation through the `Throwable` error channel, but the message is not distinguishable from other failures at the `catchAll` site in `run`.
+
 ## Known Issues Found (first review, 2026-05-25)
 
 - `ChannelIdentity.id` typed as `UserId` (a PK reuse), which is confusing and weakens type safety; no dedicated `ChannelIdentityId` type.

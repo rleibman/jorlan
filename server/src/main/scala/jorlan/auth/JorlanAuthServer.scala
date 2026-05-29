@@ -71,7 +71,7 @@ object JorlanAuthServer {
             connectionId: Option[ConnectionId],
           ): IO[AuthError, User] = {
             for {
-              now <- Clock.instant
+              now  <- Clock.instant
               user <- repo
                 .upsert(
                   User(
@@ -110,7 +110,7 @@ object JorlanAuthServer {
           ): IO[AuthError, User] = {
             for {
               now <- Clock.instant
-              _ <- ChannelType.fromProvider(provider) match {
+              _   <- ChannelType.fromProvider(provider) match {
                 case Some(channelType) =>
                   repo
                     .upsertChannelIdentity(

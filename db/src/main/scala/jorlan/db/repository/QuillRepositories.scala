@@ -524,9 +524,9 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
     val base = quote(qConnectorInstances)
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[ConnectorInstance]] = s.sorts match {
-      case Some(Sort(ConnectorOrder.Id, OrderDirection.Desc))   => quote(limited.sortBy(_.id)(Ord.desc))
-      case Some(Sort(ConnectorOrder.Name, OrderDirection.Asc))  => quote(limited.sortBy(_.name)(Ord.asc))
-      case Some(Sort(ConnectorOrder.Name, OrderDirection.Desc)) => quote(limited.sortBy(_.name)(Ord.desc))
+      case Some(Sort(ConnectorOrder.Id, OrderDirection.Desc))           => quote(limited.sortBy(_.id)(Ord.desc))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Asc))          => quote(limited.sortBy(_.name)(Ord.asc))
+      case Some(Sort(ConnectorOrder.Name, OrderDirection.Desc))         => quote(limited.sortBy(_.name)(Ord.desc))
       case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Asc)) =>
         quote(limited.sortBy(_.connectorType)(Ord.asc))
       case Some(Sort(ConnectorOrder.ConnectorType, OrderDirection.Desc)) =>
@@ -721,7 +721,7 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
 
   override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =
     for {
-      now <- Clock.instant
+      now    <- Clock.instant
       result <- exec(
         qc.ctx.run(
           qSchedulerJobs
@@ -1079,7 +1079,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
     capability: CapabilityName,
   ): RepositoryTask[List[CapabilityGrant]] =
     for {
-      now <- Clock.instant
+      now    <- Clock.instant
       grants <- exec(
         qc.ctx.run(
           qCapabilityGrants.filter(g =>
@@ -1119,7 +1119,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
       qc.ctx.run(
         (for {
           ur <- qUserRoles.filter(_.userId == lift(userId))
-          p <- qPermissions.join(p =>
+          p  <- qPermissions.join(p =>
             p.roleId.contains(ur.roleId) &&
               p.resource == lift(resource) &&
               p.action == lift(action),
@@ -1163,7 +1163,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
 
   override def expireAllStaleApprovalRequests(): RepositoryTask[Long] =
     for {
-      now <- Clock.instant
+      now   <- Clock.instant
       count <- exec(
         qc.ctx.run(
           qApprovalRequests
@@ -1175,7 +1175,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
 
   override def getExpiredApprovalRequests: RepositoryTask[List[ApprovalRequest]] =
     for {
-      now <- Clock.instant
+      now    <- Clock.instant
       result <- exec(
         qc.ctx.run(
           qApprovalRequests

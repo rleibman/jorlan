@@ -46,7 +46,7 @@ private class AgentServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsertSession(session)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.AgentStarted,
@@ -67,7 +67,7 @@ private class AgentServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsertSession(session)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.AgentCompleted,
@@ -89,7 +89,7 @@ private class AgentServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsertSession(session)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.AgentFailed,

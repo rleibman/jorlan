@@ -6,6 +6,10 @@ addSbtPlugin("de.heikoseeberger" % "sbt-header"                % "5.10.0")
 addSbtPlugin("com.github.sbt"    % "sbt-native-packager"       % "1.11.7")
 addSbtPlugin("com.eed3si9n"      % "sbt-buildinfo"             % "0.13.1")
 addSbtPlugin("org.scalameta"     % "sbt-scalafmt"              % "2.6.1")
+// scalafmt-dynamic supplies the Coursier-backed RepositoryPackageDownloaderFactory
+// that caliban-codegen-sbt requires when it calls Scalafmt.create() to format
+// generated code using the version declared in .scalafmt.conf.
+libraryDependencies += "org.scalameta" %% "scalafmt-dynamic" % "3.11.1"
 addSbtPlugin("com.github.cb372"  % "sbt-explicit-dependencies" % "0.3.1")
 addSbtPlugin("com.typesafe"      % "sbt-mima-plugin"           % "1.1.5")
 

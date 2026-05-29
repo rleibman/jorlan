@@ -62,7 +62,7 @@ object Jorlan extends ZIOApp {
       _      <- FlywayMigration.runMigrations
       _      <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       app    <- zapp
-      _ <- Server
+      _      <- Server
         .serve(app)
         .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
     } yield ()

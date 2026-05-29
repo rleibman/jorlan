@@ -35,7 +35,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner", None, T0, T0))
-          ws <- repo.upsertWorkspace(
+          ws       <- repo.upsertWorkspace(
             Workspace(WorkspaceId.empty, owner.id, "my-ws", Some("desc"), T0, T0),
           )
           artifact = Artifact(
@@ -63,7 +63,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner2", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws2", None, T0, T0))
-          _ <- repo.upsert(
+          _        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -98,7 +98,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner3", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws3", None, T0, T0))
-          _ <- repo.upsert(
+          _        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -139,7 +139,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner4", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws4", None, T0, T0))
-          _ <- repo.upsert(
+          _        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -180,7 +180,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner5", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws5", None, T0, T0))
-          _ <- repo.upsert(
+          _        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -221,7 +221,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner6", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws6", None, T0, T0))
-          _ <- repo.upsert(
+          _        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -272,7 +272,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[ArtifactZIORepository]
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner7", None, T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws7", None, T0, T0))
-          a <- repo.upsert(
+          a        <- repo.upsert(
             Artifact(
               ArtifactId.empty,
               Some(ws.id),
@@ -332,7 +332,7 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner4", None, T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "bravo", None, T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "alpha", None, T0, T0))
-          asc <- repo.searchWorkspaces(
+          asc      <- repo.searchWorkspaces(
             WorkspaceSearch(
               ownerId = owner.id,
               pageSize = 20,
