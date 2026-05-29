@@ -126,6 +126,7 @@ object JorlanScreen {
 
 // ─── Implementation ───────────────────────────────────────────────────────────
 
+// $COVERAGE-OFF$ Lanterna terminal I/O requires a real TTY; not instrumentable in CI
 // P7-026: Constructor reduced from 9 parameters to 5 by grouping display state into ScreenState.
 private class LanternaScreen(
   screen:     Screen,
@@ -379,3 +380,4 @@ private class LanternaScreen(
   }
 
 }
+// $COVERAGE-ON$

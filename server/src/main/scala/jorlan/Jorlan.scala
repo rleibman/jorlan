@@ -39,8 +39,11 @@ object Jorlan extends ZIOApp {
     Method.GET / "health" -> Handler.ok,
   )
 
-  override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {
-    val zapp = for {
+  /** Build the combined application routes. Extracted so integration tests can wire up the app with a test environment
+    * without starting a real HTTP server on a production port.
+    */
+  def buildRoutes: ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
+    for {
       authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
       authR      <- authServer.authRoutes
       unauthR    <- authServer.unauthRoutes
@@ -57,15 +60,15 @@ object Jorlan extends ZIOApp {
         }
     }
 
+  override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
     for {
       config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
       _      <- FlywayMigration.runMigrations
       _      <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
-      app    <- zapp
+      app    <- buildRoutes
       _      <- Server
         .serve(app)
         .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
     } yield ()
-  }
 
 }

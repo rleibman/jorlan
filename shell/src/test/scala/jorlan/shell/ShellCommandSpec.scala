@@ -67,7 +67,7 @@ object ShellCommandSpec extends ZIOSpecDefault {
         // split("\\s+", 2) gives ["trace", "info extra"], so level = "info extra"
         assertTrue(ShellCommand.parse("/trace info extra") == ShellCommand.Trace("info extra"))
       },
-      test("//comment — double slash produces Unknown(\"/comment\")") {
+      test("//comment — double slash produces Unknown(\"//comment\")") {
         assertTrue(ShellCommand.parse("//comment") == ShellCommand.Unknown("//comment"))
       },
       test("empty string becomes Message(\"\")") {

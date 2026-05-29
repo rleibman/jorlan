@@ -31,7 +31,7 @@ object ShellConfig {
   val layer: TaskLayer[ShellConfig] = ZLayer.fromZIO {
     ZIO
       .attempt {
-        val homeDir = java.lang.System.getenv("HOME")
+        val homeDir = java.lang.System.getProperty("user.home")
         val userFile = Option(homeDir)
           .map(h => new File(s"$h/.jorlan/jorlan.json"))
           .filter(_.exists())

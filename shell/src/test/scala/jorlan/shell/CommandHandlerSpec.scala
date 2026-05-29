@@ -62,10 +62,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
   ): ULayer[TestEnv] =
     FakeScreen.layer ++ fakeAuth(whoAmIResult) ++ fakeGQL(gqlResult) ++ defaultCfg
 
-  def runCmd(
-    cmd:   ShellCommand,
-    layer: ULayer[TestEnv] = testLayer(),
-  ): ZIO[Any, Nothing, (FakeScreen, Unit)] = {
+  def runCmd(cmd: ShellCommand): ZIO[Any, Nothing, (FakeScreen, Unit)] =
     for {
       fs   <- FakeScreen.make
       exit <- Promise.make[Nothing, Unit]
@@ -77,7 +74,6 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             defaultCfg,
         )
     } yield (fs, ())
-  }
 
   // ─── Tests ───────────────────────────────────────────────────────────────────
 

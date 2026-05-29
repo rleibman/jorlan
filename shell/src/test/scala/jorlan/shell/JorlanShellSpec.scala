@@ -10,10 +10,6 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult}
-import jorlan.shell.commands.ShellCommand
-import jorlan.shell.testing.FakeScreen
-import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*
@@ -40,30 +36,9 @@ object JorlanShellSpec extends ZIOSpecDefault {
           assertTrue(JorlanShell.fmtDelay(999.millis) == "999ms")
         },
       ),
-      suite("resolveCredentials — P7-039")(
-        test("returns credentials immediately when both present in config") {
-          val cfg = ShellConfig(
-            serverUrl = "http://localhost:8080",
-            email = Some("alice@test.com"),
-            password = Some("secret"),
-          )
-          for {
-            fs <- FakeScreen.make
-            // Access resolveCredentials via reflection would be fragile — test the observable
-            // behavior: when both are in config no messages should be added
-            msgs <- fs.messages
-          } yield assertTrue(msgs.isEmpty)
-        },
-        test("/quit during credential prompt causes RuntimeException(Cancelled)") {
-          // promptField exits on Quit command — test using the ShellCommand.parse contract
-          assertTrue(ShellCommand.parse("/quit") == ShellCommand.Quit)
-        },
-        test("/exit also maps to Quit") {
-          assertTrue(ShellCommand.parse("/exit") == ShellCommand.Quit)
-        },
+      suite("resolveCredentials config filtering — P7-039")(
         test("empty email in config is treated as absent") {
           val cfg = ShellConfig(email = Some(""), password = Some("secret"))
-          // filter(_.nonEmpty) produces None for Some("") — verify via the config filter
           val emailOpt = cfg.email.filter(_.nonEmpty)
           assertTrue(emailOpt.isEmpty)
         },
@@ -76,6 +51,12 @@ object JorlanShellSpec extends ZIOSpecDefault {
           val cfg = ShellConfig(email = Some("user@test.com"))
           val emailOpt = cfg.email.filter(_.nonEmpty)
           assertTrue(emailOpt.contains("user@test.com"))
+        },
+        test("both credentials present means no prompting is needed") {
+          val cfg = ShellConfig(email = Some("alice@test.com"), password = Some("secret"))
+          val emailOpt = cfg.email.filter(_.nonEmpty)
+          val passwordOpt = cfg.password.filter(_.nonEmpty)
+          assertTrue(emailOpt.isDefined && passwordOpt.isDefined)
         },
       ),
     )

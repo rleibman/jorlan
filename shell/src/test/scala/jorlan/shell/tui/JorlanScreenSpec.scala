@@ -26,17 +26,15 @@ object JorlanScreenSpec extends ZIOSpecDefault {
   override def spec: Spec[Any, Nothing] =
     suite("JorlanScreen behavior via FakeScreen")(
       suite("addMessage — buffer cap")(
-        test("buffer never exceeds maxMessages") {
+        test("FakeScreen has no cap and stores beyond maxMessages") {
           for {
             fs <- FakeScreen.make
-            // Add maxMessages + 5 messages
+            // Add maxMessages + 5 messages; FakeScreen stores all of them
             _ <- ZIO.foreachDiscard(1 to (JorlanScreen.maxMessages + 5))(i =>
               fs.addMessage(MessageKind.System, s"msg $i"),
             )
             msgs <- fs.messages
           } yield assertTrue(msgs.size == JorlanScreen.maxMessages + 5)
-          // Note: FakeScreen has no cap — it captures all. The cap is in LanternaScreen.
-          // This test documents that FakeScreen does not impose the cap.
         },
         test("messages are appended in order") {
           for {
