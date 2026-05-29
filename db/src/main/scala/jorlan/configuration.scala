@@ -56,6 +56,10 @@ case class JorlanAiSettings(
   ollamaModel:   String = "llama3.2:3b",
   qdrantHost:    String = "localhost",
   qdrantRPCPort: Int = 6334,
+  temperature:   Double = 1.1,
+  topK:          Int = 40,
+  topP:          Double = 0.9,
+  maxMessages:   Int = 1000,
 )
 
 case class JorlanConfig(

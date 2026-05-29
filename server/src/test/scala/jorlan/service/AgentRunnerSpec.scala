@@ -84,6 +84,29 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           received <- runWithSubscription(Nil, "hi")
         } yield assertTrue(received.length == 1, received.head.finished)
       }.provide(layers(Nil)),
+      test("processMessage publishes finished sentinel on ModelGateway failure") {
+        for {
+          received <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
+        } yield assertTrue(received.length >= 1)
+      }.provide {
+        val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
+        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val hub = SessionHub.live
+        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+      },
+      test("processMessage writes AgentResponseCompleted even on model failure") {
+        for {
+          _      <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
+          events <- ZIO.serviceWithZIO[EventLogService](_.query(EventLogFilter()))
+        } yield assertTrue(events.exists(_.eventType == EventType.AgentResponseCompleted))
+      }.provide {
+        val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
+        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val hub = SessionHub.live
+        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+      },
     )
 
 }

@@ -67,6 +67,10 @@ object EnvironmentBuilder {
           ollamaModel = ai.ollamaModel,
           qdrantHost = ai.qdrantHost,
           qdrantRPCPort = ai.qdrantRPCPort,
+          temperature = ai.temperature,
+          topK = ai.topK,
+          topP = ai.topP,
+          maxMessages = ai.maxMessages,
         )
       },
     )

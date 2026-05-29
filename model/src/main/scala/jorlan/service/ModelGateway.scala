@@ -72,6 +72,12 @@ trait ModelGateway {
   /** Returns metadata for all models the gateway can currently route to. */
   def availableModels: UIO[List[ModelInfo]]
 
+  /** Release all in-process resources (chat memory, connection pools) held for `sessionId`.
+    *
+    * Must be called on session termination to prevent unbounded growth of the per-session map.
+    */
+  def invalidateSession(sessionId: AgentSessionId): UIO[Unit]
+
 }
 
 object ModelGateway {
@@ -84,5 +90,8 @@ object ModelGateway {
 
   def availableModels: URIO[ModelGateway, List[ModelInfo]] =
     ZIO.serviceWithZIO[ModelGateway](_.availableModels)
+
+  def invalidateSession(sessionId: AgentSessionId): URIO[ModelGateway, Unit] =
+    ZIO.serviceWithZIO[ModelGateway](_.invalidateSession(sessionId))
 
 }

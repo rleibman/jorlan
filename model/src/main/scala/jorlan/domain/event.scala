@@ -22,7 +22,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
 
   // ─── Agent / session lifecycle ───────────────────────────────────────────────
   case AgentStarted, AgentCompleted, AgentFailed
-  case SessionCreated
+  case SessionCreated, SessionSuspended, SessionTerminated
 
   // ─── Message and model call cycle ────────────────────────────────────────────
   case UserMessageReceived, AgentResponseCompleted
@@ -49,6 +49,32 @@ enum EventType derives JsonEncoder, JsonDecoder {
 
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
+
+}
+
+object EventLog {
+
+  /** Smart constructor that supplies the invariant defaults (`id = EventLogId.empty`, `agentId = None`,
+    * `payloadJson = None`) so callers do not have to repeat them.
+    */
+  def entry[R](
+    eventType: EventType,
+    actorId:   Option[UserId],
+    agentId:   Option[AgentId],
+    sessionId: Option[AgentSessionId],
+    resource:  Option[R],
+    now:       Instant,
+  ): EventLog[R] =
+    EventLog(
+      id = EventLogId.empty,
+      eventType = eventType,
+      actorId = actorId,
+      agentId = agentId,
+      sessionId = sessionId,
+      resource = resource,
+      payloadJson = None,
+      occurredAt = now,
+    )
 
 }
 

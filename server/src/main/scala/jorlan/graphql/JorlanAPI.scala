@@ -30,7 +30,7 @@ import java.time.Instant
 object JorlanAPI {
 
   type JorlanApiEnv =
-    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub
+    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -240,7 +240,7 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.session.list", actorId)
               results <- ZIO.serviceWithZIO[AgentSessionManager](
-                _.getSession(AgentSessionId.empty).map(_.toList),
+                _.listSessions(actorId, input.page.getOrElse(0), input.pageSize.getOrElse(20)),
               )
             } yield results,
         ),
@@ -290,7 +290,7 @@ object JorlanAPI {
           grantPermission = input =>
             for {
               _ <- ZIO
-                .unless(input.userId.isDefined != input.roleId.isDefined)(
+                .when(input.userId.isDefined == input.roleId.isDefined)(
                   ZIO.fail(JorlanError("A permission must target exactly one of userId or roleId")),
                 )
               actorId <- actorIdFromSession
@@ -327,10 +327,10 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.message", actorId)
-              _       <- ZIO
-                .serviceWithZIO[AgentRunner](
-                  _.processMessage(AgentSessionId(input.sessionId), input.content, Some(actorId)),
-                )
+              sid = AgentSessionId(input.sessionId)
+              _ <- ZIO
+                .serviceWithZIO[AgentRunner](_.processMessage(sid, input.content, Some(actorId)))
+                .tapError(e => ZIO.logError(s"AgentRunner failed for session $sid: ${e.getMessage}"))
                 .forkDaemon
             } yield (),
         ),
@@ -338,7 +338,7 @@ object JorlanAPI {
           approvalNotifications = ZStream.empty,
           eventLogTail = ZStream.empty,
           agentResponseStream =
-            input => ZStream.serviceWithStream[SessionHub](_.subscribe(AgentSessionId(input.sessionId))),
+            input => ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(AgentSessionId(input.sessionId))),
         ),
       ),
     ) @@ maxFields(200) @@ maxDepth(20)

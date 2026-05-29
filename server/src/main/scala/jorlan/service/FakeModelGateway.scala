@@ -46,6 +46,8 @@ class FakeModelGateway(
       ),
     )
 
+  override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
+
 }
 
 object FakeModelGateway {
@@ -55,5 +57,33 @@ object FakeModelGateway {
     chunkDelay: Option[Duration] = None,
   ): ULayer[ModelGateway] =
     ZLayer.succeed(new FakeModelGateway(chunks, chunkDelay))
+
+  /** Factory for a failing model gateway (for testing error paths). */
+  def failingLayer(error: ModelError): ULayer[ModelGateway] =
+    ZLayer.succeed(new FailingFakeModelGateway(error))
+
+}
+
+/** A [[ModelGateway]] that always fails with the specified error. Used for testing error handling. */
+private class FailingFakeModelGateway(error: ModelError) extends ModelGateway {
+
+  override def streamedResponse(
+    sessionId: AgentSessionId,
+    message:   String,
+  ): ZStream[Any, ModelError, String] = ZStream.fail(error)
+
+  override def availableModels: UIO[List[ModelInfo]] =
+    ZIO.succeed(
+      List(
+        ModelInfo(
+          id = ModelId("fake-model"),
+          provider = "fake",
+          contextWindow = 4096,
+          supportsStreaming = true,
+        ),
+      ),
+    )
+
+  override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
 
 }

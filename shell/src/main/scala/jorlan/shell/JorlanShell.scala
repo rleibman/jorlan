@@ -10,7 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult}
+import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -28,7 +28,7 @@ import zio.logging.backend.SLF4J
   */
 object JorlanShell extends ZIOApp {
 
-  override type Environment = ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState
+  override type Environment = ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState & SubscriptionClient
 
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
@@ -40,6 +40,7 @@ object JorlanShell extends ZIOApp {
         GraphQLClient.live,
         JorlanScreen.live,
         ShellState.live,
+        SubscriptionClient.live,
       )
 
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {

@@ -19,15 +19,18 @@ import zio.stream.ZStream
   */
 class SessionHub private (hubs: Ref[Map[AgentSessionId, Hub[ResponseChunk]]]) {
 
-  /** Returns the hub for `sessionId`, creating a new bounded hub if none exists yet. */
+  /** Returns the hub for `sessionId`, creating a new bounded hub if none exists yet.
+    *
+    * Allocation is atomic: a fresh `Hub` is eagerly allocated and discarded if a concurrent fiber already inserted one,
+    * ensuring no subscriber is silently connected to an orphaned hub.
+    */
   def getOrCreate(sessionId: AgentSessionId): UIO[Hub[ResponseChunk]] =
-    hubs.get.flatMap { map =>
-      map.get(sessionId) match {
-        case Some(h) => ZIO.succeed(h)
-        case None    =>
-          Hub.bounded[ResponseChunk](256).flatMap { h =>
-            hubs.update(_ + (sessionId -> h)).as(h)
-          }
+    Hub.bounded[ResponseChunk](256).flatMap { fresh =>
+      hubs.modify { map =>
+        map.get(sessionId) match {
+          case Some(existing) => (existing, map)
+          case None           => (fresh, map + (sessionId -> fresh))
+        }
       }
     }
 

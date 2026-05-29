@@ -12,9 +12,7 @@ package jorlan.shell.commands
 
 import jorlan.shell.ShellConfig
 import jorlan.shell.ShellState
-import zio.json.EncoderOps
-
-import scala.math.BigDecimal.javaBigDecimal2bigDecimal
+import zio.json.{DecoderOps, EncoderOps, JsonDecoder}
 import jorlan.shell.client.{AuthClient, GraphQLClient, SubscriptionClient}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -23,7 +21,7 @@ import zio.json.ast.Json
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
 object CommandHandler {
 
-  type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState
+  type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient
 
   def handle(
     cmd:  ShellCommand,
@@ -37,7 +35,7 @@ object CommandHandler {
       case ShellCommand.About         => showAbout
       case ShellCommand.WhoAmI        => showWhoAmI
       case ShellCommand.Quit          => exit.succeed(()).unit
-      case ShellCommand.NewSession    => handleNewSession(None)
+      case ShellCommand.NewSession(m) => handleNewSession(m)
       case ShellCommand.ModelInfo     => showModelInfo
       case ShellCommand.ListModels    => listModels
       case ShellCommand.Trace(level)  => setTrace(level)
@@ -66,25 +64,25 @@ object CommandHandler {
       case Some(sessionId) =>
         val mutation =
           s"""mutation { submitMessage(sessionId: ${sessionId.value}, content: ${Json.Str(text).toJson}) }"""
-        for {
-          shellCfg <- ZIO.service[ShellConfig]
-          auth     <- ZIO.service[AuthClient]
-          _        <- gql(_.execute(mutation))
-            .foldZIO(
-              err => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err")),
-              _ =>
-                ZIO.scoped {
-                  SubscriptionClient
-                    .agentResponseStream(sessionId, shellCfg, auth)
-                    .foreach { chunk =>
-                      if (chunk.finished) ZIO.unit
-                      else screen(_.addMessage(MessageKind.Server, chunk.content))
-                    }
-                    .mapError(err => ())
-                    .ignore
-                },
-            )
-        } yield ()
+        gql(_.execute(mutation))
+          .foldZIO(
+            err => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err")),
+            _ =>
+              ZIO.scoped {
+                SubscriptionClient
+                  .agentResponseStream(sessionId)
+                  .foreach { chunk =>
+                    if (chunk.finished && !chunk.isError) ZIO.unit
+                    else if (chunk.isError)
+                      screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
+                    else screen(_.addMessage(MessageKind.Server, chunk.content))
+                  }
+                  .foldZIO(
+                    err => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err")),
+                    _ => ZIO.unit,
+                  )
+              },
+          )
     }
 
   private val showHelp: ZIO[Env, Nothing, Unit] =
@@ -147,19 +145,23 @@ object CommandHandler {
   private def handleNewSession(modelId: Option[String]): ZIO[Env, Nothing, Unit] = {
     val modelArg = modelId.map(m => s"""modelId: "$m"""").getOrElse("modelId: null")
     val mutation = s"""mutation { createSession($modelArg) { id modelId status } }"""
+
+    def parseSessionId(json: zio.json.ast.Json): Option[Long] =
+      for {
+        obj        <- json.asObject
+        data       <- obj.get("createSession")
+        sessionObj <- data.asObject
+        idField    <- sessionObj.get("id")
+        n          <- idField.asNumber
+      } yield n.value.longValue
+
     for {
       result <- gql(_.execute(mutation)).either
       _      <- result match {
         case Left(err)   => screen(_.addMessage(MessageKind.Error, s"Failed to create session: $err"))
         case Right(json) =>
-          (for {
-            obj        <- json.asObject
-            data       <- obj.get("createSession")
-            sessionObj <- data.asObject
-            idField    <- sessionObj.get("id")
-            idNum      <- idField.asNumber.map(n => BigDecimal(n.value).toLong)
-          } yield idNum) match {
-            case None     => screen(_.addMessage(MessageKind.Error, "Could not parse session response"))
+          parseSessionId(json) match {
+            case None     => screen(_.addMessage(MessageKind.Error, "Could not parse session ID from response"))
             case Some(id) =>
               import jorlan.domain.AgentSessionId
               ZIO.serviceWithZIO[ShellState](_.setSessionId(AgentSessionId(id))) *>
@@ -194,7 +196,7 @@ object CommandHandler {
         case "warning" => Level.WARN
         case "info"    => Level.INFO
         case "debug"   => Level.DEBUG
-        case _         => Level.INFO
+        case _         => Level.INFO // unreachable: guarded by valid.contains above
       }
 
       ZIO

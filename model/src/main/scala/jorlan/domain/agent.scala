@@ -78,9 +78,13 @@ case class AgentSession(
   *   The token text. Empty when `finished` is `true`.
   * @param finished
   *   When `true`, the stream is complete and `content` is empty. Consumers must close the subscription on receipt.
+  * @param isError
+  *   When `true` alongside `finished = true`, the stream ended due to a model or runtime error and `content` carries
+  *   the error message. Clients should display this as an error rather than a normal completion.
   */
 case class ResponseChunk(
   sessionId: AgentSessionId,
   content:   String,
   finished:  Boolean,
+  isError:   Boolean = false,
 ) derives JsonEncoder, JsonDecoder

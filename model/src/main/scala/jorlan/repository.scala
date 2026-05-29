@@ -58,6 +58,7 @@ case class AgentSearch(
 enum AgentSessionOrder { case Id, CreatedAt }
 case class AgentSessionSearch(
   agentId:  Option[AgentId] = None,
+  userId:   Option[UserId] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[AgentSessionOrder]] = None,

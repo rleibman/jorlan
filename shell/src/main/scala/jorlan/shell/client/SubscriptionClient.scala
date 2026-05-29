@@ -16,6 +16,7 @@ import sttp.client4.*
 import sttp.client4.ws.async.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend
 import sttp.ws.WebSocketFrame
+import sttp.client4.WebSocketBackend
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -25,26 +26,12 @@ import scala.language.unsafeNulls
 
 /** Implements the graphql-ws protocol over sttp WebSocket to stream [[ResponseChunk]] tokens from the server.
   *
+  * A single [[Backend]] is acquired once at layer construction time (via [[SubscriptionClient.live]]) and reused across
+  * all subscriptions — avoiding the P7-001 pattern of creating a new thread pool per call.
+  *
   * Protocol sequence: connection_init → connection_ack → subscribe → next* → complete
   */
-object SubscriptionClient {
-
-  private case class WsMsg(
-    `type`:  String,
-    id:      Option[String] = None,
-    payload: Option[Json] = None,
-  ) derives JsonEncoder, JsonDecoder
-
-  private case class ChunkData(
-    sessionId: AgentSessionId,
-    content:   String,
-    finished:  Boolean,
-  ) derives JsonDecoder
-
-  private case class ResponseData(agentResponseStream: ChunkData) derives JsonDecoder
-  private case class NextPayload(data: ResponseData) derives JsonDecoder
-
-  private val subscriptionId = "1"
+trait SubscriptionClient {
 
   /** Returns a stream of [[ResponseChunk]] tokens for the given session.
     *
@@ -53,16 +40,50 @@ object SubscriptionClient {
     *
     * @param sessionId
     *   The session to subscribe to.
-    * @param cfg
-    *   Shell configuration supplying the server URL (converted to `ws://` or `wss://`).
-    * @param auth
-    *   Auth client providing the current Bearer token for the WebSocket handshake.
     */
-  def agentResponseStream(
-    sessionId: AgentSessionId,
-    cfg:       ShellConfig,
-    auth:      AuthClient,
-  ): ZStream[Scope, String, ResponseChunk] = {
+  def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk]
+
+}
+
+object SubscriptionClient {
+
+  def agentResponseStream(sessionId: AgentSessionId): ZStream[SubscriptionClient & Scope, String, ResponseChunk] =
+    ZStream.serviceWithStream[SubscriptionClient](_.agentResponseStream(sessionId))
+
+  val live: ZLayer[ShellConfig & AuthClient, Throwable, SubscriptionClient] = ZLayer.scoped {
+    for {
+      cfg     <- ZIO.service[ShellConfig]
+      auth    <- ZIO.service[AuthClient]
+      backend <- HttpClientZioBackend.scoped()
+    } yield SubscriptionClientImpl(cfg, auth, backend)
+  }
+
+}
+
+private case class WsMsg(
+  `type`:  String,
+  id:      Option[String] = None,
+  payload: Option[Json] = None,
+) derives JsonEncoder, JsonDecoder
+
+private case class ChunkData(
+  sessionId: AgentSessionId,
+  content:   String,
+  finished:  Boolean,
+) derives JsonDecoder
+
+private case class AgentResponseData(agentResponseStream: ChunkData) derives JsonDecoder
+private case class NextPayload(data: AgentResponseData) derives JsonDecoder
+
+private class SubscriptionClientImpl(
+  cfg:     ShellConfig,
+  auth:    AuthClient,
+  backend: WebSocketBackend[Task],
+) extends SubscriptionClient {
+
+  private val subscriptionId = "1"
+
+  override def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk] = {
     val wsUrl = cfg.serverUrl
       .replaceFirst("^https://", "wss://")
       .replaceFirst("^http://", "ws://") + "/api/jorlan/ws"
@@ -73,7 +94,7 @@ object SubscriptionClient {
       payload = Some(
         Json.Obj(
           "query" -> Json.Str(
-            s"""subscription { agentResponseStream(sessionId: ${sessionId.value}) { sessionId content finished } }""",
+            s"""subscription { agentResponseStream(sessionId: ${sessionId.value}) { sessionId content finished isError } }""",
           ),
         ),
       ),
@@ -81,10 +102,9 @@ object SubscriptionClient {
 
     ZStream.unwrapScoped(
       for {
-        token   <- auth.currentToken
-        backend <- HttpClientZioBackend.scoped().mapError(e => s"WS backend error: ${e.getMessage}")
-        queue   <- Queue.unbounded[Option[Either[String, ResponseChunk]]]
-        _       <- basicRequest
+        token <- auth.currentToken
+        queue <- Queue.bounded[Option[Either[String, ResponseChunk]]](1024)
+        _     <- basicRequest
           .get(uri"$wsUrl")
           .headers(token.map(t => Map("Authorization" -> s"Bearer $t")).getOrElse(Map.empty))
           .response(
