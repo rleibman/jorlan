@@ -69,7 +69,7 @@ class RiskClassifierImpl extends RiskClassifier {
     val name = capability.value
     exactOverrides.get(name) match {
       case Some(rc) => rc
-      case None =>
+      case None     =>
         val segments = name.split('.')
         Iterator
           .range(segments.length, 0, -1)

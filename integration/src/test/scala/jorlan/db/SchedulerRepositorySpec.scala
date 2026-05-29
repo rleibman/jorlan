@@ -122,7 +122,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           agentRepo <- ZIO.service[AgentZIORepository]
           repo      <- ZIO.service[SchedulerZIORepository]
           agent     <- agentRepo.upsert(Agent(AgentId.empty, "SchedAgent4", None, None, 0, T0))
-          job <- repo.upsertJob(
+          job       <- repo.upsertJob(
             SchedulerJob(
               SchedulerJobId.empty,
               agent.id,
@@ -146,7 +146,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           agentRepo <- ZIO.service[AgentZIORepository]
           repo      <- ZIO.service[SchedulerZIORepository]
           agent     <- agentRepo.upsert(Agent(AgentId.empty, "SchedAgent5", None, None, 0, T0))
-          job <- repo.upsertJob(
+          job       <- repo.upsertJob(
             SchedulerJob(
               SchedulerJobId.empty,
               agent.id,
@@ -181,7 +181,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           agentRepo <- ZIO.service[AgentZIORepository]
           repo      <- ZIO.service[SchedulerZIORepository]
           agent     <- agentRepo.upsert(Agent(AgentId.empty, "SchedAgent6", None, None, 0, T0))
-          job <- repo.upsertJob(
+          job       <- repo.upsertJob(
             SchedulerJob(
               SchedulerJobId.empty,
               agent.id,
@@ -215,7 +215,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           agentRepo <- ZIO.service[AgentZIORepository]
           repo      <- ZIO.service[SchedulerZIORepository]
           agent     <- agentRepo.upsert(Agent(AgentId.empty, "SchedAgent7", None, None, 0, T0))
-          job <- repo.upsertJob(
+          job       <- repo.upsertJob(
             SchedulerJob(
               SchedulerJobId.empty,
               agent.id,
@@ -242,7 +242,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           agentRepo <- ZIO.service[AgentZIORepository]
           repo      <- ZIO.service[SchedulerZIORepository]
           agent     <- agentRepo.upsert(Agent(AgentId.empty, "SchedAgent8", None, None, 0, T0))
-          job <- repo.upsertJob(
+          job       <- repo.upsertJob(
             SchedulerJob(
               SchedulerJobId.empty,
               agent.id,

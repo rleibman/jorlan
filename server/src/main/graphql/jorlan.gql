@@ -5,11 +5,17 @@ schema {
 }
 
 "An instantaneous point on the time-line represented by a standard date time string"
+scalar AgentId
+scalar AgentSessionId
+scalar ApprovalRequestId
+scalar CapabilityName
+scalar EventLogId
 scalar Instant
-
 scalar Long
-
+scalar PermissionId
+scalar RoleId
 scalar Unit
+scalar UserId
 
 enum ApprovalStatus {
   Approved
@@ -41,16 +47,18 @@ enum EventType {
   SkillSucceeded
   SystemAlert
   UserConnected
+  UserCreated
   UserDisconnected
+  UserUpdated
 }
 
 type ApprovalRequest {
-  id: Long!
-  capability: String!
+  id: ApprovalRequestId!
+  capability: CapabilityName!
   scopeJson: String
-  agentId: Long
-  requestorUserId: Long!
-  sessionId: Long
+  agentId: AgentId
+  requestorUserId: UserId!
+  sessionId: AgentSessionId
   riskClass: String!
   status: ApprovalStatus!
   createdAt: Instant!
@@ -58,11 +66,11 @@ type ApprovalRequest {
 }
 
 type EventLogJson {
-  id: Long!
+  id: EventLogId!
   eventType: EventType!
-  actorId: Long
-  agentId: Long
-  sessionId: Long
+  actorId: UserId
+  agentId: AgentId
+  sessionId: AgentSessionId
   resource: String
   payloadJson: String
   occurredAt: Instant!
@@ -70,33 +78,33 @@ type EventLogJson {
 
 type Mutations {
   createUser(displayName: String!, email: String): User
-  updateUser(id: Long!, displayName: String!, email: String, active: Boolean!): User
+  updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
   createRole(name: String!, description: String): Role
-  assignRole(userId: Long!, roleId: Long!): Unit
-  revokeRole(userId: Long!, roleId: Long!): Unit
-  grantPermission(resource: String!, action: String!, userId: Long, roleId: Long): Permission
-  revokePermission(value: Long!): Long
+  assignRole(userId: UserId!, roleId: RoleId!): Unit
+  revokeRole(userId: UserId!, roleId: RoleId!): Unit
+  grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
+  revokePermission(id: PermissionId!): Long
 }
 
 type Permission {
-  id: Long!
-  roleId: Long
-  userId: Long
+  id: PermissionId!
+  roleId: RoleId
+  userId: UserId
   resource: String!
   action: String!
   scope: String
 }
 
 type Queries {
-  user(value: Long!): User
-  users: [User!]
-  role(value: Long!): Role
-  roles(value: Long!): [Role!]
-  permissions(value: Long!): [Permission!]
+  user(id: UserId!): User
+  users(page: Int, pageSize: Int): [User!]
+  role(id: RoleId!): Role
+  roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
+  permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
 }
 
 type Role {
-  id: Long!
+  id: RoleId!
   name: String!
   description: String
 }
@@ -107,7 +115,7 @@ type Subscriptions {
 }
 
 type User {
-  id: Long!
+  id: UserId!
   displayName: String!
   email: String
   createdAt: Instant!

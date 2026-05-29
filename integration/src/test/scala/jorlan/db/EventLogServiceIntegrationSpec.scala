@@ -42,10 +42,10 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
         val t2 = T0
         val t3 = T0.plusSeconds(5)
         for {
-          svc <- ZIO.service[EventLogService]
-          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t1))
-          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t2))
-          _   <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t3))
+          svc    <- ZIO.service[EventLogService]
+          _      <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t1))
+          _      <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t2))
+          _      <- svc.log(testEvent(EventType.SystemAlert, occurredAt = t3))
           result <- svc.query(
             EventLogFilter(
               eventType = Some(EventType.SystemAlert),

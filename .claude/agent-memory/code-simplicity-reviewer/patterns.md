@@ -57,6 +57,19 @@ type: project
 - `JorlanAPI`: `ArgBuilder` for `Long`-parameter queries/mutations (e.g. `user: Long => ...`) uses Caliban's flattened-argument convention, not a wrapper `input:` type. The scaladoc in `GraphQLApiSpec` correctly explains this. No issue, but worth preserving the comment.
 - `Jorlan.scala`: Error handler in `handleErrorCause` has an `e: AuthError` catch-all branch before the final `case e` branch; the final `case e` is still needed for non-AuthError throwables, so this is correct, not dead code.
 
+## Phase 7 Shell Interface Observations (2026-05-28)
+- `resolveCredentials` in `JorlanShell`: two nearly-identical prompt arms for email and password; each does `setInputPrompt` + `readLine` + cancel-check. Extracted helper `promptField(label)` would remove duplication.
+- `AuthClient.login` / `GraphQLClient.execute`: `private def backend = HttpClientZioBackend()` is a `def` (not `val`) — creates a new `HttpClientZioBackend` on every call. Within a single `ZIO.scoped` this is one creation per call, which is intended, but the naming is confusing (reads like a field). No correctness bug; note for future review.
+- `AuthClient.login`: nested `tokenOpt match` inside `if (resp.code.isSuccess)` block adds 3 levels of nesting; could be flattened with `for`-comprehension or `EitherT`-style chaining.
+- `JorlanClientDecoders`: `ArgEncoder` instances all follow `(id: T) => ArgEncoder.long.encode(id.value)` — 7 identical bodies differing only in type. No macro solution due to opaque types; current pattern is acceptable but worth noting.
+- `JorlanClient.scala` is Caliban-generated code — do not suggest refactors there.
+- `ShellCommand.parse`: `return` on line 33 is non-idiomatic Scala; should be an `if/else` or guard match. Minor.
+- `expandOne` in `JorlanScreen`: `MessageKind.Raw` has two match arms — one guard at the top (early return) and one dead arm inside the main match. The dead arm `case MessageKind.Raw => ...` on line 316 is unreachable; remove it.
+- `wordWrap` in `JorlanScreen`: uses mutable `ArrayBuffer` + `StringBuilder`; idiomatic Scala would use an accumulator-based recursive function or `foldLeft`. Acceptable for performance in a render-loop context, but the mixing styles (functional outer, mutable inner) is notable.
+- `CommandHandler.setTrace`: validates against a `Set` but doesn't actually change any log level — stubbed. The `@annotation.unused` on `handleMessage`'s `text` parameter signals this pattern is intentional for Phase 7.
+- `ShellCommandSpec`: 14 separate `test(...)` blocks each with a single `assertTrue`; could be table-driven with `check(Gen.fromIterable(...))` but current style is clear and explicit. No action needed.
+- `ShellConfigSpec`: `val cfg = ShellConfig()` repeated in every test; could be a `val` in suite scope, but tests are short enough that it's not a problem.
+
 ## Simplification Patterns Applied / Suggested
 - Shared `runQ` helper in a base Quill repo class would reduce per-method boilerplate significantly
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders

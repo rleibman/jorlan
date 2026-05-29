@@ -140,7 +140,7 @@ object RepositorySpec extends ZIOSpecDefault {
         userRepo  <- ZIO.service[UserZIORepository]
         user      <- userRepo.upsert(User(UserId.empty, "ConvUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
-        session <- agentRepo.upsertSession(
+        session   <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
         )
         conv     <- convRepo.create(Conversation(ConversationId.empty, session.id, T0))
@@ -166,7 +166,7 @@ object RepositorySpec extends ZIOSpecDefault {
         repo <- ZIO.service[SkillZIORepository]
         skill = Skill(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, T0)
         saved <- repo.upsert(skill)
-        sv <- repo.upsertVersion(
+        sv    <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", Json.Obj(), SkillStatus.Active, T0),
         )
         versions <- repo.searchVersions(SkillVersionSearch(skillId = saved.id))
@@ -205,7 +205,7 @@ object RepositorySpec extends ZIOSpecDefault {
         memRepo  <- ZIO.service[MemoryZIORepository]
         userRepo <- ZIO.service[UserZIORepository]
         user     <- userRepo.upsert(User(UserId.empty, "MemUser", None, T0, T0))
-        record1 <- memRepo.upsert(
+        record1  <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
             MemoryScope.User,
@@ -298,10 +298,10 @@ object RepositorySpec extends ZIOSpecDefault {
       val t2 = T0
       val t3 = T0.plusSeconds(10)
       for {
-        repo <- ZIO.service[EventLogZIORepository]
-        _    <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t1))
-        _    <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t2))
-        _    <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t3))
+        repo   <- ZIO.service[EventLogZIORepository]
+        _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t1))
+        _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t2))
+        _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t3))
         result <- repo.search(
           EventLogFilter(
             eventType = Some(EventType.MemoryWritten),
@@ -318,7 +318,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("pageSize caps the result set exactly") {
       for {
         repo <- ZIO.service[EventLogZIORepository]
-        _ <- ZIO.foreachDiscard(1 to 5) { _ =>
+        _    <- ZIO.foreachDiscard(1 to 5) { _ =>
           repo.append(testEvent(EventType.ApprovalRequested))
         }
         limited <- repo.search(EventLogFilter(eventType = Some(EventType.ApprovalRequested), pageSize = 2))

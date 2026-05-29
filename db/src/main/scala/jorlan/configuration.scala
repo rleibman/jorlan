@@ -74,6 +74,7 @@ object AppConfig {
 
 }
 
+// $COVERAGE-OFF$
 /** Base error type for configuration loading failures. */
 sealed abstract class ConfigurationError(
   override val msg:   String,
@@ -84,6 +85,8 @@ case class ConfigLoadError(
   override val msg:   String,
   override val cause: Option[Throwable] = None,
 ) extends ConfigurationError(msg, cause)
+
+// $COVERAGE-ON$
 
 /** ZIO service that provides the resolved [[AppConfig]]. Implementations may load from the classpath, environment
   * variables, or a test fixture.

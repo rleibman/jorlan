@@ -25,7 +25,7 @@ object EmbeddingStoreWrapper {
   def qdrantStoreLayer(collectionName: String): ZLayer[LangChainConfig, Throwable, EmbeddingStoreWrapper] =
     for {
       config <- ZLayer.service[LangChainConfig]
-      ret <-
+      ret    <-
         ZLayer.scoped {
           ZIO.acquireRelease(
             ZIO.attemptBlocking(

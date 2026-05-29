@@ -52,7 +52,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           eventSvc <- ZIO.service[EventLogService]
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser1", None, T0, T0))
-          _ <- permRepo.upsertCapabilityGrant(
+          _        <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("memory.write"),
@@ -79,7 +79,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           eventSvc <- ZIO.service[EventLogService]
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser2", None, T0, T0))
-          _ <- permRepo.upsertCapabilityGrant(
+          _        <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("shell.execute"),
@@ -105,7 +105,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           permRepo <- ZIO.service[PermissionZIORepository]
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser3", None, T0, T0))
-          _ <- permRepo.upsertCapabilityGrant(
+          _        <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("filesystem.write"),

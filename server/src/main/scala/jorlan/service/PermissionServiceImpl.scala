@@ -36,7 +36,7 @@ private class PermissionServiceImpl(
     for {
       now <- Clock.instant
       _   <- repo.assignRole(userId, roleId)
-      _ <- eventLog.log(
+      _   <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.RoleAssigned,
@@ -58,7 +58,7 @@ private class PermissionServiceImpl(
     for {
       now <- Clock.instant
       _   <- repo.removeRole(userId, roleId)
-      _ <- eventLog.log(
+      _   <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.RoleRevoked,
@@ -78,7 +78,7 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsertPermission(permission)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.PermissionGranted,
@@ -96,7 +96,7 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       count <- repo.deletePermission(id)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.PermissionRevoked,
@@ -114,7 +114,7 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsertCapabilityGrant(grant)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.CapabilityGranted,
@@ -132,7 +132,7 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       count <- repo.revokeGrant(id)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.CapabilityRevoked,
@@ -155,7 +155,7 @@ private class PermissionServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.createApprovalRequest(req)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.ApprovalRequested,
@@ -188,8 +188,8 @@ private class PermissionServiceImpl(
 
   override def recordApprovalDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
     for {
-      now   <- Clock.instant
-      saved <- repo.recordApprovalDecision(decision)
+      now       <- Clock.instant
+      saved     <- repo.recordApprovalDecision(decision)
       eventType <- saved.decision match {
         case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
         case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>

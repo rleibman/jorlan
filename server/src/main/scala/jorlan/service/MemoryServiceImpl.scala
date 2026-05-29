@@ -36,7 +36,7 @@ private class MemoryServiceImpl(
     for {
       now   <- Clock.instant
       saved <- repo.upsert(record)
-      _ <- eventLog.log(
+      _     <- eventLog.log(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.MemoryWritten,

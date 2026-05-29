@@ -197,75 +197,150 @@ APIs for inspiration on structure and best practices.
 **Goal:** A runnable CLI (`jorlan-shell`) that connects to the server, lets a user send messages and see responses, and
 handles approvals interactively. First deployable artifact beyond the server.
 
-- [ ] `JorlanShell` entry point (ZIO main)
-- [ ] Config: server URL, auth credentials (loaded from `~/.jorlan/config`), or passed in as command arguments, command
+- [x] `JorlanShell` entry point (ZIO main)
+- [x] Config: server URL, auth credentials (loaded from `~/.jorlan/config`), or passed in as command arguments, command
   line arguments take precedence
-- [ ] Caliban-generated GraphQL client (or sttp + hand-rolled queries — decide at implementation time).
-- [ ] I want to use sttp for the http client, with a zio back end (sttp.client4.httpclient.zio.HttpClientZioBackend)
-  you'll need to add those dependencies to the project
-- [ ] Authenticate and obtain JWT on startup
-- [ ] Interactive REPL: prompt → submit message → display streamed or complete response
-- [ ] Session management: start new session, resume existing session by ID
-- [ ] Pending approval display: show approval requests, accept/deny interactively
-- [ ] Graceful exit on `/quit` / `/exit` / Ctrl-C
-- [ ] Integration tests (mock server responses)
-- [ ] The shell shoud look similar to claude or openclaw (no surprises). The screen is split in half (I'm not quite sure
-  how that's done, you'll have to research a bit). The top section streams responses from the server, the bottom section
-  takes input from the user. You can use /commands to do various things we'll allow plugins to have their own. I'll let
-  you take a first pass at which commands are important.
-  commands, but some will be built in.
-
-/new  archives the current session and starts a fresh one, will ask a bunch of questions about model, etc
-/configure [x]  Interactively allows configuration of skill/function x
-/exit leaves the shell
-/quit alias for exit
-/model Lets you chose the model and configure various things about the model
-/trace [none, error, warning, debug] Sets trace(log) level
-/models Lists available models
-/help
-
-
+- [x] Caliban-generated GraphQL client (or sttp + hand-rolled queries — decided: sttp hand-rolled for Phase 7; caliban
+  codegen deferred until API stabilises)
+- [x] sttp for the http client with `HttpClientZioBackend` ZIO backend; `sttp.client4 %% "zio"` and `zio-json` added to
+  shell module
+- [x] Authenticate and obtain JWT on startup (`POST /login` → Bearer token stored in `Ref`)
+- [x] Interactive REPL: prompt → submit message → display response (message submission stubs Phase 8 agent runtime)
+- [ ] Session management: start new session, resume existing session by ID (Phase 8)
+- [ ] Pending approval display: show approval requests, accept/deny interactively (Phase 8)
+- [x] Graceful exit on `/quit` / `/exit` / Ctrl-C
+- [x] Integration tests: unit tests for command parsing and config arg-override (21 tests pass)
+- [x] Split-screen TUI via Lanterna: status bar (row 0), scrollable conversation area, separator + input line at bottom.
+  PgUp/PgDn scrolling, word-wrapped messages, colour-coded by kind (system/user/server/error).
 
 ---
 
 ## Phase 8: Agent Session Runtime + Model Gateway
 
-**Goal:** End-to-end message → agent → Ollama model → response, with everything traced to the event log. **This is the
-first iterable milestone.**
+**Goal:** End-to-end message → agent → Ollama → **streaming** response token-by-token back to the shell, with every
+step traced to the event log. **This is the first iterable milestone.**
 
-**Agent Session Runtime (in `server`):**
+### What the `ai` module already provides
 
-- [ ] `AgentSessionManager`: create, restore, suspend, terminate sessions; persist state via `AgentSessionRepository`
-- [ ] `ConversationContextManager`: maintain in-memory context window; truncate when needed; flush to
-  `ConversationRepository`
-- [ ] `Orchestrator`: top-level per-session loop — receive message, invoke `Planner`, dispatch result
-- [ ] `Planner`: build prompt from context + memory, call model, parse response into `PlanStep` (tool call or final
-  answer)
-- [ ] `ExecutionEngine`: dispatch `PlanStep` to skill runtime (stub for now) or return answer; handle multi-step loops
-- [ ] `HumanApprovalManager`: pause execution on `NeedsApproval`, notify via `NotificationRouter`, resume on decision
-- [ ] `NotificationRouter`: stub — logs to console and writes event; real delivery added in Phase 12
+The `ai` module (already present) wraps LangChain4j with ZIO-compatible types. Phase 8 builds on top of it:
 
-**Model Gateway (in `ai` module):**
+- `StreamingChatLanguageModel` — wraps `OllamaStreamingChatModel`
+- `StreamAssistant` — LangChain4j `AiServices` interface: `chat(String): TokenStream`
+- `streamedChat(message): ZStream[StreamAssistant, Throwable, String]` — the key bridge: converts LangChain4j's
+  `TokenStream` callbacks (`onPartialResponse`, `onCompleteResponse`, `onError`) into a proper ZIO `ZStream` via
+  `ZStream.async`; this is the streaming path used for every model call in Phase 8
+- `MessageWindowChatMemory` — per-instance sliding-window chat history (LangChain4j, in-memory)
+- `LangChainServiceBuilder` — ZLayer builders for Ollama streaming and non-streaming variants
 
-- [ ] `ModelProvider` ZIO service trait: `complete(prompt, options) => ZIO[..., ModelError, ModelResponse]`
-- [ ] `FakeModelProvider`: deterministic canned responses, configurable per test
-- [ ] `OllamaProvider`: wraps LangChain4j `OllamaChatModel` in ZIO (enable LangChain4j deps in `build.sbt`)
-- [ ] `ModelCapabilityMetadata`: context window, tool calling support, structured output reliability, cost/latency
-  profile
-- [ ] `ModelGateway` ZIO layer: routes to configured provider, records `ModelCallEvent` to event log
-- [ ] Model config in `application.conf` (provider type, model name, endpoint URL, timeout)
+> **Note:** Phase 8 sessions are ephemeral — conversation history lives only in the JVM process and is lost on server
+> restart. Phase 9 adds `ConversationRepository` to persist `ChatMessage` history per session and reconstruct
+> `MessageWindowChatMemory` on resume.
 
-**Integration:**
+### Clean-up (prerequisite)
 
-- [ ] Wire: shell REPL → GraphQL mutation `submitMessage` → identity resolution → session manager → orchestrator → model
-  gateway → response → subscription event → shell displays response
-- [ ] All steps write to event log
-- [ ] Unit tests for each component; integration test for full round-trip using `FakeModelProvider`
+- [ ] Remove `maxDND5eMonsters` and other DMScreen-specific fields from `LangChainConfig`; rename to `JorlanAiConfig`;
+  wire into `application.conf` under `jorlan.ai`
+- [ ] Config keys: `jorlan.ai.enabled`, `jorlan.ai.ollamaBaseUrl`, `jorlan.ai.ollamaModel`
+
+### Model Gateway (in `ai` module, exposed through `server`)
+
+The `ModelGateway` is the Jorlan boundary — `server` code never imports `langchain4j` directly, only the `ai` module
+does.
+
+- [ ] `ModelInfo` data class: `id`, `provider`, `contextWindow`, `supportsStreaming`
+- [ ] `ModelGateway` ZIO service trait:
+  - `streamedResponse(sessionId: AgentSessionId, message: String): ZStream[Any, ModelError, String]`
+  - `availableModels: UIO[List[ModelInfo]]`
+- [ ] `OllamaModelGateway` implementation:
+  - Maintains `Ref[Map[AgentSessionId, (StreamAssistant, ChatMemory)]]` — one LangChain4j
+    `MessageWindowChatMemory` per session, created on first use and keyed by `AgentSessionId`
+  - Delegates to `streamedChat(message)` from `ai.util`
+  - Records `ModelCallStarted` and `ModelCallCompleted` events to `EventLogService`; records `ModelCallFailed` on
+    error
+- [ ] `FakeModelGateway` for testing: returns a configurable `ZStream` of `String` chunks with optional delay to
+  simulate streaming; deterministic so integration tests can assert on token-by-token delivery without Ollama
+- [ ] `ModelError` sealed type: `ModelUnavailable`, `ModelTimeout`, `ModelResponseMalformed`
+- [ ] Model config in `application.conf`: `provider` (`ollama | fake`), model name, endpoint URL, timeout
+
+> **LangChain4j abstracts model differences:** `AiServices` handles tool specification, response parsing, and memory
+> injection internally. `ModelCapabilityMetadata` (context window, tool calling support, etc.) can be read from
+> LangChain4j's model introspection or declared statically in config for each named model.
+
+### Agent Session Runtime (in `server`)
+
+- [ ] `AgentSession` domain model: `id: AgentSessionId`, `userId: UserId`, `modelId: String`,
+  `status: SessionStatus`, `createdAt: Instant`, `updatedAt: Instant`
+- [ ] `SessionStatus` enum: `Active | Suspended | Completed | Failed`
+- [ ] `AgentSessionRepository`: `create`, `findById`, `findByUserId`, `updateStatus` — persists session metadata to
+  MariaDB; **note:** conversation history itself is in-memory only in Phase 8 (see Phase 9)
+- [ ] `AgentSessionManager` ZIO service: `createSession(userId, modelId)`, `getSession(id)`,
+  `suspendSession(id)`, `terminateSession(id)`
+- [ ] `AgentRunner` ZIO service — the per-session agent execution loop (previously called `Orchestrator` in draft
+  plans; renamed to avoid confusion with Phase 14's external `OrchestratorIdentity`):
+  - `processMessage(sessionId: AgentSessionId, message: String): ZIO[..., AgentError, Unit]`
+  - **Phase 8 implementation:** look up session → call `ModelGateway.streamedResponse(sessionId, message)` →
+    publish each `String` chunk to the session's `Hub[ResponseChunk]` as `ResponseChunk(content=chunk, finished=false)`
+    → on stream completion publish `ResponseChunk(content="", finished=true)`
+  - Records `UserMessageReceived` and `AgentResponseCompleted` to event log
+- [ ] `SessionHub` ZIO service: maintains `Ref[Map[AgentSessionId, Hub[ResponseChunk]]]`; `getOrCreate(id)` used
+  by `AgentRunner` to publish and by Caliban subscriptions to subscribe
+- [ ] `HumanApprovalNotifier` (stub for Phase 8): logs `ApprovalRequired` event only; real delivery added in
+  Phase 11 (Telegram) / Phase 12 (notification skill)
+
+> **Full planning loop deferred to Phase 12:** The complete agent architecture uses a `Planner` that parses model
+> responses into typed `PlanStep` values — either a final answer or a tool call — and an `AgentRunner` dispatch loop
+> that executes tool calls via the skill runtime and re-submits results to the model (the "ReAct" pattern). This
+> architecture is intentionally deferred until Phase 12 introduces built-in skills. In Phase 8, `AgentRunner` is a
+> thin pass-through: message in → `streamedChat` → stream back. No multi-step loops, no tool dispatch.
+
+### GraphQL changes
+
+- [ ] New domain type: `ResponseChunk { sessionId: AgentSessionId!, content: String!, finished: Boolean! }`
+- [ ] New mutation: `submitMessage(sessionId: AgentSessionId!, content: String!): Unit` — capability-gated
+  (`agent.message`), records event, enqueues to `AgentRunner`
+- [ ] Session lifecycle mutations: `createSession(modelId: String): AgentSession!`,
+  `listSessions: [AgentSession!]` — capability-gated (`agent.session.create`)
+- [ ] New subscription: `agentResponseStream(sessionId: AgentSessionId!): ResponseChunk` — backed by
+  `SessionHub.getOrCreate(sessionId)` as a `ZStream`; the shell subscribes after `submitMessage` and displays each
+  arriving chunk until `finished=true`
+- [ ] Add `ResponseChunk`, `AgentSession`, `SessionStatus` to `jorlan.gql`; regenerate Caliban shell client
+
+### Shell changes
+
+- [ ] Implement `/new [modelId]` command: calls `createSession` mutation, stores returned `sessionId` in shell
+  state, updates mode bar to show active session ID and model name
+- [ ] Plain text input when a session is active: calls `submitMessage` mutation, then subscribes to
+  `agentResponseStream(sessionId)` — each incoming chunk is appended via
+  `screen.addMessage(MessageKind.Server, chunk)`; the `finished=true` sentinel chunk closes the subscription
+- [ ] If no session is active when the user types a plain message, show a system prompt: "No active session — type
+  `/new` to start one"
+
+### Integration wiring summary
+
+```
+Shell /new → createSession mutation → AgentSessionManager.createSession
+                                    → SessionHub.getOrCreate(sessionId)
+                                    ← AgentSession (with sessionId displayed in mode bar)
+
+Shell <text> → submitMessage mutation → AgentRunner.processMessage(sessionId, message)
+                                       → ModelGateway.streamedResponse(sessionId, message)
+                                       → ZStream[String] token chunks (from ai.streamedChat)
+                                       → SessionHub.publish(ResponseChunk(content=chunk))
+                                       → Caliban agentResponseStream subscription ZStream
+                                       → GraphQL WebSocket frames
+                                       → shell addMessage(MessageKind.Server, chunk) per token
+```
+
+- [ ] All steps write to event log: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`,
+  `ModelCallCompleted`, `AgentResponseCompleted`
+- [ ] Integration test: full round-trip using `FakeModelGateway`, asserting each chunk arrives in order
+- [ ] Unit tests: `AgentRunner`, `AgentSessionManager`, `SessionHub`, `OllamaModelGateway` streaming behavior
 
 ### ★ FIRST ITERABLE MILESTONE
 
-> A user sends a message via the shell CLI. The server creates an agent session, sends the message to Ollama, returns
-> the response, and every step is recorded in the event log. The shell displays the response. The loop can repeat.
+> A user types `/new` in the shell. The server creates an agent session. The user types a message. The server streams
+> it through Ollama (via LangChain4j) token by token — each token appearing in the shell conversation area as it
+> arrives over the GraphQL subscription WebSocket. Every step is recorded in the event log. The loop repeats.
 
 ---
 
@@ -458,7 +533,13 @@ managing sessions, reviewing approvals, inspecting execution history, and browsi
 
 ---
 
-## Phase 16: Advanced Features
+## Phase 16: Additional features found during development
+
+- [ ] autocomplete of / commands. When a user starts typing a command, the shell should suggest available commands that
+  match the input. This can be implemented using a simple prefix matching algorithm that filters the list of available
+  commands based on the user's input.
+
+## Phase 17: Advanced Features
 
 **Goal:** Full platform feature set — declarative skills, agent-authored skills, MCP import, vector memory, and
 remaining skills.
@@ -499,3 +580,74 @@ model
 - Fake providers: `FakeModelProvider`, mock connectors — all integration tests must run without live external
   credentials
 - Every subsystem that writes to the event log should have a test asserting the correct event is emitted
+
+## Appendix: Supported shell commands
+
+**Status legend:** `[x]` implemented · `[~]` stub/partial (planned for a later phase) · `[ ]` not yet started
+
+| Status | Command         | Type     | Priority | Parameters                                        | Description                                                 |
+|:------:|-----------------|----------|----------|---------------------------------------------------|-------------------------------------------------------------|
+|  [x]   | `/help`         | Built-in | 0        | —                                                 | Show short help summary and key bindings                    |
+|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands                                 |
+|  [x]   | `/quit`         | Built-in | 0        | —                                                 | Exit the shell cleanly                                      |
+|  [x]   | `/exit`         | Built-in | 0        | —                                                 | Alias for `/quit`                                           |
+|  [x]   | `/about`        | Built-in | 0        | —                                                 | Show version and platform information                       |
+|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity and GraphQL health check                |
+|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user                             |
+|  [~]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level (display only — runtime wiring Phase 8) |
+|  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
+|  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
+|  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |
+|  [ ]   | `/version`      | Built-in |          | —                                                 | Show shell and server version                               |
+|  [ ]   | `/logs`         | Built-in |          | `[n]`                                             | Tail the last *n* lines from `~/.jorlan/shell.log`          |
+|  [~]   | `/new`          | Session  |          | —                                                 | Archive the current session and start a fresh one (Phase 8) |
+|  [~]   | `/model`        | Session  |          | —                                                 | Show or interactively configure the active model (Phase 8)  |
+|  [~]   | `/models`       | Session  |          | —                                                 | List models available on the connected server (Phase 8)     |
+|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions (Phase 8)                             |
+|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session (Phase 8) |
+|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function (Phase 8)       |
+|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name (Phase 8)                               |
+|  [ ]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants (Phase 9)               |
+|  [ ]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests (Phase 10)        |
+|  [ ]   | `/agents`       | Agent    |          | `list \| status <id> \| stop <id>`                | List and manage running agent sessions (Phase 10)           |
+|  [ ]   | `/memory`       | Memory   |          | `list \| search <q> \| forget <id>`               | Browse and manage agent memory entries (Phase 9)            |
+|  [ ]   | `/restart`      | Admin    |          | —                                                 | Restart the Jorlan server process (Phase 10)                |
+|  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable` | Manage server plugins (Phase 12)                            |
+|  [ ]   | `/mcp`          | Plugin   |          | —                                                 | MCP protocol tools and adapter management (Phase 12)        |
+
+## Appendix: Supported skills
+
+| Status | Skill            | Priority | Type     | Description |
+|:------:|------------------|----------|----------|-------------|
+|  [ ]   | Market Data      |          | Built-in |             |
+|  [ ]   | Lyrion Server    | 1        | Built-in |             |
+|  [ ]   | Google Contacts  |          | Built-in |             |
+|  [ ]   | Google Calendar  | 1        | Built-in |             |
+|  [ ]   | MCP Connector    |          | Built-in |             |
+|  [ ]   | Declarative Json |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+|  [ ]   | ``               |          | Built-in |             |
+
+## Appendix: Connectors
+
+| Status | Skill              | Priority | Type     | Description |
+|:------:|--------------------|----------|----------|-------------|
+|  [ ]   | Telegram           | 1        | Built-in |             |
+|  [ ]   | Slack              |          | Built-in |             |
+|  [ ]   | Whatsapp           |          | Built-in |             |
+|  [ ]   | Discord            | 2        | Built-in |             |
+|  [ ]   | SMS                |          | Built-in |             |
+|  [ ]   | Matrix             |          | Built-in |             |
+|  [ ]   | IRC                |          | Built-in |             |
+|  [ ]   | Facebook Messenger |          | Built-in |             |
+|  [ ]   | Twitter DM         |          | Built-in |             |
+|  [ ]   | LinkedIn Messaging |          | Built-in |             |
+|  [ ]   | Email (IMAP/SMTP)  | 2        | Built-in |             |
+

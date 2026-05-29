@@ -52,7 +52,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", None, T0, T0))
-          _ <- repo.upsertCapabilityGrant(
+          _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("memory.read"),
@@ -88,7 +88,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", None, T0, T0))
-          _ <- repo.upsertCapabilityGrant(
+          _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("skill.invoke"),
@@ -138,7 +138,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", None, T0, T0))
-          grant <- repo.upsertCapabilityGrant(
+          grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("revoke.me"),
@@ -160,7 +160,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", None, T0, T0))
-          grant <- repo.upsertCapabilityGrant(
+          grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("upd.cap"),
@@ -210,7 +210,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           user     <- userRepo.upsert(User(UserId.empty, "Requestor2", None, T0, T0))
-          req <- repo.createApprovalRequest(
+          req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
               CapabilityName("cancel.op"),
@@ -237,7 +237,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           repo     <- ZIO.service[PermissionZIORepository]
           user     <- userRepo.upsert(User(UserId.empty, "Requestor3", None, T0, T0))
           approver <- userRepo.upsert(User(UserId.empty, "Approver1", None, T0, T0))
-          req <- repo.createApprovalRequest(
+          req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
               CapabilityName("approve.op"),
@@ -341,7 +341,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
           user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", None, T0, T0))
-          byName <- repo.searchRoles(
+          byName   <- repo.searchRoles(
             RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Asc))),
           )
           byNameDesc <- repo.searchRoles(

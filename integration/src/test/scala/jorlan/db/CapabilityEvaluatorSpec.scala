@@ -52,7 +52,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser2", None, T0, T0))
-          _ <- permRepo.upsertPermission(
+          _         <- permRepo.upsertPermission(
             Permission(PermissionId.empty, None, Some(user.id), "shell", "execute", None),
           )
           result <- evaluator.evaluate(capReq(user.id, "shell.execute"))
@@ -66,7 +66,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           user      <- userRepo.upsert(User(UserId.empty, "CEUser3", None, T0, T0))
           role      <- permRepo.upsertRole(Role(RoleId.empty, "shell-operator", None))
           _         <- permRepo.assignRole(user.id, role.id)
-          _ <- permRepo.upsertPermission(
+          _         <- permRepo.upsertPermission(
             Permission(PermissionId.empty, Some(role.id), None, "memory", "read", None),
           )
           result <- evaluator.evaluate(capReq(user.id, "memory.read"))
@@ -78,7 +78,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser4", None, T0, T0))
-          _ <- permRepo.upsertPermission(
+          _         <- permRepo.upsertPermission(
             Permission(PermissionId.empty, None, Some(user.id), "shell", "execute", None),
           )
           _ <- permRepo.upsertCapabilityGrant(
@@ -103,7 +103,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser5", None, T0, T0))
-          grant <- permRepo.upsertCapabilityGrant(
+          grant     <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("memory.write"),
@@ -128,7 +128,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser6", None, T0, T0))
-          _ <- permRepo.upsertCapabilityGrant(
+          _         <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("skill.invoke"),

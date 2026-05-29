@@ -21,7 +21,24 @@ fi
 echo "Generating client from $SCHEMA ..."
 mkdir -p "$(dirname "$OUTPUT")"
 cd "$PROJECT_ROOT"
+SCALAR_MAPPINGS="\
+UserId:jorlan.domain.UserId,\
+RoleId:jorlan.domain.RoleId,\
+PermissionId:jorlan.domain.PermissionId,\
+AgentId:jorlan.domain.AgentId,\
+AgentSessionId:jorlan.domain.AgentSessionId,\
+ApprovalRequestId:jorlan.domain.ApprovalRequestId,\
+EventLogId:jorlan.domain.EventLogId,\
+CapabilityName:jorlan.domain.CapabilityName,\
+Instant:java.time.Instant,\
+Long:Long,\
+Unit:Unit"
+
+IMPORTS="\
+jorlan.domain._,\
+jorlan.shell.client.JorlanClientDecoders._"
+
 sbt --error \
   "project server" \
-  "calibanGenClient $SCHEMA $OUTPUT --genView true --scalarMappings String:String --packageName jorlan.graphql.client"
+  "calibanGenClient $SCHEMA $OUTPUT --genView true --packageName jorlan.graphql.client --enableFmt false --scalarMappings $SCALAR_MAPPINGS --imports $IMPORTS"
 echo "Done. Client written to $OUTPUT"
