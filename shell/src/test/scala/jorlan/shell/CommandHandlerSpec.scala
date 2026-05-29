@@ -54,13 +54,13 @@ object CommandHandlerSpec extends ZIOSpecDefault {
 
   val defaultCfg: ULayer[ShellConfig] = ZLayer.succeed(ShellConfig())
 
-  type TestEnv = JorlanScreen & AuthClient & GraphQLClient & ShellConfig
+  type TestEnv = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState
 
   def testLayer(
     whoAmIResult: Either[String, String] = Right("alice@test.com"),
     gqlResult:    Either[String, Json] = Right(Json.Obj()),
   ): ULayer[TestEnv] =
-    FakeScreen.layer ++ fakeAuth(whoAmIResult) ++ fakeGQL(gqlResult) ++ defaultCfg
+    FakeScreen.layer ++ fakeAuth(whoAmIResult) ++ fakeGQL(gqlResult) ++ defaultCfg ++ ShellState.live
 
   def runCmd(cmd: ShellCommand): ZIO[Any, Nothing, (FakeScreen, Unit)] =
     for {
@@ -71,7 +71,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           ZLayer.succeed[JorlanScreen](fs) ++
             fakeAuth() ++
             fakeGQL() ++
-            defaultCfg,
+            defaultCfg ++
+            ShellState.live,
         )
     } yield (fs, ())
 
@@ -170,7 +171,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQL() ++
-                defaultCfg,
+                defaultCfg ++
+                ShellState.live,
             )
           done   <- exit.isDone
           msgCnt <- fs.messages.map(_.size)
@@ -185,7 +187,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQL(Right(Json.Obj())) ++
-                ZLayer.succeed(ShellConfig(serverUrl = "http://test-server:9090")),
+                ZLayer.succeed(ShellConfig(serverUrl = "http://test-server:9090")) ++
+                ShellState.live,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -200,7 +203,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQL(Left("connection refused")) ++
-                defaultCfg,
+                defaultCfg ++
+                ShellState.live,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -215,7 +219,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth(Right("alice@test.com")) ++
                 fakeGQL() ++
-                defaultCfg,
+                defaultCfg ++
+                ShellState.live,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -230,7 +235,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth(whoAmIResult = Left("401 Unauthorized")) ++
                 fakeGQL() ++
-                defaultCfg,
+                defaultCfg ++
+                ShellState.live,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString

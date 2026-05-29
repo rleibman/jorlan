@@ -1,125 +1,175 @@
 schema {
-  query: Queries
-  mutation: Mutations
-  subscription: Subscriptions
+    query: Queries
+    mutation: Mutations
+    subscription: Subscriptions
 }
 
-"An instantaneous point on the time-line represented by a standard date time string"
 scalar AgentId
+
 scalar AgentSessionId
+
 scalar ApprovalRequestId
+
 scalar CapabilityName
+
 scalar EventLogId
+
 scalar Instant
+
 scalar Long
+
+scalar ModelId
+
 scalar PermissionId
+
 scalar RoleId
+
 scalar Unit
+
 scalar UserId
 
+scalar WorkspaceId
+
 enum ApprovalStatus {
-  Approved
-  Cancelled
-  Expired
-  Pending
-  Rejected
+    Approved
+    Cancelled
+    Expired
+    Pending
+    Rejected
 }
 
 enum EventType {
-  AgentCompleted
-  AgentFailed
-  AgentStarted
-  ApprovalDenied
-  ApprovalGranted
-  ApprovalRequested
-  CapabilityAllowed
-  CapabilityDenied
-  CapabilityGranted
-  CapabilityRevoked
-  MemoryExpired
-  MemoryWritten
-  PermissionGranted
-  PermissionRevoked
-  RoleAssigned
-  RoleRevoked
-  SkillFailed
-  SkillInvoked
-  SkillSucceeded
-  SystemAlert
-  UserConnected
-  UserCreated
-  UserDisconnected
-  UserUpdated
+    AgentCompleted
+    AgentFailed
+    AgentResponseCompleted
+    AgentStarted
+    ApprovalDenied
+    ApprovalGranted
+    ApprovalRequested
+    CapabilityAllowed
+    CapabilityDenied
+    CapabilityGranted
+    CapabilityRevoked
+    MemoryExpired
+    MemoryWritten
+    ModelCallCompleted
+    ModelCallFailed
+    ModelCallStarted
+    PermissionGranted
+    PermissionRevoked
+    RoleAssigned
+    RoleRevoked
+    SessionCreated
+    SkillFailed
+    SkillInvoked
+    SkillSucceeded
+    SystemAlert
+    UserConnected
+    UserCreated
+    UserDisconnected
+    UserMessageReceived
+    UserUpdated
+}
+
+enum SessionStatus {
+    Active
+    Blocked
+    Cancelled
+    Completed
+    Created
+    Failed
+    Paused
+}
+
+type AgentSession {
+    id: AgentSessionId!
+    agentId: AgentId!
+    userId: UserId!
+    workspaceId: WorkspaceId
+    status: SessionStatus!
+    modelId: ModelId
+    createdAt: Instant!
+    updatedAt: Instant!
 }
 
 type ApprovalRequest {
-  id: ApprovalRequestId!
-  capability: CapabilityName!
-  scopeJson: String
-  agentId: AgentId
-  requestorUserId: UserId!
-  sessionId: AgentSessionId
-  riskClass: String!
-  status: ApprovalStatus!
-  createdAt: Instant!
-  expiresAt: Instant
+    id: ApprovalRequestId!
+    capability: CapabilityName!
+    scopeJson: String
+    agentId: AgentId
+    requestorUserId: UserId!
+    sessionId: AgentSessionId
+    riskClass: String!
+    status: ApprovalStatus!
+    createdAt: Instant!
+    expiresAt: Instant
 }
 
 type EventLogJson {
-  id: EventLogId!
-  eventType: EventType!
-  actorId: UserId
-  agentId: AgentId
-  sessionId: AgentSessionId
-  resource: String
-  payloadJson: String
-  occurredAt: Instant!
+    id: EventLogId!
+    eventType: EventType!
+    actorId: UserId
+    agentId: AgentId
+    sessionId: AgentSessionId
+    resource: String
+    payloadJson: String
+    occurredAt: Instant!
 }
 
 type Mutations {
-  createUser(displayName: String!, email: String): User
-  updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
-  createRole(name: String!, description: String): Role
-  assignRole(userId: UserId!, roleId: RoleId!): Unit
-  revokeRole(userId: UserId!, roleId: RoleId!): Unit
-  grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
-  revokePermission(id: PermissionId!): Long
+    createUser(displayName: String!, email: String): User
+    updateUser(id: Long!, displayName: String!, email: String, active: Boolean!): User
+    createRole(name: String!, description: String): Role
+    assignRole(userId: Long!, roleId: Long!): Unit
+    revokeRole(userId: Long!, roleId: Long!): Unit
+    grantPermission(resource: String!, action: String!, userId: Long, roleId: Long): Permission
+    revokePermission(id: Long!): Long
+    createSession(modelId: String): AgentSession
+    submitMessage(sessionId: Long!, content: String!): Unit
 }
 
 type Permission {
-  id: PermissionId!
-  roleId: RoleId
-  userId: UserId
-  resource: String!
-  action: String!
-  scope: String
+    id: PermissionId!
+    roleId: RoleId
+    userId: UserId
+    resource: String!
+    action: String!
+    scope: String
 }
 
 type Queries {
-  user(id: UserId!): User
-  users(page: Int, pageSize: Int): [User!]
-  role(id: RoleId!): Role
-  roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
-  permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
+    user(id: Long!): User
+    users(page: Int, pageSize: Int): [User!]
+    role(id: Long!): Role
+    roles(userId: Long!, page: Int, pageSize: Int): [Role!]
+    permissions(userId: Long!, page: Int, pageSize: Int): [Permission!]
+    listSessions(page: Int, pageSize: Int): [AgentSession!]
+}
+
+type ResponseChunk {
+    sessionId: AgentSessionId!
+    content: String!
+    finished: Boolean!
 }
 
 type Role {
-  id: RoleId!
-  name: String!
-  description: String
+    id: RoleId!
+    name: String!
+    description: String
 }
 
 type Subscriptions {
-  approvalNotifications: ApprovalRequest
-  eventLogTail: EventLogJson
+    approvalNotifications: ApprovalRequest
+    eventLogTail: EventLogJson
+    agentResponseStream(sessionId: Long!): ResponseChunk
 }
 
 type User {
-  id: UserId!
-  displayName: String!
-  email: String
-  createdAt: Instant!
-  updatedAt: Instant!
-  active: Boolean!
+    id: UserId!
+    displayName: String!
+    email: String
+    createdAt: Instant!
+    updatedAt: Instant!
+    active: Boolean!
 }
 

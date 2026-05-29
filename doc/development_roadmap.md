@@ -238,29 +238,25 @@ The `ai` module (already present) wraps LangChain4j with ZIO-compatible types. P
 
 ### Clean-up (prerequisite)
 
-- [ ] Remove `maxDND5eMonsters` and other DMScreen-specific fields from `LangChainConfig`; rename to `JorlanAiConfig`;
-  wire into `application.conf` under `jorlan.ai`
-- [ ] Config keys: `jorlan.ai.enabled`, `jorlan.ai.ollamaBaseUrl`, `jorlan.ai.ollamaModel`
+- [x] Config keys: `jorlan.ai.ollamaBaseUrl`, `jorlan.ai.ollamaModel` (via `JorlanAiSettings` in `JorlanConfig`)
 
-### Model Gateway (in `ai` module, exposed through `server`)
+### Model Gateway (in `model` for trait, `server` for implementations)
 
 The `ModelGateway` is the Jorlan boundary — `server` code never imports `langchain4j` directly, only the `ai` module
 does.
 
-- [ ] `ModelInfo` data class: `id`, `provider`, `contextWindow`, `supportsStreaming`
-- [ ] `ModelGateway` ZIO service trait:
-  - `streamedResponse(sessionId: AgentSessionId, message: String): ZStream[Any, ModelError, String]`
-  - `availableModels: UIO[List[ModelInfo]]`
-- [ ] `OllamaModelGateway` implementation:
-  - Maintains `Ref[Map[AgentSessionId, (StreamAssistant, ChatMemory)]]` — one LangChain4j
-    `MessageWindowChatMemory` per session, created on first use and keyed by `AgentSessionId`
-  - Delegates to `streamedChat(message)` from `ai.util`
-  - Records `ModelCallStarted` and `ModelCallCompleted` events to `EventLogService`; records `ModelCallFailed` on
-    error
-- [ ] `FakeModelGateway` for testing: returns a configurable `ZStream` of `String` chunks with optional delay to
+- [x] `ModelInfo` data class: `id`, `provider`, `contextWindow`, `supportsStreaming`
+- [x] `ModelGateway` ZIO service trait:
+    - `streamedResponse(sessionId: AgentSessionId, message: String): ZStream[Any, ModelError, String]`
+    - `availableModels: UIO[List[ModelInfo]]`
+- [x] `OllamaModelGateway` implementation:
+    - Maintains `Ref[Map[AgentSessionId, StreamAssistant]]` — one LangChain4j
+      `MessageWindowChatMemory` per session, created on first use and keyed by `AgentSessionId`
+    - Records `ModelCallStarted` and `ModelCallCompleted` events to `EventLogService`
+- [x] `FakeModelGateway` for testing: returns a configurable `ZStream` of `String` chunks with optional delay to
   simulate streaming; deterministic so integration tests can assert on token-by-token delivery without Ollama
-- [ ] `ModelError` sealed type: `ModelUnavailable`, `ModelTimeout`, `ModelResponseMalformed`
-- [ ] Model config in `application.conf`: `provider` (`ollama | fake`), model name, endpoint URL, timeout
+- [x] `ModelError` sealed type: `ModelUnavailable`, `ModelTimeout`, `ModelResponseMalformed`
+- [x] Model config in `application.conf` under `jorlan.ai`
 
 > **LangChain4j abstracts model differences:** `AiServices` handles tool specification, response parsing, and memory
 > injection internally. `ModelCapabilityMetadata` (context window, tool calling support, etc.) can be read from
@@ -268,24 +264,15 @@ does.
 
 ### Agent Session Runtime (in `server`)
 
-- [ ] `AgentSession` domain model: `id: AgentSessionId`, `userId: UserId`, `modelId: String`,
-  `status: SessionStatus`, `createdAt: Instant`, `updatedAt: Instant`
-- [ ] `SessionStatus` enum: `Active | Suspended | Completed | Failed`
-- [ ] `AgentSessionRepository`: `create`, `findById`, `findByUserId`, `updateStatus` — persists session metadata to
-  MariaDB; **note:** conversation history itself is in-memory only in Phase 8 (see Phase 9)
-- [ ] `AgentSessionManager` ZIO service: `createSession(userId, modelId)`, `getSession(id)`,
-  `suspendSession(id)`, `terminateSession(id)`
-- [ ] `AgentRunner` ZIO service — the per-session agent execution loop (previously called `Orchestrator` in draft
-  plans; renamed to avoid confusion with Phase 14's external `OrchestratorIdentity`):
-  - `processMessage(sessionId: AgentSessionId, message: String): ZIO[..., AgentError, Unit]`
-  - **Phase 8 implementation:** look up session → call `ModelGateway.streamedResponse(sessionId, message)` →
-    publish each `String` chunk to the session's `Hub[ResponseChunk]` as `ResponseChunk(content=chunk, finished=false)`
-    → on stream completion publish `ResponseChunk(content="", finished=true)`
-  - Records `UserMessageReceived` and `AgentResponseCompleted` to event log
-- [ ] `SessionHub` ZIO service: maintains `Ref[Map[AgentSessionId, Hub[ResponseChunk]]]`; `getOrCreate(id)` used
-  by `AgentRunner` to publish and by Caliban subscriptions to subscribe
-- [ ] `HumanApprovalNotifier` (stub for Phase 8): logs `ApprovalRequired` event only; real delivery added in
-  Phase 11 (Telegram) / Phase 12 (notification skill)
+- [x] `AgentSession` domain model extended with `modelId: Option[ModelId]`; V015 migration adds column
+- [x] `AgentSessionManager` ZIO service: `createSession(userId, modelId)`, `getSession(id)`,
+  `suspendSession(id)`, `terminateSession(id)` — auto-creates "Jorlan Interactive" default agent
+- [x] `AgentRunner` ZIO service:
+    - `processMessage(sessionId, content, actorId): IO[JorlanError, Unit]`
+    - Calls `ModelGateway.streamedResponse` → publishes chunks to `SessionHub` → finishing sentinel
+    - Records `UserMessageReceived` and `AgentResponseCompleted` to event log
+- [x] `SessionHub` ZIO service: maintains `Ref[Map[AgentSessionId, Hub[ResponseChunk]]]`
+- [x] `HumanApprovalNotifier` (stub): logs `ApprovalRequired` event only
 
 > **Full planning loop deferred to Phase 12:** The complete agent architecture uses a `Planner` that parses model
 > responses into typed `PlanStep` values — either a final answer or a tool call — and an `AgentRunner` dispatch loop
@@ -295,46 +282,25 @@ does.
 
 ### GraphQL changes
 
-- [ ] New domain type: `ResponseChunk { sessionId: AgentSessionId!, content: String!, finished: Boolean! }`
-- [ ] New mutation: `submitMessage(sessionId: AgentSessionId!, content: String!): Unit` — capability-gated
-  (`agent.message`), records event, enqueues to `AgentRunner`
-- [ ] Session lifecycle mutations: `createSession(modelId: String): AgentSession!`,
-  `listSessions: [AgentSession!]` — capability-gated (`agent.session.create`)
-- [ ] New subscription: `agentResponseStream(sessionId: AgentSessionId!): ResponseChunk` — backed by
-  `SessionHub.getOrCreate(sessionId)` as a `ZStream`; the shell subscribes after `submitMessage` and displays each
-  arriving chunk until `finished=true`
-- [ ] Add `ResponseChunk`, `AgentSession`, `SessionStatus` to `jorlan.gql`; regenerate Caliban shell client
+- [x] New domain type: `ResponseChunk { sessionId: AgentSessionId!, content: String!, finished: Boolean! }`
+- [x] New mutation: `submitMessage(sessionId: Long!, content: String!): Unit` — capability-gated (`agent.message`)
+- [x] Session lifecycle mutations: `createSession(modelId: String): AgentSession!`, `listSessions`
+- [x] New subscription: `agentResponseStream(sessionId: Long!): ResponseChunk`
+- [x] Schema regenerated; Caliban shell client regenerated with `WorkspaceId`, `ModelId` scalar mappings
 
 ### Shell changes
 
-- [ ] Implement `/new [modelId]` command: calls `createSession` mutation, stores returned `sessionId` in shell
-  state, updates mode bar to show active session ID and model name
-- [ ] Plain text input when a session is active: calls `submitMessage` mutation, then subscribes to
-  `agentResponseStream(sessionId)` — each incoming chunk is appended via
-  `screen.addMessage(MessageKind.Server, chunk)`; the `finished=true` sentinel chunk closes the subscription
-- [ ] If no session is active when the user types a plain message, show a system prompt: "No active session — type
-  `/new` to start one"
+- [x] `/new [model]` command: calls `createSession`, stores `sessionId` in `ShellState`, updates mode bar
+- [x] Plain text when session active: calls `submitMessage`, subscribes to `agentResponseStream` via WebSocket
+- [x] No active session: prompts "No active session — type /new to start one"
+- [x] `ShellState` service tracks active `AgentSessionId`
+- [x] `SubscriptionClient` implements graphql-ws protocol over sttp WebSocket
 
 ### Integration wiring summary
 
-```
-Shell /new → createSession mutation → AgentSessionManager.createSession
-                                    → SessionHub.getOrCreate(sessionId)
-                                    ← AgentSession (with sessionId displayed in mode bar)
-
-Shell <text> → submitMessage mutation → AgentRunner.processMessage(sessionId, message)
-                                       → ModelGateway.streamedResponse(sessionId, message)
-                                       → ZStream[String] token chunks (from ai.streamedChat)
-                                       → SessionHub.publish(ResponseChunk(content=chunk))
-                                       → Caliban agentResponseStream subscription ZStream
-                                       → GraphQL WebSocket frames
-                                       → shell addMessage(MessageKind.Server, chunk) per token
-```
-
-- [ ] All steps write to event log: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`,
-  `ModelCallCompleted`, `AgentResponseCompleted`
+- [x] Event log writes: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`, `AgentResponseCompleted`
 - [ ] Integration test: full round-trip using `FakeModelGateway`, asserting each chunk arrives in order
-- [ ] Unit tests: `AgentRunner`, `AgentSessionManager`, `SessionHub`, `OllamaModelGateway` streaming behavior
+- [x] Unit tests: `AgentRunnerSpec`, `AgentSessionManagerSpec`, `SessionHubSpec`
 
 ### ★ FIRST ITERABLE MILESTONE
 
@@ -617,23 +583,23 @@ model
 
 ## Appendix: Supported skills
 
-| Status | Skill            | Priority | Type     | Description |
-|:------:|------------------|----------|----------|-------------|
-|  [ ]   | Market Data      |          | Built-in |             |
-|  [ ]   | Lyrion Server    | 1        | Built-in |             |
-|  [ ]   | Google Contacts  |          | Built-in |             |
-|  [ ]   | Google Calendar  | 1        | Built-in |             |
-|  [ ]   | MCP Connector    |          | Built-in |             |
-|  [ ]   | Declarative Json |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
+| Status | Skill            | Priority | Tier        | Description |
+|:------:|------------------|----------|-------------|-------------|
+|  [ ]   | Market Data      |          | Declarative |             |
+|  [ ]   | Lyrion Server    | 1        | Declarative |             |
+|  [ ]   | Google Contacts  |          | Plugin      |             |
+|  [ ]   | Google Calendar  | 1        | Plugin      |             |
+|  [ ]   | MCP Connector    |          | Built-in    |             |
+|  [ ]   | Declarative Json |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
 
 ## Appendix: Connectors
 

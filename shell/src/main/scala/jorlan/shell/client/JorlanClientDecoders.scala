@@ -19,9 +19,11 @@ import jorlan.domain.{
   ApprovalRequestId,
   CapabilityName,
   EventLogId,
+  ModelId,
   PermissionId,
   RoleId,
   UserId,
+  WorkspaceId,
 }
 
 import scala.util.Try
@@ -56,7 +58,13 @@ object JorlanClientDecoders {
   implicit val agentSessionIdDecoder: ScalarDecoder[AgentSessionId] = longDecoder(AgentSessionId(_), "AgentSessionId")
   implicit val approvalRequestIdDecoder: ScalarDecoder[ApprovalRequestId] =
     longDecoder(ApprovalRequestId(_), "ApprovalRequestId")
-  implicit val eventLogIdDecoder: ScalarDecoder[EventLogId] = longDecoder(EventLogId(_), "EventLogId")
+  implicit val eventLogIdDecoder:  ScalarDecoder[EventLogId] = longDecoder(EventLogId(_), "EventLogId")
+  implicit val workspaceIdDecoder: ScalarDecoder[WorkspaceId] = longDecoder(WorkspaceId(_), "WorkspaceId")
+
+  implicit val modelIdDecoder: ScalarDecoder[ModelId] = {
+    case __StringValue(v) => Right(ModelId(v))
+    case other            => Left(DecodingError(s"Expected string for ModelId, got: $other"))
+  }
 
   // ArgEncoder instances mirror ScalarDecoder above.
   // P7-030: A generic helper is not possible because opaque types do not expose a shared `.value`
@@ -70,7 +78,9 @@ object JorlanClientDecoders {
     ArgEncoder.long.encode(id.value)
   implicit val approvalRequestIdEncoder: ArgEncoder[ApprovalRequestId] = (id: ApprovalRequestId) =>
     ArgEncoder.long.encode(id.value)
-  implicit val eventLogIdEncoder: ArgEncoder[EventLogId] = (id: EventLogId) => ArgEncoder.long.encode(id.value)
+  implicit val eventLogIdEncoder:  ArgEncoder[EventLogId] = (id: EventLogId) => ArgEncoder.long.encode(id.value)
+  implicit val workspaceIdEncoder: ArgEncoder[WorkspaceId] = (id: WorkspaceId) => ArgEncoder.long.encode(id.value)
+  implicit val modelIdEncoder:     ArgEncoder[ModelId] = (id: ModelId) => ArgEncoder.string.encode(id.value)
 
   implicit val capabilityNameDecoder: ScalarDecoder[CapabilityName] = {
     case __StringValue(v) => Right(CapabilityName(v))

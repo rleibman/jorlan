@@ -76,6 +76,10 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       authConfigLayer,
       oauthLayer,
       OAuthStateStore.live(),
+      SessionHub.live,
+      FakeModelGateway.layer(List("test")),
+      AgentSessionManagerImpl.live,
+      AgentRunnerImpl.live,
     )
 
   private val interpLayer: ZLayer[

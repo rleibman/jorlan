@@ -21,6 +21,9 @@ import java.time.Instant
 enum EventType derives JsonEncoder, JsonDecoder {
 
   case AgentStarted, AgentCompleted, AgentFailed
+  case SessionCreated
+  case UserMessageReceived, AgentResponseCompleted
+  case ModelCallStarted, ModelCallCompleted, ModelCallFailed
   case SkillInvoked, SkillSucceeded, SkillFailed
   case ApprovalRequested, ApprovalGranted, ApprovalDenied
   case UserCreated, UserUpdated

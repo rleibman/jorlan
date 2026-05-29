@@ -22,17 +22,15 @@ import jorlan.service.*
 import zio.*
 import zio.json.JsonEncoder
 import zio.json.ast.Json
+import zio.stream.ZStream
 
 import java.time.Instant
 
-/** Caliban GraphQL schema for the Jorlan control-plane API.
-  *
-  * Queries cover users / roles / permissions. Mutations cover CRUD for those entities plus role assignment and
-  * permission grants. Subscription infrastructure is wired but stubs empty streams until Phase 8 adds live sources.
-  */
+/** Caliban GraphQL schema for the Jorlan control-plane API. */
 object JorlanAPI {
 
-  type JorlanApiEnv = UserService & PermissionService & CapabilityEvaluator
+  type JorlanApiEnv =
+    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -86,14 +84,28 @@ object JorlanAPI {
     roleId:   Option[Long],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  case class CreateSessionInput(
+    modelId: Option[String],
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  case class SubmitMessageInput(
+    sessionId: Long,
+    content:   String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  case class AgentResponseStreamInput(
+    sessionId: Long,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
-    user:        EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
-    users:       PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
-    role:        EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
-    roles:       RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
-    permissions: PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
+    user:         EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
+    users:        PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
+    role:         EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
+    roles:        RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
+    permissions:  PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
+    listSessions: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[AgentSession]],
   )
 
   case class Mutations(
@@ -104,17 +116,17 @@ object JorlanAPI {
     revokeRole:       AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     grantPermission:  GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
     revokePermission: EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
+    createSession:    CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
+    submitMessage:    SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
   )
 
   case class Subscriptions(
-    approvalNotifications: zio.stream.ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
-    eventLogTail:          zio.stream.ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
+    approvalNotifications: ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
+    eventLogTail:          ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
+    agentResponseStream:   AgentResponseStreamInput => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
   )
 
   // ─── Schema instances ─────────────────────────────────────────────────────────
-  // Named scalars so the SDL (and generated client) carry typed IDs rather than
-  // anonymous Long values. Each scalarSchema call registers a distinct GraphQL
-  // scalar name while serialising to/from the underlying Long or String value.
 
   private given Schema[Any, UserId] =
     Schema.scalarSchema("UserId", None, None, None, id => Value.IntValue(id.value))
@@ -130,8 +142,12 @@ object JorlanAPI {
     Schema.scalarSchema("ApprovalRequestId", None, None, None, id => Value.IntValue(id.value))
   private given Schema[Any, EventLogId] =
     Schema.scalarSchema("EventLogId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, WorkspaceId] =
+    Schema.scalarSchema("WorkspaceId", None, None, None, id => Value.IntValue(id.value))
   private given Schema[Any, CapabilityName] =
     Schema.scalarSchema("CapabilityName", None, None, None, cn => Value.StringValue(cn.value))
+  private given Schema[Any, ModelId] =
+    Schema.scalarSchema("ModelId", None, None, None, id => Value.StringValue(id.value))
   private given Schema[Any, RiskClass] = Schema.stringSchema.contramap(_.toString)
   private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
 
@@ -139,12 +155,15 @@ object JorlanAPI {
   private given Schema[Any, ApprovalStatus] = Schema.gen[Any, ApprovalStatus]
   private given Schema[Any, ApprovalMode] = Schema.gen[Any, ApprovalMode]
   private given Schema[Any, EventType] = Schema.gen[Any, EventType]
+  private given Schema[Any, SessionStatus] = Schema.gen[Any, SessionStatus]
 
   private given Schema[Any, User] = Schema.gen[Any, User]
   private given Schema[Any, Role] = Schema.gen[Any, Role]
   private given Schema[Any, Permission] = Schema.gen[Any, Permission]
   private given Schema[Any, ApprovalRequest] = Schema.gen[Any, ApprovalRequest]
   private given Schema[Any, EventLog[Json]] = Schema.gen[Any, EventLog[Json]]
+  private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
+  private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -204,6 +223,14 @@ object JorlanAPI {
                   ),
                 ),
               ),
+          listSessions = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.list", actorId)
+              results <- ZIO.serviceWithZIO[AgentSessionManager](
+                _.getSession(AgentSessionId.empty).map(_.toList),
+              )
+            } yield results,
         ),
         Mutations(
           createUser = input =>
@@ -276,10 +303,30 @@ object JorlanAPI {
               _       <- requireCapability("permission.revoke", actorId)
               count   <- ZIO.serviceWithZIO[PermissionService](_.deletePermission(PermissionId(input.id)))
             } yield count,
+          createSession = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.create", actorId)
+              session <- ZIO.serviceWithZIO[AgentSessionManager](
+                _.createSession(actorId, input.modelId.map(ModelId(_))),
+              )
+            } yield session,
+          submitMessage = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.message", actorId)
+              _       <- ZIO
+                .serviceWithZIO[AgentRunner](
+                  _.processMessage(AgentSessionId(input.sessionId), input.content, Some(actorId)),
+                )
+                .forkDaemon
+            } yield (),
         ),
         Subscriptions(
-          approvalNotifications = zio.stream.ZStream.empty,
-          eventLogTail = zio.stream.ZStream.empty,
+          approvalNotifications = ZStream.empty,
+          eventLogTail = ZStream.empty,
+          agentResponseStream =
+            input => ZStream.serviceWithStream[SessionHub](_.subscribe(AgentSessionId(input.sessionId))),
         ),
       ),
     ) @@ maxFields(200) @@ maxDepth(20)

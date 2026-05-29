@@ -12,11 +12,9 @@ package ai
 // $COVERAGE-OFF$
 
 case class LangChainConfig(
-  enabled:          Boolean = false,
-  ollamaBaseUrl:    String = "http://localhost:11434",
-  ollamaModel:      String = "llama3.2:3b",
-  qdrantHost:       String = "localhost",
-  qdrantRPCPort:    Int = 6334,
-  maxDND5eMonsters: Option[Int] = None, // Some(0) will disable reading of monsters, None will be the same as no limit
+  ollamaBaseUrl: String = "http://localhost:11434",
+  ollamaModel:   String = "llama3.2:3b",
+  qdrantHost:    String = "localhost",
+  qdrantRPCPort: Int = 6334,
 )
 // $COVERAGE-ON$

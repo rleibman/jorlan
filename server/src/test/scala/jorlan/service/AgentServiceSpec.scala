@@ -141,6 +141,7 @@ object AgentServiceSpec extends ZIOSpecDefault {
     userId = UserId(1L),
     workspaceId = None,
     status = SessionStatus.Created,
+    modelId = None,
     createdAt = T0,
     updatedAt = T0,
   )

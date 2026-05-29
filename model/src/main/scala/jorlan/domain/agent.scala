@@ -40,6 +40,9 @@ case class Agent(
 
 /** A single runtime instance of an [[Agent]] executing on behalf of a [[jorlan.domain.User]]. Each session maintains
   * its own conversation context window and execution state.
+  *
+  * @param modelId
+  *   The LLM model used for this session. Overrides the agent's `defaultModel` when set.
   */
 case class AgentSession(
   id:          AgentSessionId,
@@ -47,6 +50,18 @@ case class AgentSession(
   userId:      UserId,
   workspaceId: Option[WorkspaceId],
   status:      SessionStatus,
+  modelId:     Option[ModelId],
   createdAt:   Instant,
   updatedAt:   Instant,
+) derives JsonEncoder, JsonDecoder
+
+/** A single streamed token (or completion sentinel) from an agent response.
+  *
+  * @param finished
+  *   When `true`, the stream is complete; `content` will be empty. Consumers must close the subscription on receipt.
+  */
+case class ResponseChunk(
+  sessionId: AgentSessionId,
+  content:   String,
+  finished:  Boolean,
 ) derives JsonEncoder, JsonDecoder

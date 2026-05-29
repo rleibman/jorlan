@@ -10,6 +10,7 @@
 
 package jorlan
 
+import _root_.ai.LangChainConfig
 import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import jorlan.auth.JorlanAuthServer
@@ -57,6 +58,19 @@ object EnvironmentBuilder {
         },
       ).flatten
 
+  private val langChainConfigLayer: ZLayer[ConfigurationService, Nothing, LangChainConfig] =
+    ZLayer.fromZIO(
+      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+        val ai = cfg.jorlan.ai
+        LangChainConfig(
+          ollamaBaseUrl = ai.ollamaBaseUrl,
+          ollamaModel = ai.ollamaModel,
+          qdrantHost = ai.qdrantHost,
+          qdrantRPCPort = ai.qdrantRPCPort,
+        )
+      },
+    )
+
   val live: ULayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       ConfigurationServiceImpl.live,
@@ -73,6 +87,11 @@ object EnvironmentBuilder {
       authConfigLayer,
       oauthServiceLayer,
       OAuthStateStore.live(),
+      langChainConfigLayer,
+      SessionHub.live,
+      OllamaModelGateway.live,
+      AgentSessionManagerImpl.live,
+      AgentRunnerImpl.live,
     )
 
 }

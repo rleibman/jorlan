@@ -29,6 +29,8 @@ AgentId:jorlan.domain.AgentId,\
 AgentSessionId:jorlan.domain.AgentSessionId,\
 ApprovalRequestId:jorlan.domain.ApprovalRequestId,\
 EventLogId:jorlan.domain.EventLogId,\
+WorkspaceId:jorlan.domain.WorkspaceId,\
+ModelId:jorlan.domain.ModelId,\
 CapabilityName:jorlan.domain.CapabilityName,\
 Instant:java.time.Instant,\
 Long:Long,\

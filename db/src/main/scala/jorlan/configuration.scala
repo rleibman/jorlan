@@ -51,11 +51,19 @@ case class FlywayConfig(
   baselineDescription: String = "Initial",
 )
 
+case class JorlanAiSettings(
+  ollamaBaseUrl: String = "http://localhost:11434",
+  ollamaModel:   String = "llama3.2:3b",
+  qdrantHost:    String = "localhost",
+  qdrantRPCPort: Int = 6334,
+)
+
 case class JorlanConfig(
   db:     DatabaseConfig,
   flyway: FlywayConfig = FlywayConfig(),
   http:   HttpConfig = HttpConfig(),
   auth:   AuthSettings,
+  ai:     JorlanAiSettings = JorlanAiSettings(),
 )
 
 /** Root application configuration. Wraps all subsystem configs. The connection pool is created in the `db` module. */

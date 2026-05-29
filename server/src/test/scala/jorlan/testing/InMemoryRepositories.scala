@@ -333,4 +333,62 @@ object InMemoryRepositories {
 
   }
 
+  // ─── Agent ────────────────────────────────────────────────────────────────────
+
+  class InMemoryAgentRepo(
+    agentIdGen:   Ref[Long],
+    agentStore:   Ref[Map[Long, Agent]],
+    sessionIdGen: Ref[Long],
+    sessionStore: Ref[Map[Long, AgentSession]],
+  ) extends AgentZIORepository {
+
+    override def getById(id: AgentId): RepositoryTask[Option[Agent]] =
+      agentStore.get.map(_.get(id.value))
+
+    override def search(s: AgentSearch): RepositoryTask[List[Agent]] =
+      agentStore.get.map(_.values.toList)
+
+    override def upsert(agent: Agent): RepositoryTask[Agent] =
+      for {
+        id <- if (agent.id == AgentId.empty) agentIdGen.updateAndGet(_ + 1) else ZIO.succeed(agent.id.value)
+        saved = agent.copy(id = AgentId(id))
+        _ <- agentStore.update(_.updated(id, saved))
+      } yield saved
+
+    override def delete(id: AgentId): RepositoryTask[Long] =
+      agentStore.modify { m =>
+        if (m.contains(id.value)) (1L, m.removed(id.value)) else (0L, m)
+      }
+
+    override def getSession(id: AgentSessionId): RepositoryTask[Option[AgentSession]] =
+      sessionStore.get.map(_.get(id.value))
+
+    override def searchSessions(s: AgentSessionSearch): RepositoryTask[List[AgentSession]] =
+      sessionStore.get.map(_.values.toList)
+
+    override def upsertSession(session: AgentSession): RepositoryTask[AgentSession] =
+      for {
+        id <-
+          if (session.id == AgentSessionId.empty) sessionIdGen.updateAndGet(_ + 1)
+          else ZIO.succeed(session.id.value)
+        saved = session.copy(id = AgentSessionId(id))
+        _ <- sessionStore.update(_.updated(id, saved))
+      } yield saved
+
+  }
+
+  object InMemoryAgentRepo {
+
+    def make: UIO[InMemoryAgentRepo] =
+      for {
+        agentIdGen   <- Ref.make(0L)
+        agentStore   <- Ref.make(Map.empty[Long, Agent])
+        sessionIdGen <- Ref.make(0L)
+        sessionStore <- Ref.make(Map.empty[Long, AgentSession])
+      } yield new InMemoryAgentRepo(agentIdGen, agentStore, sessionIdGen, sessionStore)
+
+    val layer: ULayer[AgentZIORepository] = ZLayer(make.map(r => r: AgentZIORepository))
+
+  }
+
 }

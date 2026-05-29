@@ -28,7 +28,7 @@ import zio.logging.backend.SLF4J
   */
 object JorlanShell extends ZIOApp {
 
-  override type Environment = ShellConfig & AuthClient & GraphQLClient & JorlanScreen
+  override type Environment = ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState
 
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
@@ -39,6 +39,7 @@ object JorlanShell extends ZIOApp {
         AuthClient.live,
         GraphQLClient.live,
         JorlanScreen.live,
+        ShellState.live,
       )
 
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {

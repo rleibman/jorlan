@@ -39,7 +39,11 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       PermissionServiceImpl.live >+>
       UserServiceImpl.live >+>
       stubCapabilityEvaluator >+>
-      ZLayer.succeed(JorlanSession.serverSession)
+      ZLayer.succeed(JorlanSession.serverSession) >+>
+      SessionHub.live >+>
+      AgentSessionManagerImpl.live >+>
+      FakeModelGateway.layer(List("test")) >+>
+      AgentRunnerImpl.live
 
   private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[
     JorlanAPI.JorlanApiEnv & JorlanSession,
