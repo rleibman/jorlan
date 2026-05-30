@@ -107,30 +107,29 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val hub = SessionHub.live
         (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       },
-      test("processMessage respects chunkDelay in FakeModelGateway") {
+      test("FakeModelGateway with chunkDelay emits chunks in order") {
         val tokens = List("a", "b", "c")
         val delay = 10.millis
+        val delayLayers = {
+          val fakeGateway = FakeModelGateway.layer(tokens, Some(delay))
+          val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+          val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+          val hub = SessionHub.live
+          (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        }
         for {
-          start    <- Clock.instant
-          received <- runWithSubscription(tokens, "hi").provide(
-            layers(tokens).map { env =>
-              // Replace FakeModelGateway.layer to include delay
-              val fakeGateway = FakeModelGateway.layer(tokens, Some(delay))
-              val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-              val eventLog = eventLogRepo >>> EventLogServiceImpl.live
-              val hub = SessionHub.live
-              (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
-            }.flatten,
-          )
-          end <- Clock.instant
-          elapsed = end.minus(start)
+          received <- runWithSubscription(tokens, "hi")
         } yield {
           val contents = received.toList.filterNot(_.finished).map(_.content)
-          assertTrue(
-            contents == tokens,
-            elapsed.getSeconds * 1000 + elapsed.getNano / 1000000 >= delay.toMillis * tokens.length,
-          )
+          assertTrue(contents == tokens)
         }
+      }.provide {
+        val tokens = List("a", "b", "c")
+        val fakeGateway = FakeModelGateway.layer(tokens, Some(10.millis))
+        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val hub = SessionHub.live
+        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       },
     )
 

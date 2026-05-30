@@ -41,8 +41,8 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       stubCapabilityEvaluator >+>
       ZLayer.succeed(JorlanSession.serverSession) >+>
       SessionHub.live >+>
-      AgentSessionManagerImpl.live >+>
       FakeModelGateway.layer(List("test")) >+>
+      AgentSessionManagerImpl.live >+>
       AgentRunnerImpl.live
 
   private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[

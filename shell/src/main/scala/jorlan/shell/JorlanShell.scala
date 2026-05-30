@@ -186,11 +186,17 @@ object JorlanShell extends ZIOApp {
 
   // ─── Connection management ────────────────────────────────────────────────────
 
+  // 4xx responses indicate a credential or authorization problem that won't be solved by retrying.
+  private def isClientError(err: String): Boolean = {
+    val clientCodes = Seq("(400)", "(401)", "(403)", "(404)", "(422)", "(429)")
+    clientCodes.exists(err.contains)
+  }
+
   private def connectWithRetry(
     email:     String,
     password:  String,
     serverUrl: String,
-  ): ZIO[AuthClient & JorlanScreen, Nothing, LoginResult] = {
+  ): ZIO[AuthClient & JorlanScreen, Throwable, LoginResult] = {
 
     // Exponential backoff starting at 0.5s, doubling each attempt, capped at 60s.
     val backoff = Schedule
@@ -209,9 +215,9 @@ object JorlanShell extends ZIOApp {
       AuthClient
         .login(email, password)
         .tapError(err => ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.Error, s"Connection failed: $err")))
-        .retry(backoff)
+        // Stop retrying on 4xx — wrong credentials won't succeed on the next attempt.
+        .retry(backoff.whileInput(!isClientError(_)))
         .mapError(new RuntimeException(_))
-        .orDie // backoff recurs forever so this is unreachable
   }
 
   private def connectionHeartbeat(
@@ -224,7 +230,9 @@ object JorlanShell extends ZIOApp {
         _ =>
           ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.Error, "Lost connection to server.")) *>
             ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [reconnecting…]  [no session]")) *>
-            connectWithRetry(email, password, serverUrl).flatMap { r =>
+            // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
+            // heartbeat fiber; the main shell process continues until the user quits.
+            connectWithRetry(email, password, serverUrl).orDie.flatMap { r =>
               ZIO.serviceWithZIO[JorlanScreen](_.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [$serverUrl]")) *>
                 ZIO.serviceWithZIO[JorlanScreen](
                   _.setModeStatus(s" [connected: $serverUrl]  [user: ${r.displayName}]  [no session]"),

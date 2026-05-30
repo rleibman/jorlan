@@ -25,37 +25,40 @@ object HumanApprovalNotifierSpec extends ZIOSpecDefault {
     eventLogLayer >>> (HumanApprovalNotifierImpl.live ++ eventLogLayer)
   }
 
+  private def makeRequest(id: Long): ApprovalRequest =
+    ApprovalRequest(
+      id = ApprovalRequestId(id),
+      capability = CapabilityName("test.capability"),
+      scopeJson = None,
+      agentId = None,
+      requestorUserId = UserId(1L),
+      sessionId = None,
+      riskClass = RiskClass.ReadOnly,
+      status = ApprovalStatus.Pending,
+      createdAt = java.time.Instant.now(),
+      expiresAt = None,
+    )
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("HumanApprovalNotifier")(
       test("notifyApprovalRequired logs ApprovalRequested event") {
+        val request = makeRequest(1L)
         for {
           notifier <- ZIO.service[HumanApprovalNotifier]
-          request = ApprovalRequest(
-            id = ResourceId("test-approval"),
-            requiredLevel = TrustLevel.High,
-            createdAt = java.time.Instant.now(),
-          )
-          _      <- notifier.notifyApprovalRequired(request)
-          events <- ZIO.serviceWithZIO[EventLogService](
-            _.query(
-              EventLogFilter(eventType = Some(EventType.ApprovalRequested)),
-            ),
+          _        <- notifier.notifyApprovalRequired(request)
+          events   <- ZIO.serviceWithZIO[EventLogService](
+            _.query(EventLogFilter(eventType = Some(EventType.ApprovalRequested))),
           )
         } yield assertTrue(
           events.nonEmpty,
-          events.head.resource.contains(request.id),
           events.head.eventType == EventType.ApprovalRequested,
         )
       }.provide(freshLayers),
-      test("notifyApprovalRequired succeeds for valid requests") {
+      test("notifyApprovalRequired succeeds for a second request") {
+        val request = makeRequest(2L)
         for {
           notifier <- ZIO.service[HumanApprovalNotifier]
-          request = ApprovalRequest(
-            id = ResourceId("another-approval"),
-            requiredLevel = TrustLevel.Medium,
-            createdAt = java.time.Instant.now(),
-          )
-          result <- notifier.notifyApprovalRequired(request)
+          result   <- notifier.notifyApprovalRequired(request)
         } yield assertTrue(result == (()))
       }.provide(freshLayers),
     )

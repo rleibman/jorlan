@@ -63,9 +63,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
     val permLayer = (InMemoryRepositories.InMemoryPermissionRepo.layer ++ logLayer) >>> PermissionServiceImpl.live
     val hubLayer = SessionHub.live
     val agentRepoLayer = InMemoryRepositories.InMemoryAgentRepo.layer
-    val sessionMgrLayer: ULayer[AgentSessionManager] =
-      (agentRepoLayer ++ hubLayer ++ logLayer) >>> AgentSessionManagerImpl.live
     val fakeGateway = FakeModelGateway.layer(List("ok"))
+    val sessionMgrLayer: ULayer[AgentSessionManager] =
+      (agentRepoLayer ++ hubLayer ++ fakeGateway ++ logLayer) >>> AgentSessionManagerImpl.live
     val runnerLayer: ULayer[AgentRunner] =
       (fakeGateway ++ hubLayer ++ logLayer) >>> AgentRunnerImpl.live
     val svcLayer: ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =

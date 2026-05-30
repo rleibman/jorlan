@@ -21,12 +21,13 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
 
   private val userId = UserId(1L)
 
-  private val freshLayers: ULayer[AgentSessionManager & EventLogService] = {
+  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogService] = {
     val agentRepoLayer = InMemoryRepositories.InMemoryAgentRepo.layer
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
     val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
     val hubLayer = SessionHub.live
-    (agentRepoLayer ++ hubLayer ++ eventLogLayer) >>> AgentSessionManagerImpl.live ++ eventLogLayer
+    val fakeGateway = FakeModelGateway.layer(Nil)
+    (agentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogLayer) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogLayer
   }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -88,20 +89,22 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           s2  <- mgr.createSession(userId, None)
         } yield assertTrue(s1.agentId == s2.agentId)
       }.provide(freshLayers),
-      test("updateStatus with unknown session ID returns JorlanError") {
+      test("suspendSession with unknown session ID returns JorlanError") {
         for {
           mgr    <- ZIO.service[AgentSessionManager]
-          result <- mgr.updateStatus(AgentSessionId(999L), SessionStatus.Paused).flip
+          result <- mgr.suspendSession(AgentSessionId(999L)).flip
         } yield assertTrue(result.isInstanceOf[JorlanError])
       }.provide(freshLayers),
-      test("terminateSession removes session from SessionHub") {
+      test("terminateSession removes session hub entry (fresh hub after termination)") {
         for {
-          mgr      <- ZIO.service[AgentSessionManager]
-          hub      <- ZIO.service[SessionHub]
-          created  <- mgr.createSession(userId, None)
-          _        <- mgr.terminateSession(created.id)
-          hubEntry <- hub.getOrCreate(created.id).flip
-        } yield assertTrue(hubEntry.isInstanceOf[Throwable] || true) // hub cleanup verification
+          mgr     <- ZIO.service[AgentSessionManager]
+          hub     <- ZIO.service[SessionHub]
+          created <- mgr.createSession(userId, None)
+          h1      <- hub.getOrCreate(created.id)
+          _       <- mgr.terminateSession(created.id)
+          h2      <- hub.getOrCreate(created.id)
+          // After remove the Ref is cleared, so a fresh Hub is allocated on next getOrCreate
+        } yield assertTrue(!(h1 eq h2))
       }.provide(freshLayers),
     )
 
