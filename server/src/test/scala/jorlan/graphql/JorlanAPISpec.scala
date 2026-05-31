@@ -13,6 +13,7 @@ package jorlan.graphql
 import auth.{AuthenticatedSession, UnauthenticatedSession}
 import caliban.GraphQLInterpreter
 import jorlan.*
+import jorlan.db.repository.AgentZIORepository
 import jorlan.domain.*
 import jorlan.service.*
 import jorlan.testing.InMemoryRepositories
@@ -62,7 +63,24 @@ object JorlanAPISpec extends ZIOSpecDefault {
     val userLayer = (InMemoryRepositories.InMemoryUserRepo.layer ++ logLayer) >>> UserServiceImpl.live
     val permLayer = (InMemoryRepositories.InMemoryPermissionRepo.layer ++ logLayer) >>> PermissionServiceImpl.live
     val hubLayer = SessionHub.live
-    val agentRepoLayer = InMemoryRepositories.InMemoryAgentRepo.layer
+    val agentRepoLayer: ULayer[AgentZIORepository] = ZLayer.fromZIO {
+      for {
+        now  <- Clock.instant
+        repo <- InMemoryRepositories.InMemoryAgentRepo.make
+        _    <- repo
+          .upsert(
+            Agent(
+              id = AgentId.empty,
+              name = "Jorlan Interactive",
+              description = Some("Default interactive agent"),
+              defaultModel = None,
+              trustLevel = 0,
+              createdAt = now,
+            ),
+          )
+          .orDie
+      } yield repo: AgentZIORepository
+    }
     val fakeGateway = FakeModelGateway.layer(List("ok"))
     val sessionMgrLayer: ULayer[AgentSessionManager] =
       (agentRepoLayer ++ hubLayer ++ fakeGateway ++ logLayer) >>> AgentSessionManagerImpl.live

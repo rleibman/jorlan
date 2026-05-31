@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.AgentZIORepository
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -21,13 +22,34 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
 
   private val userId = UserId(1L)
 
+  // Seeds the "Jorlan Interactive" default agent so createSession can find it
+  // (mirrors what V016 Flyway migration does against a real DB).
+  private val seededAgentRepoLayer: ULayer[AgentZIORepository] =
+    ZLayer.fromZIO {
+      for {
+        now  <- Clock.instant
+        repo <- InMemoryRepositories.InMemoryAgentRepo.make
+        _    <- repo
+          .upsert(
+            Agent(
+              id = AgentId.empty,
+              name = "Jorlan Interactive",
+              description = Some("Default interactive agent for shell sessions"),
+              defaultModel = None,
+              trustLevel = 0,
+              createdAt = now,
+            ),
+          )
+          .orDie
+      } yield repo: AgentZIORepository
+    }
+
   private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogService] = {
-    val agentRepoLayer = InMemoryRepositories.InMemoryAgentRepo.layer
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
     val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
     val hubLayer = SessionHub.live
     val fakeGateway = FakeModelGateway.layer(Nil)
-    (agentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogLayer) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogLayer
+    (seededAgentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogLayer) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogLayer
   }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =

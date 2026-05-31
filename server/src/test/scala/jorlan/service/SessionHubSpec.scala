@@ -92,8 +92,7 @@ object SessionHubSpec extends ZIOSpecDefault {
             hub      <- ZIO.service[SessionHub]
             innerHub <- hub.getOrCreate(sid2)
             dequeue  <- innerHub.subscribe
-            fiber    <- ZStream.fromQueue(dequeue).runCollect.fork
-            _        <- ZIO.sleep(10.millis) // Give subscribe a moment
+            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.fork
             _        <- ZIO.foreachDiscard(chunks)(hub.publish)
             _        <- hub.publish(ResponseChunk(sid2, "", true))
             received <- fiber.join

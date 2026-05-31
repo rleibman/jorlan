@@ -45,6 +45,10 @@ Always use `--error` option: `sbt --error compile`
 5. Relational DB (MariaDB) is the canonical source of truth; vector indexes are derived
 6. Multi-user from day one — all inbound messages resolve to a canonical user before agent execution
 
+## Git Discipline — MANDATORY
+- **NEVER run `git commit` or `git push` without explicit user approval.** Present the diff/summary and wait for the user to say "commit", "push", or equivalent. Not even as a "finishing touch". Not even when the task is clearly complete. No exceptions.
+- Before asking to commit: run `sbt --error scalafmtAll` and `sbt --error test` (or at minimum `test:compile`), then report results.
+
 ## Open Design Issues (do not silently assume)
 1. Exact shared-memory privacy boundaries
 2. Whether some connectors should run out-of-process

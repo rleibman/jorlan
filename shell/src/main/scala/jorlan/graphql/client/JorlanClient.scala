@@ -10,12 +10,13 @@
 
 package jorlan.graphql.client
 
-import caliban.client.*
 import caliban.client.CalibanClientError.DecodingError
-import caliban.client.FieldBuilder.*
-import caliban.client.__Value.*
-import jorlan.domain.*
-import jorlan.shell.client.JorlanClientDecoders.*
+import caliban.client.FieldBuilder._
+import caliban.client._
+import caliban.client.__Value._
+
+import jorlan.domain._
+import jorlan.shell.client.JorlanClientDecoders._
 
 object JorlanClient {
 
@@ -73,6 +74,8 @@ object JorlanClient {
     case object RoleAssigned extends EventType { val value: String = "RoleAssigned" }
     case object RoleRevoked extends EventType { val value: String = "RoleRevoked" }
     case object SessionCreated extends EventType { val value: String = "SessionCreated" }
+    case object SessionSuspended extends EventType { val value: String = "SessionSuspended" }
+    case object SessionTerminated extends EventType { val value: String = "SessionTerminated" }
     case object SkillFailed extends EventType { val value: String = "SkillFailed" }
     case object SkillInvoked extends EventType { val value: String = "SkillInvoked" }
     case object SkillSucceeded extends EventType { val value: String = "SkillSucceeded" }
@@ -105,6 +108,8 @@ object JorlanClient {
       case __StringValue("RoleAssigned")           => Right(EventType.RoleAssigned)
       case __StringValue("RoleRevoked")            => Right(EventType.RoleRevoked)
       case __StringValue("SessionCreated")         => Right(EventType.SessionCreated)
+      case __StringValue("SessionSuspended")       => Right(EventType.SessionSuspended)
+      case __StringValue("SessionTerminated")      => Right(EventType.SessionTerminated)
       case __StringValue("SkillFailed")            => Right(EventType.SkillFailed)
       case __StringValue("SkillInvoked")           => Right(EventType.SkillInvoked)
       case __StringValue("SkillSucceeded")         => Right(EventType.SkillSucceeded)
@@ -138,6 +143,8 @@ object JorlanClient {
       case EventType.RoleAssigned           => __EnumValue("RoleAssigned")
       case EventType.RoleRevoked            => __EnumValue("RoleRevoked")
       case EventType.SessionCreated         => __EnumValue("SessionCreated")
+      case EventType.SessionSuspended       => __EnumValue("SessionSuspended")
+      case EventType.SessionTerminated      => __EnumValue("SessionTerminated")
       case EventType.SkillFailed            => __EnumValue("SkillFailed")
       case EventType.SkillInvoked           => __EnumValue("SkillInvoked")
       case EventType.SkillSucceeded         => __EnumValue("SkillSucceeded")
@@ -171,6 +178,8 @@ object JorlanClient {
       RoleAssigned,
       RoleRevoked,
       SessionCreated,
+      SessionSuspended,
+      SessionTerminated,
       SkillFailed,
       SkillInvoked,
       SkillSucceeded,
@@ -412,13 +421,14 @@ object JorlanClient {
       sessionId: jorlan.domain.AgentSessionId,
       content:   String,
       finished:  Boolean,
+      isError:   Boolean,
     )
 
     type ViewSelection = SelectionBuilder[ResponseChunk, ResponseChunkView]
 
     def view: ViewSelection =
-      (sessionId ~ content ~ finished).map { case (sessionId, content, finished) =>
-        ResponseChunkView(sessionId, content, finished)
+      (sessionId ~ content ~ finished ~ isError).map { case (sessionId, content, finished, isError) =>
+        ResponseChunkView(sessionId, content, finished, isError)
       }
 
     def sessionId: SelectionBuilder[ResponseChunk, jorlan.domain.AgentSessionId] =
@@ -427,6 +437,8 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field("content", Scalar())
     def finished: SelectionBuilder[ResponseChunk, Boolean] =
       _root_.caliban.client.SelectionBuilder.Field("finished", Scalar())
+    def isError: SelectionBuilder[ResponseChunk, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("isError", Scalar())
 
   }
 

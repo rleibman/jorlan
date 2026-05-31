@@ -41,7 +41,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         hub      <- ZIO.service[SessionHub]
         innerHub <- hub.getOrCreate(sessionId)
         dequeue  <- innerHub.subscribe
-        fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.fork
+        fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
         _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, message, Some(userId)))
         result   <- fiber.join
       } yield result
@@ -85,9 +85,19 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         } yield assertTrue(received.length == 1, received.head.finished)
       }.provide(layers(Nil)),
       test("processMessage publishes finished sentinel on ModelGateway failure") {
-        for {
-          received <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
-        } yield assertTrue(received.length >= 1)
+        // Must NOT use runWithSubscription here: forkScoped would be interrupted when the
+        // scope exits on processMessage failure, before the fiber reads the sentinel.
+        // Instead, use .ignore so the for-comprehension continues to fiber.join.
+        ZIO.scoped {
+          for {
+            hub      <- ZIO.service[SessionHub]
+            innerHub <- hub.getOrCreate(sessionId)
+            dequeue  <- innerHub.subscribe
+            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
+            _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hi", Some(userId))).ignore
+            received <- fiber.join
+          } yield assertTrue(received.nonEmpty, received.last.finished, received.last.isError)
+        }
       }.provide {
         val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
@@ -109,14 +119,6 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       },
       test("FakeModelGateway with chunkDelay emits chunks in order") {
         val tokens = List("a", "b", "c")
-        val delay = 10.millis
-        val delayLayers = {
-          val fakeGateway = FakeModelGateway.layer(tokens, Some(delay))
-          val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-          val eventLog = eventLogRepo >>> EventLogServiceImpl.live
-          val hub = SessionHub.live
-          (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
-        }
         for {
           received <- runWithSubscription(tokens, "hi")
         } yield {
@@ -124,13 +126,15 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           assertTrue(contents == tokens)
         }
       }.provide {
+        // Use withLiveClock so ZIO.sleep inside FakeModelGateway uses real time,
+        // not the frozen TestClock (which would cause this test to hang forever).
         val tokens = List("a", "b", "c")
-        val fakeGateway = FakeModelGateway.layer(tokens, Some(10.millis))
+        val fakeGateway = FakeModelGateway.layer(tokens, Some(5.millis))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
         val eventLog = eventLogRepo >>> EventLogServiceImpl.live
         val hub = SessionHub.live
         (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
-      },
+      } @@ TestAspect.withLiveClock,
     )
 
 }

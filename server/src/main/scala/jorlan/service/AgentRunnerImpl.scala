@@ -25,23 +25,25 @@ class AgentRunnerImpl(
     sessionId: AgentSessionId,
     content:   String,
     actorId:   Option[UserId],
-  ): IO[JorlanError, Unit] = {
-    for {
-      now <- Clock.instant
-      _   <- eventLog.log(
-        EventLog(
-          id = EventLogId.empty,
-          eventType = EventType.UserMessageReceived,
-          actorId = actorId,
-          agentId = None,
-          sessionId = Some(sessionId),
-          resource = Some(sessionId),
-          payloadJson = None,
-          occurredAt = now,
-        ),
-      )
-      _ <- ZIO.scoped {
-        Ref.make(Option.empty[String]).flatMap { errorRef =>
+  ): IO[JorlanError, Unit] =
+    // errorRef is hoisted above the entire for-comprehension so that failures at any
+    // step (event log write, stream processing) are captured and reflected in the sentinel.
+    Ref.make(Option.empty[String]).flatMap { errorRef =>
+      val work = for {
+        now <- Clock.instant
+        _   <- eventLog.log(
+          EventLog(
+            id = EventLogId.empty,
+            eventType = EventType.UserMessageReceived,
+            actorId = actorId,
+            agentId = None,
+            sessionId = Some(sessionId),
+            resource = Some(sessionId),
+            payloadJson = None,
+            occurredAt = now,
+          ),
+        )
+        _ <- ZIO.scoped {
           modelGateway
             .streamedResponse(sessionId, content)
             .mapError(e => JorlanError(e.msg, Some(e)))
@@ -49,35 +51,38 @@ class AgentRunnerImpl(
             .foreach { chunk =>
               sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
             }
-            .ensuring(
-              errorRef.get.flatMap { errMsg =>
-                val sentinel = errMsg match {
-                  case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
-                  case None      => ResponseChunk(sessionId, "", finished = true)
-                }
-                sessionHub.publish(sentinel) *>
-                  Clock.instant.flatMap { completedAt =>
-                    eventLog
-                      .log(
-                        EventLog(
-                          id = EventLogId.empty,
-                          eventType = EventType.AgentResponseCompleted,
-                          actorId = actorId,
-                          agentId = None,
-                          sessionId = Some(sessionId),
-                          resource = Some(sessionId),
-                          payloadJson = None,
-                          occurredAt = completedAt,
-                        ),
-                      )
-                      .ignore
-                  }
-              },
-            )
         }
-      }
-    } yield ()
-  }
+      } yield ()
+
+      // Capture any failure not already recorded by tapError (e.g. event log write failure).
+      work
+        .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
+        .ensuring {
+          errorRef.get.flatMap { errMsg =>
+            val sentinel = errMsg match {
+              case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
+              case None      => ResponseChunk(sessionId, "", finished = true)
+            }
+            sessionHub.publish(sentinel) *>
+              Clock.instant.flatMap { completedAt =>
+                eventLog
+                  .log(
+                    EventLog(
+                      id = EventLogId.empty,
+                      eventType = EventType.AgentResponseCompleted,
+                      actorId = actorId,
+                      agentId = None,
+                      sessionId = Some(sessionId),
+                      resource = Some(sessionId),
+                      payloadJson = None,
+                      occurredAt = completedAt,
+                    ),
+                  )
+                  .ignore
+              }
+          }
+        }
+    }
 
   override def subscribeToSession(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk] =
     sessionHub.subscribe(sessionId)
