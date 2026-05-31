@@ -12,7 +12,7 @@ package jorlan.shell.commands
 
 import jorlan.shell.ShellConfig
 import jorlan.shell.ShellState
-import zio.json.{DecoderOps, EncoderOps, JsonDecoder}
+import zio.json.EncoderOps
 import jorlan.shell.client.{AuthClient, GraphQLClient, SubscriptionClient}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
