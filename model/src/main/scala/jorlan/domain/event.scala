@@ -54,6 +54,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
 
 object EventLog {
 
+  // Future: consider removing this constructor, I don't see why it's needed
   /** Smart constructor that supplies the invariant defaults (`id = EventLogId.empty`, `agentId = None`,
     * `payloadJson = None`) so callers do not have to repeat them.
     */

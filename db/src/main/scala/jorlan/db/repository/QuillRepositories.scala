@@ -109,7 +109,7 @@ private abstract class QuillRepoBase(qc: QuillCtx) {
 object QuillRepositories {
 
   val live: ZLayer[
-    ConfigurationService,
+    DatabaseConfig,
     Nothing,
     UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
       EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository,
@@ -117,7 +117,7 @@ object QuillRepositories {
     ZLayer
       .scoped {
         for {
-          config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+          config <- ZIO.service[DatabaseConfig]
           hds    <- managedDataSource(config)
         } yield {
           val qc = new QuillCtx(hds)

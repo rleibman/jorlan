@@ -23,6 +23,7 @@ import zio.stream.ZStream
 
 import scala.language.unsafeNulls
 
+// Future: consider how much of this belongs in the ai module and how much of it should should be using it directly.
 /** [[ModelGateway]] implementation backed by a local Ollama endpoint via LangChain4j.
   *
   * A single [[ai.StreamingChatLanguageModel]] (and its HTTP connection pool) is shared across all sessions. Each

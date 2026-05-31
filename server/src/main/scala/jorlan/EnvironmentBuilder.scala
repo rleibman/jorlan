@@ -14,17 +14,25 @@ import _root_.ai.LangChainConfig
 import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import jorlan.auth.JorlanAuthServer
+import jorlan.db.FlywayMigration
 import jorlan.db.repository.QuillRepositories
-import jorlan.db.{ConfigurationServiceImpl, FlywayMigration}
-import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.service.*
-import zio.{ULayer, ZIO, ZLayer, durationInt}
+import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
 
 object EnvironmentBuilder {
 
-  private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
+  private val databaseConfigLayer: ZLayer[ConfigurationService, ConfigurationError, DatabaseConfig] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db))
+
+  private val flywayConfigLayer: ZLayer[ConfigurationService, ConfigurationError, FlywayConfig] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.flyway))
+
+  private val langChainConfigLayer: ZLayer[ConfigurationService, ConfigurationError, LangChainConfig] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai))
+
+  private val authConfigLayer: ZLayer[ConfigurationService, ConfigurationError, AuthConfig] =
     ZLayer.fromZIO(
-      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
         val a = cfg.jorlan.auth
         AuthConfig(
           secretKey = SecretKey(a.secretKey),
@@ -45,10 +53,10 @@ object EnvironmentBuilder {
       scopes = s.scopes,
     )
 
-  private val oauthServiceLayer: ZLayer[ConfigurationService, Nothing, OAuthService] =
+  private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
     ZLayer
       .fromZIO(
-        ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+        ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
           val a = cfg.jorlan.auth
           OAuthService.live(
             googleConfig = a.google.map(toProviderConfig),
@@ -58,44 +66,30 @@ object EnvironmentBuilder {
         },
       ).flatten
 
-  private val langChainConfigLayer: ZLayer[ConfigurationService, Nothing, LangChainConfig] =
-    ZLayer.fromZIO(
-      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
-        val ai = cfg.jorlan.ai
-        LangChainConfig(
-          ollamaBaseUrl = ai.ollamaBaseUrl,
-          ollamaModel = ai.ollamaModel,
-          qdrantHost = ai.qdrantHost,
-          qdrantRPCPort = ai.qdrantRPCPort,
-          temperature = ai.temperature,
-          topK = ai.topK,
-          topP = ai.topP,
-          maxMessages = ai.maxMessages,
-        )
-      },
-    )
-
   val live: ULayer[JorlanEnvironment] =
-    ZLayer.make[JorlanEnvironment](
-      ConfigurationServiceImpl.live,
-      FlywayMigration.live,
-      QuillRepositories.live,
-      EventLogServiceImpl.live,
-      UserServiceImpl.live,
-      PermissionServiceImpl.live,
-      RiskClassifierImpl.live,
-      CapabilityEvaluatorImpl.live,
-      ApprovalPolicyEngineImpl.live,
-      ApprovalServiceImpl.live,
-      JorlanAuthServer.live,
-      authConfigLayer,
-      oauthServiceLayer,
-      OAuthStateStore.live(),
-      langChainConfigLayer,
-      SessionHub.live,
-      OllamaModelGateway.live,
-      AgentSessionManagerImpl.live,
-      AgentRunnerImpl.live,
-    )
+    ZLayer
+      .make[JorlanEnvironment](
+        ConfigurationServiceImpl.live,
+        databaseConfigLayer,
+        flywayConfigLayer,
+        langChainConfigLayer,
+        FlywayMigration.live,
+        QuillRepositories.live,
+        EventLogServiceImpl.live,
+        UserServiceImpl.live,
+        PermissionServiceImpl.live,
+        RiskClassifierImpl.live,
+        CapabilityEvaluatorImpl.live,
+        ApprovalPolicyEngineImpl.live,
+        ApprovalServiceImpl.live,
+        JorlanAuthServer.live,
+        authConfigLayer,
+        oauthServiceLayer,
+        OAuthStateStore.live(),
+        SessionHub.live,
+        OllamaModelGateway.live,
+        AgentSessionManagerImpl.live,
+        AgentRunnerImpl.live,
+      ).orDie
 
 }

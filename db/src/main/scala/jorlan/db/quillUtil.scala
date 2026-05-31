@@ -12,7 +12,7 @@ package jorlan.db
 
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
-import jorlan.{AppConfig, DataSourceConfig}
+import jorlan.{DataSourceConfig, DatabaseConfig}
 import jorlan.domain.*
 import just.semver.{ParseError, SemVer}
 import zio.http.MediaType
@@ -26,13 +26,13 @@ import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.Base64
 import scala.language.unsafeNulls
 
-/** Constructs an unmanaged [[HikariDataSource]] from [[AppConfig]].
+/** Constructs an unmanaged [[HikariDataSource]] from [[DatabaseConfig]].
   *
   * This allocates a datasource and may throw during configuration or initialization. Prefer [[managedDataSource]] when
   * a scoped, lifecycle-safe API is needed.
   */
-def makeDataSource(config: AppConfig): HikariDataSource = {
-  val c = config.jorlan.db.dataSource
+def makeDataSource(config: DatabaseConfig): HikariDataSource = {
+  val c = config.dataSource
   val hc = new HikariConfig()
   hc.setDriverClassName(c.driver)
   hc.setJdbcUrl(c.url)
@@ -48,7 +48,7 @@ def makeDataSource(config: AppConfig): HikariDataSource = {
 }
 
 /** Constructs a [[HikariDataSource]] as a scoped resource — the pool is closed when the scope is released. */
-def managedDataSource(config: AppConfig): zio.ZIO[zio.Scope, Nothing, HikariDataSource] =
+def managedDataSource(config: DatabaseConfig): zio.ZIO[zio.Scope, Nothing, HikariDataSource] =
   zio.ZIO.acquireRelease(
     zio.ZIO.attempt(makeDataSource(config)).orDie,
   )(ds => zio.ZIO.succeed(ds.close()))

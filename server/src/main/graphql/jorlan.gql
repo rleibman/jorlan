@@ -10,9 +10,13 @@ scalar AgentSessionId
 
 scalar ApprovalRequestId
 
+scalar ApprovalStatus
+
 scalar CapabilityName
 
 scalar EventLogId
+
+scalar EventType
 
 "An instantaneous point on the time-line represented by a standard date time string"
 scalar Instant
@@ -23,66 +27,17 @@ scalar ModelId
 
 scalar PermissionId
 
+scalar RiskClass
+
 scalar RoleId
+
+scalar SessionStatus
 
 scalar Unit
 
 scalar UserId
 
 scalar WorkspaceId
-
-enum ApprovalStatus {
-  Approved
-  Cancelled
-  Expired
-  Pending
-  Rejected
-}
-
-enum EventType {
-  AgentCompleted
-  AgentFailed
-  AgentResponseCompleted
-  AgentStarted
-  ApprovalDenied
-  ApprovalGranted
-  ApprovalRequested
-  CapabilityAllowed
-  CapabilityDenied
-  CapabilityGranted
-  CapabilityRevoked
-  MemoryExpired
-  MemoryWritten
-  ModelCallCompleted
-  ModelCallFailed
-  ModelCallStarted
-  PermissionGranted
-  PermissionRevoked
-  RoleAssigned
-  RoleRevoked
-  SessionCreated
-  SessionSuspended
-  SessionTerminated
-  SkillFailed
-  SkillInvoked
-  SkillSucceeded
-  SystemAlert
-  UserConnected
-  UserCreated
-  UserDisconnected
-  UserMessageReceived
-  UserUpdated
-}
-
-enum SessionStatus {
-  Active
-  Blocked
-  Cancelled
-  Completed
-  Created
-  Failed
-  Paused
-}
 
 type AgentSession {
   id: AgentSessionId!
@@ -102,7 +57,7 @@ type ApprovalRequest {
   agentId: AgentId
   requestorUserId: UserId!
   sessionId: AgentSessionId
-  riskClass: String!
+  riskClass: RiskClass!
   status: ApprovalStatus!
   createdAt: Instant!
   expiresAt: Instant
@@ -121,14 +76,14 @@ type EventLogJson {
 
 type Mutations {
   createUser(displayName: String!, email: String): User
-  updateUser(id: Long!, displayName: String!, email: String, active: Boolean!): User
+  updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
   createRole(name: String!, description: String): Role
-  assignRole(userId: Long!, roleId: Long!): Unit
-  revokeRole(userId: Long!, roleId: Long!): Unit
-  grantPermission(resource: String!, action: String!, userId: Long, roleId: Long): Permission
-  revokePermission(id: Long!): Long
-  createSession(modelId: String): AgentSession
-  submitMessage(sessionId: Long!, content: String!): Unit
+  assignRole(userId: UserId!, roleId: RoleId!): Unit
+  revokeRole(userId: UserId!, roleId: RoleId!): Unit
+  grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
+  revokePermission(id: PermissionId!): Long
+  createSession(modelId: ModelId): AgentSession
+  submitMessage(sessionId: AgentSessionId!, content: String!): Unit
 }
 
 type Permission {
@@ -141,11 +96,11 @@ type Permission {
 }
 
 type Queries {
-  user(id: Long!): User
+  user(id: UserId!): User
   users(page: Int, pageSize: Int): [User!]
-  role(id: Long!): Role
-  roles(userId: Long!, page: Int, pageSize: Int): [Role!]
-  permissions(userId: Long!, page: Int, pageSize: Int): [Permission!]
+  role(id: RoleId!): Role
+  roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
+  permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
   listSessions(page: Int, pageSize: Int): [AgentSession!]
 }
 
@@ -165,7 +120,7 @@ type Role {
 type Subscriptions {
   approvalNotifications: ApprovalRequest
   eventLogTail: EventLogJson
-  agentResponseStream(sessionId: Long!): ResponseChunk
+  agentResponseStream(sessionId: AgentSessionId!): ResponseChunk
 }
 
 type User {

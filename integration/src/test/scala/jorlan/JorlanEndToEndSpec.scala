@@ -60,9 +60,17 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
+  private val databaseConfigLayer: TaskLayer[DatabaseConfig] =
+    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
+
+  private val flywayConfigLayer: TaskLayer[FlywayConfig] =
+    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.flyway))
+
   private val envLayer: TaskLayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       configLayer,
+      databaseConfigLayer,
+      flywayConfigLayer,
       jorlan.db.FlywayMigration.live,
       QuillRepositories.live,
       EventLogServiceImpl.live,

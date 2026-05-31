@@ -15,6 +15,7 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 
+// Future: consider if this is an unecessary abstraction and we could use the ai facilities more directly
 /** The per-session agent execution loop.
   *
   * Receives a user message, streams the model response token-by-token through the session hub, and records all

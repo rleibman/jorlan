@@ -10,13 +10,6 @@
 
 package jorlan
 
-import com.typesafe.config.Config as TypesafeConfig
-import zio.config.magnolia.DeriveConfig
-import zio.config.typesafe.TypesafeConfigProvider
-import zio.{IO, UIO}
-
-import scala.language.unsafeNulls
-
 /** JDBC connection-pool settings, mapped directly from `application.conf`. */
 case class DataSourceConfig(
   driver:                  String,
@@ -50,61 +43,3 @@ case class FlywayConfig(
   baselineVersion:     String = "0",
   baselineDescription: String = "Initial",
 )
-
-case class JorlanAiSettings(
-  ollamaBaseUrl: String = "http://localhost:11434",
-  ollamaModel:   String = "llama3.2:3b",
-  qdrantHost:    String = "localhost",
-  qdrantRPCPort: Int = 6334,
-  temperature:   Double = 1.1,
-  topK:          Int = 40,
-  topP:          Double = 0.9,
-  maxMessages:   Int = 1000,
-)
-
-case class JorlanConfig(
-  db:     DatabaseConfig,
-  flyway: FlywayConfig = FlywayConfig(),
-  http:   HttpConfig = HttpConfig(),
-  auth:   AuthSettings,
-  ai:     JorlanAiSettings = JorlanAiSettings(),
-)
-
-/** Root application configuration. Wraps all subsystem configs. The connection pool is created in the `db` module. */
-case class AppConfig(jorlan: JorlanConfig)
-
-object AppConfig {
-
-  /** Derives an [[AppConfig]] from a Typesafe `Config` tree using `zio-config-magnolia`. Any derivation failure is
-    * treated as an unrecoverable defect (`orDie`).
-    */
-  def read(typesafeConfig: TypesafeConfig): UIO[AppConfig] =
-    TypesafeConfigProvider
-      .fromTypesafeConfig(typesafeConfig)
-      .load(DeriveConfig.derived[AppConfig].desc)
-      .orDie
-
-}
-
-// $COVERAGE-OFF$
-/** Base error type for configuration loading failures. */
-sealed abstract class ConfigurationError(
-  override val msg:   String,
-  override val cause: Option[Throwable] = None,
-) extends JorlanError(msg, cause)
-
-case class ConfigLoadError(
-  override val msg:   String,
-  override val cause: Option[Throwable] = None,
-) extends ConfigurationError(msg, cause)
-
-// $COVERAGE-ON$
-
-/** ZIO service that provides the resolved [[AppConfig]]. Implementations may load from the classpath, environment
-  * variables, or a test fixture.
-  */
-trait ConfigurationService {
-
-  def appConfig: IO[ConfigurationError, AppConfig]
-
-}

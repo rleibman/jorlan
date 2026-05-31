@@ -16,12 +16,18 @@ import caliban.client.__Value.{__NumberValue, __StringValue}
 import jorlan.domain.{
   AgentId,
   AgentSessionId,
+  ApprovalMode,
   ApprovalRequestId,
+  ApprovalStatus,
   CapabilityName,
+  ChannelType,
   EventLogId,
+  EventType,
   ModelId,
   PermissionId,
+  RiskClass,
   RoleId,
+  SessionStatus,
   UserId,
   WorkspaceId,
 }
@@ -89,5 +95,34 @@ object JorlanClientDecoders {
 
   implicit val capabilityNameEncoder: ArgEncoder[CapabilityName] = (cn: CapabilityName) =>
     ArgEncoder.string.encode(cn.value)
+
+  // ─── Enum decoders / encoders ─────────────────────────────────────────────────
+
+  private def enumDecoder[A](
+    valueOf: String => A,
+    name:    String,
+  ): ScalarDecoder[A] = {
+    case __StringValue(v) =>
+      Try(valueOf(v)).toEither.left.map(e => DecodingError(s"Can't build $name from '$v'", Some(e)))
+    case other => Left(DecodingError(s"Expected string for $name, got: $other"))
+  }
+
+  private def enumEncoder[A](stringify: A => String): ArgEncoder[A] =
+    (a: A) => ArgEncoder.string.encode(stringify(a))
+
+  implicit val eventTypeDecoder:      ScalarDecoder[EventType] = enumDecoder(EventType.valueOf, "EventType")
+  implicit val sessionStatusDecoder:  ScalarDecoder[SessionStatus] = enumDecoder(SessionStatus.valueOf, "SessionStatus")
+  implicit val approvalStatusDecoder: ScalarDecoder[ApprovalStatus] =
+    enumDecoder(ApprovalStatus.valueOf, "ApprovalStatus")
+  implicit val approvalModeDecoder: ScalarDecoder[ApprovalMode] = enumDecoder(ApprovalMode.valueOf, "ApprovalMode")
+  implicit val channelTypeDecoder:  ScalarDecoder[ChannelType] = enumDecoder(ChannelType.valueOf, "ChannelType")
+  implicit val riskClassDecoder:    ScalarDecoder[RiskClass] = enumDecoder(RiskClass.valueOf, "RiskClass")
+
+  implicit val eventTypeEncoder:      ArgEncoder[EventType] = enumEncoder(_.toString)
+  implicit val sessionStatusEncoder:  ArgEncoder[SessionStatus] = enumEncoder(_.toString)
+  implicit val approvalStatusEncoder: ArgEncoder[ApprovalStatus] = enumEncoder(_.toString)
+  implicit val approvalModeEncoder:   ArgEncoder[ApprovalMode] = enumEncoder(_.toString)
+  implicit val channelTypeEncoder:    ArgEncoder[ChannelType] = enumEncoder(_.toString)
+  implicit val riskClassEncoder:      ArgEncoder[RiskClass] = enumEncoder(_.toString)
 
 }

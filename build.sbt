@@ -452,7 +452,6 @@ lazy val ai = project
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
-  .dependsOn(model)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Root project

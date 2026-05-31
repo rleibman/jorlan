@@ -24,9 +24,9 @@ enum ShellCommand {
   case About
   case WhoAmI
   case Quit
-  case NewSession(model: Option[String]) // Phase 8
-  case ModelInfo // Phase 8
-  case ListModels // Phase 8
+  case NewSession(model: Option[String])
+  case ModelInfo
+  case ListModels
   case Trace(level: String)
   case Unknown(raw: String)
 

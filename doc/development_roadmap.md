@@ -298,7 +298,8 @@ does.
 
 ### Integration wiring summary
 
-- [x] Event log writes: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`, `AgentResponseCompleted`
+- [x] Event log writes: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`,
+  `AgentResponseCompleted`
 - [ ] Integration test: full round-trip using `FakeModelGateway`, asserting each chunk arrives in order
 - [x] Unit tests: `AgentRunnerSpec`, `AgentSessionManagerSpec`, `SessionHubSpec`
 
@@ -319,7 +320,7 @@ editing, DBA scripting, or manual SQL. See `doc/phase8.1-initialization.md` for 
 flag, server name, personality, future settings) lives in a single `server_settings` table with schema
 `(key VARCHAR(64) PRIMARY KEY, value JSON NOT NULL)`. Using a JSON value column means each entry can hold a scalar,
 an array, or a nested object without schema migrations when the shape of a setting evolves. The `initialized` flag
-is a JSON boolean; the server name is a JSON string; the personality (Phase 8.2) is a JSON object.
+is a JSON boolean; the server name is a JSON string; the personality (Phase 8.3) is a JSON object.
 
 **Server:**
 
@@ -327,7 +328,8 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.2)
   seed `('initialized', 'false')` and `('serverName', '"Jorlan"')`
 - [ ] `ServerSettingsRepository`: `get(key): UIO[Option[Json]]`, `set(key, value: Json): UIO[Unit]`; wraps
   `server_settings`; used by all Phase 8.x services instead of ad-hoc SQL
-- [ ] `InitService` trait + `InitServiceImpl`: `isInitialized`, `complete(token, serverName, adminEmail, adminName, adminPassword)`;
+- [ ] `InitService` trait + `InitServiceImpl`: `isInitialized`,
+  `complete(token, serverName, adminEmail, adminName, adminPassword)`;
   reads/writes `server_settings` via `ServerSettingsRepository`; invalidates the one-time token on success
 - [ ] `InitTokenStore`: `Ref[Option[String]]` holding a 32-hex random token generated on startup when uninitialized;
   printed to stdout in a clearly visible box; discarded after use
@@ -344,7 +346,7 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.2)
 
 **Shell:**
 
-- [ ] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order: `JORLAN_SHELL_CONFIG`
+- [ ] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order:`JORLAN_SHELL_CONFIG`
   env var → `--config` flag → `~/.jorlan/jorlan-shell.json` → `~/.jorlan/jorlan.json` (read-only backwards compat) →
   `application.conf` defaults
 - [ ] `ShellConfig` writer: persists `serverUrl`, `email`, `password` to the resolved config path after successful
@@ -360,7 +362,7 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.2)
 
 ---
 
-## Phase 8b: Database Bootstrap Prerequisites
+## Phase 8.2: Database Bootstrap Prerequisites
 
 **Goal:** The empty MariaDB database and application user exist before Phase 8.1's in-process wizard runs. This is
 the only step that requires MySQL root credentials; everything after it is handled by the server itself.
@@ -373,7 +375,7 @@ the only step that requires MySQL root credentials; everything after it is handl
 
 ---
 
-## Phase 8.2: Server Personality and Identity
+## Phase 8.3: Server Personality and Identity
 
 **Goal:** Every Jorlan installation has a name and a personality that shapes how its agents communicate. The
 personality is structured (giving admins concrete handles) but also includes an open-ended prose section for anything
@@ -381,6 +383,7 @@ that doesn't fit the structured fields. All agents on a server share the same pe
 per-agent setting.
 
 **Design decisions:**
+
 - Stored entirely in `server_settings` as a JSON object under key `personality` — no files, no YAML parsing at
   runtime. The structured fields give the admin a clear model; the admin edits via GraphQL mutation or shell command,
   not by editing a file.
@@ -397,13 +400,16 @@ per-agent setting.
 {
   "name": "Jorlan",
   "formality": "professional",
-  "languages": ["en"],
+  "languages": [
+    "en"
+  ],
   "expertise": [],
   "prompt": "You are a capable, thoughtful assistant focused on helping users accomplish their goals efficiently. You ask clarifying questions when a request is ambiguous rather than making assumptions. You acknowledge uncertainty rather than fabricating answers."
 }
 ```
 
 Fields:
+
 - `name` — what the assistant calls itself in conversation (mirrors `serverName`)
 - `formality` — `casual | professional | academic | technical`
 - `languages` — ISO 639-1 list; assistant matches the user's language when possible
@@ -431,6 +437,15 @@ Fields:
 - [ ] Shell title bar / status bar shows server name from `/api/status` `serverName` field (already wired in Phase 8.1)
 - [ ] `/personality` shell command (admin only): displays the current personality fields in the message area with a
   clear structure; sub-commands or interactive prompts allow updating individual fields or the full prompt
+
+---
+
+## Phase 8.4: Agent testing on CI. We need to add some tests for AI,
+
+- [ ] Integrate AI/CI testing according to the documentation on doc/testing_ai_on_ci.md.
+- [ ] Add tests for the AI module, ensuring that the `FakeModelGateway` is used to simulate model responses and that the
+  `AgentSessionManager` and `AgentRunner` correctly handle streaming responses and event logging. These tests should
+  work both locally and on CI
 
 ---
 
@@ -607,7 +622,7 @@ remaining skills.
 ## Phase 18: Installer and Distribution
 
 **Goal:** Jorlan can be installed cleanly on Ubuntu (deb package) and macOS by a non-developer, with full end-to-end
-smoke tests. Depends on Phase 8.1 (in-process wizard) and Phase 8b (database bootstrap script) being complete.
+smoke tests. Depends on Phase 8.1 (in-process wizard) and Phase 8.2 (database bootstrap script) being complete.
 
 > The smoke test starts the server, checks `GET /api/status`, runs the Phase 8.1 initialization wizard, and verifies
 > normal operation — so Phase 8.1 must be complete before this phase can close.
@@ -623,7 +638,7 @@ smoke tests. Depends on Phase 8.1 (in-process wizard) and Phase 8b (database boo
     - `/usr/bin/jorlan` — launch script (generated by `sbt-native-packager`)
     - `/etc/jorlan/jorlan.env` — environment variables file (installed as config, not overwritten on upgrade)
     - `/var/log/jorlan/` — log directory (owned by `jorlan` system user)
-    - `/usr/lib/jorlan/scripts/init-db.sh` — bundled copy of the Phase 8b bootstrap script
+    - `/usr/lib/jorlan/scripts/init-db.sh` — bundled copy of the Phase 8.2 bootstrap script
 - [ ] Debian pre/post install scripts: create `jorlan` system user and group if absent; set log directory permissions
 - [ ] Debian pre-remove script: stop service if running
 - [ ] `sbt debian:packageBin` produces a valid `.deb` installable via `dpkg -i` or `apt install ./jorlan_*.deb`
