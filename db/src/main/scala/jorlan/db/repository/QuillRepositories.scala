@@ -109,7 +109,7 @@ private abstract class QuillRepoBase(qc: QuillCtx) {
 object QuillRepositories {
 
   val live: ZLayer[
-    ConfigurationService,
+    DatabaseConfig,
     Nothing,
     UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
       EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository,
@@ -117,7 +117,7 @@ object QuillRepositories {
     ZLayer
       .scoped {
         for {
-          config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+          config <- ZIO.service[DatabaseConfig]
           hds    <- managedDataSource(config)
         } yield {
           val qc = new QuillCtx(hds)
@@ -338,7 +338,11 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchSessions(s: AgentSessionSearch): RepositoryTask[List[AgentSession]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qAgentSessions.filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid)))
+    val base = quote(
+      qAgentSessions
+        .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid))
+        .filter(sess => lift(s.userId).forall(uid => sess.userId == uid)),
+    )
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[AgentSession]] = s.sorts match {
       case Some(Sort(AgentSessionOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))

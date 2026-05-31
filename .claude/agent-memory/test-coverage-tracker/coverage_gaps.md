@@ -5,6 +5,9 @@ metadata:
   type: project
 ---
 
+## Phase 8 Agent Session Runtime — Coverage Gaps (added 2026-05-29)
+See dedicated section below.
+
 ## Phase 6 GraphQL API — Coverage Gaps (added 2026-05-27)
 See dedicated section below.
 
@@ -87,6 +90,51 @@ See dedicated section below.
 - `recordDecision` delegates to permissionService.recordApprovalDecision
 - `expireStaleRequests` sums expired counts across multiple records
 - `expireStaleRequests` with empty result set → returns 0
+
+## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29)
+
+### OllamaModelGateway
+- Entire file excluded with $COVERAGE-OFF$ / $COVERAGE-ON$ — appropriate because it requires a live Ollama process.
+
+### FakeModelGateway
+- `chunkDelay` branch (tap + ZIO.sleep) — never exercised; only the no-delay path is tested indirectly via AgentRunnerSpec.
+- `availableModels` — never directly asserted.
+
+### SessionHub
+- `publish` to a non-existent session (no hub created) — the None branch is untested; only the Some branch is exercised.
+- `subscribe` stream integration via `SessionHub.subscribe()` method directly — tests use `hub.getOrCreate` + `innerHub.subscribe` directly, bypassing `SessionHub.subscribe`.
+
+### AgentRunner
+- ModelGateway failure path — when `streamedResponse` emits an error, the `.ensuring` block must still publish the finished sentinel; this is not tested.
+- `actorId = None` path — only tested with `Some(userId)`.
+- `AgentResponseCompleted` event written AFTER model failure (vs. success) — no test.
+
+### AgentSessionManager
+- `suspendSession` does NOT remove the hub (only `terminateSession` does); no test verifies hub is still accessible after suspend.
+- `terminateSession` hub removal — no test verifies the hub is gone from the Ref after terminate.
+- `ensureDefaultAgent` when multiple agents exist (only one named "Jorlan Interactive") — tested only when store is empty or already has the default.
+- `updateStatus` when session not found — `ZIO.fromOption(_).orElseFail(JorlanError(...))` error path never tested (both suspendSession and terminateSession).
+- `createSession` with modelId = None — only `Some(ModelId("test-model"))` path is tested in most tests.
+
+### HumanApprovalNotifier
+- Zero tests. Single method `notifyApprovalRequired` writes an `ApprovalRequested` event — entirely untested.
+
+### GraphQL mutations createSession / submitMessage / agentResponseStream
+- `createSession` mutation — NOT tested in JorlanAPISpec.
+- `submitMessage` mutation — NOT tested in JorlanAPISpec.
+- `agentResponseStream` subscription — NOT tested in JorlanAPISpec.
+
+### Shell CommandHandler (Phase 8 behaviors)
+- `handleMessage` with active session (Some(sessionId)) — both the success path (GQL ok → subscription stream) and the GQL failure path (`Submit failed`) are untested. Tests only check the no-session branch.
+- `handleNewSession` GQL success path — tested to check the "Phase 8" stub, but the real implementation (parsing session JSON, calling `setSessionId`) is not exercised in tests.
+- `handleNewSession` parse failure path (`Could not parse session response`) — untested.
+- `showModelInfo` with active session — untested (only "No active session" path is tested).
+
+### ShellState
+- Zero tests. All three methods (`getSessionId`, `setSessionId`, `clearSessionId`) are untested.
+
+### SubscriptionClient
+- Zero tests. Requires WebSocket infrastructure; excluded from unit testing is reasonable, but no integration test covers it either.
 
 ## Phase 6 GraphQL API Coverage Gaps
 

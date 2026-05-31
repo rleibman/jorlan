@@ -15,15 +15,15 @@ import _root_.auth.*
 import jorlan.db.FlywayMigration
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
-import jorlan.service.{CapabilityEvaluator, EventLogService, PermissionService, UserService}
+import jorlan.service.*
 import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
-  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore &
-  jorlan.service.ApprovalService & UserService & PermissionService & CapabilityEvaluator
+  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & ApprovalService & UserService &
+  PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub & ModelGateway
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {

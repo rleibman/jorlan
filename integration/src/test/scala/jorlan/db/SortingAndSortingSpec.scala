@@ -189,10 +189,28 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "SortSessUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SortSessAgent", None, None, 0, T0))
         _         <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0.minusSeconds(10), T0),
+          AgentSession(
+            AgentSessionId.empty,
+            agent.id,
+            user.id,
+            None,
+            SessionStatus.Active,
+            None,
+            T0.minusSeconds(10),
+            T0,
+          ),
         )
         _ <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0.plusSeconds(10), T0),
+          AgentSession(
+            AgentSessionId.empty,
+            agent.id,
+            user.id,
+            None,
+            SessionStatus.Active,
+            None,
+            T0.plusSeconds(10),
+            T0,
+          ),
         )
         res <- agentRepo.searchSessions(
           AgentSessionSearch(pageSize = 50, sorts = Some(Sort(AgentSessionOrder.Id, OrderDirection.Desc))),
@@ -206,10 +224,28 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "SortSessUser2", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SortSessAgent2", None, None, 0, T0))
         _         <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0.minusSeconds(30), T0),
+          AgentSession(
+            AgentSessionId.empty,
+            agent.id,
+            user.id,
+            None,
+            SessionStatus.Active,
+            None,
+            T0.minusSeconds(30),
+            T0,
+          ),
         )
         _ <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0.plusSeconds(30), T0),
+          AgentSession(
+            AgentSessionId.empty,
+            agent.id,
+            user.id,
+            None,
+            SessionStatus.Active,
+            None,
+            T0.plusSeconds(30),
+            T0,
+          ),
         )
         asc <- agentRepo.searchSessions(
           AgentSessionSearch(pageSize = 50, sorts = Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Asc))),
@@ -229,7 +265,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "UpdSessUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "UpdSessAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         _       <- agentRepo.upsertSession(sess.copy(status = SessionStatus.Completed, updatedAt = T0.plusSeconds(1)))
         fetched <- agentRepo.getSession(sess.id)
@@ -248,7 +284,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.minusSeconds(5)))
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.plusSeconds(5)))
@@ -269,7 +305,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser2", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.minusSeconds(50)))
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.plusSeconds(50)))
@@ -300,7 +336,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         conv <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         _ <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "msg1", None, T0.minusSeconds(2)))
@@ -324,7 +360,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser2", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         conv <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         _ <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "first", None, T0.minusSeconds(5)))
@@ -349,7 +385,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvGetUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvGetAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         conv    <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         fetched <- convRepo.getById(conv.id)

@@ -11,12 +11,25 @@
 package ai
 // $COVERAGE-OFF$
 
+/** Configuration for the LangChain4j / Ollama integration.
+  *
+  * @param temperature
+  *   Sampling temperature. Higher values produce more varied output (default 1.1).
+  * @param topK
+  *   Top-K sampling parameter (default 40).
+  * @param topP
+  *   Top-P (nucleus) sampling parameter (default 0.9).
+  * @param maxMessages
+  *   Maximum number of messages to retain per session in the sliding chat memory window (default 1000).
+  */
 case class LangChainConfig(
-  enabled:          Boolean = false,
-  ollamaBaseUrl:    String = "http://localhost:11434",
-  ollamaModel:      String = "llama3.2:3b",
-  qdrantHost:       String = "localhost",
-  qdrantRPCPort:    Int = 6334,
-  maxDND5eMonsters: Option[Int] = None, // Some(0) will disable reading of monsters, None will be the same as no limit
+  ollamaBaseUrl: String = "http://localhost:11434",
+  ollamaModel:   String = "llama3.2:3b",
+  qdrantHost:    String = "localhost",
+  qdrantRPCPort: Int = 6334,
+  temperature:   Double = 1.1,
+  topK:          Int = 40,
+  topP:          Double = 0.9,
+  maxMessages:   Int = 1000,
 )
 // $COVERAGE-ON$

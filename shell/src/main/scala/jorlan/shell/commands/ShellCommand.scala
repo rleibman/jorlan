@@ -24,9 +24,9 @@ enum ShellCommand {
   case About
   case WhoAmI
   case Quit
-  case NewSession // Phase 8
-  case ModelInfo // Phase 8
-  case ListModels // Phase 8
+  case NewSession(model: Option[String])
+  case ModelInfo
+  case ListModels
   case Trace(level: String)
   case Unknown(raw: String)
 
@@ -49,7 +49,8 @@ object ShellCommand {
         case "whoami" :: _         => WhoAmI
         case "quit" :: _           => Quit
         case "exit" :: _           => Quit
-        case "new" :: _            => NewSession
+        case "new" :: model :: _   => NewSession(Some(model))
+        case "new" :: Nil          => NewSession(None)
         case "model" :: _          => ModelInfo
         case "models" :: _         => ListModels
         case "trace" :: level :: _ => Trace(level)

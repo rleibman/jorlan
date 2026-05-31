@@ -31,7 +31,16 @@ type: project
 - `EnvironmentBuilder.live` uses `ZLayer.make` macro for compile-time graph resolution
 - `FlywayMigration.live` takes `ConfigurationService`, creates Flyway, wraps in `UIO` (swallows errors as log output)
 
-## Known Technical Debt (updated 2026-05-27)
+## Phase 8 Service Placement Pattern (2026-05-29)
+- `ModelGateway` trait placed in `model/` (correct — no infra deps)
+- `AgentRunner` and `AgentSessionManager` traits placed in `server/` (inconsistent — they follow ZIO service pattern and should be in `model/`)
+- `SessionHub` is a concrete class (not a trait+impl pair) in `server/` — acceptable if it stays server-only (depends on ZIO Hub, which is fine in model, but the class directly holds infrastructure state)
+- `AgentSessionManager` doc says "Delegates to AgentService" but implementation injects `AgentZIORepository` directly — bypasses the service layer
+- `AgentSessionSearch` is missing a `userId` field — listSessions cannot be properly scoped to the authenticated user without DB schema change
+- `JorlanApiEnv` now includes `SessionHub` directly — subscription wiring leaks a low-level hub into the GraphQL layer instead of going through `AgentRunner`
+- Magic numbers in `OllamaModelGateway`: temperature 1.1, topK 40, topP 0.9, maxMessages 1000, hub capacity 256 — duplicated from `ai/util.scala`
+
+## Known Technical Debt (updated 2026-05-29)
 - `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
 - `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module
 - `QuillCtx.hds` is a raw `DataSource` created eagerly — pool lifecycle not managed by ZIO acquire/release
@@ -45,3 +54,8 @@ type: project
 - Mutation resolvers do read `JorlanSession` for capability checks; authorization wiring exists, though broader coverage may still need review
 - `QuickAdapter(interp)` instantiated twice in `JorlanRoutes` (once per handler call) — minor inefficiency
 - `extractLongField` in `GraphQLApiSpec` uses regex on JSON strings — fragile; breaks on field reordering
+- `listSessions` in `JorlanAPI` calls `getSession(AgentSessionId.empty)` — returns at most one session (or none), not a list; broken semantics
+- `createSession` in `AgentSessionManagerImpl` calls `sessionHub.getOrCreate(AgentSessionId.empty)` before saving — creates a hub entry under the sentinel ID, wasted allocation
+- `ensureDefaultAgent` in `AgentSessionManagerImpl` — violates SRP; session manager should not be responsible for provisioning agent records
+- `HumanApprovalNotifier` is a plain class; should follow the ZIO service pattern (trait + companion) for testability
+- `AgentRunnerImpl` and `AgentSessionManagerImpl` live in same file as their traits; the impl companion is named `AgentRunnerImpl`/`AgentSessionManagerImpl` not following the `XxxImpl.live` object-inside-companion pattern used elsewhere

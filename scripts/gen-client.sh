@@ -29,7 +29,15 @@ AgentId:jorlan.domain.AgentId,\
 AgentSessionId:jorlan.domain.AgentSessionId,\
 ApprovalRequestId:jorlan.domain.ApprovalRequestId,\
 EventLogId:jorlan.domain.EventLogId,\
+WorkspaceId:jorlan.domain.WorkspaceId,\
+ModelId:jorlan.domain.ModelId,\
 CapabilityName:jorlan.domain.CapabilityName,\
+ChannelType:jorlan.domain.ChannelType,\
+ApprovalStatus:jorlan.domain.ApprovalStatus,\
+ApprovalMode:jorlan.domain.ApprovalMode,\
+EventType:jorlan.domain.EventType,\
+SessionStatus:jorlan.domain.SessionStatus,\
+RiskClass:jorlan.domain.RiskClass,\
 Instant:java.time.Instant,\
 Long:Long,\
 Unit:Unit"

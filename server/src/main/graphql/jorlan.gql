@@ -4,52 +4,50 @@ schema {
   subscription: Subscriptions
 }
 
-"An instantaneous point on the time-line represented by a standard date time string"
 scalar AgentId
+
 scalar AgentSessionId
+
 scalar ApprovalRequestId
+
+scalar ApprovalStatus
+
 scalar CapabilityName
+
 scalar EventLogId
+
+scalar EventType
+
+"An instantaneous point on the time-line represented by a standard date time string"
 scalar Instant
+
 scalar Long
+
+scalar ModelId
+
 scalar PermissionId
+
+scalar RiskClass
+
 scalar RoleId
+
+scalar SessionStatus
+
 scalar Unit
+
 scalar UserId
 
-enum ApprovalStatus {
-  Approved
-  Cancelled
-  Expired
-  Pending
-  Rejected
-}
+scalar WorkspaceId
 
-enum EventType {
-  AgentCompleted
-  AgentFailed
-  AgentStarted
-  ApprovalDenied
-  ApprovalGranted
-  ApprovalRequested
-  CapabilityAllowed
-  CapabilityDenied
-  CapabilityGranted
-  CapabilityRevoked
-  MemoryExpired
-  MemoryWritten
-  PermissionGranted
-  PermissionRevoked
-  RoleAssigned
-  RoleRevoked
-  SkillFailed
-  SkillInvoked
-  SkillSucceeded
-  SystemAlert
-  UserConnected
-  UserCreated
-  UserDisconnected
-  UserUpdated
+type AgentSession {
+  id: AgentSessionId!
+  agentId: AgentId!
+  userId: UserId!
+  workspaceId: WorkspaceId
+  status: SessionStatus!
+  modelId: ModelId
+  createdAt: Instant!
+  updatedAt: Instant!
 }
 
 type ApprovalRequest {
@@ -59,7 +57,7 @@ type ApprovalRequest {
   agentId: AgentId
   requestorUserId: UserId!
   sessionId: AgentSessionId
-  riskClass: String!
+  riskClass: RiskClass!
   status: ApprovalStatus!
   createdAt: Instant!
   expiresAt: Instant
@@ -84,6 +82,8 @@ type Mutations {
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
   revokePermission(id: PermissionId!): Long
+  createSession(modelId: ModelId): AgentSession
+  submitMessage(sessionId: AgentSessionId!, content: String!): Unit
 }
 
 type Permission {
@@ -101,6 +101,14 @@ type Queries {
   role(id: RoleId!): Role
   roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
   permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
+  listSessions(page: Int, pageSize: Int): [AgentSession!]
+}
+
+type ResponseChunk {
+  sessionId: AgentSessionId!
+  content: String!
+  finished: Boolean!
+  isError: Boolean!
 }
 
 type Role {
@@ -112,6 +120,7 @@ type Role {
 type Subscriptions {
   approvalNotifications: ApprovalRequest
   eventLogTail: EventLogJson
+  agentResponseStream(sessionId: AgentSessionId!): ResponseChunk
 }
 
 type User {

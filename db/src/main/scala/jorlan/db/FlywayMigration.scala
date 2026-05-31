@@ -10,9 +10,9 @@
 
 package jorlan.db
 
-import jorlan.{AppConfig, ConfigurationService}
+import jorlan.{DatabaseConfig, FlywayConfig}
 import org.flywaydb.core.Flyway
-import zio.{Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Task, URLayer, ZIO, ZLayer}
 
 import scala.language.unsafeNulls
 
@@ -36,15 +36,12 @@ trait FlywayMigration {
 
 object FlywayMigration {
 
-  val live: ZLayer[ConfigurationService, Nothing, FlywayMigration] =
+  val live: URLayer[FlywayConfig & DatabaseConfig, FlywayMigration] =
     ZLayer.fromZIO {
-      ZIO
-        .serviceWithZIO[ConfigurationService](_.appConfig)
-        .orDie
-        .map { config =>
-          val flyway = createFlyway(config)
-          FlywayMigrationLive(flyway, config)
-        }
+      for {
+        flywayConfig <- ZIO.service[FlywayConfig]
+        dbConfig     <- ZIO.service[DatabaseConfig]
+      } yield FlywayMigrationLive(createFlyway(flywayConfig, dbConfig), flywayConfig)
     }
 
   /** Convenience accessor: runs `migrate` from the ZIO environment. Intended for the startup sequence:
@@ -53,11 +50,13 @@ object FlywayMigration {
   val runMigrations: ZIO[FlywayMigration, Throwable, Unit] =
     ZIO.serviceWithZIO[FlywayMigration](_.migrate)
 
-  private def createFlyway(config: AppConfig): Flyway = {
-    val flywayConfig = config.jorlan.flyway
+  private def createFlyway(
+    flywayConfig: FlywayConfig,
+    dbConfig:     DatabaseConfig,
+  ): Flyway = {
     val fb = Flyway
       .configure()
-      .dataSource(makeDataSource(config))
+      .dataSource(makeDataSource(dbConfig))
       .locations(flywayConfig.locations*)
       .cleanDisabled(flywayConfig.cleanDisabled)
       .validateOnMigrate(flywayConfig.validateOnMigrate)
@@ -74,12 +73,12 @@ object FlywayMigration {
 }
 
 private case class FlywayMigrationLive(
-  flyway: Flyway,
-  config: AppConfig,
+  flyway:       Flyway,
+  flywayConfig: FlywayConfig,
 ) extends FlywayMigration {
 
   override val migrate: Task[Unit] =
-    if (!config.jorlan.flyway.enabled) {
+    if (!flywayConfig.enabled) {
       ZIO.logInfo("Flyway migrations disabled — skipping")
     } else {
       ZIO.logInfo("Starting Flyway database migrations...") *>

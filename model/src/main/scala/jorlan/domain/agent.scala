@@ -14,7 +14,16 @@ import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
-/** Lifecycle state of an [[AgentSession]]. */
+/** Lifecycle state of an [[AgentSession]].
+  *
+  *   - `Created` — session record exists but execution has not started.
+  *   - `Active` — the agent is running and accepting messages.
+  *   - `Paused` — execution is suspended; the [[SessionHub]] slot is retained for resumption.
+  *   - `Blocked` — the agent is waiting for human approval before proceeding.
+  *   - `Completed` — the session ended normally.
+  *   - `Failed` — the session ended due to an unrecoverable error.
+  *   - `Cancelled` — the session was explicitly cancelled by the user or an orchestrator.
+  */
 enum SessionStatus derives JsonEncoder, JsonDecoder {
 
   case Created, Active, Paused, Blocked, Completed, Failed, Cancelled
@@ -40,6 +49,15 @@ case class Agent(
 
 /** A single runtime instance of an [[Agent]] executing on behalf of a [[jorlan.domain.User]]. Each session maintains
   * its own conversation context window and execution state.
+  *
+  * @param agentId
+  *   The agent definition driving this session.
+  * @param userId
+  *   The user on whose behalf the agent is executing.
+  * @param workspaceId
+  *   Optional workspace scope; `None` for sessions without a file-system context.
+  * @param modelId
+  *   The LLM model used for this session. Overrides the agent's `defaultModel` when set.
   */
 case class AgentSession(
   id:          AgentSessionId,
@@ -47,6 +65,26 @@ case class AgentSession(
   userId:      UserId,
   workspaceId: Option[WorkspaceId],
   status:      SessionStatus,
+  modelId:     Option[ModelId],
   createdAt:   Instant,
   updatedAt:   Instant,
+) derives JsonEncoder, JsonDecoder
+
+/** A single streamed token (or completion sentinel) from an agent response.
+  *
+  * @param sessionId
+  *   The session this chunk belongs to; used by the GraphQL subscription resolver to route to the right subscriber.
+  * @param content
+  *   The token text. Empty when `finished` is `true`.
+  * @param finished
+  *   When `true`, the stream is complete and `content` is empty. Consumers must close the subscription on receipt.
+  * @param isError
+  *   When `true` alongside `finished = true`, the stream ended due to a model or runtime error and `content` carries
+  *   the error message. Clients should display this as an error rather than a normal completion.
+  */
+case class ResponseChunk(
+  sessionId: AgentSessionId,
+  content:   String,
+  finished:  Boolean,
+  isError:   Boolean = false,
 ) derives JsonEncoder, JsonDecoder

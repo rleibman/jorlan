@@ -22,78 +22,120 @@ import jorlan.service.*
 import zio.*
 import zio.json.JsonEncoder
 import zio.json.ast.Json
+import zio.stream.ZStream
 
 import java.time.Instant
 
-/** Caliban GraphQL schema for the Jorlan control-plane API.
-  *
-  * Queries cover users / roles / permissions. Mutations cover CRUD for those entities plus role assignment and
-  * permission grants. Subscription infrastructure is wired but stubs empty streams until Phase 8 adds live sources.
-  */
+/** Caliban GraphQL schema for the Jorlan control-plane API. */
 object JorlanAPI {
 
-  type JorlanApiEnv = UserService & PermissionService & CapabilityEvaluator
+  type JorlanApiEnv =
+    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner
+
+  // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
+
+  private given ArgBuilder[UserId] = ArgBuilder.long.map(UserId(_))
+  private given ArgBuilder[RoleId] = ArgBuilder.long.map(RoleId(_))
+  private given ArgBuilder[PermissionId] = ArgBuilder.long.map(PermissionId(_))
+  private given ArgBuilder[AgentId] = ArgBuilder.long.map(AgentId(_))
+  private given ArgBuilder[AgentSessionId] = ArgBuilder.long.map(AgentSessionId(_))
+  private given ArgBuilder[EventLogId] = ArgBuilder.long.map(EventLogId(_))
+  private given ArgBuilder[WorkspaceId] = ArgBuilder.long.map(WorkspaceId(_))
+  private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
+  private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
-  case class EntityIdInput(id: Long) derives Schema.SemiAuto, ArgBuilder
+  /** Input for `user(id)` */
+  case class UserByIdInput(id: UserId) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `role(id)` */
+  case class RoleByIdInput(id: RoleId) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `revokePermission(id)` */
+  case class PermissionByIdInput(id: PermissionId) derives Schema.SemiAuto, ArgBuilder
+
+  /** Standard pagination input used by list queries. Defaults: `page = 0`, `pageSize = 20`. */
   case class PaginationInput(
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `roles(userId)` — returns roles assigned to the given user. */
   case class RolesForUserInput(
-    userId:   Long,
+    userId:   UserId,
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `permissions(userId)` — returns permissions granted to the given user. */
   case class PermissionsForUserInput(
-    userId:   Long,
+    userId:   UserId,
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
   // ─── Mutation input types ─────────────────────────────────────────────────────
 
+  /** Input for `createUser`. */
   case class CreateUserInput(
     displayName: String,
     email:       Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `updateUser`. `active = false` soft-deletes the account. */
   case class UpdateUserInput(
-    id:          Long,
+    id:          UserId,
     displayName: String,
     email:       Option[String],
     active:      Boolean,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `createRole`. */
   case class CreateRoleInput(
     name:        String,
     description: Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `assignRole` / `revokeRole`. */
   case class AssignRoleInput(
-    userId: Long,
-    roleId: Long,
+    userId: UserId,
+    roleId: RoleId,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `grantPermission`. Exactly one of `userId` or `roleId` must be provided. */
   case class GrantPermissionInput(
     resource: String,
     action:   String,
-    userId:   Option[Long],
-    roleId:   Option[Long],
+    userId:   Option[UserId],
+    roleId:   Option[RoleId],
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `createSession`. `modelId = null` uses the agent's configured default model. */
+  case class CreateSessionInput(
+    modelId: Option[ModelId],
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `submitMessage` — sends a user message to the active agent session. */
+  case class SubmitMessageInput(
+    sessionId: AgentSessionId,
+    content:   String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for the `agentResponseStream` subscription. */
+  case class AgentResponseStreamInput(
+    sessionId: AgentSessionId,
   ) derives Schema.SemiAuto, ArgBuilder
 
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
-    user:        EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
-    users:       PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
-    role:        EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
-    roles:       RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
-    permissions: PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
+    user:         UserByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
+    users:        PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
+    role:         RoleByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
+    roles:        RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
+    permissions:  PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
+    listSessions: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[AgentSession]],
   )
 
   case class Mutations(
@@ -103,18 +145,18 @@ object JorlanAPI {
     assignRole:       AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     revokeRole:       AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     grantPermission:  GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
-    revokePermission: EntityIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
+    revokePermission: PermissionByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
+    createSession:    CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
+    submitMessage:    SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
   )
 
   case class Subscriptions(
-    approvalNotifications: zio.stream.ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
-    eventLogTail:          zio.stream.ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
+    approvalNotifications: ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
+    eventLogTail:          ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
+    agentResponseStream:   AgentResponseStreamInput => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
   )
 
   // ─── Schema instances ─────────────────────────────────────────────────────────
-  // Named scalars so the SDL (and generated client) carry typed IDs rather than
-  // anonymous Long values. Each scalarSchema call registers a distinct GraphQL
-  // scalar name while serialising to/from the underlying Long or String value.
 
   private given Schema[Any, UserId] =
     Schema.scalarSchema("UserId", None, None, None, id => Value.IntValue(id.value))
@@ -130,21 +172,40 @@ object JorlanAPI {
     Schema.scalarSchema("ApprovalRequestId", None, None, None, id => Value.IntValue(id.value))
   private given Schema[Any, EventLogId] =
     Schema.scalarSchema("EventLogId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, WorkspaceId] =
+    Schema.scalarSchema("WorkspaceId", None, None, None, id => Value.IntValue(id.value))
   private given Schema[Any, CapabilityName] =
     Schema.scalarSchema("CapabilityName", None, None, None, cn => Value.StringValue(cn.value))
-  private given Schema[Any, RiskClass] = Schema.stringSchema.contramap(_.toString)
+  private given Schema[Any, ModelId] =
+    Schema.scalarSchema("ModelId", None, None, None, id => Value.StringValue(id.value))
+  private given Schema[Any, RiskClass] =
+    Schema.scalarSchema("RiskClass", None, None, None, r => Value.StringValue(r.toString))
   private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
+  private given Schema[Any, ChannelType] =
+    Schema.scalarSchema("ChannelType", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, ApprovalStatus] =
+    Schema.scalarSchema("ApprovalStatus", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, ApprovalMode] =
+    Schema.scalarSchema("ApprovalMode", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, EventType] =
+    Schema.scalarSchema("EventType", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, SessionStatus] =
+    Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
 
-  private given Schema[Any, ChannelType] = Schema.gen[Any, ChannelType]
-  private given Schema[Any, ApprovalStatus] = Schema.gen[Any, ApprovalStatus]
-  private given Schema[Any, ApprovalMode] = Schema.gen[Any, ApprovalMode]
-  private given Schema[Any, EventType] = Schema.gen[Any, EventType]
+  private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
+  private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
+  private given ArgBuilder[ApprovalMode] = ArgBuilder.string.map(ApprovalMode.valueOf)
+  private given ArgBuilder[EventType] = ArgBuilder.string.map(EventType.valueOf)
+  private given ArgBuilder[SessionStatus] = ArgBuilder.string.map(SessionStatus.valueOf)
+  private given ArgBuilder[RiskClass] = ArgBuilder.string.map(RiskClass.valueOf)
 
   private given Schema[Any, User] = Schema.gen[Any, User]
   private given Schema[Any, Role] = Schema.gen[Any, Role]
   private given Schema[Any, Permission] = Schema.gen[Any, Permission]
   private given Schema[Any, ApprovalRequest] = Schema.gen[Any, ApprovalRequest]
   private given Schema[Any, EventLog[Json]] = Schema.gen[Any, EventLog[Json]]
+  private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
+  private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -176,18 +237,18 @@ object JorlanAPI {
     ](
       RootResolver(
         Queries(
-          user = input => ZIO.serviceWithZIO[UserService](_.getById(UserId(input.id))),
+          user = input => ZIO.serviceWithZIO[UserService](_.getById(input.id)),
           users = input =>
             ZIO.serviceWithZIO[UserService](
               _.search(UserSearch(page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(20))),
             ),
-          role = input => ZIO.serviceWithZIO[PermissionService](_.getRole(RoleId(input.id))),
+          role = input => ZIO.serviceWithZIO[PermissionService](_.getRole(input.id)),
           roles = input =>
             ZIO
               .serviceWithZIO[PermissionService](
                 _.searchRoles(
                   RoleSearch(
-                    userId = UserId(input.userId),
+                    userId = input.userId,
                     page = input.page.getOrElse(0),
                     pageSize = input.pageSize.getOrElse(20),
                   ),
@@ -198,12 +259,20 @@ object JorlanAPI {
               .serviceWithZIO[PermissionService](
                 _.searchPermissions(
                   PermissionSearch(
-                    userId = Some(UserId(input.userId)),
+                    userId = Some(input.userId),
                     page = input.page.getOrElse(0),
                     pageSize = input.pageSize.getOrElse(20),
                   ),
                 ),
               ),
+          listSessions = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.list", actorId)
+              results <- ZIO.serviceWithZIO[AgentSessionManager](
+                _.listSessions(actorId, input.page.getOrElse(0), input.pageSize.getOrElse(20)),
+              )
+            } yield results,
         ),
         Mutations(
           createUser = input =>
@@ -218,7 +287,7 @@ object JorlanAPI {
               _       <- requireCapability("user.update", actorId)
               user    <- ZIO
                 .serviceWithZIO[UserService](
-                  _.updateUser(UserId(input.id), input.displayName, input.email, input.active, Some(actorId)),
+                  _.updateUser(input.id, input.displayName, input.email, input.active, Some(actorId)),
                 )
             } yield user,
           createRole = input =>
@@ -236,7 +305,7 @@ object JorlanAPI {
               _       <- requireCapability("role.assign", actorId)
               _       <- ZIO
                 .serviceWithZIO[PermissionService](
-                  _.assignRole(UserId(input.userId), RoleId(input.roleId), Some(actorId)),
+                  _.assignRole(input.userId, input.roleId, Some(actorId)),
                 )
             } yield (),
           revokeRole = input =>
@@ -245,13 +314,13 @@ object JorlanAPI {
               _       <- requireCapability("role.revoke", actorId)
               _       <- ZIO
                 .serviceWithZIO[PermissionService](
-                  _.removeRole(UserId(input.userId), RoleId(input.roleId), Some(actorId)),
+                  _.removeRole(input.userId, input.roleId, Some(actorId)),
                 )
             } yield (),
           grantPermission = input =>
             for {
               _ <- ZIO
-                .unless(input.userId.isDefined != input.roleId.isDefined)(
+                .when(input.userId.isDefined == input.roleId.isDefined)(
                   ZIO.fail(JorlanError("A permission must target exactly one of userId or roleId")),
                 )
               actorId <- actorIdFromSession
@@ -261,8 +330,8 @@ object JorlanAPI {
                   _.upsertPermission(
                     Permission(
                       PermissionId.empty,
-                      input.roleId.map(RoleId(_)),
-                      input.userId.map(UserId(_)),
+                      input.roleId,
+                      input.userId,
                       input.resource,
                       input.action,
                       None,
@@ -274,12 +343,30 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.revoke", actorId)
-              count   <- ZIO.serviceWithZIO[PermissionService](_.deletePermission(PermissionId(input.id)))
+              count   <- ZIO.serviceWithZIO[PermissionService](_.deletePermission(input.id))
             } yield count,
+          createSession = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.create", actorId)
+              session <- ZIO.serviceWithZIO[AgentSessionManager](
+                _.createSession(actorId, input.modelId),
+              )
+            } yield session,
+          submitMessage = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.message", actorId)
+              _       <- ZIO
+                .serviceWithZIO[AgentRunner](_.processMessage(input.sessionId, input.content, Some(actorId)))
+                .tapError(e => ZIO.logError(s"AgentRunner failed for session ${input.sessionId}: ${e.getMessage}"))
+                .forkDaemon
+            } yield (),
         ),
         Subscriptions(
-          approvalNotifications = zio.stream.ZStream.empty,
-          eventLogTail = zio.stream.ZStream.empty,
+          approvalNotifications = ZStream.empty,
+          eventLogTail = ZStream.empty,
+          agentResponseStream = input => ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(input.sessionId)),
         ),
       ),
     ) @@ maxFields(200) @@ maxDepth(20)

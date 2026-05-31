@@ -13,6 +13,7 @@ package jorlan.graphql
 import auth.{AuthenticatedSession, UnauthenticatedSession}
 import caliban.GraphQLInterpreter
 import jorlan.*
+import jorlan.db.repository.AgentZIORepository
 import jorlan.domain.*
 import jorlan.service.*
 import jorlan.testing.InMemoryRepositories
@@ -61,8 +62,32 @@ object JorlanAPISpec extends ZIOSpecDefault {
     val logLayer = InMemoryRepositories.InMemoryEventLogRepo.layer >>> EventLogServiceImpl.live
     val userLayer = (InMemoryRepositories.InMemoryUserRepo.layer ++ logLayer) >>> UserServiceImpl.live
     val permLayer = (InMemoryRepositories.InMemoryPermissionRepo.layer ++ logLayer) >>> PermissionServiceImpl.live
+    val hubLayer = SessionHub.live
+    val agentRepoLayer: ULayer[AgentZIORepository] = ZLayer.fromZIO {
+      for {
+        now  <- Clock.instant
+        repo <- InMemoryRepositories.InMemoryAgentRepo.make
+        _    <- repo
+          .upsert(
+            Agent(
+              id = AgentId.empty,
+              name = "Jorlan Interactive",
+              description = Some("Default interactive agent"),
+              defaultModel = None,
+              trustLevel = 0,
+              createdAt = now,
+            ),
+          )
+          .orDie
+      } yield repo: AgentZIORepository
+    }
+    val fakeGateway = FakeModelGateway.layer(List("ok"))
+    val sessionMgrLayer: ULayer[AgentSessionManager] =
+      (agentRepoLayer ++ hubLayer ++ fakeGateway ++ logLayer) >>> AgentSessionManagerImpl.live
+    val runnerLayer: ULayer[AgentRunner] =
+      (fakeGateway ++ hubLayer ++ logLayer) >>> AgentRunnerImpl.live
     val svcLayer: ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
-      userLayer ++ permLayer ++ capEval ++ session
+      userLayer ++ permLayer ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer ++ hubLayer
     val interpLayer
       : ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
@@ -90,6 +115,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       querySuite,
       mutationSuite,
       authSuite,
+      agentSessionSuite,
       subscriptionSuite,
     )
 
@@ -282,6 +308,30 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""{ users { id displayName } }""")
       } yield assertTrue(result.errors.isEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
+  )
+
+  // ─── Agent session mutations ──────────────────────────────────────────────────
+
+  private val agentSessionSuite = suite("Agent Sessions")(
+    test("createSession returns a session with Active status") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { createSession { id status } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("Active"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("submitMessage mutation succeeds with active session") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute("""mutation { createSession { id } }""")
+        sessionId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { submitMessage(sessionId: $sessionId, content: "hello") }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
   )
 
   // ─── Subscription stubs ───────────────────────────────────────────────────────

@@ -296,6 +296,9 @@ lazy val integration = project
     // Integration tests are only in the Test configuration
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     Test / parallelExecution := false,
+    // Fork so Testcontainers' non-daemon threads (HikariCP, Docker client) don't
+    // keep SBT's JVM alive after tests complete.
+    Test / fork := true,
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -449,7 +452,6 @@ lazy val ai = project
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
-  .dependsOn(model)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Root project

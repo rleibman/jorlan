@@ -116,7 +116,7 @@ object RepositorySpec extends ZIOSpecDefault {
         userRepo  <- ZIO.service[UserZIORepository]
         user      <- userRepo.upsert(User(UserId.empty, "SessionUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, T0))
-        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0)
+        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0)
         saved    <- agentRepo.upsertSession(session)
         fetched  <- agentRepo.getSession(saved.id)
         sessions <- agentRepo.searchSessions(AgentSessionSearch(agentId = Some(agent.id)))
@@ -141,7 +141,7 @@ object RepositorySpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvUser", None, T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
         session   <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
         )
         conv     <- convRepo.create(Conversation(ConversationId.empty, session.id, T0))
         _        <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "Hello!", None, T0))

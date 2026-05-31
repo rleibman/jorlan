@@ -42,7 +42,7 @@ object ShellCommandSpec extends ZIOSpecDefault {
         assertTrue(ShellCommand.parse("/exit") == ShellCommand.Quit)
       },
       test("/new") {
-        assertTrue(ShellCommand.parse("/new") == ShellCommand.NewSession)
+        assertTrue(ShellCommand.parse("/new") == ShellCommand.NewSession(None))
       },
       test("/model") {
         assertTrue(ShellCommand.parse("/model gpt-4") == ShellCommand.ModelInfo)

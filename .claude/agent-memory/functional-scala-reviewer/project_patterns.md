@@ -54,6 +54,21 @@ type: project
 - `JorlanClient.scala` uses `implicit` keyword (Scala 2 style) instead of `given`/`using` (Scala 3) — this is generated Caliban client code and should not be hand-edited. Not a review issue.
 - `resolveCredentials` throws `new RuntimeException("Cancelled")` via `ZIO.fail` — appropriate for signalling cancellation through the `Throwable` error channel, but the message is not distinguishable from other failures at the `catchAll` site in `run`.
 
+## Phase 8 Agent Session Runtime Patterns (reviewed 2026-05-29)
+
+- `SessionHub` correctly uses `ZStream.unwrapScoped` + `hub.subscribe` (a `ZIO[Scope, ...]` call) so the subscription queue is released when the stream ends. Clean pattern.
+- `OllamaModelGateway.streamedResponse` uses `ZStream.async` with LangChain4j callbacks (`.onPartialResponse`, `.onCompleteResponse`, `.onError`, `.start()`). `start()` runs inside the `ZStream.async` callback — this is the project's established interop pattern (matches `ai/util.scala`). Not a purity violation.
+- `AgentRunnerImpl.live` uses `ZLayer.fromFunction` — correct when no `ZIO` effects are needed in construction.
+- `OllamaModelGateway.live` uses `ZLayer.fromZIO` + `Ref.make` — correct as Ref construction requires ZIO.
+- `submitMessage` mutation in `JorlanAPI.scala` uses `.forkDaemon` to decouple model execution from HTTP response. This is intentional but introduces a risk: if the server shuts down while a daemon fiber is mid-stream, no graceful cleanup occurs. For Phase 8 this is acceptable.
+- `listSessions` query (JorlanAPI line 231) calls `getSession(AgentSessionId.empty)` — this is a correctness bug; it should call `searchSessions(AgentSessionSearch(...))` with pagination from `input`.
+- `AgentSessionManagerImpl.createSession` (line 95) calls `sessionHub.getOrCreate(AgentSessionId.empty)` before persisting — this creates a hub slot for the sentinel ID `0` which is immediately abandoned. The real hub is created at line 107 with the saved ID. The line-95 call is dead code.
+- `suspendSession` and `terminateSession` do not write event log entries — only `createSession` does. Significant state transitions are unobserved in the audit trail.
+- `HumanApprovalNotifier` does not write sessionId or agentId on the `ApprovalRequested` event — payload is thin.
+- `SubscriptionClient` uses `Queue.unbounded` for the WebSocket message queue — could grow without bound if the consumer is slow. `Queue.bounded` with backpressure would be safer.
+- `SubscriptionClient` wraps JSON parse errors in `new RuntimeException(...)` (lines 91, 96) inside the `asWebSocketAlways` callback — these exceptions propagate as `Throwable` errors rather than typed `String` errors. They are then caught by `.mapError(e => s"WebSocket request failed: ${e.getMessage}")` further up, so they do surface as errors, but via the exception path rather than through the typed error channel.
+- `CommandHandler.setTrace` (lines 184-215) uses an `if/else` where pattern matching over a `val normalized match` would be idiomatic. The double `case "_"` branch inside the inner `match` is dead code (only reached after `valid.contains(normalized)` is true).
+
 ## Known Issues Found (first review, 2026-05-25)
 
 - `ChannelIdentity.id` typed as `UserId` (a PK reuse), which is confusing and weakens type safety; no dedicated `ChannelIdentityId` type.

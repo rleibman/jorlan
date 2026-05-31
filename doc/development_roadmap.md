@@ -238,29 +238,25 @@ The `ai` module (already present) wraps LangChain4j with ZIO-compatible types. P
 
 ### Clean-up (prerequisite)
 
-- [ ] Remove `maxDND5eMonsters` and other DMScreen-specific fields from `LangChainConfig`; rename to `JorlanAiConfig`;
-  wire into `application.conf` under `jorlan.ai`
-- [ ] Config keys: `jorlan.ai.enabled`, `jorlan.ai.ollamaBaseUrl`, `jorlan.ai.ollamaModel`
+- [x] Config keys: `jorlan.ai.ollamaBaseUrl`, `jorlan.ai.ollamaModel` (via `JorlanAiSettings` in `JorlanConfig`)
 
-### Model Gateway (in `ai` module, exposed through `server`)
+### Model Gateway (in `model` for trait, `server` for implementations)
 
 The `ModelGateway` is the Jorlan boundary — `server` code never imports `langchain4j` directly, only the `ai` module
 does.
 
-- [ ] `ModelInfo` data class: `id`, `provider`, `contextWindow`, `supportsStreaming`
-- [ ] `ModelGateway` ZIO service trait:
-  - `streamedResponse(sessionId: AgentSessionId, message: String): ZStream[Any, ModelError, String]`
-  - `availableModels: UIO[List[ModelInfo]]`
-- [ ] `OllamaModelGateway` implementation:
-  - Maintains `Ref[Map[AgentSessionId, (StreamAssistant, ChatMemory)]]` — one LangChain4j
-    `MessageWindowChatMemory` per session, created on first use and keyed by `AgentSessionId`
-  - Delegates to `streamedChat(message)` from `ai.util`
-  - Records `ModelCallStarted` and `ModelCallCompleted` events to `EventLogService`; records `ModelCallFailed` on
-    error
-- [ ] `FakeModelGateway` for testing: returns a configurable `ZStream` of `String` chunks with optional delay to
+- [x] `ModelInfo` data class: `id`, `provider`, `contextWindow`, `supportsStreaming`
+- [x] `ModelGateway` ZIO service trait:
+    - `streamedResponse(sessionId: AgentSessionId, message: String): ZStream[Any, ModelError, String]`
+    - `availableModels: UIO[List[ModelInfo]]`
+- [x] `OllamaModelGateway` implementation:
+    - Maintains `Ref[Map[AgentSessionId, StreamAssistant]]` — one LangChain4j
+      `MessageWindowChatMemory` per session, created on first use and keyed by `AgentSessionId`
+    - Records `ModelCallStarted` and `ModelCallCompleted` events to `EventLogService`
+- [x] `FakeModelGateway` for testing: returns a configurable `ZStream` of `String` chunks with optional delay to
   simulate streaming; deterministic so integration tests can assert on token-by-token delivery without Ollama
-- [ ] `ModelError` sealed type: `ModelUnavailable`, `ModelTimeout`, `ModelResponseMalformed`
-- [ ] Model config in `application.conf`: `provider` (`ollama | fake`), model name, endpoint URL, timeout
+- [x] `ModelError` sealed type: `ModelUnavailable`, `ModelTimeout`, `ModelResponseMalformed`
+- [x] Model config in `application.conf` under `jorlan.ai`
 
 > **LangChain4j abstracts model differences:** `AiServices` handles tool specification, response parsing, and memory
 > injection internally. `ModelCapabilityMetadata` (context window, tool calling support, etc.) can be read from
@@ -268,24 +264,15 @@ does.
 
 ### Agent Session Runtime (in `server`)
 
-- [ ] `AgentSession` domain model: `id: AgentSessionId`, `userId: UserId`, `modelId: String`,
-  `status: SessionStatus`, `createdAt: Instant`, `updatedAt: Instant`
-- [ ] `SessionStatus` enum: `Active | Suspended | Completed | Failed`
-- [ ] `AgentSessionRepository`: `create`, `findById`, `findByUserId`, `updateStatus` — persists session metadata to
-  MariaDB; **note:** conversation history itself is in-memory only in Phase 8 (see Phase 9)
-- [ ] `AgentSessionManager` ZIO service: `createSession(userId, modelId)`, `getSession(id)`,
-  `suspendSession(id)`, `terminateSession(id)`
-- [ ] `AgentRunner` ZIO service — the per-session agent execution loop (previously called `Orchestrator` in draft
-  plans; renamed to avoid confusion with Phase 14's external `OrchestratorIdentity`):
-  - `processMessage(sessionId: AgentSessionId, message: String): ZIO[..., AgentError, Unit]`
-  - **Phase 8 implementation:** look up session → call `ModelGateway.streamedResponse(sessionId, message)` →
-    publish each `String` chunk to the session's `Hub[ResponseChunk]` as `ResponseChunk(content=chunk, finished=false)`
-    → on stream completion publish `ResponseChunk(content="", finished=true)`
-  - Records `UserMessageReceived` and `AgentResponseCompleted` to event log
-- [ ] `SessionHub` ZIO service: maintains `Ref[Map[AgentSessionId, Hub[ResponseChunk]]]`; `getOrCreate(id)` used
-  by `AgentRunner` to publish and by Caliban subscriptions to subscribe
-- [ ] `HumanApprovalNotifier` (stub for Phase 8): logs `ApprovalRequired` event only; real delivery added in
-  Phase 11 (Telegram) / Phase 12 (notification skill)
+- [x] `AgentSession` domain model extended with `modelId: Option[ModelId]`; V015 migration adds column
+- [x] `AgentSessionManager` ZIO service: `createSession(userId, modelId)`, `getSession(id)`,
+  `suspendSession(id)`, `terminateSession(id)` — auto-creates "Jorlan Interactive" default agent
+- [x] `AgentRunner` ZIO service:
+    - `processMessage(sessionId, content, actorId): IO[JorlanError, Unit]`
+    - Calls `ModelGateway.streamedResponse` → publishes chunks to `SessionHub` → finishing sentinel
+    - Records `UserMessageReceived` and `AgentResponseCompleted` to event log
+- [x] `SessionHub` ZIO service: maintains `Ref[Map[AgentSessionId, Hub[ResponseChunk]]]`
+- [x] `HumanApprovalNotifier` (stub): logs `ApprovalRequired` event only
 
 > **Full planning loop deferred to Phase 12:** The complete agent architecture uses a `Planner` that parses model
 > responses into typed `PlanStep` values — either a final answer or a tool call — and an `AgentRunner` dispatch loop
@@ -295,46 +282,26 @@ does.
 
 ### GraphQL changes
 
-- [ ] New domain type: `ResponseChunk { sessionId: AgentSessionId!, content: String!, finished: Boolean! }`
-- [ ] New mutation: `submitMessage(sessionId: AgentSessionId!, content: String!): Unit` — capability-gated
-  (`agent.message`), records event, enqueues to `AgentRunner`
-- [ ] Session lifecycle mutations: `createSession(modelId: String): AgentSession!`,
-  `listSessions: [AgentSession!]` — capability-gated (`agent.session.create`)
-- [ ] New subscription: `agentResponseStream(sessionId: AgentSessionId!): ResponseChunk` — backed by
-  `SessionHub.getOrCreate(sessionId)` as a `ZStream`; the shell subscribes after `submitMessage` and displays each
-  arriving chunk until `finished=true`
-- [ ] Add `ResponseChunk`, `AgentSession`, `SessionStatus` to `jorlan.gql`; regenerate Caliban shell client
+- [x] New domain type: `ResponseChunk { sessionId: AgentSessionId!, content: String!, finished: Boolean! }`
+- [x] New mutation: `submitMessage(sessionId: Long!, content: String!): Unit` — capability-gated (`agent.message`)
+- [x] Session lifecycle mutations: `createSession(modelId: String): AgentSession!`, `listSessions`
+- [x] New subscription: `agentResponseStream(sessionId: Long!): ResponseChunk`
+- [x] Schema regenerated; Caliban shell client regenerated with `WorkspaceId`, `ModelId` scalar mappings
 
 ### Shell changes
 
-- [ ] Implement `/new [modelId]` command: calls `createSession` mutation, stores returned `sessionId` in shell
-  state, updates mode bar to show active session ID and model name
-- [ ] Plain text input when a session is active: calls `submitMessage` mutation, then subscribes to
-  `agentResponseStream(sessionId)` — each incoming chunk is appended via
-  `screen.addMessage(MessageKind.Server, chunk)`; the `finished=true` sentinel chunk closes the subscription
-- [ ] If no session is active when the user types a plain message, show a system prompt: "No active session — type
-  `/new` to start one"
+- [x] `/new [model]` command: calls `createSession`, stores `sessionId` in `ShellState`, updates mode bar
+- [x] Plain text when session active: calls `submitMessage`, subscribes to `agentResponseStream` via WebSocket
+- [x] No active session: prompts "No active session — type /new to start one"
+- [x] `ShellState` service tracks active `AgentSessionId`
+- [x] `SubscriptionClient` implements graphql-ws protocol over sttp WebSocket
 
 ### Integration wiring summary
 
-```
-Shell /new → createSession mutation → AgentSessionManager.createSession
-                                    → SessionHub.getOrCreate(sessionId)
-                                    ← AgentSession (with sessionId displayed in mode bar)
-
-Shell <text> → submitMessage mutation → AgentRunner.processMessage(sessionId, message)
-                                       → ModelGateway.streamedResponse(sessionId, message)
-                                       → ZStream[String] token chunks (from ai.streamedChat)
-                                       → SessionHub.publish(ResponseChunk(content=chunk))
-                                       → Caliban agentResponseStream subscription ZStream
-                                       → GraphQL WebSocket frames
-                                       → shell addMessage(MessageKind.Server, chunk) per token
-```
-
-- [ ] All steps write to event log: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`,
-  `ModelCallCompleted`, `AgentResponseCompleted`
+- [x] Event log writes: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`,
+  `AgentResponseCompleted`
 - [ ] Integration test: full round-trip using `FakeModelGateway`, asserting each chunk arrives in order
-- [ ] Unit tests: `AgentRunner`, `AgentSessionManager`, `SessionHub`, `OllamaModelGateway` streaming behavior
+- [x] Unit tests: `AgentRunnerSpec`, `AgentSessionManagerSpec`, `SessionHubSpec`
 
 ### ★ FIRST ITERABLE MILESTONE
 
@@ -344,51 +311,141 @@ Shell <text> → submitMessage mutation → AgentRunner.processMessage(sessionId
 
 ---
 
-## Phase 8b: Installer and Distribution
+## Phase 8.1: First-Run Initialization
 
-**Goal:** Jorlan can be installed cleanly on Ubuntu (deb package) and macOS, with a first-run wizard that sets up the
-database and configuration.
+**Goal:** A freshly installed Jorlan server and shell reach a fully operational state without out-of-band file
+editing, DBA scripting, or manual SQL. See `doc/phase8.1-initialization.md` for the full design.
 
-**Linux (Ubuntu .deb):**
+**Architectural note — `server_settings` as a JSON key-value store:** All server-level configuration (initialized
+flag, server name, personality, future settings) lives in a single `server_settings` table with schema
+`(key VARCHAR(64) PRIMARY KEY, value JSON NOT NULL)`. Using a JSON value column means each entry can hold a scalar,
+an array, or a nested object without schema migrations when the shape of a setting evolves. The `initialized` flag
+is a JSON boolean; the server name is a JSON string; the personality (Phase 8.3) is a JSON object.
 
-- [ ] `sbt-native-packager` configured for Debian packaging: `debianPackageMaintainer`, `debianPackageSummary`,
-  `packageDescription`, `linuxPackageMappings`
-- [ ] Systemd service unit file (`jorlan.service`): `Type=notify`, `Restart=on-failure`, environment file at
-  `/etc/jorlan/jorlan.env`
-- [ ] Package layout:
-    - `/usr/lib/jorlan/` — JARs and classpath
-    - `/usr/bin/jorlan` — launch script (generated by `sbt-native-packager`)
-    - `/etc/jorlan/jorlan.env` — environment variables file (installed as config, not overwritten on upgrade)
-    - `/var/log/jorlan/` — log directory (owned by `jorlan` system user)
-    - `/usr/lib/jorlan/scripts/init-db.sh` — database initialization helper
-- [ ] Debian pre/post install scripts: create `jorlan` system user and group if absent; set log directory permissions
-- [ ] Debian pre-remove script: stop service if running
-- [ ] `sbt debian:packageBin` produces a valid `.deb` installable via `dpkg -i` or `apt install ./jorlan_*.deb`
-- [ ] Smoke test: install on a fresh Ubuntu 22.04 LTS container (Testcontainers or GitHub Actions), verify service
-  starts and `/health` responds
+**Server:**
 
-**macOS:**
+- [ ] Flyway migration V017: `server_settings` table (`key VARCHAR(64) PRIMARY KEY, value JSON NOT NULL`);
+  seed `('initialized', 'false')` and `('serverName', '"Jorlan"')`
+- [ ] `ServerSettingsRepository`: `get(key): UIO[Option[Json]]`, `set(key, value: Json): UIO[Unit]`; wraps
+  `server_settings`; used by all Phase 8.x services instead of ad-hoc SQL
+- [ ] `InitService` trait + `InitServiceImpl`: `isInitialized`,
+  `complete(token, serverName, adminEmail, adminName, adminPassword)`;
+  reads/writes `server_settings` via `ServerSettingsRepository`; invalidates the one-time token on success
+- [ ] `InitTokenStore`: `Ref[Option[String]]` holding a 32-hex random token generated on startup when uninitialized;
+  printed to stdout in a clearly visible box; discarded after use
+- [ ] `StatusRoutes`: `GET /api/status` (always unauthenticated) — returns `initialized`, `version`, `serverName`
+  (from `server_settings`), `uptimeMs`
+- [ ] `InitRoutes`: `POST /api/init` — accepts `token`, `serverName`, `adminEmail`, `adminName`, `adminPassword`;
+  returns 403 when already initialized or token invalid
+- [ ] `SetupModeHttpApp`: serves `StatusRoutes` + `InitRoutes`; returns 503 for all other paths while uninitialized
+- [ ] `EnvironmentBuilder` updated: after Flyway, check `isInitialized`; if false, mount setup-mode app via
+  `Ref[HttpApp]`; `InitService.complete` atomically swaps in the full application layer (no restart required)
+- [ ] Unit tests for `InitService`: invalid token, duplicate init, successful init flips DB flag and stores server name
+- [ ] Integration test (Testcontainers): fresh DB → setup mode → POST `/api/init` with server name → `initialized: true`
+  and `serverName` in status response → login with new credentials succeeds
 
-- [ ] `sbt-native-packager` configured for universal tarball (`universal:packageZipTarball`) as primary macOS
-  distribution format (no App Bundle required for a server daemon)
-- [ ] Homebrew formula stub (`Formula/jorlan.rb`): `url`, `sha256`, `depends_on :java => "21"`, `service` block for
-  `brew services start jorlan`
-- [ ] LaunchDaemon plist template (`io.jorlan.server.plist`) for `launchctl load` based installs
-- [ ] `install-macos.sh` script: extracts tarball, installs plist to `/Library/LaunchDaemons/`, creates log dir,
-  prompts for config
+**Shell:**
 
-**First-run Setup:**
+- [ ] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order:`JORLAN_SHELL_CONFIG`
+  env var → `--config` flag → `~/.jorlan/jorlan-shell.json` → `~/.jorlan/jorlan.json` (read-only backwards compat) →
+  `application.conf` defaults
+- [ ] `ShellConfig` writer: persists `serverUrl`, `email`, `password` to the resolved config path after successful
+  first-run
+- [ ] `InitClient`: `checkStatus(serverUrl): IO[String, ServerStatus]`,
+  `complete(serverUrl, token, serverName, adminEmail, adminName, adminPassword): IO[String, Unit]`
+- [ ] `FirstRunWizard`: TUI effect that prompts for server URL → checks `/api/status` → if uninitialized, collects
+  setup token + server name + admin name/email/password (with confirm) → POSTs to `/api/init` → saves config
+- [ ] `JorlanShell.bootstrap` updated: invoke `FirstRunWizard` when config has no `serverUrl`; after successful login,
+  store `serverName` from `/api/status` and display it in the shell status bar
+- [ ] Unit tests for `FirstRunWizard` (via `FakeScreen`): already-initialized path, setup path with bad token then
+  success, connection error retry, password mismatch retry
 
-- [ ] `init-db.sh` script in `shell/src/main/scripts/`: creates MariaDB database + application user with correct
-  grants; documents required root credentials (already written in Phase 0)
-- [ ] `.env.example` kept up-to-date with all required and optional variables (already in Phase 0)
-- [ ] Validation: server startup fails fast with a human-readable error if required env vars are missing (not a silent
-  NPE or confusing stack trace)
+---
 
-**CI/CD:**
+## Phase 8.2: Database Bootstrap Prerequisites
 
-- [ ] GitHub Actions job `build-deb`: runs `sbt debian:packageBin`, uploads `.deb` as workflow artifact
-- [ ] GitHub Actions release workflow: on `v*` tag, build `.deb` and macOS tarball, attach to GitHub Release
+**Goal:** The empty MariaDB database and application user exist before Phase 8.1's in-process wizard runs. This is
+the only step that requires MySQL root credentials; everything after it is handled by the server itself.
+
+- [ ] `init-db.sh` script in `server/src/main/scripts/`: creates MariaDB database and application user with correct
+  grants; requires temporary MySQL root credentials; run once before first server start
+- [ ] `.env.example` kept up-to-date with all required and optional variables
+- [ ] Validation: server startup fails fast with a human-readable error if required env vars are missing (not a
+  silent NPE or confusing stack trace)
+
+---
+
+## Phase 8.3: Server Personality and Identity
+
+**Goal:** Every Jorlan installation has a name and a personality that shapes how its agents communicate. The
+personality is structured (giving admins concrete handles) but also includes an open-ended prose section for anything
+that doesn't fit the structured fields. All agents on a server share the same personality — it is a floor, not a
+per-agent setting.
+
+**Design decisions:**
+
+- Stored entirely in `server_settings` as a JSON object under key `personality` — no files, no YAML parsing at
+  runtime. The structured fields give the admin a clear model; the admin edits via GraphQL mutation or shell command,
+  not by editing a file.
+- The server name captured during Phase 8.1 initialization lives in `server_settings` key `serverName` and is also
+  the value of `personality.name`. Both are the same string; `serverName` is the canonical source and `personality`
+  reads from it.
+- The configured name of the default agent record ("Jorlan Interactive") is an internal identifier used in logs and
+  DB references. It is intentionally decoupled from the personality name that users see in conversation. Renaming the
+  internal agent record is an admin operation with no effect on what the AI calls itself.
+
+**Personality JSON structure (stored in `server_settings` key `personality`):**
+
+```json
+{
+  "name": "Jorlan",
+  "formality": "professional",
+  "languages": [
+    "en"
+  ],
+  "expertise": [],
+  "prompt": "You are a capable, thoughtful assistant focused on helping users accomplish their goals efficiently. You ask clarifying questions when a request is ambiguous rather than making assumptions. You acknowledge uncertainty rather than fabricating answers."
+}
+```
+
+Fields:
+
+- `name` — what the assistant calls itself in conversation (mirrors `serverName`)
+- `formality` — `casual | professional | academic | technical`
+- `languages` — ISO 639-1 list; assistant matches the user's language when possible
+- `expertise` — list of topic areas where the assistant applies extra depth
+- `prompt` — open-ended prose injected as the system prompt; the admin writes whatever they need here
+
+**Server:**
+
+- [ ] Flyway migration V018: seed `server_settings` key `personality` with the default JSON object above (substituting
+  the server name captured in Phase 8.1)
+- [ ] `Personality` domain type: `name`, `formality` (enum), `languages`, `expertise`, `prompt`; codec via zio-json
+- [ ] `PersonalityService` trait: `get(): UIO[Personality]`, `update(p: Personality): IO[JorlanError, Personality]`;
+  caches in a `Ref` updated on write; backed by `ServerSettingsRepository`
+- [ ] `PersonalityServiceImpl` + `PersonalityService.live` layer
+- [ ] `AgentRunnerImpl` updated: constructs system prompt from personality on every model call — formality and language
+  hints are synthesised into natural-language instructions and prepended to the `prompt` field
+- [ ] Admin GraphQL query `serverPersonality: ServerPersonality`
+- [ ] Admin GraphQL mutation `updatePersonality(input: ServerPersonalityInput): ServerPersonality`
+  (admin-only capability check; updates `server_settings` and refreshes the `Ref`)
+- [ ] Unit tests: `PersonalityService` get/update round-trip; `AgentRunnerImpl` system-prompt construction for each
+  formality level
+
+**Shell:**
+
+- [ ] Shell title bar / status bar shows server name from `/api/status` `serverName` field (already wired in Phase 8.1)
+- [ ] `/personality` shell command (admin only): displays the current personality fields in the message area with a
+  clear structure; sub-commands or interactive prompts allow updating individual fields or the full prompt
+
+---
+
+## Phase 8.4: Agent testing on CI. We need to add some tests for AI,
+
+- [ ] Integrate AI/CI testing according to the documentation on doc/testing_ai_on_ci.md.
+- [ ] Add tests for the AI module, ensuring that the `FakeModelGateway` is used to simulate model responses and that the
+  `AgentSessionManager` and `AgentRunner` correctly handle streaming responses and event logging. These tests should
+  work both locally and on CI
 
 ---
 
@@ -562,6 +619,48 @@ remaining skills.
 
 ---
 
+## Phase 18: Installer and Distribution
+
+**Goal:** Jorlan can be installed cleanly on Ubuntu (deb package) and macOS by a non-developer, with full end-to-end
+smoke tests. Depends on Phase 8.1 (in-process wizard) and Phase 8.2 (database bootstrap script) being complete.
+
+> The smoke test starts the server, checks `GET /api/status`, runs the Phase 8.1 initialization wizard, and verifies
+> normal operation — so Phase 8.1 must be complete before this phase can close.
+
+**Linux (Ubuntu .deb):**
+
+- [ ] `sbt-native-packager` configured for Debian packaging: `debianPackageMaintainer`, `debianPackageSummary`,
+  `packageDescription`, `linuxPackageMappings`
+- [ ] Systemd service unit file (`jorlan.service`): `Type=notify`, `Restart=on-failure`, environment file at
+  `/etc/jorlan/jorlan.env`
+- [ ] Package layout:
+    - `/usr/lib/jorlan/` — JARs and classpath
+    - `/usr/bin/jorlan` — launch script (generated by `sbt-native-packager`)
+    - `/etc/jorlan/jorlan.env` — environment variables file (installed as config, not overwritten on upgrade)
+    - `/var/log/jorlan/` — log directory (owned by `jorlan` system user)
+    - `/usr/lib/jorlan/scripts/init-db.sh` — bundled copy of the Phase 8.2 bootstrap script
+- [ ] Debian pre/post install scripts: create `jorlan` system user and group if absent; set log directory permissions
+- [ ] Debian pre-remove script: stop service if running
+- [ ] `sbt debian:packageBin` produces a valid `.deb` installable via `dpkg -i` or `apt install ./jorlan_*.deb`
+- [ ] Smoke test: install on a fresh Ubuntu 22.04 LTS container, run `init-db.sh`, start server, complete
+  initialization wizard, verify login and first agent session succeed
+
+**macOS:**
+
+- [ ] `sbt-native-packager` configured for universal tarball (`universal:packageZipTarball`) as primary macOS
+  distribution format (no App Bundle required for a server daemon)
+- [ ] Homebrew formula stub (`Formula/jorlan.rb`): `url`, `sha256`, `depends_on :java => "21"`, `service` block for
+  `brew services start jorlan`
+- [ ] LaunchDaemon plist template (`io.jorlan.server.plist`) for `launchctl load` based installs
+- [ ] `install-macos.sh` script: extracts tarball, installs plist to `/Library/LaunchDaemons/`, creates log dir
+
+**CI/CD:**
+
+- [ ] GitHub Actions job `build-deb`: runs `sbt debian:packageBin`, uploads `.deb` as workflow artifact
+- [ ] GitHub Actions release workflow: on `v*` tag, build `.deb` and macOS tarball, attach to GitHub Release
+
+---
+
 ## Appendix: Module Dependency Map
 
 ```
@@ -617,23 +716,23 @@ model
 
 ## Appendix: Supported skills
 
-| Status | Skill            | Priority | Type     | Description |
-|:------:|------------------|----------|----------|-------------|
-|  [ ]   | Market Data      |          | Built-in |             |
-|  [ ]   | Lyrion Server    | 1        | Built-in |             |
-|  [ ]   | Google Contacts  |          | Built-in |             |
-|  [ ]   | Google Calendar  | 1        | Built-in |             |
-|  [ ]   | MCP Connector    |          | Built-in |             |
-|  [ ]   | Declarative Json |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
-|  [ ]   | ``               |          | Built-in |             |
+| Status | Skill            | Priority | Tier        | Description |
+|:------:|------------------|----------|-------------|-------------|
+|  [ ]   | Market Data      |          | Declarative |             |
+|  [ ]   | Lyrion Server    | 1        | Declarative |             |
+|  [ ]   | Google Contacts  |          | Plugin      |             |
+|  [ ]   | Google Calendar  | 1        | Plugin      |             |
+|  [ ]   | MCP Connector    |          | Built-in    |             |
+|  [ ]   | Declarative Json |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | ``               |          | Built-in    |             |
 
 ## Appendix: Connectors
 

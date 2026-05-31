@@ -1,0 +1,66 @@
+/*
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ *
+ * This source code is protected under international copyright law.  All rights
+ * reserved and protected by the copyright holders.
+ * This file is confidential and only available to authorized individuals with the
+ * permission of the copyright holders.  If you encounter this file and do not have
+ * permission, please contact the copyright holders and delete this file.
+ */
+
+package jorlan.service
+
+import jorlan.*
+import jorlan.domain.*
+import jorlan.testing.InMemoryRepositories
+import zio.*
+import zio.test.*
+import zio.test.Assertion.*
+
+object HumanApprovalNotifierSpec extends ZIOSpecDefault {
+
+  private val freshLayers: ULayer[HumanApprovalNotifier & EventLogService] = {
+    val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
+    val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
+    eventLogLayer >>> (HumanApprovalNotifierImpl.live ++ eventLogLayer)
+  }
+
+  private def makeRequest(id: Long): ApprovalRequest =
+    ApprovalRequest(
+      id = ApprovalRequestId(id),
+      capability = CapabilityName("test.capability"),
+      scopeJson = None,
+      agentId = None,
+      requestorUserId = UserId(1L),
+      sessionId = None,
+      riskClass = RiskClass.ReadOnly,
+      status = ApprovalStatus.Pending,
+      createdAt = java.time.Instant.now(),
+      expiresAt = None,
+    )
+
+  override def spec: Spec[TestEnvironment & Scope, Any] =
+    suite("HumanApprovalNotifier")(
+      test("notifyApprovalRequired logs ApprovalRequested event") {
+        val request = makeRequest(1L)
+        for {
+          notifier <- ZIO.service[HumanApprovalNotifier]
+          _        <- notifier.notifyApprovalRequired(request)
+          events   <- ZIO.serviceWithZIO[EventLogService](
+            _.query(EventLogFilter(eventType = Some(EventType.ApprovalRequested))),
+          )
+        } yield assertTrue(
+          events.nonEmpty,
+          events.head.eventType == EventType.ApprovalRequested,
+        )
+      }.provide(freshLayers),
+      test("notifyApprovalRequired succeeds for a second request") {
+        val request = makeRequest(2L)
+        for {
+          notifier <- ZIO.service[HumanApprovalNotifier]
+          result   <- notifier.notifyApprovalRequired(request)
+        } yield assertTrue(result == (()))
+      }.provide(freshLayers),
+    )
+
+}
