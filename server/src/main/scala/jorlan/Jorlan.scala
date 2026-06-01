@@ -75,12 +75,10 @@ object Jorlan extends ZIOApp {
       startTime    <- Clock.currentTime(TimeUnit.MILLISECONDS)
       settingsRepo <- ZIO.service[ServerSettingsRepository]
       userService  <- ZIO.service[UserService]
-      initialized  <- settingsRepo.get("initialized").map {
-        case Some(Json.Bool(v)) => v
-        case _                  => false
-      }
-      tokenStore <- InitTokenStore.make(initialized)
-      initService = new InitServiceImpl(settingsRepo, userService, tokenStore)
+      eventLogSvc  <- ZIO.service[EventLogService]
+      initialized  <- ServerSettingsRepository.isServerInitialized.provide(ZLayer.succeed(settingsRepo))
+      tokenStore   <- InitTokenStore.make(initialized)
+      initService = new InitServiceImpl(settingsRepo, userService, tokenStore, eventLogSvc)
       _   <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       app <-
         if (initialized) {

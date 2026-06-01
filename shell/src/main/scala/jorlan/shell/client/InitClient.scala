@@ -21,8 +21,20 @@ import scala.language.unsafeNulls
 /** HTTP client for the first-run initialization endpoints: `GET /api/status` and `POST /api/init`. */
 trait InitClient {
 
+  /** Fetches `GET /api/status` from `serverUrl` and decodes the response.
+    *
+    * @return
+    *   the decoded [[ServerStatus]], or a human-readable error string (not a typed [[jorlan.JorlanError]]) on network
+    *   failure, non-2xx response, or JSON decode failure.
+    */
   def checkStatus(serverUrl: String): IO[String, ServerStatus]
 
+  /** Posts `POST /api/init` with the given setup parameters.
+    *
+    * @return
+    *   `Unit` on success (HTTP 2xx), or a human-readable error string on failure. The error channel carries plain
+    *   strings rather than typed [[jorlan.JorlanError]]s because this client crosses the HTTP boundary.
+    */
   def complete(
     serverUrl:     String,
     token:         String,
@@ -94,7 +106,7 @@ private class InitClientImpl(backend: Backend[Task]) extends InitClient {
       .send(backend)
       .mapError(e => s"Connection error: ${e.getMessage}")
       .flatMap { resp =>
-        ZIO.fail(s"Init failed (${resp.code.code}): ${resp.body.merge}").unless(resp.code.isSuccess)
+        ZIO.fail(s"Init failed (${resp.code.code}): ${resp.body.merge}").unless(resp.code.isSuccess).unit
       }
   }
 

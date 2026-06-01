@@ -11,7 +11,7 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.ServerSettingsRepository
+import jorlan.db.repository.{RepositoryError, ServerSettingsRepository}
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -32,8 +32,10 @@ object StatusRoutes {
     Routes(
       Method.GET / "api" / "status" -> handler {
         for {
-          initialized <- settings.get("initialized").map { case Some(Json.Bool(v)) => v; case _ => false }
-          nameJson    <- settings.get("serverName")
+          (initializedJson, nameJson) <-
+            settings.get(ServerSettingsRepository.InitializedKey) <&>
+              settings.get(ServerSettingsRepository.ServerNameKey)
+          initialized = initializedJson.collect { case Json.Bool(v) => v }.getOrElse(false)
           name = nameJson.collect { case Json.Str(s) => s }.getOrElse("Jorlan")
           now <- Clock.currentTime(TimeUnit.MILLISECONDS)
           status = ServerStatus(initialized, jorlan.BuildInfo.version, name, now - startTime)
@@ -55,6 +57,12 @@ object SetupModeApp {
       body = Body.fromString("""{"error":"server not initialized — POST /api/init to set up"}"""),
     )
 
+  /** Builds the pre-initialization HTTP app.
+    *
+    * Serves `GET /api/status` and `POST /api/init`; returns 503 for all other paths so callers know the server is not
+    * yet ready. Delegates status handling to [[StatusRoutes]] so the response shape is identical before and after
+    * initialization.
+    */
   def make(
     startTime:          Long,
     serverSettingsRepo: ServerSettingsRepository,
@@ -84,9 +92,17 @@ object SetupModeApp {
                 .complete(r.token, r.serverName, r.adminEmail, r.adminName, r.adminPassword)
                 .foldZIO(
                   {
+                    // TODO extract this into a method called mapError
                     case v: ValidationError =>
                       ZIO.succeed(
                         Response(Status.BadRequest, body = Body.fromString(Map("error" -> v.getMessage).toJson)),
+                      )
+                    case _: RepositoryError =>
+                      ZIO.succeed(
+                        Response(
+                          Status.InternalServerError,
+                          body = Body.fromString(Map("error" -> "Internal server error during initialization").toJson),
+                        ),
                       )
                     case err =>
                       ZIO.succeed(

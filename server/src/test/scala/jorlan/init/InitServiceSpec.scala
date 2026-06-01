@@ -12,7 +12,7 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.ServerSettingsRepository
-import jorlan.service.{EventLogServiceImpl, UserService, UserServiceImpl}
+import jorlan.service.{EventLogService, EventLogServiceImpl, UserService, UserServiceImpl}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -52,10 +52,38 @@ object InitServiceSpec extends ZIOSpecDefault {
 
   // ─── Helper: build an InitService with a given token and settings ───────────
 
-  private type TestEnv = ServerSettingsRepository & UserService & InitTokenStore
+  private val failingUserService: ULayer[UserService] = ZLayer.succeed(
+    new UserService {
+      override def getById(id: jorlan.domain.UserId) = ZIO.die(new RuntimeException("stub"))
+      override def search(s:   jorlan.UserSearch) = ZIO.die(new RuntimeException("stub"))
+      override def createUser(
+        displayName: String,
+        email:       Option[String],
+        actorId:     Option[jorlan.domain.UserId],
+      ) =
+        ZIO.fail(JorlanError("simulated DB failure"))
+      override def updateUser(
+        id:    jorlan.domain.UserId,
+        d:     String,
+        e:     Option[String],
+        a:     Boolean,
+        actor: Option[jorlan.domain.UserId],
+      ) =
+        ZIO.die(new RuntimeException("stub"))
+      override def setPassword(
+        userId:   jorlan.domain.UserId,
+        password: String,
+      ) = ZIO.die(new RuntimeException("stub"))
+    },
+  )
+
+  private type TestEnv = ServerSettingsRepository & UserService & InitTokenStore & EventLogService
 
   private def makeTokenStore(initialized: Boolean): ZLayer[Any, Nothing, InitTokenStore] =
     ZLayer.fromZIO(InitTokenStore.make(initialized))
+
+  private val eventLogLayer: ULayer[EventLogService] =
+    InMemoryRepositories.InMemoryEventLogRepo.layer >>> EventLogServiceImpl.live
 
   private val userServiceLayer: ULayer[UserService] =
     InMemoryRepositories.InMemoryUserRepo.layer ++
@@ -66,10 +94,10 @@ object InitServiceSpec extends ZIOSpecDefault {
     settingsLayer: ULayer[ServerSettingsRepository],
     initialized:   Boolean,
   ): ULayer[TestEnv] =
-    settingsLayer ++ userServiceLayer ++ makeTokenStore(initialized)
+    settingsLayer ++ userServiceLayer ++ makeTokenStore(initialized) ++ eventLogLayer
 
   private val initServiceLayer: URLayer[TestEnv, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _))
+    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
 
   // ─── Tests ─────────────────────────────────────────────────────────────────
 
@@ -143,6 +171,41 @@ object InitServiceSpec extends ZIOSpecDefault {
         } yield assertTrue(
           result.isLeft,
           result.left.toOption.exists(_.getMessage.contains("email")),
+        )
+      }.provide(
+        testLayer(uninitializedSettings, initialized = false),
+        initServiceLayer,
+      ),
+      // P8.1-021: createUser failure leaves initialized = false
+      test("createUser failure leaves initialized flag unchanged") {
+        for {
+          tokenStore <- ZIO.service[InitTokenStore]
+          validToken <- tokenStore.token.map(_.getOrElse(""))
+          svc        <- ZIO.service[InitService]
+          result     <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!").either
+          settings   <- ZIO.service[ServerSettingsRepository]
+          flagAfter  <- settings.get(ServerSettingsRepository.InitializedKey)
+        } yield assertTrue(
+          result.isLeft,
+          flagAfter.contains(Json.Bool(false)),
+        )
+      }.provide(
+        settingsLayer(Map(ServerSettingsRepository.InitializedKey -> Json.Bool(false))) ++
+          failingUserService ++
+          makeTokenStore(false) ++
+          eventLogLayer,
+        initServiceLayer,
+      ),
+      // P8.1-020: blank/whitespace serverName
+      test("validation rejects blank server name") {
+        for {
+          tokenStore <- ZIO.service[InitTokenStore]
+          validToken <- tokenStore.token.map(_.getOrElse(""))
+          svc        <- ZIO.service[InitService]
+          result     <- svc.complete(validToken, "   ", "admin@example.com", "Admin", "password123!").either
+        } yield assertTrue(
+          result.isLeft,
+          result.left.toOption.exists(_.getMessage.contains("Server name")),
         )
       }.provide(
         testLayer(uninitializedSettings, initialized = false),

@@ -12,7 +12,7 @@ package jorlan.db
 
 import jorlan.db.repository.ServerSettingsRepository
 import jorlan.init.{InitService, InitServiceImpl, InitTokenStore}
-import jorlan.service.{EventLogServiceImpl, UserService, UserServiceImpl}
+import jorlan.service.{EventLogService, EventLogServiceImpl, UserService, UserServiceImpl}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -37,8 +37,9 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
   private val tokenStoreLayer: ULayer[InitTokenStore] =
     ZLayer.fromZIO(InitTokenStore.make(false))
 
-  private val initServiceLayer: URLayer[ServerSettingsRepository & UserService & InitTokenStore, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _))
+  private val initServiceLayer
+    : URLayer[ServerSettingsRepository & UserService & InitTokenStore & EventLogService, InitService] =
+    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
 
   private val fullLayer: TaskLayer[
     ServerSettingsRepository & UserService & InitTokenStore & InitService,
@@ -53,11 +54,11 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("InitService integration (real DB)")(
-      test("1. fresh DB has initialized = false") {
+      test("1. fresh DB has initialized = false (V017 seed row present)") {
         for {
           settings    <- ZIO.service[ServerSettingsRepository]
           initialized <- settings.get("initialized")
-        } yield assertTrue(initialized.contains(Json.Bool(false)))
+        } yield assertTrue(initialized == Some(Json.Bool(false))) // assert seed row exists, not just that service returns false
       },
       test("2. complete with valid token sets initialized = true and persists serverName") {
         for {

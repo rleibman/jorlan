@@ -122,33 +122,19 @@ object QuillRepositories {
         for {
           config <- ZIO.service[DatabaseConfig]
           hds    <- managedDataSource(config)
-        } yield {
-          val qc = new QuillCtx(hds)
-          (
-            new QuillUserRepository(qc),
-            new QuillAgentRepository(qc),
-            new QuillConversationRepository(qc),
-            new QuillSkillRepository(qc),
-            new QuillMemoryRepository(qc),
-            new QuillEventLogRepository(qc),
-            new QuillSchedulerRepository(qc),
-            new QuillArtifactRepository(qc),
-            new QuillPermissionRepository(qc),
-            new QuillServerSettingsRepository(qc),
-          )
-        }
+        } yield new QuillCtx(hds)
       }.flatMap { env =>
-        val (ur, ar, cr, sr, mr, elr, schr, artR, pr, ssr) = env.get
-        ZLayer.succeed(ur: UserZIORepository) ++
-          ZLayer.succeed(ar: AgentZIORepository) ++
-          ZLayer.succeed(cr: ConversationZIORepository) ++
-          ZLayer.succeed(sr: SkillZIORepository) ++
-          ZLayer.succeed(mr: MemoryZIORepository) ++
-          ZLayer.succeed(elr: EventLogZIORepository) ++
-          ZLayer.succeed(schr: SchedulerZIORepository) ++
-          ZLayer.succeed(artR: ArtifactZIORepository) ++
-          ZLayer.succeed(pr: PermissionZIORepository) ++
-          ZLayer.succeed(ssr: ServerSettingsRepository)
+        val qc = env.get
+        ZLayer.succeed(new QuillUserRepository(qc): UserZIORepository) ++
+          ZLayer.succeed(new QuillAgentRepository(qc): AgentZIORepository) ++
+          ZLayer.succeed(new QuillConversationRepository(qc): ConversationZIORepository) ++
+          ZLayer.succeed(new QuillSkillRepository(qc): SkillZIORepository) ++
+          ZLayer.succeed(new QuillMemoryRepository(qc): MemoryZIORepository) ++
+          ZLayer.succeed(new QuillEventLogRepository(qc): EventLogZIORepository) ++
+          ZLayer.succeed(new QuillSchedulerRepository(qc): SchedulerZIORepository) ++
+          ZLayer.succeed(new QuillArtifactRepository(qc): ArtifactZIORepository) ++
+          ZLayer.succeed(new QuillPermissionRepository(qc): PermissionZIORepository) ++
+          ZLayer.succeed(new QuillServerSettingsRepository(qc): ServerSettingsRepository)
       }
 
 }
@@ -1196,6 +1182,16 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
 }
 
 // ─── ServerSettings ───────────────────────────────────────────────────────────
+
+/** Quill row type for the `server_settings` table.
+  *
+  * Named `setting_key` (not `key`) because `key` is a reserved word in MariaDB. `value` stores valid JSON as a raw
+  * string; `QuillServerSettingsRepository` handles serialization.
+  */
+private[repository] case class ServerSettingRow(
+  settingKey: String,
+  value:      String,
+)
 
 private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ServerSettingsRepository {
 

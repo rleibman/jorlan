@@ -20,7 +20,10 @@ import zio.json.ast.Json
   */
 trait ServerSettingsRepository {
 
+  /** Retrieves the JSON value for `key`, or `None` if absent. Never fails. */
   def get(key: String): UIO[Option[Json]]
+
+  /** Upserts `value` under `key`. Never fails. */
   def set(
     key:   String,
     value: Json,
@@ -29,6 +32,9 @@ trait ServerSettingsRepository {
 }
 
 object ServerSettingsRepository {
+
+  val InitializedKey = "initialized"
+  val ServerNameKey = "serverName"
 
   def get(key: String): URIO[ServerSettingsRepository, Option[Json]] =
     ZIO.serviceWithZIO[ServerSettingsRepository](_.get(key))
@@ -39,11 +45,12 @@ object ServerSettingsRepository {
   ): URIO[ServerSettingsRepository, Unit] =
     ZIO.serviceWithZIO[ServerSettingsRepository](_.set(key, value))
 
-}
+  /** Reads the `initialized` flag from `server_settings`. Returns `false` if the key is absent or not a JSON boolean.
+    */
+  def isServerInitialized: URIO[ServerSettingsRepository, Boolean] =
+    ZIO.serviceWithZIO[ServerSettingsRepository](_.get(InitializedKey)).map {
+      case Some(Json.Bool(v)) => v
+      case _                  => false
+    }
 
-// Row type used by QuillServerSettingsRepository (defined in QuillRepositories.scala).
-// Note: the DB column is `setting_key` (not `key`) because `key` is a reserved word in MariaDB.
-case class ServerSettingRow(
-  settingKey: String,
-  value:      String,
-)
+}

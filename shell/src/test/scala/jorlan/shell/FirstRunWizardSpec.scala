@@ -10,7 +10,8 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{InitClient, ServerStatus}
+import jorlan.init.ServerStatus
+import jorlan.shell.client.InitClient
 import jorlan.shell.testing.FakeScreen
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -179,6 +180,23 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
             msgs.exists(_.content.contains("connection refused")),
           )
         }
+      },
+      // P8.1-027: custom server URL overrides the default
+      test("custom server URL is used when user types one") {
+        for {
+          screen <- FakeScreen.make
+          path   <- tmpFile
+          client = stubClient(status = ZIO.succeed(initializedStatus))
+          _   <- screen.sendLine("http://myserver:9090") // custom URL
+          _   <- screen.sendLine("dave@example.com")
+          _   <- screen.sendLine("password123!")
+          cfg <- FirstRunWizard
+            .run("http://localhost:8080", path)
+            .provide(ZLayer.succeed(screen: JorlanScreen), client)
+        } yield assertTrue(
+          cfg.serverUrl == "http://myserver:9090",
+          cfg.email.contains("dave@example.com"),
+        )
       },
     )
 

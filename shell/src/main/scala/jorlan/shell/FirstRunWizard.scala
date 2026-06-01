@@ -10,7 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{InitClient, ServerStatus}
+import jorlan.shell.client.InitClient
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
 

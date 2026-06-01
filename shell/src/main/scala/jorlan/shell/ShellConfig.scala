@@ -20,6 +20,12 @@ import java.io.File
 import scala.annotation.tailrec
 import scala.language.unsafeNulls
 
+/** Shell client configuration, persisted to `~/.jorlan/jorlan-shell.json`.
+  *
+  * SECURITY NOTE: `password` is stored as plaintext JSON and is readable by any process running as the same OS user.
+  * Consider OS keychain integration or omitting the password and re-prompting on each session in security-sensitive
+  * environments.
+  */
 case class ShellConfig(
   serverUrl: String = "http://localhost:8080",
   email:     Option[String] = None,
@@ -52,6 +58,17 @@ object ShellConfig {
     } yield cfg
   }
 
+  private def envConfigPath: Option[File] =
+    Option(java.lang.System.getenv("JORLAN_SHELL_CONFIG")).map(new File(_))
+
+  private def argConfigPath(args: List[String]): Option[File] =
+    args.sliding(2).collectFirst { case List("--config", path) => new File(path) }
+
+  private def defaultConfigPath: File = {
+    val homeDir = java.lang.System.getProperty("user.home", "")
+    new File(s"$homeDir/.jorlan/jorlan-shell.json")
+  }
+
   /** Determine the file to read config from, given a set of CLI args.
     *
     * Priority: env var → `--config` arg → `jorlan-shell.json` → `jorlan.json`.
@@ -59,25 +76,17 @@ object ShellConfig {
   private[shell] def findReadFile(args: List[String]): UIO[Option[File]] =
     ZIO.succeed {
       val homeDir = java.lang.System.getProperty("user.home", "")
-      val envFile = Option(java.lang.System.getenv("JORLAN_SHELL_CONFIG")).map(new File(_)).filter(_.exists())
-      val argFile = args.sliding(2).collectFirst { case List("--config", path) => new File(path) }.filter(_.exists())
-      val newFile = new File(s"$homeDir/.jorlan/jorlan-shell.json")
       val legacyFile = new File(s"$homeDir/.jorlan/jorlan.json")
-
-      envFile
-        .orElse(argFile)
-        .orElse(Option(newFile).filter(_.exists()))
+      envConfigPath
+        .filter(_.exists())
+        .orElse(argConfigPath(args).filter(_.exists()))
+        .orElse(Option(defaultConfigPath).filter(_.exists()))
         .orElse(Option(legacyFile).filter(_.exists()))
     }
 
   /** Determine the file path to write the config to. Never uses the legacy file. */
   def resolveWritePath(args: List[String]): UIO[File] =
-    ZIO.succeed {
-      val homeDir = java.lang.System.getProperty("user.home", "")
-      val envFile = Option(java.lang.System.getenv("JORLAN_SHELL_CONFIG")).map(new File(_))
-      val argFile = args.sliding(2).collectFirst { case List("--config", path) => new File(path) }
-      envFile.orElse(argFile).getOrElse(new File(s"$homeDir/.jorlan/jorlan-shell.json"))
-    }
+    ZIO.succeed(envConfigPath.orElse(argConfigPath(args)).getOrElse(defaultConfigPath))
 
   /** `true` when no config file exists or the loaded config has no serverUrl. */
   def isFirstRun(
@@ -88,7 +97,10 @@ object ShellConfig {
       fileOpt.isEmpty || cfg.serverUrl.isEmpty
     }
 
-  /** Write `cfg` to `path` in the canonical JSON format that `layer` can load back. */
+  /** Write `cfg` to `path` in the canonical JSON format (`{"jorlan":{"shell":{...}}}`) that `layer` can load back.
+    *
+    * Creates parent directories if they do not exist. SECURITY: password is written as plaintext; see [[ShellConfig]].
+    */
   def write(
     path: File,
     cfg:  ShellConfig,

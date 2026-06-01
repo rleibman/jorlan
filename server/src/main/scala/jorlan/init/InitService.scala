@@ -12,8 +12,8 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.ServerSettingsRepository
-import jorlan.domain.UserId
-import jorlan.service.UserService
+import jorlan.domain.{EventLog, EventLogId, EventType, UserId}
+import jorlan.service.{EventLogService, UserService}
 import zio.*
 import zio.json.ast.Json
 
@@ -25,52 +25,89 @@ import scala.language.unsafeNulls
   * The token is printed to stdout and must be supplied with `POST /api/init`. It is discarded (set to `None`) after the
   * first successful initialization and cannot be reused.
   */
-class InitTokenStore private (tokenRef: Ref[Option[String]]) {
+trait InitTokenStore {
 
-  val token: UIO[Option[String]] = tokenRef.get
+  /** The current token, or `None` if the store has been invalidated. */
+  def token: UIO[Option[String]]
 
-  val invalidate: UIO[Unit] = tokenRef.set(None)
+  /** Discards the token permanently; subsequent `verify` calls will always return `false`. */
+  def invalidate: UIO[Unit]
 
-  val isValid: UIO[Boolean] = tokenRef.get.map(_.isDefined)
+  /** `true` while a token is held (not yet invalidated). */
+  def isValid: UIO[Boolean]
 
-  def verify(provided: String): UIO[Boolean] =
-    tokenRef.get.map(_.contains(provided))
+  /** Returns `true` if `provided` matches the stored token. */
+  def verify(provided: String): UIO[Boolean]
 
 }
 
 object InitTokenStore {
 
-  private def generateToken(): String = {
-    val rng = new SecureRandom()
-    val bytes = new Array[Byte](16)
-    rng.nextBytes(bytes)
-    bytes.map(b => f"${b & 0xff}%02x").mkString
-  }
+  def token:                    URIO[InitTokenStore, Option[String]] = ZIO.serviceWithZIO[InitTokenStore](_.token)
+  def invalidate:               URIO[InitTokenStore, Unit] = ZIO.serviceWithZIO[InitTokenStore](_.invalidate)
+  def isValid:                  URIO[InitTokenStore, Boolean] = ZIO.serviceWithZIO[InitTokenStore](_.isValid)
+  def verify(provided: String): URIO[InitTokenStore, Boolean] = ZIO.serviceWithZIO[InitTokenStore](_.verify(provided))
+
+  private val rng: SecureRandom = new SecureRandom()
+
+  private def generateToken(): UIO[String] =
+    ZIO.attempt {
+      val bytes = new Array[Byte](16)
+      rng.nextBytes(bytes)
+      bytes.map(b => f"${b & 0xff}%02x").mkString
+    }.orDie
 
   /** Creates the token store. If `initialized` is false, a 32-hex token is generated and printed to stdout. If already
     * initialized, the store holds `None` and setup is permanently disabled.
     */
   def make(initialized: Boolean): UIO[InitTokenStore] =
     if (initialized) {
-      Ref.make(Option.empty[String]).map(new InitTokenStore(_))
+      Ref.make(Option.empty[String]).map(new InitTokenStoreImpl(_))
     } else {
-      val tok = generateToken()
-      ZIO.succeed {
-        val border = "═" * 58
-        println(s"\n╔$border╗")
-        println(s"║  JORLAN SETUP TOKEN  (valid for this process only)       ║")
-        println(s"║  $tok  ║")
-        println(s"╚$border╝\n")
-      } *> Ref.make(Option(tok)).map(new InitTokenStore(_))
+      generateToken().flatMap { tok =>
+        ZIO.succeed {
+          val border = "═" * 58
+          println(s"\n╔$border╗")
+          println(s"║  JORLAN SETUP TOKEN  (valid for this process only)       ║")
+          println(s"║  $tok  ║")
+          println(s"╚$border╝\n")
+        } *> Ref.make(Option(tok)).map(new InitTokenStoreImpl(_))
+      }
     }
+
+}
+
+private class InitTokenStoreImpl(tokenRef: Ref[Option[String]]) extends InitTokenStore {
+
+  override def token:                    UIO[Option[String]] = tokenRef.get
+  override def invalidate:               UIO[Unit] = tokenRef.set(None)
+  override def isValid:                  UIO[Boolean] = tokenRef.get.map(_.isDefined)
+  override def verify(provided: String): UIO[Boolean] = tokenRef.get.map(_.contains(provided))
 
 }
 
 /** Performs first-run server initialization. */
 trait InitService {
 
+  /** Returns `true` if the server has been initialized (i.e., the `initialized` flag is `true` in `server_settings`).
+    */
   def isInitialized: UIO[Boolean]
 
+  /** Validates inputs, creates the admin user with the given password, persists server settings, and invalidates the
+    * setup token. Fails with [[ValidationError]] (→ HTTP 400) for bad inputs, or [[JorlanError]] (→ HTTP 403) if the
+    * token is invalid or the server is already initialized.
+    *
+    * @param token
+    *   the one-time setup token printed to stdout at startup
+    * @param serverName
+    *   human-readable name for this server instance
+    * @param adminEmail
+    *   email address for the first admin user
+    * @param adminName
+    *   display name for the first admin user
+    * @param adminPassword
+    *   plain-text password for the first admin user (min 12 chars)
+    */
   def complete(
     token:         String,
     serverName:    String,
@@ -101,10 +138,11 @@ class InitServiceImpl(
   settings:   ServerSettingsRepository,
   users:      UserService,
   tokenStore: InitTokenStore,
+  eventLog:   EventLogService,
 ) extends InitService {
 
-  override val isInitialized: UIO[Boolean] =
-    settings.get("initialized").map {
+  override def isInitialized: UIO[Boolean] =
+    settings.get(ServerSettingsRepository.InitializedKey).map {
       case Some(Json.Bool(v)) => v
       case _                  => false
     }
@@ -124,27 +162,46 @@ class InitServiceImpl(
       _           <- validateInputs(serverName, adminEmail, adminPassword)
       createdUser <- users.createUser(adminName, Some(adminEmail), None)
       _           <- users.setPassword(createdUser.id, adminPassword)
-      _           <- settings.set("initialized", Json.Bool(true))
-      _           <- settings.set("serverName", Json.Str(serverName))
+      _           <- settings.set(ServerSettingsRepository.InitializedKey, Json.Bool(true))
+      _           <- settings.set(ServerSettingsRepository.ServerNameKey, Json.Str(serverName))
       _           <- tokenStore.invalidate
+      now         <- Clock.instant
+      _           <- eventLog.log(
+        EventLog[Nothing](
+          id = EventLogId.empty,
+          eventType = EventType.ServerInitialized,
+          actorId = Some(createdUser.id),
+          agentId = None,
+          sessionId = None,
+          resource = None,
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
     } yield ()
 
   private def validateInputs(
     serverName:    String,
     adminEmail:    String,
     adminPassword: String,
-  ): IO[JorlanError, Unit] =
-    (
-      ZIO.when(serverName.trim.isEmpty)(ZIO.fail(ValidationError("Server name must not be empty"))) *>
-        ZIO.when(!adminEmail.contains("@"))(ZIO.fail(ValidationError("Admin email is not valid"))) *>
-        ZIO.when(adminPassword.length < 12)(ZIO.fail(ValidationError("Password must be at least 12 characters")))
-    ).unit
+  ): IO[JorlanError, Unit] = {
+    val errors = List(
+      Option.when(serverName.trim.isEmpty)("Server name must not be empty"),
+      Option.when(!adminEmail.contains("@"))("Admin email is not valid"),
+      Option.when(adminPassword.length < 12)("Password must be at least 12 characters"),
+    ).flatten
+    ZIO.when(errors.nonEmpty)(ZIO.fail(ValidationError(errors.mkString("; ")))).unit
+  }
 
 }
 
 object InitServiceImpl {
 
-  val live: URLayer[ServerSettingsRepository & UserService & InitTokenStore, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _))
+  // NOTE: `InitServiceImpl` is deliberately constructed with `new` in `Jorlan.run` rather than through
+  // this layer. `InitTokenStore` requires the `initialized` flag read from the DB after Flyway has run,
+  // which is not available at ZLayer bootstrap time. This layer is available for test code that
+  // provides a pre-built `InitTokenStore` via its own setup logic.
+  val layer: URLayer[ServerSettingsRepository & UserService & InitTokenStore & EventLogService, InitService] =
+    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
 
 }
