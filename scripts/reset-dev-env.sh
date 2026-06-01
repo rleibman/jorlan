@@ -135,11 +135,11 @@ if [[ "$RESET_DB" == true ]]; then
   fi
 
   mysql_exec() {
+    MYSQL_PWD="$MYSQL_PASS" \
     "$MYSQL_CMD" \
       --host="$DB_HOST" \
       --port="$DB_PORT" \
       --user="$MYSQL_USER" \
-      --password="$MYSQL_PASS" \
       --batch \
       --silent \
       -e "$1"
