@@ -75,12 +75,7 @@ object EnvironmentBuilder {
         langChainConfigLayer,
         FlywayMigration.live,
         QuillRepositories.live,
-        EventLogServiceImpl.live,
-        UserServiceImpl.live,
-        PermissionServiceImpl.live,
-        RiskClassifierImpl.live,
         CapabilityEvaluatorImpl.live,
-        ApprovalPolicyEngineImpl.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
         authConfigLayer,
@@ -90,7 +85,6 @@ object EnvironmentBuilder {
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
         AgentRunnerImpl.live,
-        PersonalityServiceImpl.live,
       ).orDie
 
 }

@@ -45,7 +45,7 @@ object ShellCommand {
     if (!line.startsWith("/")) {
       Message(line)
     } else {
-      val parts = line.stripPrefix("/").split("\\s+", 2).toList
+      val parts = line.stripPrefix("/").split("\\s+", 4).toList
       parts match {
         case "help" :: _                                              => Help
         case "commands" :: _                                          => Commands

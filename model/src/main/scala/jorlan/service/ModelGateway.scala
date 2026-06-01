@@ -84,19 +84,4 @@ trait ModelGateway {
 
 }
 
-object ModelGateway {
-
-  def streamedResponse(
-    sessionId:    AgentSessionId,
-    message:      String,
-    systemPrompt: String = "",
-  ): ZStream[ModelGateway, ModelError, String] =
-    ZStream.serviceWithStream[ModelGateway](_.streamedResponse(sessionId, message, systemPrompt))
-
-  def availableModels: URIO[ModelGateway, List[ModelInfo]] =
-    ZIO.serviceWithZIO[ModelGateway](_.availableModels)
-
-  def invalidateSession(sessionId: AgentSessionId): URIO[ModelGateway, Unit] =
-    ZIO.serviceWithZIO[ModelGateway](_.invalidateSession(sessionId))
-
-}
+object ModelGateway {}

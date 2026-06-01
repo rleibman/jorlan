@@ -72,12 +72,7 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       flywayConfigLayer,
       jorlan.db.FlywayMigration.live,
       QuillRepositories.live,
-      EventLogServiceImpl.live,
-      UserServiceImpl.live,
-      PermissionServiceImpl.live,
-      RiskClassifierImpl.live,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
-      ApprovalPolicyEngineImpl.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -85,7 +80,6 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       OAuthStateStore.live(),
       SessionHub.live,
       FakeModelGateway.layer(List("test")),
-      PersonalityServiceImpl.live,
       AgentSessionManagerImpl.live,
       AgentRunnerImpl.live,
     )

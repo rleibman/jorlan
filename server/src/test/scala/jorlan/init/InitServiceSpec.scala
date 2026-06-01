@@ -11,8 +11,14 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.ServerSettingsRepository
-import jorlan.service.{EventLogService, EventLogServiceImpl, UserService, UserServiceImpl}
+import jorlan.db.repository.{
+  EventLogZIORepository,
+  RepositoryError,
+  RepositoryTask,
+  ServerSettingsRepository,
+  UserZIORepository,
+}
+import jorlan.domain.{ChannelIdentity, ChannelIdentityId, ChannelType, User, UserId}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -52,49 +58,48 @@ object InitServiceSpec extends ZIOSpecDefault {
 
   // ─── Helper: build an InitService with a given token and settings ───────────
 
-  private val failingUserService: ULayer[UserService] = ZLayer.succeed(
-    new UserService {
-      override def getById(id: jorlan.domain.UserId) = ZIO.die(new RuntimeException("stub"))
-      override def search(s:   jorlan.UserSearch) = ZIO.die(new RuntimeException("stub"))
-      override def createUser(
-        displayName: String,
-        email:       Option[String],
-        actorId:     Option[jorlan.domain.UserId],
-      ) =
-        ZIO.fail(JorlanError("simulated DB failure"))
-      override def updateUser(
-        id:    jorlan.domain.UserId,
-        d:     String,
-        e:     Option[String],
-        a:     Boolean,
-        actor: Option[jorlan.domain.UserId],
-      ) =
-        ZIO.die(new RuntimeException("stub"))
-      override def setPassword(
-        userId:   jorlan.domain.UserId,
-        password: String,
-      ) = ZIO.die(new RuntimeException("stub"))
-    },
-  )
+  private val failingUserRepo: ULayer[UserZIORepository] = ZLayer.succeed(new UserZIORepository {
+    override def getById(id: UserId):            RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+    override def search(s:   jorlan.UserSearch): RepositoryTask[List[User]] = ZIO.die(new RuntimeException("stub"))
+    override def upsert(user:   User):   RepositoryTask[User] = ZIO.fail(RepositoryError("simulated DB failure"))
+    override def deactivate(id: UserId): RepositoryTask[Long] = ZIO.die(new RuntimeException("stub"))
+    override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
+      ZIO.die(new RuntimeException("stub"))
+    override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
+      ZIO.die(new RuntimeException("stub"))
+    override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
+      ZIO.die(new RuntimeException("stub"))
+    override def login(
+      email:    String,
+      password: String,
+    ):                                       RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+    override def userByEmail(email: String): RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+    override def changePassword(
+      id:          UserId,
+      newPassword: String,
+    ): RepositoryTask[Unit] = ZIO.die(new RuntimeException("stub"))
+    override def userByChannelIdentity(
+      channelType:   ChannelType,
+      channelUserId: String,
+    ): RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+  })
 
-  private type TestEnv = ServerSettingsRepository & UserService & InitTokenStore & EventLogService
+  private type TestEnv = ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository
 
   private def makeTokenStore(initialized: Boolean): ZLayer[Any, Nothing, InitTokenStore] =
     ZLayer.fromZIO(InitTokenStore.make(initialized))
 
-  private val eventLogLayer: ULayer[EventLogService] =
-    InMemoryRepositories.InMemoryEventLogRepo.layer >>> EventLogServiceImpl.live
+  private val eventLogLayer: ULayer[EventLogZIORepository] =
+    InMemoryRepositories.InMemoryEventLogRepo.layer
 
-  private val userServiceLayer: ULayer[UserService] =
-    InMemoryRepositories.InMemoryUserRepo.layer ++
-      (InMemoryRepositories.InMemoryEventLogRepo.layer >>> EventLogServiceImpl.live) >>>
-      UserServiceImpl.live
+  private val userRepoLayer: ULayer[UserZIORepository] =
+    InMemoryRepositories.InMemoryUserRepo.layer
 
   private def testLayer(
     settingsLayer: ULayer[ServerSettingsRepository],
     initialized:   Boolean,
   ): ULayer[TestEnv] =
-    settingsLayer ++ userServiceLayer ++ makeTokenStore(initialized) ++ eventLogLayer
+    settingsLayer ++ userRepoLayer ++ makeTokenStore(initialized) ++ eventLogLayer
 
   private val initServiceLayer: URLayer[TestEnv, InitService] =
     ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
@@ -191,7 +196,7 @@ object InitServiceSpec extends ZIOSpecDefault {
         )
       }.provide(
         settingsLayer(Map(ServerSettingsRepository.InitializedKey -> Json.Bool(false))) ++
-          failingUserService ++
+          failingUserRepo ++
           makeTokenStore(false) ++
           eventLogLayer,
         initServiceLayer,
@@ -255,8 +260,8 @@ object InitServiceSpec extends ZIOSpecDefault {
       // ─── ServerSettingsRepository companion accessors ─────────────────────────
       test("ServerSettingsRepository companion: get and set") {
         for {
-          _      <- ServerSettingsRepository.set("testKey", Json.Str("hello"))
-          gotten <- ServerSettingsRepository.get("testKey")
+          _      <- ZIO.serviceWithZIO[ServerSettingsRepository](_.set("testKey", Json.Str("hello")))
+          gotten <- ZIO.serviceWithZIO[ServerSettingsRepository](_.get("testKey"))
         } yield assertTrue(gotten.contains(Json.Str("hello")))
       }.provide(uninitializedSettings),
       test("ServerSettingsRepository companion: isServerInitialized returns true when flag is true") {

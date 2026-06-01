@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.EventLogZIORepository
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -18,10 +19,9 @@ import zio.test.*
 
 object HumanApprovalNotifierSpec extends ZIOSpecDefault {
 
-  private val freshLayers: ULayer[HumanApprovalNotifier & EventLogService] = {
+  private val freshLayers: ULayer[HumanApprovalNotifier & EventLogZIORepository] = {
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
-    eventLogLayer >>> (HumanApprovalNotifierImpl.live ++ eventLogLayer)
+    eventLogRepo >+> HumanApprovalNotifierImpl.live
   }
 
   private def makeRequest(id: Long): ApprovalRequest =
@@ -45,8 +45,8 @@ object HumanApprovalNotifierSpec extends ZIOSpecDefault {
         for {
           notifier <- ZIO.service[HumanApprovalNotifier]
           _        <- notifier.notifyApprovalRequired(request)
-          events   <- ZIO.serviceWithZIO[EventLogService](
-            _.query(EventLogFilter(eventType = Some(EventType.ApprovalRequested))),
+          events   <- ZIO.serviceWithZIO[EventLogZIORepository](
+            _.search(EventLogFilter(eventType = Some(EventType.ApprovalRequested))),
           )
         } yield assertTrue(
           events.nonEmpty,

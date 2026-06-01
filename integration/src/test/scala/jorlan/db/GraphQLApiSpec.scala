@@ -32,18 +32,12 @@ object GraphQLApiSpec extends ZIOSpecDefault {
         ZIO.succeed(EvaluationResult.ResourcePermissionAllows)
     })
 
-  private val fakePersonality: ULayer[PersonalityService] = FakePersonalityService.layer
-
   private val appLayer =
     JorlanContainer.repositoryLayer >+>
-      EventLogServiceImpl.live >+>
-      PermissionServiceImpl.live >+>
-      UserServiceImpl.live >+>
       stubCapabilityEvaluator >+>
       ZLayer.succeed(JorlanSession.serverSession) >+>
       SessionHub.live >+>
       FakeModelGateway.layer(List("test")) >+>
-      fakePersonality >+>
       AgentSessionManagerImpl.live >+>
       AgentRunnerImpl.live
 

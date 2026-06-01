@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.AgentZIORepository
+import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -42,12 +42,11 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
       } yield repo: AgentZIORepository
     }
 
-  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogService] = {
+  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogZIORepository] = {
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
     val hubLayer = SessionHub.live
     val fakeGateway = FakeModelGateway.layer(Nil)
-    (seededAgentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogLayer) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogLayer
+    (seededAgentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogRepo) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogRepo
   }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -66,9 +65,10 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
       test("createSession logs SessionCreated event") {
         for {
           mgr     <- ZIO.service[AgentSessionManager]
-          log     <- ZIO.service[EventLogService]
           session <- mgr.createSession(userId, None)
-          events  <- log.query(EventLogFilter(eventType = Some(EventType.SessionCreated)))
+          events  <- ZIO.serviceWithZIO[EventLogZIORepository](
+            _.search(EventLogFilter(eventType = Some(EventType.SessionCreated))),
+          )
         } yield assertTrue(
           events.nonEmpty,
           events.head.sessionId.contains(session.id),
@@ -123,32 +123,31 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           h1      <- hub.getOrCreate(created.id)
           _       <- mgr.terminateSession(created.id)
           h2      <- hub.getOrCreate(created.id)
-          // After remove the Ref is cleared, so a fresh Hub is allocated on next getOrCreate
         } yield assertTrue(!(h1 eq h2))
       }.provide(freshLayers),
-      suite("companion accessors")(
-        test("createSession companion accessor") {
-          AgentSessionManager.createSession(userId, None).as(assertCompletes)
+      suite("service methods")(
+        test("createSession works") {
+          ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None)).as(assertCompletes)
         }.provide(freshLayers),
-        test("getSession companion accessor") {
-          AgentSessionManager.getSession(AgentSessionId(999L)).as(assertCompletes)
+        test("getSession works") {
+          ZIO.serviceWithZIO[AgentSessionManager](_.getSession(AgentSessionId(999L))).as(assertCompletes)
         }.provide(freshLayers),
-        test("suspendSession companion accessor") {
+        test("suspendSession round-trip") {
           for {
-            created <- AgentSessionManager.createSession(userId, None)
-            _       <- AgentSessionManager.suspendSession(created.id)
+            created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
+            _       <- ZIO.serviceWithZIO[AgentSessionManager](_.suspendSession(created.id))
           } yield assertCompletes
         }.provide(freshLayers),
-        test("terminateSession companion accessor") {
+        test("terminateSession round-trip") {
           for {
-            created <- AgentSessionManager.createSession(userId, None)
-            _       <- AgentSessionManager.terminateSession(created.id)
+            created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
+            _       <- ZIO.serviceWithZIO[AgentSessionManager](_.terminateSession(created.id))
           } yield assertCompletes
         }.provide(freshLayers),
-        test("listSessions companion accessor covers impl and companion") {
+        test("listSessions covers impl") {
           for {
-            created <- AgentSessionManager.createSession(userId, None)
-            results <- AgentSessionManager.listSessions(userId, 0, 10)
+            created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
+            results <- ZIO.serviceWithZIO[AgentSessionManager](_.listSessions(userId, 0, 10))
           } yield assertTrue(results.exists(_.id == created.id))
         }.provide(freshLayers),
       ),

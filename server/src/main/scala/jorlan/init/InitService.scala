@@ -11,9 +11,8 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.ServerSettingsRepository
-import jorlan.domain.{EventLog, EventLogId, EventType, UserId}
-import jorlan.service.{EventLogService, UserService}
+import jorlan.db.repository.{EventLogZIORepository, ServerSettingsRepository, UserZIORepository}
+import jorlan.domain.{EventLog, EventLogId, EventType, User, UserId}
 import zio.*
 import zio.json.ast.Json
 
@@ -135,10 +134,10 @@ object InitService {
 }
 
 class InitServiceImpl(
-  settings:   ServerSettingsRepository,
-  users:      UserService,
-  tokenStore: InitTokenStore,
-  eventLog:   EventLogService,
+  settings:     ServerSettingsRepository,
+  userRepo:     UserZIORepository,
+  tokenStore:   InitTokenStore,
+  eventLogRepo: EventLogZIORepository,
 ) extends InitService {
 
   override def isInitialized: UIO[Boolean] =
@@ -160,13 +159,13 @@ class InitServiceImpl(
       tokenOk     <- tokenStore.verify(token)
       _           <- ZIO.unless(tokenOk)(ZIO.fail(JorlanError("Invalid setup token"))).unit
       _           <- validateInputs(serverName, adminEmail, adminPassword)
-      createdUser <- users.createUser(adminName, Some(adminEmail), None)
-      _           <- users.setPassword(createdUser.id, adminPassword)
+      now         <- Clock.instant
+      createdUser <- userRepo.upsert(User(UserId.empty, adminName, Some(adminEmail), now, now))
+      _           <- userRepo.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
       _           <- settings.set(ServerSettingsRepository.InitializedKey, Json.Bool(true))
       _           <- settings.set(ServerSettingsRepository.ServerNameKey, Json.Str(serverName))
       _           <- tokenStore.invalidate
-      now         <- Clock.instant
-      _           <- eventLog.log(
+      _           <- eventLogRepo.append(
         EventLog[Nothing](
           id = EventLogId.empty,
           eventType = EventType.ServerInitialized,
@@ -201,7 +200,8 @@ object InitServiceImpl {
   // this layer. `InitTokenStore` requires the `initialized` flag read from the DB after Flyway has run,
   // which is not available at ZLayer bootstrap time. This layer is available for test code that
   // provides a pre-built `InitTokenStore` via its own setup logic.
-  val layer: URLayer[ServerSettingsRepository & UserService & InitTokenStore & EventLogService, InitService] =
+  val layer
+    : URLayer[ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository, InitService] =
     ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
 
 }

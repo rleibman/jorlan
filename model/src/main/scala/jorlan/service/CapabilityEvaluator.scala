@@ -31,9 +31,4 @@ trait CapabilityEvaluator {
 
 }
 
-object CapabilityEvaluator {
-
-  def evaluate(request: CapabilityRequest): ZIO[CapabilityEvaluator, JorlanError, EvaluationResult] =
-    ZIO.serviceWithZIO[CapabilityEvaluator](_.evaluate(request))
-
-}
+object CapabilityEvaluator

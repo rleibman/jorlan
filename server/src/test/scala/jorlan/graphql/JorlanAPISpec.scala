@@ -13,7 +13,13 @@ package jorlan.graphql
 import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
-import jorlan.db.repository.AgentZIORepository
+import jorlan.db.repository.{
+  AgentZIORepository,
+  EventLogZIORepository,
+  PermissionZIORepository,
+  ServerSettingsRepository,
+  UserZIORepository,
+}
 import jorlan.domain.*
 import jorlan.service.*
 import jorlan.testing.InMemoryRepositories
@@ -58,9 +64,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
     capEval: ULayer[CapabilityEvaluator] = allowAll,
     session: ULayer[JorlanSession] = serverSessionLayer,
   ): ULayer[FullEnv] = {
-    val logLayer = InMemoryRepositories.InMemoryEventLogRepo.layer >>> EventLogServiceImpl.live
-    val userLayer = (InMemoryRepositories.InMemoryUserRepo.layer ++ logLayer) >>> UserServiceImpl.live
-    val permLayer = (InMemoryRepositories.InMemoryPermissionRepo.layer ++ logLayer) >>> PermissionServiceImpl.live
+    val userRepoLayer: ULayer[UserZIORepository] = InMemoryRepositories.InMemoryUserRepo.layer
+    val permRepoLayer: ULayer[PermissionZIORepository] = InMemoryRepositories.InMemoryPermissionRepo.layer
+    val eventLogRepo:  ULayer[EventLogZIORepository] = InMemoryRepositories.InMemoryEventLogRepo.layer
+    val settingsRepo:  ULayer[ServerSettingsRepository] = InMemoryRepositories.InMemoryServerSettingsRepo.layer
     val hubLayer = SessionHub.live
     val agentRepoLayer: ULayer[AgentZIORepository] = ZLayer.fromZIO {
       for {
@@ -81,12 +88,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
     }
     val fakeGateway = FakeModelGateway.layer(List("ok"))
     val sessionMgrLayer: ULayer[AgentSessionManager] =
-      (agentRepoLayer ++ hubLayer ++ fakeGateway ++ logLayer) >>> AgentSessionManagerImpl.live
-    val fakePersonality: ULayer[PersonalityService] = FakePersonalityService.layer
-    val runnerLayer:     ULayer[AgentRunner] =
-      (fakeGateway ++ hubLayer ++ logLayer ++ fakePersonality) >>> AgentRunnerImpl.live
+      (agentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogRepo) >>> AgentSessionManagerImpl.live
+    val runnerLayer: ULayer[AgentRunner] =
+      (fakeGateway ++ hubLayer ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live
     val svcLayer: ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
-      userLayer ++ permLayer ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer ++ hubLayer ++ fakePersonality
+      userRepoLayer ++ permRepoLayer ++ eventLogRepo ++ settingsRepo ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer
     val interpLayer
       : ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)

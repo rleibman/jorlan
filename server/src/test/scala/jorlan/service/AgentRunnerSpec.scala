@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.{EventLogZIORepository, ServerSettingsRepository}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -22,21 +23,19 @@ object AgentRunnerSpec extends ZIOSpecDefault {
   private val sessionId = AgentSessionId(42L)
   private val userId = UserId(1L)
 
-  private val fakePersonality: ULayer[PersonalityService] = FakePersonalityService.layer
-
-  private def layers(chunks: List[String]): ULayer[AgentRunner & SessionHub & EventLogService] = {
+  private def layers(chunks: List[String]): ULayer[AgentRunner & SessionHub & EventLogZIORepository] = {
     val fakeGateway = FakeModelGateway.layer(chunks)
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+    val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
     val hub = SessionHub.live
-    (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+    (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
   }
 
   /** Pre-creates the hub subscription BEFORE triggering processMessage to avoid publish-before-subscribe races. */
   private def runWithSubscription(
     chunks:  List[String],
     message: String,
-  ): ZIO[AgentRunner & SessionHub & EventLogService, Any, Chunk[ResponseChunk]] =
+  ): ZIO[AgentRunner & SessionHub & EventLogZIORepository, Any, Chunk[ResponseChunk]] =
     ZIO.scoped {
       for {
         hub      <- ZIO.service[SessionHub]
@@ -67,7 +66,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       test("processMessage writes UserMessageReceived and AgentResponseCompleted events") {
         for {
           _      <- runWithSubscription(List("ok"), "test")
-          events <- ZIO.serviceWithZIO[EventLogService](_.query(EventLogFilter()))
+          events <- ZIO.serviceWithZIO[EventLogZIORepository](_.search(EventLogFilter()))
         } yield assertTrue(
           events.exists(_.eventType == EventType.UserMessageReceived),
           events.exists(_.eventType == EventType.AgentResponseCompleted),
@@ -76,7 +75,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       test("processMessage sets sessionId on event log entries") {
         for {
           _      <- runWithSubscription(List("pong"), "ping")
-          events <- ZIO.serviceWithZIO[EventLogService](_.query(EventLogFilter()))
+          events <- ZIO.serviceWithZIO[EventLogZIORepository](_.search(EventLogFilter()))
           msgEvents = events.filter(_.sessionId.contains(sessionId))
         } yield assertTrue(msgEvents.nonEmpty)
       }.provide(layers(List("pong"))),
@@ -86,9 +85,6 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         } yield assertTrue(received.length == 1, received.head.finished)
       }.provide(layers(Nil)),
       test("processMessage publishes finished sentinel on ModelGateway failure") {
-        // Must NOT use runWithSubscription here: forkScoped would be interrupted when the
-        // scope exits on processMessage failure, before the fiber reads the sentinel.
-        // Instead, use .ignore so the for-comprehension continues to fiber.join.
         ZIO.scoped {
           for {
             hub      <- ZIO.service[SessionHub]
@@ -102,21 +98,21 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       }.provide {
         val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
       },
       test("processMessage writes AgentResponseCompleted even on model failure") {
         for {
           _      <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
-          events <- ZIO.serviceWithZIO[EventLogService](_.query(EventLogFilter()))
+          events <- ZIO.serviceWithZIO[EventLogZIORepository](_.search(EventLogFilter()))
         } yield assertTrue(events.exists(_.eventType == EventType.AgentResponseCompleted))
       }.provide {
         val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
       },
       test("FakeModelGateway with chunkDelay emits chunks in order") {
         val tokens = List("a", "b", "c")
@@ -127,30 +123,28 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           assertTrue(contents == tokens)
         }
       }.provide {
-        // Use withLiveClock so ZIO.sleep inside FakeModelGateway uses real time,
-        // not the frozen TestClock (which would cause this test to hang forever).
         val tokens = List("a", "b", "c")
         val fakeGateway = FakeModelGateway.layer(tokens, Some(5.millis))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val eventLog = eventLogRepo >>> EventLogServiceImpl.live
+        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
       } @@ TestAspect.withLiveClock,
-      suite("companion accessors")(
-        test("processMessage companion accessor delegates") {
+      suite("service methods")(
+        test("processMessage delegates to implementation") {
           ZIO.scoped {
             for {
               hub      <- ZIO.service[SessionHub]
               innerHub <- hub.getOrCreate(sessionId)
               dequeue  <- innerHub.subscribe
               fiber    <- zio.stream.ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
-              _        <- AgentRunner.processMessage(sessionId, "hello", Some(userId))
+              _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
               _        <- fiber.join
             } yield assertCompletes
           }
         }.provide(layers(List("ok"))),
-        test("subscribeToSession companion accessor delegates") {
-          AgentRunner.subscribeToSession(sessionId).take(0).runDrain.as(assertCompletes)
+        test("subscribeToSession delegates to implementation") {
+          ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(sessionId)).take(0).runDrain.as(assertCompletes)
         }.provide(layers(Nil)),
       ),
     )

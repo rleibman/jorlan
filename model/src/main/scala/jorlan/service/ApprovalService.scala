@@ -34,9 +34,7 @@ trait ApprovalService {
     */
   def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult]
 
-  /** Record a human's decision on a pending [[ApprovalRequest]]. Delegates to [[PermissionService]] and writes an audit
-    * event.
-    */
+  /** Record a human's decision on a pending [[ApprovalRequest]]. Writes an audit event. */
   def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision]
 
   /** Mark all `Pending` [[ApprovalRequest]] rows whose `expiresAt` has passed as `Expired`. Should be called on a
@@ -46,15 +44,4 @@ trait ApprovalService {
 
 }
 
-object ApprovalService {
-
-  def authorize(request: CapabilityRequest): ZIO[ApprovalService, JorlanError, AuthorizationResult] =
-    ZIO.serviceWithZIO[ApprovalService](_.authorize(request))
-
-  def recordDecision(decision: ApprovalDecision): ZIO[ApprovalService, JorlanError, ApprovalDecision] =
-    ZIO.serviceWithZIO[ApprovalService](_.recordDecision(decision))
-
-  def expireStaleRequests(): ZIO[ApprovalService, JorlanError, Long] =
-    ZIO.serviceWithZIO[ApprovalService](_.expireStaleRequests())
-
-}
+object ApprovalService

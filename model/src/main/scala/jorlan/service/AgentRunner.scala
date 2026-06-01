@@ -52,16 +52,4 @@ trait AgentRunner {
 
 }
 
-object AgentRunner {
-
-  def processMessage(
-    sessionId: AgentSessionId,
-    content:   String,
-    actorId:   Option[UserId],
-  ): ZIO[AgentRunner, JorlanError, Unit] =
-    ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, content, actorId))
-
-  def subscribeToSession(sessionId: AgentSessionId): ZStream[AgentRunner, Nothing, ResponseChunk] =
-    ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(sessionId))
-
-}
+object AgentRunner

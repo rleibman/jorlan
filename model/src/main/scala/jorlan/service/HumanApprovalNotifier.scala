@@ -30,9 +30,4 @@ trait HumanApprovalNotifier {
 
 }
 
-object HumanApprovalNotifier {
-
-  def notifyApprovalRequired(request: ApprovalRequest): ZIO[HumanApprovalNotifier, JorlanError, Unit] =
-    ZIO.serviceWithZIO[HumanApprovalNotifier](_.notifyApprovalRequired(request))
-
-}
+object HumanApprovalNotifier

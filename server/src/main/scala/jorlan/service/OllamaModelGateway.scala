@@ -17,6 +17,7 @@ import ai.given_Conversion_ChatMemory_ChatMemory
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
+import jorlan.db.repository.EventLogZIORepository
 import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
@@ -48,10 +49,10 @@ private case class SessionEntry(
   * conversation history for that session.
   */
 private class OllamaModelGateway(
-  config:      LangChainConfig,
-  sharedModel: StreamingChatLanguageModel,
-  sessions:    Ref[Map[AgentSessionId, SessionEntry]],
-  eventLog:    EventLogService,
+  config:       LangChainConfig,
+  sharedModel:  StreamingChatLanguageModel,
+  sessions:     Ref[Map[AgentSessionId, SessionEntry]],
+  eventLogRepo: EventLogZIORepository,
 ) extends ModelGateway {
 
   private def buildAssistant(
@@ -105,8 +106,8 @@ private class OllamaModelGateway(
     systemPrompt: String = "",
   ): ZStream[Any, ModelError, String] = {
     val logStarted = Clock.instant.flatMap { now =>
-      eventLog
-        .log(
+      eventLogRepo
+        .append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.ModelCallStarted,
@@ -122,8 +123,8 @@ private class OllamaModelGateway(
     }
 
     val logCompleted = Clock.instant.flatMap { now =>
-      eventLog
-        .log(
+      eventLogRepo
+        .append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.ModelCallCompleted,
@@ -140,8 +141,8 @@ private class OllamaModelGateway(
 
     def logFailed(err: Throwable) =
       Clock.instant.flatMap { now =>
-        eventLog
-          .log(
+        eventLogRepo
+          .append(
             EventLog(
               id = EventLogId.empty,
               eventType = EventType.ModelCallFailed,
@@ -197,12 +198,12 @@ private class OllamaModelGateway(
 
 object OllamaModelGateway {
 
-  val live: URLayer[LangChainConfig & EventLogService, ModelGateway] =
+  val live: URLayer[LangChainConfig & EventLogZIORepository, ModelGateway] =
     ZLayer.fromZIO(
       for {
-        config   <- ZIO.service[LangChainConfig]
-        eventLog <- ZIO.service[EventLogService]
-        model    <- ZIO.attempt {
+        config       <- ZIO.service[LangChainConfig]
+        eventLogRepo <- ZIO.service[EventLogZIORepository]
+        model        <- ZIO.attempt {
           StreamingChatLanguageModel.fromJava(
             dev.langchain4j.model.ollama.OllamaStreamingChatModel.builder
               .baseUrl(config.ollamaBaseUrl)
@@ -215,7 +216,7 @@ object OllamaModelGateway {
           )
         }.orDie
         sessions <- Ref.make(Map.empty[AgentSessionId, SessionEntry])
-      } yield new OllamaModelGateway(config, model, sessions, eventLog),
+      } yield new OllamaModelGateway(config, model, sessions, eventLogRepo),
     )
 
 }

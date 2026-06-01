@@ -10,7 +10,9 @@
 
 package jorlan.db.repository
 
+import jorlan.domain.{Formality, Personality}
 import zio.*
+import zio.json.*
 import zio.json.ast.Json
 
 /** Read/write access to the `server_settings` key-value table.
@@ -39,17 +41,8 @@ object ServerSettingsRepository {
   /** Key whose value is a JSON string holding the human-readable server name set during initialization. */
   val ServerNameKey = "serverName"
 
-  /** Key whose value is a JSON object encoding the [[jorlan.domain.Personality]] for this server installation. */
+  /** Key whose value is a JSON object encoding the [[Personality]] for this server installation. */
   val PersonalityKey = "personality"
-
-  def get(key: String): URIO[ServerSettingsRepository, Option[Json]] =
-    ZIO.serviceWithZIO[ServerSettingsRepository](_.get(key))
-
-  def set(
-    key:   String,
-    value: Json,
-  ): URIO[ServerSettingsRepository, Unit] =
-    ZIO.serviceWithZIO[ServerSettingsRepository](_.set(key, value))
 
   /** Reads the `initialized` flag from `server_settings`. Returns `false` if the key is absent or not a JSON boolean.
     */
@@ -58,5 +51,28 @@ object ServerSettingsRepository {
       case Some(Json.Bool(v)) => v
       case _                  => false
     }
+
+  /** Reads and decodes the server personality. Falls back to [[Personality.default]] if the key is absent or the JSON
+    * cannot be decoded, logging a warning in the latter case.
+    */
+  def getPersonality: URIO[ServerSettingsRepository, Personality] =
+    ZIO.serviceWithZIO[ServerSettingsRepository](_.get(PersonalityKey)).flatMap {
+      case Some(json) =>
+        json.as[Personality] match {
+          case Right(p)  => ZIO.succeed(p)
+          case Left(err) =>
+            ZIO.logWarning(
+              s"Corrupt personality in server_settings (key=$PersonalityKey): $err. Falling back to default.",
+            ) *> ZIO.succeed(Personality.default)
+        }
+      case None => ZIO.succeed(Personality.default)
+    }
+
+  /** Encodes and persists the given personality. Never fails (encoding errors die). */
+  def setPersonality(p: Personality): URIO[ServerSettingsRepository, Unit] =
+    ZIO
+      .fromEither(p.toJsonAST.left.map(msg => new RuntimeException(msg)))
+      .orDie
+      .flatMap(json => ZIO.serviceWithZIO[ServerSettingsRepository](_.set(PersonalityKey, json)))
 
 }
