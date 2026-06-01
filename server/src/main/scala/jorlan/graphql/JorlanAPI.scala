@@ -30,7 +30,7 @@ import java.time.Instant
 object JorlanAPI {
 
   type JorlanApiEnv =
-    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner
+    UserService & PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & PersonalityService
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -127,6 +127,21 @@ object JorlanAPI {
     sessionId: AgentSessionId,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `updatePersonality`. All fields are required — send the complete personality object. */
+  case class UpdatePersonalityInput(
+    name:      String,
+    formality: Formality,
+    languages: List[String],
+    expertise: List[String],
+    prompt:    String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  extension (i: UpdatePersonalityInput) {
+
+    def toPersonality: Personality = Personality(i.name, i.formality, i.languages, i.expertise, i.prompt)
+
+  }
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
@@ -136,6 +151,8 @@ object JorlanAPI {
     roles:        RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     permissions:  PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
     listSessions: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[AgentSession]],
+    /** Returns the current server personality. Requires `admin.personality.read` capability. */
+    serverPersonality: ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
   )
 
   case class Mutations(
@@ -148,6 +165,8 @@ object JorlanAPI {
     revokePermission: PermissionByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
     createSession:    CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
     submitMessage:    SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
+    /** Replaces the server personality. Requires `admin.personality.update` capability. */
+    updatePersonality: UpdatePersonalityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
   )
 
   case class Subscriptions(
@@ -191,6 +210,8 @@ object JorlanAPI {
     Schema.scalarSchema("EventType", None, None, None, e => Value.StringValue(e.toString))
   private given Schema[Any, SessionStatus] =
     Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, Formality] =
+    Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
 
   private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
   private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
@@ -198,6 +219,7 @@ object JorlanAPI {
   private given ArgBuilder[EventType] = ArgBuilder.string.map(EventType.valueOf)
   private given ArgBuilder[SessionStatus] = ArgBuilder.string.map(SessionStatus.valueOf)
   private given ArgBuilder[RiskClass] = ArgBuilder.string.map(RiskClass.valueOf)
+  private given ArgBuilder[Formality] = ArgBuilder.string.map(Formality.valueOf)
 
   private given Schema[Any, User] = Schema.gen[Any, User]
   private given Schema[Any, Role] = Schema.gen[Any, Role]
@@ -206,6 +228,7 @@ object JorlanAPI {
   private given Schema[Any, EventLog[Json]] = Schema.gen[Any, EventLog[Json]]
   private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
   private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
+  private given Schema[Any, Personality] = Schema.gen[Any, Personality]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -273,6 +296,11 @@ object JorlanAPI {
                 _.listSessions(actorId, input.page.getOrElse(0), input.pageSize.getOrElse(20)),
               )
             } yield results,
+          serverPersonality = for {
+            actorId <- actorIdFromSession
+            _       <- requireCapability("admin.personality.read", actorId)
+            p       <- ZIO.serviceWithZIO[PersonalityService](_.get())
+          } yield p,
         ),
         Mutations(
           createUser = input =>
@@ -362,6 +390,12 @@ object JorlanAPI {
                 .tapError(e => ZIO.logError(s"AgentRunner failed for session ${input.sessionId}: ${e.getMessage}"))
                 .forkDaemon
             } yield (),
+          updatePersonality = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.personality.update", actorId)
+              updated <- ZIO.serviceWithZIO[PersonalityService](_.update(input.toPersonality))
+            } yield updated,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

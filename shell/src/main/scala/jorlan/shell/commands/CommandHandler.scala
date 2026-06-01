@@ -10,13 +10,17 @@
 
 package jorlan.shell.commands
 
+import ch.qos.logback.classic.{Level, LoggerContext}
 import jorlan.shell.ShellConfig
 import jorlan.shell.ShellState
-import zio.json.EncoderOps
 import jorlan.shell.client.{AuthClient, GraphQLClient, SubscriptionClient}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
+import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
 import zio.*
+import zio.json.EncoderOps
 import zio.json.ast.Json
+
+import scala.language.unsafeNulls
 
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
 object CommandHandler {
@@ -28,18 +32,20 @@ object CommandHandler {
     exit: Promise[Nothing, Unit],
   ): ZIO[Env, Nothing, Unit] = {
     cmd match {
-      case ShellCommand.Message(text) => handleMessage(text)
-      case ShellCommand.Help          => showHelp
-      case ShellCommand.Commands      => showCommands
-      case ShellCommand.Status        => showStatus
-      case ShellCommand.About         => showAbout
-      case ShellCommand.WhoAmI        => showWhoAmI
-      case ShellCommand.Quit          => exit.succeed(()).unit
-      case ShellCommand.NewSession(m) => handleNewSession(m)
-      case ShellCommand.ModelInfo     => showModelInfo
-      case ShellCommand.ListModels    => listModels
-      case ShellCommand.Trace(level)  => setTrace(level)
-      case ShellCommand.Unknown(raw)  => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
+      case ShellCommand.Message(text)            => handleMessage(text)
+      case ShellCommand.Help                     => showHelp
+      case ShellCommand.Commands                 => showCommands
+      case ShellCommand.Status                   => showStatus
+      case ShellCommand.About                    => showAbout
+      case ShellCommand.WhoAmI                   => showWhoAmI
+      case ShellCommand.Quit                     => exit.succeed(()).unit
+      case ShellCommand.NewSession(m)            => handleNewSession(m)
+      case ShellCommand.ModelInfo                => showModelInfo
+      case ShellCommand.ListModels               => listModels
+      case ShellCommand.Trace(level)             => setTrace(level)
+      case ShellCommand.Personality              => showPersonality
+      case ShellCommand.PersonalitySet(field, v) => setPersonalityField(field, v)
+      case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
 
@@ -96,16 +102,20 @@ object CommandHandler {
 
   private val showCommands: ZIO[Env, Nothing, Unit] = {
     val lines = List(
-      "/help          Show help summary",
-      "/commands      List all commands",
-      "/status        Server connectivity and version",
-      "/about         About Jorlan Shell",
-      "/whoami        Show current authenticated user",
-      "/new [model]   Start a new agent session",
-      "/model         Show the active model",
-      "/models        List available models",
-      "/trace [level] Set log level: none | error | warning | info | debug",
-      "/quit /exit    Exit the shell",
+      "/help               Show help summary",
+      "/commands           List all commands",
+      "/status             Server connectivity and version",
+      "/about              About Jorlan Shell",
+      "/whoami             Show current authenticated user",
+      "/new [model]        Start a new agent session",
+      "/model              Show the active model",
+      "/models             List available models",
+      "/personality                         Show server personality",
+      "/personality set <field> <value>     Update a personality field (admin only)",
+      "  fields: name | formality | prompt | languages | expertise",
+      "  formality values: Casual | Professional | Academic | Technical",
+      "/trace [level]      Set log level: none | error | warning | info | debug",
+      "/quit /exit         Exit the shell",
     )
     screen(_.addMessage(MessageKind.System, lines.mkString("\n")))
   }
@@ -183,37 +193,132 @@ object CommandHandler {
   private val listModels: ZIO[Env, Nothing, Unit] =
     screen(_.addMessage(MessageKind.System, "Model listing requires a running Phase 8 server."))
 
-  private def setTrace(level: String): ZIO[Env, Nothing, Unit] = {
-    val valid = Set("none", "error", "warning", "info", "debug")
-    val normalized = level.toLowerCase
-    if (valid.contains(normalized)) {
-      import ch.qos.logback.classic.{Level, LoggerContext}
-      import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
+  private val personalityQuery = """{ serverPersonality { name formality languages expertise prompt } }"""
 
-      val logbackLevel = normalized match {
-        case "none"    => Level.OFF
-        case "error"   => Level.ERROR
-        case "warning" => Level.WARN
-        case "info"    => Level.INFO
-        case "debug"   => Level.DEBUG
-        case _         => Level.INFO // unreachable: guarded by valid.contains above
-      }
+  private def fetchCurrentPersonality: ZIO[GraphQLClient, String, Json] =
+    gql(_.execute(personalityQuery))
 
-      ZIO
-        .attempt {
-          import scala.language.unsafeNulls
-          LoggerFactory.getILoggerFactory match {
-            case ctx: LoggerContext =>
-              ctx.getLogger(Slf4jLogger.ROOT_LOGGER_NAME).setLevel(logbackLevel)
-            case _ => ()
-          }
-        }.fold(
-          err => screen(_.addMessage(MessageKind.Error, s"Failed to set log level: ${err.getClass.getName}")),
-          _ => screen(_.addMessage(MessageKind.System, s"Log level set to: $level")),
-        ).flatten
+  private def setPersonalityField(
+    field: String,
+    value: String,
+  ): ZIO[Env, Nothing, Unit] = {
+    val validFields = Set("name", "formality", "prompt", "languages", "expertise")
+    if (!validFields.contains(field.toLowerCase)) {
+      screen(
+        _.addMessage(
+          MessageKind.Error,
+          s"Unknown personality field '$field'. Valid fields: ${validFields.mkString(", ")}",
+        ),
+      )
     } else {
-      screen(_.addMessage(MessageKind.Error, s"Unknown trace level '$level'. Valid: ${valid.mkString(", ")}"))
+      fetchCurrentPersonality.foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not fetch current personality: $err")),
+        currentJson => {
+          val pObjOpt = for {
+            obj  <- currentJson.asObject
+            p    <- obj.get("serverPersonality")
+            pObj <- p.asObject
+          } yield pObj
+
+          pObjOpt match {
+            case None =>
+              screen(_.addMessage(MessageKind.Error, "Could not parse current personality response"))
+            case Some(pObj) =>
+              val str = (k: String) => pObj.get(k).flatMap(_.asString).getOrElse("")
+              val arr = (k: String) => pObj.get(k).flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
+              val name = if (field.toLowerCase == "name") value else str("name")
+              val formality = if (field.toLowerCase == "formality") value else str("formality")
+              val prompt = if (field.toLowerCase == "prompt") value else str("prompt")
+              val languages =
+                if (field.toLowerCase == "languages") value.split(",").map(_.trim).toList else arr("languages")
+              val expertise =
+                if (field.toLowerCase == "expertise") value.split(",").map(_.trim).filter(_.nonEmpty).toList
+                else arr("expertise")
+
+              val langArg = languages.map(l => s""""$l"""").mkString("[", ",", "]")
+              val expertArg = expertise.map(e => s""""$e"""").mkString("[", ",", "]")
+              val mutation =
+                s"""mutation { updatePersonality(name: ${Json.Str(name).toJson}, formality: ${Json
+                    .Str(formality).toJson}, languages: $langArg, expertise: $expertArg, prompt: ${Json
+                    .Str(prompt).toJson}) { name formality prompt } }"""
+
+              gql(_.execute(mutation)).foldZIO(
+                err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
+                json =>
+                  screen(
+                    _.addMessage(
+                      MessageKind.System,
+                      parsePersonalityText(
+                        json.asObject
+                          .flatMap(_.get("updatePersonality")).map(p => Json.Obj("serverPersonality" -> p)).getOrElse(
+                            json,
+                          ),
+                      ).getOrElse(s"Personality $field updated to: $value"),
+                    ),
+                  ),
+              )
+          }
+        },
+      )
     }
   }
+
+  private def parsePersonalityText(json: Json): Option[String] =
+    for {
+      obj  <- json.asObject
+      p    <- obj.get("serverPersonality")
+      pObj <- p.asObject
+      name = pObj.get("name").flatMap(_.asString).getOrElse("?")
+      formality = pObj.get("formality").flatMap(_.asString).getOrElse("?")
+      languages = pObj
+        .get("languages").flatMap(_.asArray).map(_.flatMap(_.asString).mkString(", ")).getOrElse("?")
+      expertise = pObj
+        .get("expertise").flatMap(_.asArray).map(a =>
+          if (a.isEmpty) "(none)" else a.flatMap(_.asString).mkString(", "),
+        ).getOrElse("?")
+      prompt = pObj.get("prompt").flatMap(_.asString).getOrElse("?")
+    } yield s"Server personality:\n  name:       $name\n  formality:  $formality\n  languages:  $languages\n  expertise:  $expertise\n  prompt:     $prompt"
+
+  private val showPersonality: ZIO[Env, Nothing, Unit] = {
+    val query = """{ serverPersonality { name formality languages expertise prompt } }"""
+    gql(_.execute(query)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch personality: $err")),
+      json =>
+        screen(
+          _.addMessage(MessageKind.System, parsePersonalityText(json).getOrElse("Could not parse personality response")),
+        ),
+    )
+  }
+
+  private val traceLevels: Map[String, Level] = Map(
+    "none"    -> Level.OFF,
+    "error"   -> Level.ERROR,
+    "warning" -> Level.WARN,
+    "info"    -> Level.INFO,
+    "debug"   -> Level.DEBUG,
+  )
+
+  private def setTrace(level: String): ZIO[Env, Nothing, Unit] =
+    traceLevels.get(level.toLowerCase) match {
+      case None =>
+        screen(
+          _.addMessage(
+            MessageKind.Error,
+            s"Unknown trace level '$level'. Valid: ${traceLevels.keys.mkString(", ")}",
+          ),
+        )
+      case Some(logbackLevel) =>
+        ZIO
+          .attempt {
+            LoggerFactory.getILoggerFactory match {
+              case ctx: LoggerContext =>
+                ctx.getLogger(Slf4jLogger.ROOT_LOGGER_NAME).setLevel(logbackLevel)
+              case _ => ()
+            }
+          }.fold(
+            err => screen(_.addMessage(MessageKind.Error, s"Failed to set log level: ${err.getClass.getName}")),
+            _ => screen(_.addMessage(MessageKind.System, s"Log level set to: $level")),
+          ).flatten
+    }
 
 }

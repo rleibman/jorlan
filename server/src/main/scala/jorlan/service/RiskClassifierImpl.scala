@@ -13,6 +13,8 @@ package jorlan.service
 import jorlan.domain.{CapabilityName, RiskClass}
 import zio.*
 
+// TODO the RiskClassifierImpl does not need to be a ZIO type service, it has no dependencies and is pure,
+//  so we could just make it a plain class with a method in the companion object. We can make it zio aware late if needed
 /** Default [[RiskClassifier]] driven by capability-name prefix matching.
   *
   * Exact-name overrides are checked first. For all other names, the classifier walks from the most-specific dot-segment

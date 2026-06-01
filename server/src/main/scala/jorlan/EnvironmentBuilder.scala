@@ -90,6 +90,7 @@ object EnvironmentBuilder {
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
         AgentRunnerImpl.live,
+        PersonalityServiceImpl.live,
       ).orDie
 
 }

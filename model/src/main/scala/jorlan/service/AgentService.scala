@@ -15,6 +15,7 @@ import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 
+// TODO, this is not necessary, we can move what little functionality we have here to the AgentRepository
 /** Application service for agent and session lifecycle.
   *
   * All session-state mutations (start, complete, fail) write to the event log so every agent execution is auditable.

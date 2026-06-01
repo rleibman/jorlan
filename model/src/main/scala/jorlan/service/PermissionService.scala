@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.domain.*
 import zio.*
 
+//TODO we don 't really need a PermissionService, it's mostly just a thin veneer over the PermissionRepository, use that instead.
 /** Application service for capability grants and the approval request/decision lifecycle.
   *
   * Each approval state transition writes to the event log so the capability model is fully auditable.

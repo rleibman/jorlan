@@ -106,20 +106,26 @@ object JorlanShell extends ZIOApp {
 
   // ─── Phase helpers ────────────────────────────────────────────────────────────
 
-  /** Set status and mode bars to the post-login connected state. */
+  /** Set status and mode bars to the post-login connected state. Fetches the server name from `/api/status` to display
+    * in the title bar; falls back to the server URL on failure.
+    */
   private def initialisePostLogin(
     loginResult: LoginResult,
     serverUrl:   String,
-  ): ZIO[JorlanScreen, Nothing, Unit] = {
+  ): ZIO[JorlanScreen & InitClient, Nothing, Unit] = {
     for {
-      screen <- ZIO.service[JorlanScreen]
-      _      <- screen.setStatus(s" ● Jorlan Shell  [${loginResult.displayName}]  [$serverUrl]")
-      _      <- screen.setModeStatus(
-        s" [connected: $serverUrl]  [user: ${loginResult.displayName}]  [no session]",
+      screen     <- ZIO.service[JorlanScreen]
+      serverName <- InitClient
+        .checkStatus(serverUrl)
+        .map(_.serverName)
+        .orElse(ZIO.succeed(serverUrl))
+      _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [$serverUrl]")
+      _ <- screen.setModeStatus(
+        s" [connected: $serverName]  [user: ${loginResult.displayName}]  [no session]",
       )
       _ <- screen.addMessage(
         MessageKind.System,
-        s"Connected as ${loginResult.displayName}. Type /help for commands.",
+        s"Connected to $serverName as ${loginResult.displayName}. Type /help for commands.",
       )
     } yield ()
   }

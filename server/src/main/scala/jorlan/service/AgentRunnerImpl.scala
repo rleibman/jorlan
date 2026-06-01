@@ -15,10 +15,18 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 
+/** [[AgentRunner]] implementation. On each [[processMessage]] call it reads the current [[PersonalityService]]
+  * snapshot, builds the system prompt, and streams the model response token-by-token through [[SessionHub]].
+  *
+  * @param personalityService
+  *   Read on every `processMessage` call so personality changes take effect on the next message without requiring a
+  *   server restart.
+  */
 class AgentRunnerImpl(
-  modelGateway: ModelGateway,
-  sessionHub:   SessionHub,
-  eventLog:     EventLogService,
+  modelGateway:       ModelGateway,
+  sessionHub:         SessionHub,
+  eventLog:           EventLogService,
+  personalityService: PersonalityService,
 ) extends AgentRunner {
 
   override def processMessage(
@@ -30,6 +38,8 @@ class AgentRunnerImpl(
     // step (event log write, stream processing) are captured and reflected in the sentinel.
     Ref.make(Option.empty[String]).flatMap { errorRef =>
       val work = for {
+        personality <- personalityService.get()
+        systemPrompt = Personality.buildSystemPrompt(personality)
         now <- Clock.instant
         _   <- eventLog.log(
           EventLog(
@@ -45,7 +55,7 @@ class AgentRunnerImpl(
         )
         _ <- ZIO.scoped {
           modelGateway
-            .streamedResponse(sessionId, content)
+            .streamedResponse(sessionId, content, systemPrompt)
             .mapError(e => JorlanError(e.msg, Some(e)))
             .tapError(e => errorRef.set(Some(e.getMessage)))
             .foreach { chunk =>
@@ -91,7 +101,7 @@ class AgentRunnerImpl(
 
 object AgentRunnerImpl {
 
-  val live: URLayer[ModelGateway & SessionHub & EventLogService, AgentRunner] =
-    ZLayer.fromFunction(new AgentRunnerImpl(_, _, _))
+  val live: URLayer[ModelGateway & SessionHub & EventLogService & PersonalityService, AgentRunner] =
+    ZLayer.fromFunction(new AgentRunnerImpl(_, _, _, _))
 
 }

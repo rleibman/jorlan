@@ -96,3 +96,54 @@ metadata:
 **How to apply:** When reviewing Phase 9+, check that ModelGateway exposes eviction hooks
 called from terminateSession. Verify Ref.modify is used for all concurrent get-or-create
 patterns. Confirm shared model instances are not duplicated per-session.
+
+---
+
+## Phase 8.3/server-personality findings (branch phase-8.3/server-personality, 2026-06-01)
+
+### Resolved from Phase 8: OllamaModelGateway shared model
+- `sharedModel: StreamingChatLanguageModel` is now constructed once in `live` and shared across all sessions.
+- `sessions` map now stores `(StreamAssistant, String)` (assistant + systemPrompt) to support prompt-change invalidation.
+
+### Regression introduced: non-atomic get+update in OllamaModelGateway.getOrCreate
+- The Phase 8 fix used `Ref.modify` (atomic). Phase 8.3 reverted to `sessions.get.flatMap { ... sessions.update(...) }`.
+- The class-level ScalaDoc still says "all reads/writes use Ref.modify" — this comment is now wrong.
+- Under concurrent `submitMessage` calls for the same session with the same systemPrompt, two fibers can
+  both observe `Some(existing, samePrompt)` on the first branch and return the same assistant (which is
+  fine). But under the _rebuild_ branch (prompt changed or missing), both fibers see the `_` case, both
+  call `buildAssistant`, and the second `sessions.update` silently overwrites the first — leaking the
+  first `StreamAssistant` and resetting that session's chat memory.
+- Fix: use `Ref.modify` to atomically check-and-insert; only call `buildAssistant` inside the modify
+  if the entry is absent or stale.
+
+### SessionHub.getOrCreate: correctly uses Ref.modify — no regression.
+
+### New: Personality.buildSystemPrompt called on every processMessage — string allocation in hot path
+- `AgentRunnerImpl.processMessage` calls `personalityService.get()` (Ref.get — cheap) then
+  `Personality.buildSystemPrompt(personality)` on every message.
+- `buildSystemPrompt` allocates a new String on every call via `List(...).mkString`. The personality
+  object is server-wide and changes rarely (admin action only).
+- The same `systemPrompt` String is then passed into `OllamaModelGateway.getOrCreate`, which stores it
+  in the sessions map and compares it with `storedPrompt == systemPrompt`. This means `String.==` is
+  called on the full prompt text on every message — not just reference equality.
+- At the default prompt length (~300 chars) this is negligible per call. At scale (100+ concurrent
+  sessions, high message throughput) the allocations and comparisons accumulate. Low severity at
+  current expected load.
+- Fix: cache the built prompt in a second Ref[String] inside PersonalityServiceImpl, invalidated on
+  `update()`. `processMessage` would read the cached String directly (no rebuild).
+
+### New: InitClient.checkStatus — no timeout configured, blocks login on slow server
+- `initialisePostLogin` (called once at login and on reconnect in `connectionHeartbeat`) calls
+  `InitClient.checkStatus(serverUrl)`. The underlying `basicRequest` has no explicit read timeout.
+  sttp's `HttpClientZioBackend` defaults to no read timeout (infinite).
+- If the server is accepting TCP connections but is slow to respond (e.g., still starting up),
+  the shell hangs at the connected/connecting status bar indefinitely. The `.orElse(ZIO.succeed(serverUrl))`
+  fallback only fires on a hard connection error, not on a slow-response hang.
+- `connectionHeartbeat` is NOT affected (it calls `AuthClient.whoAmI`, not `InitClient.checkStatus`).
+  `initialisePostLogin` is called only once per login sequence, making this a startup concern rather
+  than a per-message hot path.
+- Fix: add `.readTimeout(5.seconds)` to the `basicRequest` in `InitClientImpl.checkStatus`.
+
+### Resolved from Phase 8: invalidateSession
+- `ModelGateway.invalidateSession` now exists and is called from `AgentSessionManagerImpl.terminateSession`.
+  The sessions map leak from Phase 8 is resolved (pending confirming AgentSessionManagerImpl wiring).

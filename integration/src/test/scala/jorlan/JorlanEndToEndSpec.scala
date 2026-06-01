@@ -85,6 +85,7 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       OAuthStateStore.live(),
       SessionHub.live,
       FakeModelGateway.layer(List("test")),
+      PersonalityServiceImpl.live,
       AgentSessionManagerImpl.live,
       AgentRunnerImpl.live,
     )

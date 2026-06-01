@@ -22,12 +22,14 @@ object AgentRunnerSpec extends ZIOSpecDefault {
   private val sessionId = AgentSessionId(42L)
   private val userId = UserId(1L)
 
+  private val fakePersonality: ULayer[PersonalityService] = FakePersonalityService.layer
+
   private def layers(chunks: List[String]): ULayer[AgentRunner & SessionHub & EventLogService] = {
     val fakeGateway = FakeModelGateway.layer(chunks)
     val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
     val eventLog = eventLogRepo >>> EventLogServiceImpl.live
     val hub = SessionHub.live
-    (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+    (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
   }
 
   /** Pre-creates the hub subscription BEFORE triggering processMessage to avoid publish-before-subscribe races. */
@@ -102,7 +104,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
         val eventLog = eventLogRepo >>> EventLogServiceImpl.live
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       },
       test("processMessage writes AgentResponseCompleted even on model failure") {
         for {
@@ -114,7 +116,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
         val eventLog = eventLogRepo >>> EventLogServiceImpl.live
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       },
       test("FakeModelGateway with chunkDelay emits chunks in order") {
         val tokens = List("a", "b", "c")
@@ -132,7 +134,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
         val eventLog = eventLogRepo >>> EventLogServiceImpl.live
         val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
+        (fakeGateway ++ hub ++ eventLog ++ fakePersonality) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       } @@ TestAspect.withLiveClock,
       suite("companion accessors")(
         test("processMessage companion accessor delegates") {

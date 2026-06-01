@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.domain.*
 import zio.*
 
+//TODO, we probably don't need a memory service at all, it doesn't add much to MemoryZIORepository so we should just use that instead.
 /** Application service for agent memory records.
   *
   * Memory writes log [[EventType.MemoryWritten]] so the audit trail captures what information the agent retained.

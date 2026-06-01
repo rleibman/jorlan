@@ -82,10 +82,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
     val fakeGateway = FakeModelGateway.layer(List("ok"))
     val sessionMgrLayer: ULayer[AgentSessionManager] =
       (agentRepoLayer ++ hubLayer ++ fakeGateway ++ logLayer) >>> AgentSessionManagerImpl.live
-    val runnerLayer: ULayer[AgentRunner] =
-      (fakeGateway ++ hubLayer ++ logLayer) >>> AgentRunnerImpl.live
+    val fakePersonality: ULayer[PersonalityService] = FakePersonalityService.layer
+    val runnerLayer:     ULayer[AgentRunner] =
+      (fakeGateway ++ hubLayer ++ logLayer ++ fakePersonality) >>> AgentRunnerImpl.live
     val svcLayer: ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
-      userLayer ++ permLayer ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer ++ hubLayer
+      userLayer ++ permLayer ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer ++ hubLayer ++ fakePersonality
     val interpLayer
       : ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
@@ -115,6 +116,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       authSuite,
       agentSessionSuite,
       subscriptionSuite,
+      personalitySuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -377,6 +379,66 @@ object JorlanAPISpec extends ZIOSpecDefault {
         }
       } yield assertTrue(events.isEmpty)
     }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── Personality query / mutation ────────────────────────────────────────────
+
+  private val updatePersonalityMutation =
+    """mutation {
+      |  updatePersonality(
+      |    name: "TestBot",
+      |    formality: "Casual",
+      |    languages: ["en", "es"],
+      |    expertise: ["Scala"],
+      |    prompt: "Be concise."
+      |  ) { name formality prompt }
+      |}""".stripMargin
+
+  private val personalitySuite = suite("Personality")(
+    test("serverPersonality query returns default personality fields") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ serverPersonality { name formality prompt } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("Jorlan"),
+        result.data.toString.contains("Professional"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("serverPersonality query fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ serverPersonality { name } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("serverPersonality query fails when capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ serverPersonality { name } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("updatePersonality mutation succeeds with allowAll capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(updatePersonalityMutation)
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("TestBot"),
+        result.data.toString.contains("Casual"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("updatePersonality mutation fails with denyAll capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(updatePersonalityMutation)
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("updatePersonality mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(updatePersonalityMutation)
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
   )
 
 }

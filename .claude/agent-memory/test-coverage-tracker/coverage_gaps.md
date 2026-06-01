@@ -91,6 +91,57 @@ See dedicated section below.
 - `expireStaleRequests` sums expired counts across multiple records
 - `expireStaleRequests` with empty result set → returns 0
 
+## Phase 8.3 Server Personality / Phase 8.4 AI CI Testing Coverage Gaps (2026-06-01)
+
+### PersonalityService — WELL COVERED (15 tests in PersonalityServiceSpec.scala)
+- `buildSystemPrompt` all 4 Formality values: COVERED (Casual, Professional, Academic, Technical)
+- Language hint omitted for single 'en': COVERED
+- Language hint included for multi-language: COVERED
+- Expertise hint included/omitted: COVERED
+- Free-form prompt at end: COVERED
+- get() returns default when no key stored: COVERED
+- update() persists to repo and refreshes cache: COVERED
+- `PersonalityServiceImpl.live` layer INIT FROM PRE-POPULATED STORE: NOT TESTED (always starts from empty InMemoryServerSettingsRepo — the code path `case Some(json) => json.as[Personality]` is never exercised in unit tests)
+
+### GraphQL serverPersonality query: NOT TESTED
+- No test in JorlanAPISpec or GraphQLApiSpec calls `{ serverPersonality { ... } }`
+- Both specs use a fakePersonality stub, bypassing the real service
+
+### GraphQL updatePersonality mutation: NOT TESTED
+- No test calls `mutation { updatePersonality(...) }`
+- The admin capability check (`admin.personality.update`) is NOT tested for deny/allow paths
+- The mutation is entirely absent from JorlanAPISpec and GraphQLApiSpec
+
+### OllamaModelGateway system-prompt rebuild: NOT DIRECTLY TESTABLE
+- Entire file is `$COVERAGE-OFF$` / `$COVERAGE-ON$`; requires live Ollama
+- The `getOrCreate` session rebuild when systemPrompt changes IS the key logic but cannot be unit-tested
+- No integration test covers this behavior
+
+### AgentRunnerImpl personality integration: COVERED ONLY BY PROXY
+- AgentRunnerSpec uses fakePersonality returning `Personality.default`; personality is fetched on every processMessage call
+- The fact that `buildSystemPrompt` output is passed to `modelGateway.streamedResponse` is structurally exercised but never verified by asserting on systemPrompt content
+
+### Shell /personality command (CommandHandler.showPersonality): NOT TESTED
+- `ShellCommand.Personality` case is present in CommandHandler.handle dispatch
+- CommandHandlerSpec has zero tests for `ShellCommand.Personality`
+- The GQL query path, JSON parsing, and both success/failure branches are untested
+
+### Shell /commands listing includes /personality: IMPLICITLY COVERED
+- The showCommands test checks `text.contains("/personality")` indirectly via the commands listing
+
+### JorlanShell status bar server name (initialisePostLogin): NOT TESTED
+- `initialisePostLogin` fetches serverName via `InitClient.checkStatus`, formats it into status/mode bars
+- JorlanShellSpec only tests `fmtDelay` and `resolveCredentials` filtering — zero test for `initialisePostLogin`
+
+### V018 migration and PersonalityKey constant: NOT COVERED BY INTEGRATION TESTS
+- V018__personality.sql seeds the default personality row — no integration test queries `PersonalityKey`
+- GraphQLApiSpec uses `fakePersonality` stub, so V018 row is never read through the real service
+- `ServerSettingsRepository.PersonalityKey` constant is used only in PersonalityServiceImpl; covered by unit tests only
+
+### StreamedChatSpec (Phase 8.4 AI CI): WELL COVERED
+- 5 tests covering LangChainConfig default values and field overrides
+- `streamedChat` bridge itself is excluded ($COVERAGE-OFF$) — reasonable as it needs live Ollama
+
 ## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29)
 
 ### OllamaModelGateway

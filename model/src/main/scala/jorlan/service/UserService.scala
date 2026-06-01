@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.domain.*
 import zio.*
 
+//TODO  We don't need a UserService separate from the UserRepository, delete this and use the repository directly.
 /** Application service for user lifecycle management.
   *
   * All state-mutating operations write to the event log so the user lifecycle is fully auditable.

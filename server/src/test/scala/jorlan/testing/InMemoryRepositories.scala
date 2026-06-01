@@ -391,4 +391,27 @@ object InMemoryRepositories {
 
   }
 
+  // ─── ServerSettings ────────────────────────────────────────────────────────────
+
+  class InMemoryServerSettingsRepo(store: Ref[Map[String, Json]]) extends ServerSettingsRepository {
+
+    override def get(key: String): UIO[Option[Json]] = store.get.map(_.get(key))
+
+    override def set(
+      key:   String,
+      value: Json,
+    ): UIO[Unit] = store.update(_.updated(key, value))
+
+  }
+
+  object InMemoryServerSettingsRepo {
+
+    def make: UIO[InMemoryServerSettingsRepo] =
+      Ref.make(Map.empty[String, Json]).map(new InMemoryServerSettingsRepo(_))
+
+    val layer: ULayer[ServerSettingsRepository] =
+      ZLayer(make.map(r => r: ServerSettingsRepository))
+
+  }
+
 }

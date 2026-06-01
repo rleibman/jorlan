@@ -28,6 +28,11 @@ enum ShellCommand {
   case ModelInfo
   case ListModels
   case Trace(level: String)
+  case Personality
+  case PersonalitySet(
+    field: String,
+    value: String,
+  )
   case Unknown(raw: String)
 
 }
@@ -42,21 +47,23 @@ object ShellCommand {
     } else {
       val parts = line.stripPrefix("/").split("\\s+", 2).toList
       parts match {
-        case "help" :: _           => Help
-        case "commands" :: _       => Commands
-        case "status" :: _         => Status
-        case "about" :: _          => About
-        case "whoami" :: _         => WhoAmI
-        case "quit" :: _           => Quit
-        case "exit" :: _           => Quit
-        case "new" :: model :: _   => NewSession(Some(model))
-        case "new" :: Nil          => NewSession(None)
-        case "model" :: _          => ModelInfo
-        case "models" :: _         => ListModels
-        case "trace" :: level :: _ => Trace(level)
-        case "trace" :: Nil        => Trace("info")
-        case other :: _            => Unknown(s"/$other")
-        case Nil                   => Unknown("/")
+        case "help" :: _                                              => Help
+        case "commands" :: _                                          => Commands
+        case "status" :: _                                            => Status
+        case "about" :: _                                             => About
+        case "whoami" :: _                                            => WhoAmI
+        case "quit" :: _                                              => Quit
+        case "exit" :: _                                              => Quit
+        case "new" :: model :: _                                      => NewSession(Some(model))
+        case "new" :: Nil                                             => NewSession(None)
+        case "model" :: _                                             => ModelInfo
+        case "models" :: _                                            => ListModels
+        case "trace" :: level :: _                                    => Trace(level)
+        case "trace" :: Nil                                           => Trace("info")
+        case "personality" :: "set" :: field :: rest if rest.nonEmpty => PersonalitySet(field, rest.mkString(" "))
+        case "personality" :: _                                       => Personality
+        case other :: _                                               => Unknown(s"/$other")
+        case Nil                                                      => Unknown("/")
       }
     }
   }

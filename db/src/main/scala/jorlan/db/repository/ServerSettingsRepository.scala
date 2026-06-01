@@ -33,8 +33,14 @@ trait ServerSettingsRepository {
 
 object ServerSettingsRepository {
 
+  /** Key whose value is a JSON boolean (`true`/`false`) indicating whether first-run initialization has completed. */
   val InitializedKey = "initialized"
+
+  /** Key whose value is a JSON string holding the human-readable server name set during initialization. */
   val ServerNameKey = "serverName"
+
+  /** Key whose value is a JSON object encoding the [[jorlan.domain.Personality]] for this server installation. */
+  val PersonalityKey = "personality"
 
   def get(key: String): URIO[ServerSettingsRepository, Option[Json]] =
     ZIO.serviceWithZIO[ServerSettingsRepository](_.get(key))

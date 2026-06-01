@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
 type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
   AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & ApprovalService & UserService &
   PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub & ModelGateway &
-  ServerSettingsRepository
+  ServerSettingsRepository & PersonalityService
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {

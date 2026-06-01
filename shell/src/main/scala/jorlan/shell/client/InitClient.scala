@@ -73,6 +73,7 @@ private class InitClientImpl(backend: Backend[Task]) extends InitClient {
   override def checkStatus(serverUrl: String): IO[String, ServerStatus] =
     basicRequest
       .get(uri"$serverUrl/api/status")
+      .readTimeout(scala.concurrent.duration.FiniteDuration(5, java.util.concurrent.TimeUnit.SECONDS))
       .send(backend)
       .mapError(e => s"Connection error: ${e.getMessage}")
       .flatMap { resp =>

@@ -39,12 +39,11 @@ object ShellConfigSpec extends ZIOSpecDefault {
         },
         test("--config flag is honored by layer when the file exists") {
           for {
-            f   <- tmpFile
-            cfg  = ShellConfig("http://from-file:7777", Some("cfg@test.com"), None)
-            _   <- ShellConfig.write(f, cfg)
+            f <- tmpFile
+            cfg = ShellConfig("http://from-file:7777", Some("cfg@test.com"), None)
+            _      <- ShellConfig.write(f, cfg)
             loaded <- ZIO.scoped {
-              (ZLayer.succeed(ZIOAppArgs(Chunk("--config", f.getAbsolutePath))) >>> ShellConfig.layer)
-                .build
+              (ZLayer.succeed(ZIOAppArgs(Chunk("--config", f.getAbsolutePath))) >>> ShellConfig.layer).build
                 .map(_.get[ShellConfig])
             }
           } yield assertTrue(loaded.serverUrl == "http://from-file:7777")
@@ -149,7 +148,6 @@ object ShellConfigSpec extends ZIOSpecDefault {
             file <- ShellConfig.resolveWritePath(List("--config", tmp.getAbsolutePath))
           } yield assertTrue(file.getPath == tmp.getAbsolutePath)
         },
-        },
       ),
       suite("isFirstRun")(
         test("returns false when a config file exists and serverUrl is non-empty") {
@@ -206,8 +204,8 @@ object ShellConfigSpec extends ZIOSpecDefault {
         },
         test("does not return a --config file that does not exist") {
           for {
-            tmp    <- ZIO.attempt(Files.createTempFile("jorlan-missing-", ".json").toFile)
-            path    = tmp.getAbsolutePath
+            tmp <- ZIO.attempt(Files.createTempFile("jorlan-missing-", ".json").toFile)
+            path = tmp.getAbsolutePath
             _      <- ZIO.attempt(tmp.delete())
             result <- ShellConfig.findReadFile(List("--config", path))
           } yield assertTrue(!result.exists(_.getPath == path))

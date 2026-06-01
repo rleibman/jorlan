@@ -416,32 +416,32 @@ Fields:
 
 **Server:**
 
-- [ ] Flyway migration V018: seed `server_settings` key `personality` with the default JSON object above (substituting
+- [x] Flyway migration V018: seed `server_settings` key `personality` with the default JSON object above (substituting
   the server name captured in Phase 8.1)
-- [ ] `Personality` domain type: `name`, `formality` (enum), `languages`, `expertise`, `prompt`; codec via zio-json
-- [ ] `PersonalityService` trait: `get(): UIO[Personality]`, `update(p: Personality): IO[JorlanError, Personality]`;
+- [x] `Personality` domain type: `name`, `formality` (enum), `languages`, `expertise`, `prompt`; codec via zio-json
+- [x] `PersonalityService` trait: `get(): UIO[Personality]`, `update(p: Personality): IO[JorlanError, Personality]`;
   caches in a `Ref` updated on write; backed by `ServerSettingsRepository`
-- [ ] `PersonalityServiceImpl` + `PersonalityService.live` layer
-- [ ] `AgentRunnerImpl` updated: constructs system prompt from personality on every model call — formality and language
+- [x] `PersonalityServiceImpl` + `PersonalityService.live` layer
+- [x] `AgentRunnerImpl` updated: constructs system prompt from personality on every model call — formality and language
   hints are synthesised into natural-language instructions and prepended to the `prompt` field
-- [ ] Admin GraphQL query `serverPersonality: ServerPersonality`
-- [ ] Admin GraphQL mutation `updatePersonality(input: ServerPersonalityInput): ServerPersonality`
+- [x] Admin GraphQL query `serverPersonality: ServerPersonality`
+- [x] Admin GraphQL mutation `updatePersonality(input: ServerPersonalityInput): ServerPersonality`
   (admin-only capability check; updates `server_settings` and refreshes the `Ref`)
-- [ ] Unit tests: `PersonalityService` get/update round-trip; `AgentRunnerImpl` system-prompt construction for each
+- [x] Unit tests: `PersonalityService` get/update round-trip; `AgentRunnerImpl` system-prompt construction for each
   formality level
 
 **Shell:**
 
-- [ ] Shell title bar / status bar shows server name from `/api/status` `serverName` field (already wired in Phase 8.1)
-- [ ] `/personality` shell command (admin only): displays the current personality fields in the message area with a
+- [x] Shell title bar / status bar shows server name from `/api/status` `serverName` field (already wired in Phase 8.1)
+- [x] `/personality` shell command (admin only): displays the current personality fields in the message area with a
   clear structure; sub-commands or interactive prompts allow updating individual fields or the full prompt
 
 ---
 
 ## Phase 8.4: Agent testing on CI. We need to add some tests for AI,
 
-- [ ] Integrate AI/CI testing according to the documentation on doc/testing_ai_on_ci.md.
-- [ ] Add tests for the AI module, ensuring that the `FakeModelGateway` is used to simulate model responses and that the
+- [x] Integrate AI/CI testing according to the documentation on doc/testing_ai_on_ci.md.
+- [x] Add tests for the AI module, ensuring that the `FakeModelGateway` is used to simulate model responses and that the
   `AgentSessionManager` and `AgentRunner` correctly handle streaming responses and event logging. These tests should
   work both locally and on CI
 
@@ -692,6 +692,7 @@ model
 |  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity and GraphQL health check                |
 |  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user                             |
 |  [~]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level (display only — runtime wiring Phase 8) |
+|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field (admin only) |
 |  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
 |  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
 |  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |

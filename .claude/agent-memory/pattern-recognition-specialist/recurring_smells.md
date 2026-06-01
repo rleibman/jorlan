@@ -26,6 +26,14 @@ type: project
 - `RepositoryTask` type alias is defined in `db` package — callers outside `db` must spell out `IO[RepositoryError, A]`; consider re-exporting from `model`
 - `F[_]` abstraction in `model/repository.scala` adds complexity with no current non-ZIO consumer; revisit when a second effect type materializes
 
+## Phase 8.3/8.4 Findings (2026-06-01)
+- Inline anonymous `PersonalityService` duplicated in 3 test files (AgentRunnerSpec, JorlanAPISpec, GraphQLApiSpec) — should be extracted to `FakePersonalityService.layer` in `FakeModelGateway.scala` alongside the existing `FakeModelGateway`
+- `serverPersonality` query has NO authentication or capability guard — any unauthenticated caller can read the server personality; inconsistent with `listSessions` which calls `actorIdFromSession` + `requireCapability`
+- `ServerPersonalityInput` naming is inconsistent: all other mutation input types follow `VerbNounInput` (e.g., `UpdateUserInput`, `CreateRoleInput`); this one is `ServerPersonalityInput` (describes a noun, not the action)
+- `OllamaModelGateway.getOrCreate` docstring claims "all reads/writes use `Ref.modify`" but the implementation uses separate `.get` + `.update` — a real TOCTOU race window exists under concurrent calls with the same sessionId
+- CI `sbt test` command missing `--error` flag (project CLAUDE.md mandates `--error` for all sbt invocations)
+- `OllamaModelGateway.availableModels` hardcodes `contextWindow = 4096` as a placeholder — magic number with a comment; acceptable short-term but flagged
+
 ## Phase 8.1 Findings (2026-05-31)
 - `isInitialized` decoding pattern (settings.get("initialized").map { case Some(Json.Bool(v)) => ... }) duplicated across Jorlan.scala:78, InitServiceImpl:107, and StatusRoutes:52 — should be extracted to `ServerSettingsRepository` or a helper
 - `ServerStatus` and `InitRequest` case classes defined twice: once in `server/init/InitRoutes.scala` and again in `shell/client/InitClient.scala` — structural duplication; modules are independent, but the field names and JSON shape must stay in sync manually

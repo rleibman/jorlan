@@ -5,6 +5,20 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of Phase 8.3/8.4 review (2026-06-01)
+
+### Flyway migration seeding lowercase enum values while Scala derives PascalCase JSON
+V018 seeds `"formality":"professional"` (lowercase) but `Formality` enum derives `JsonEncoder/JsonDecoder` via zio-json macro derivation, which encodes case names as-is: `"Professional"`, `"Casual"`, etc. The default personality loaded from DB at startup will fail to decode and silently fall back to `Personality.default`. This is a latent class of bug: whenever a Flyway seed inserts an enum JSON value, verify it matches the zio-json derived representation (PascalCase for Scala 3 enum cases by default).
+
+### GraphQL query tests for new schema elements not added to JorlanAPISpec
+When `serverPersonality` query and `updatePersonality` mutation were added, no corresponding tests were added to `JorlanAPISpec`. The spec test file covers the original mutations (createUser, createRole, etc.) but has no test exercising the personality query/mutation through the Caliban interpreter. New schema fields should always have GraphQL-level tests, not just service-level tests.
+
+### /personality command not added to the shell commands appendix table
+Phase 8.3 added `/personality` as a `ShellCommand.Personality` enum case and wired it in `CommandHandler`, but the roadmap appendix "Supported shell commands" table was not updated with a new row for `/personality`. The table is the canonical source of truth for shell command status.
+
+### Shell /personality command implements read-only; update sub-commands not implemented
+The roadmap Phase 8.3 spec says the `/personality` command should also allow "updating individual fields or the full prompt" via sub-commands or interactive prompts. The implementation only reads (calls `serverPersonality` query) and does not offer any update path. This is a partial implementation gap.
+
 ## Patterns observed as of Phase 8.1 review (2026-05-31)
 
 ### ShellConfig.layer ignores --config CLI arg during bootstrap

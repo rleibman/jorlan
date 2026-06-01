@@ -42,6 +42,9 @@ object EventLogFilter {
 
 }
 
+// TODO, I don't think that we need an EventLogService independent of the EventLogRepository.
+//  The service doesn't add any logic beyond the repository, and we can always add one later if we need it.
+//  For now, the GraphQL resolvers can call the repository directly and we can remove this layer of indirection.
 /** Append-only service for platform event logging.
   *
   * Every significant action in the system — agent start/stop, skill invocation, memory write, approval decision — must
