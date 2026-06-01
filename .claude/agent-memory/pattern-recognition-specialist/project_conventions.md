@@ -40,6 +40,12 @@ type: project
 - `JorlanApiEnv` now includes `SessionHub` directly — subscription wiring leaks a low-level hub into the GraphQL layer instead of going through `AgentRunner`
 - Magic numbers in `OllamaModelGateway`: temperature 1.1, topK 40, topP 0.9, maxMessages 1000, hub capacity 256 — duplicated from `ai/util.scala`
 
+## Phase 8.1 Conventions Added
+- `InitTokenStore` is a plain class (not ZIO service) — intentional because it holds ephemeral state only needed during startup, but prevents environment injection
+- `ServerSettingsRepository` trait lives in `db` module (not `model`) — because it depends on `zio.json.ast.Json` which is acceptable, but it is a pure trait so placement in `model` would be more consistent
+- `QuillRepositories.live` now destructures a 10-tuple; pattern is established but becoming fragile
+- Error branching in `InitRoutes.SetupModeApp`: `ValidationError` → 400, all other `JorlanError` → 403 (not 500) — this is wrong; non-validation errors that aren't "forbidden" (e.g., a DB error) should map to 500
+
 ## Known Technical Debt (updated 2026-05-29)
 - `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
 - `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module

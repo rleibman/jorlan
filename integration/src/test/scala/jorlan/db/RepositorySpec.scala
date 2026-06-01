@@ -10,16 +10,14 @@
 
 package jorlan.db
 
-import jorlan.db.TestFixtures.*
-import jorlan.db.TestFixtures.given
+import jorlan.*
+import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.EventLogFilter
-import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 object RepositorySpec extends ZIOSpecDefault {
 
@@ -39,7 +37,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("upsert and retrieve a user") {
       for {
         repo <- ZIO.service[UserZIORepository]
-        user = User(UserId.empty, "Alice", None, T0, T0, active = true)
+        user = User(UserId.empty, "Alice", None, T0, T0)
         saved    <- repo.upsert(user)
         fetched  <- repo.getById(saved.id)
         allUsers <- repo.search(UserSearch())

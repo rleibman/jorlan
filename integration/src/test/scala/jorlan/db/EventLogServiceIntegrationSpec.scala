@@ -10,14 +10,12 @@
 
 package jorlan.db
 
-import jorlan.db.TestFixtures.*
 import jorlan.*
-import jorlan.db.TestFixtures.given
+import jorlan.db.TestFixtures.{*, given}
 import jorlan.domain.*
 import jorlan.service.{CorrelationId, EventLogFilter, EventLogService, EventLogServiceImpl}
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
 

@@ -16,7 +16,6 @@ import zio.*
 import zio.http.MediaType
 import zio.json.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.net.URI
 import java.security.KeyPairGenerator

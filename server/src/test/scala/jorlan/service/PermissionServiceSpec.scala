@@ -16,7 +16,6 @@ import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.time.Instant
 
@@ -339,6 +338,7 @@ object PermissionServiceSpec extends ZIOSpecDefault {
       permissionSuite,
       grantSuite,
       approvalSuite,
+      companionAccessorSuite,
     )
 
   private val roleSuite = suite("roles")(
@@ -448,6 +448,44 @@ object PermissionServiceSpec extends ZIOSpecDefault {
       } yield assertTrue(res.length == 1, res.head.granteeId == uid)
     }.provide(freshLayers),
   )
+
+  private val companionAccessorSuite =
+    suite("companion accessors delegate to implementation")(
+      test("all PermissionService companion methods delegate correctly") {
+        for {
+          role       <- PermissionService.upsertRole(role1)
+          _          <- PermissionService.getRole(role.id)
+          _          <- PermissionService.searchRoles(RoleSearch(UserId(1L)))
+          _          <- PermissionService.assignRole(UserId(1L), role.id)
+          _          <- PermissionService.removeRole(UserId(1L), role.id)
+          _          <- PermissionService.deleteRole(role.id)
+          savedPerm  <- PermissionService.upsertPermission(perm1.copy(roleId = None))
+          _          <- PermissionService.searchPermissions(PermissionSearch())
+          _          <- PermissionService.deletePermission(savedPerm.id)
+          savedGrant <- PermissionService.upsertCapabilityGrant(grant1)
+          _          <- PermissionService.searchGrants(GrantSearch(userId = UserId(1L)))
+          _          <- PermissionService.revokeGrant(savedGrant.id)
+          req        <- PermissionService.requestApproval(approvalRequest(), None)
+          _          <- PermissionService.getApprovalRequest(req.id)
+          _          <- PermissionService.getExpiredApprovalRequests
+          _          <- PermissionService.findApprovedRequest(CapabilityName("shell.execute"), UserId(1L), None)
+          _          <- PermissionService.cancelApprovalRequest(req.id)
+          req2       <- PermissionService.requestApproval(approvalRequest("other.thing"), None)
+          _          <- PermissionService.expireApprovalRequest(req2.id)
+          _          <- PermissionService.expireAllStaleApprovalRequests()
+          req3       <- PermissionService.requestApproval(approvalRequest("third.thing"), None)
+          decision = ApprovalDecision(
+            ApprovalDecisionId.empty,
+            req3.id,
+            UserId(99L),
+            ApprovalStatus.Approved,
+            None,
+            T0,
+          )
+          _ <- PermissionService.recordApprovalDecision(decision)
+        } yield assertCompletes
+      },
+    ).provide(freshLayers)
 
   private val approvalSuite = suite("approval requests")(
     test("requestApproval creates a request and logs ApprovalRequested") {

@@ -41,6 +41,18 @@ class JorlanError(
   val isTransient: Boolean = false,
 ) extends Exception(msg, cause.orNull) {}
 
+/** Raised when user input fails validation. Routes should return HTTP 400 for this error. */
+class ValidationError(
+  override val msg: String,
+  cause:            Option[Throwable] = None,
+) extends JorlanError(msg, cause)
+
+object ValidationError {
+
+  def apply(message: String): ValidationError = new ValidationError(message)
+
+}
+
 class NotFoundError(
   val path:         Path,
   override val msg: String,

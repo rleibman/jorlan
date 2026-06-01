@@ -10,7 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
+import jorlan.shell.client.{AuthClient, GraphQLClient, InitClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -28,19 +28,21 @@ import zio.logging.backend.SLF4J
   */
 object JorlanShell extends ZIOApp {
 
-  override type Environment = ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState & SubscriptionClient
+  override type Environment =
+    ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState & SubscriptionClient & InitClient
 
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
-    Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>>
-      ZLayer.make[Environment](
+    (Runtime.removeDefaultLoggers >>> SLF4J.slf4j) ++
+      ZLayer.makeSome[ZIOAppArgs, Environment](
         ShellConfig.layer,
         AuthClient.live,
         GraphQLClient.live,
         JorlanScreen.live,
         ShellState.live,
         SubscriptionClient.live,
+        InitClient.live,
       )
 
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {
@@ -55,17 +57,28 @@ object JorlanShell extends ZIOApp {
       renderFiber <- screen.startRendering.fork
 
       _ <- displayWelcome(screen)
-      _ <- screen.addMessage(MessageKind.System, s"Connecting to ${effectiveCfg.serverUrl} …")
 
-      (email, password) <- resolveCredentials(effectiveCfg, screen)
+      // Detect first-run and invoke the setup wizard before attempting login.
+      firstRun  <- ShellConfig.isFirstRun(effectiveCfg, args.toList)
+      writePath <- ShellConfig.resolveWritePath(args.toList)
+      activeCfg <-
+        if (firstRun) {
+          FirstRunWizard.run(effectiveCfg.serverUrl, writePath)
+        } else {
+          ZIO.succeed(effectiveCfg)
+        }
 
-      loginResult <- connectWithRetry(email, password, effectiveCfg.serverUrl)
+      _ <- screen.addMessage(MessageKind.System, s"Connecting to ${activeCfg.serverUrl} …")
 
-      _ <- initialisePostLogin(loginResult, effectiveCfg.serverUrl)
+      (email, password) <- resolveCredentials(activeCfg, screen)
+
+      loginResult <- connectWithRetry(email, password, activeCfg.serverUrl)
+
+      _ <- initialisePostLogin(loginResult, activeCfg.serverUrl)
 
       exitPromise    <- Promise.make[Nothing, Unit]
       loopFiber      <- processLoop(screen, exitPromise).fork
-      heartbeatFiber <- connectionHeartbeat(email, password, effectiveCfg.serverUrl).fork
+      heartbeatFiber <- connectionHeartbeat(email, password, activeCfg.serverUrl).fork
 
       _ <- exitPromise.await
 
@@ -243,7 +256,7 @@ object JorlanShell extends ZIOApp {
       )
 
     // First check after 30s; then every 30s thereafter.
-    ZIO.sleep(30.seconds) *> check.repeat(Schedule.spaced(30.seconds)).unit
+    check.repeat(Schedule.spaced(30.seconds)).unit.delay(30.seconds)
   }
 
   // ─── Credential resolution ────────────────────────────────────────────────────

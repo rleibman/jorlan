@@ -181,7 +181,7 @@ def chat(
       ChatRequest.builder().parameters(ChatRequestParameters.builder().responseFormat(fmt).build()),
     )
     .messages(UserMessage.from(question))
-    .build();
+    .build()
   for {
     model <- ZIO.service[ChatLanguageModel]
     res   <- ZIO.attemptBlocking(model.chat(request).aiMessage().text())

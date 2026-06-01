@@ -54,6 +54,20 @@ type: project
 - `JorlanClient.scala` uses `implicit` keyword (Scala 2 style) instead of `given`/`using` (Scala 3) — this is generated Caliban client code and should not be hand-edited. Not a review issue.
 - `resolveCredentials` throws `new RuntimeException("Cancelled")` via `ZIO.fail` — appropriate for signalling cancellation through the `Throwable` error channel, but the message is not distinguishable from other failures at the `catchAll` site in `run`.
 
+## Phase 8.1 First-Run Init Patterns (reviewed 2026-05-31)
+
+- `QuillServerSettingsRepository` uses `.orDie` to satisfy `UIO` contract in `ServerSettingsRepository` trait — DB errors become defects. Intentional: trait contract is `UIO`, not `IO[RepositoryError, _]`.
+- `isInitialized` logic (`settings.get("initialized").map { case Some(Json.Bool(v)) => v; case _ => false }`) is duplicated in `InitServiceImpl`, `StatusRoutes`, and `Jorlan.run` — three places, no shared helper.
+- `InitServiceImpl` is constructed manually in `Jorlan.run` via `new InitServiceImpl(...)`, bypassing `InitServiceImpl.live`. The live layer exists but is unused at the only call site.
+- `adminPassword` is accepted by `InitService.complete` and validated, but is NOT passed to `users.createUser`. This appears to be a correctness bug — the first admin user may be created without a stored password.
+- `SetupModeApp.make` takes live service instances as plain parameters rather than using ZIO environment. Intentional for the setup mode app, but inconsistent with ZLayer convention.
+- `ZIO.scoped` in `FirstRunWizard.run` is a no-op — nothing inside uses `Scope`. Should be removed.
+- `ShellConfig.findReadFile` and `resolveWritePath` call `System.getProperty`, `System.getenv`, and `File.exists()` inside `ZIO.succeed` — these are I/O side effects that should be in `ZIO.attempt`.
+- `generateToken()` in `InitTokenStore` is called as a plain `val` before the ZIO pipeline — the SecureRandom side effect is not wrapped in ZIO.
+- Error JSON bodies in `InitRoutes.scala` are hand-interpolated strings, not zio-json serialized. Risk of malformed JSON if `getMessage` contains quotes.
+- `InitClient.live` correctly uses `ZLayer.scoped` with `HttpClientZioBackend.scoped()` — backend lifecycle is properly managed.
+- `ServerStatus` is defined independently in both server (`InitRoutes.scala`) and shell (`InitClient.scala`) modules — intentional for module separation, but JSON contract divergence risk.
+
 ## Phase 8 Agent Session Runtime Patterns (reviewed 2026-05-29)
 
 - `SessionHub` correctly uses `ZStream.unwrapScoped` + `hub.subscribe` (a `ZIO[Scope, ...]` call) so the subscription queue is released when the stream ends. Clean pattern.

@@ -15,7 +15,6 @@ import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object HumanApprovalNotifierSpec extends ZIOSpecDefault {
 
@@ -59,7 +58,7 @@ object HumanApprovalNotifierSpec extends ZIOSpecDefault {
         for {
           notifier <- ZIO.service[HumanApprovalNotifier]
           result   <- notifier.notifyApprovalRequired(request)
-        } yield assertTrue(result == (()))
+        } yield assertTrue(result == ())
       }.provide(freshLayers),
     )
 

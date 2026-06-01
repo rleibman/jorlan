@@ -84,7 +84,8 @@ object JorlanContainer {
 
   val repositoryLayer: TaskLayer[
     UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
-      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository,
+      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository &
+      ServerSettingsRepository,
   ] =
     databaseConfigLayer >>> QuillRepositories.live
 

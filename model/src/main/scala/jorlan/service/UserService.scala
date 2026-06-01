@@ -35,6 +35,14 @@ trait UserService {
     actorId:     Option[UserId] = None,
   ): IO[JorlanError, User]
 
+  /** Sets (or replaces) the password for `userId`. Called by [[jorlan.init.InitServiceImpl]] after user creation to
+    * store the admin credential. Accepts the plain-text password; hashing is delegated to the repository layer.
+    */
+  def setPassword(
+    userId:   UserId,
+    password: String,
+  ): IO[JorlanError, Unit]
+
 }
 
 object UserService {
@@ -57,5 +65,11 @@ object UserService {
     actorId:     Option[UserId] = None,
   ): ZIO[UserService, JorlanError, User] =
     ZIO.serviceWithZIO[UserService](_.updateUser(id, displayName, email, active, actorId))
+
+  def setPassword(
+    userId:   UserId,
+    password: String,
+  ): ZIO[UserService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[UserService](_.setPassword(userId, password))
 
 }

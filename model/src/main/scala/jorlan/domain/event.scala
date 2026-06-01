@@ -49,6 +49,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
 
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
+  case ServerInitialized
 
 }
 

@@ -11,15 +11,11 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{RepositoryError, RepositoryTask, UserZIORepository}
+import jorlan.db.repository.{RepositoryTask, UserZIORepository}
 import jorlan.domain.*
-import jorlan.service.TestFixtures.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
-
-import java.time.Instant
 
 object UserServiceSpec extends ZIOSpecDefault {
 
@@ -64,7 +60,7 @@ object UserServiceSpec extends ZIOSpecDefault {
     override def login(
       email:    String,
       password: String,
-    ): RepositoryTask[Option[User]] = ZIO.succeed(None)
+    ): RepositoryTask[Option[User]] = ZIO.none
 
     override def userByEmail(email: String): RepositoryTask[Option[User]] =
       store.get.map(_.values.find(_.email.contains(email)))
@@ -77,7 +73,7 @@ object UserServiceSpec extends ZIOSpecDefault {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.succeed(None)
+    ): RepositoryTask[Option[User]] = ZIO.none
 
   }
 
@@ -204,6 +200,17 @@ object UserServiceSpec extends ZIOSpecDefault {
           active <- svc.search(UserSearch(active = Some(true)))
         } yield assertTrue(active.exists(_.id == u1.id), !active.exists(_.id == u2.id))
       }.provide(freshLayers),
+      suite("UserService companion accessors")(
+        test("all companion methods delegate to implementation") {
+          for {
+            user <- UserService.createUser("Test", Some("t@t.com"))
+            _    <- UserService.getById(user.id)
+            _    <- UserService.search(UserSearch())
+            _    <- UserService.updateUser(user.id, "Updated", None, active = true)
+            _    <- UserService.setPassword(user.id, "newpassword")
+          } yield assertCompletes
+        },
+      ).provide(freshLayers),
     )
 
 }

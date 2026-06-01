@@ -139,7 +139,7 @@ private class OllamaModelGateway(
               .tapError(e => errored.set(true) *> logFailed(e))
               .mapError(e => ModelUnavailable(Option(e.getMessage).getOrElse(e.getClass.getName)))
           }
-          .ensuring(errored.get.flatMap(failed => if (failed) ZIO.unit else logCompleted))
+          .ensuring(errored.get.flatMap(failed => logCompleted.unless(failed)))
       },
     )
   }

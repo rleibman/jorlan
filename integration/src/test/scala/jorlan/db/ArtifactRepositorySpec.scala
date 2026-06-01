@@ -10,16 +10,13 @@
 
 package jorlan.db
 
+import jorlan.*
 import jorlan.db.TestFixtures.*
-import jorlan.db.TestFixtures.given
 import jorlan.db.repository.*
 import jorlan.domain.*
-import jorlan.*
 import zio.*
 import zio.http.MediaType
-import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.net.URI
 

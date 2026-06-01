@@ -12,7 +12,6 @@ package jorlan.db
 
 import caliban.*
 import jorlan.*
-import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*

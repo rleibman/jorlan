@@ -142,6 +142,71 @@ object AuthClientSpec extends ZIOSpecDefault {
           } yield assertTrue(token.isEmpty)
         },
       ),
+      suite("companion accessors")(
+        test("AuthClient.login delegates to the service") {
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/login") =>
+                ResponseStub.adjust(loginBody, StatusCode.Ok, List(authHeader))
+            }
+          for {
+            client <- makeClient(stub)
+            result <- AuthClient.login("alice@test.com", "pass").provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(result.token == "abc123" && result.displayName == "Alice")
+        },
+        test("AuthClient.whoAmI delegates to the service") {
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/whoami") =>
+                ResponseStub.adjust("alice@test.com", StatusCode.Ok)
+            }
+          for {
+            client <- makeClient(stub)
+            result <- AuthClient.whoAmI.provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(result == "alice@test.com")
+        },
+        test("AuthClient.currentToken delegates to the service — None before login") {
+          val stub = HttpClientZioBackend.stub
+          for {
+            client <- makeClient(stub)
+            token  <- AuthClient.currentToken.provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(token.isEmpty)
+        },
+        test("AuthClient.currentToken delegates to the service — Some after login") {
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/login") =>
+                ResponseStub.adjust(loginBody, StatusCode.Ok, List(authHeader))
+            }
+          for {
+            client <- makeClient(stub)
+            _      <- client.login("alice@test.com", "pass")
+            token  <- AuthClient.currentToken.provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(token.contains("abc123"))
+        },
+        test("AuthClient.whoAmI fails on non-2xx via companion") {
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/whoami") =>
+                ResponseStub.adjust("Forbidden", StatusCode.Forbidden)
+            }
+          for {
+            client <- makeClient(stub)
+            result <- AuthClient.whoAmI.provideLayer(ZLayer.succeed(client)).either
+          } yield assertTrue(result.isLeft && result.left.toOption.exists(_.contains("403")))
+        },
+        test("whoAmI fails when body is Left on a non-2xx response") {
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/whoami") =>
+                ResponseStub.adjust("Unauthorized", StatusCode.Unauthorized)
+            }
+          for {
+            client <- makeClient(stub)
+            result <- client.whoAmI.either
+          } yield assertTrue(result.isLeft && result.left.toOption.exists(_.contains("401")))
+        },
+      ),
     )
 
 }

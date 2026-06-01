@@ -14,7 +14,6 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 import zio.test.*
-import zio.test.Assertion.*
 
 object SessionHubSpec extends ZIOSpecDefault {
 

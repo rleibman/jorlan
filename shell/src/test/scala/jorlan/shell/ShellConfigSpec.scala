@@ -16,7 +16,13 @@ import zio.config.typesafe.TypesafeConfigProvider
 import zio.test.*
 import zio.test.Assertion.*
 
+import java.io.File
+import java.nio.file.Files
+
 object ShellConfigSpec extends ZIOSpecDefault {
+
+  private def tmpFile: UIO[File] =
+    ZIO.succeed(Files.createTempFile("jorlan-shellcfg-", ".json").toFile).map { f => f.delete(); f }
 
   override def spec: Spec[Any, Any] =
     suite("ShellConfig")(
@@ -25,10 +31,23 @@ object ShellConfigSpec extends ZIOSpecDefault {
           // The application.conf in test resources has jorlan.shell.serverUrl = "http://localhost:8080"
           ZIO
             .scoped {
-              ShellConfig.layer.build.map(_.get[ShellConfig])
+              (ZLayer.succeed(ZIOAppArgs(Chunk.empty)) >>> ShellConfig.layer).build
+                .map(_.get[ShellConfig])
             }.map { cfg =>
               assertTrue(cfg.serverUrl == "http://localhost:8080")
             }
+        },
+        test("--config flag is honored by layer when the file exists") {
+          for {
+            f   <- tmpFile
+            cfg  = ShellConfig("http://from-file:7777", Some("cfg@test.com"), None)
+            _   <- ShellConfig.write(f, cfg)
+            loaded <- ZIO.scoped {
+              (ZLayer.succeed(ZIOAppArgs(Chunk("--config", f.getAbsolutePath))) >>> ShellConfig.layer)
+                .build
+                .map(_.get[ShellConfig])
+            }
+          } yield assertTrue(loaded.serverUrl == "http://from-file:7777")
         },
         test("overrides values from a HOCON string") {
           val hocon =
@@ -114,6 +133,84 @@ object ShellConfigSpec extends ZIOSpecDefault {
           val cfg = ShellConfig()
           val result = ShellConfig.applyArgs(cfg, List("--password"))
           assertTrue(result.password == cfg.password)
+        },
+      ),
+      // P8.1-005: resolveWritePath, isFirstRun, write, findReadFile
+      suite("resolveWritePath")(
+        test("returns default path when no args and no env var") {
+          ShellConfig.resolveWritePath(Nil).map { file =>
+            assertTrue(file.getPath.endsWith("jorlan-shell.json"))
+          }
+        },
+        test("--config arg overrides default") {
+          for {
+            tmp  <- ZIO.attempt(Files.createTempFile("jorlan-custom-", ".json").toFile)
+            _    <- ZIO.attempt(tmp.delete())
+            file <- ShellConfig.resolveWritePath(List("--config", tmp.getAbsolutePath))
+          } yield assertTrue(file.getPath == tmp.getAbsolutePath)
+        },
+        },
+      ),
+      suite("isFirstRun")(
+        test("returns false when a config file exists and serverUrl is non-empty") {
+          for {
+            f <- tmpFile
+            _ <- ZIO.attempt(f.createNewFile())
+            cfg = ShellConfig(serverUrl = "http://localhost:8080")
+            result <- ShellConfig.isFirstRun(cfg, List("--config", f.getAbsolutePath))
+          } yield assertTrue(!result)
+        },
+        test("returns true when serverUrl is empty even if file exists") {
+          for {
+            f <- tmpFile
+            _ <- ZIO.attempt(f.createNewFile())
+            cfg = ShellConfig(serverUrl = "")
+            result <- ShellConfig.isFirstRun(cfg, List("--config", f.getAbsolutePath))
+          } yield assertTrue(result)
+        },
+      ),
+      suite("write and round-trip")(
+        test("write then load via HOCON produces the original config") {
+          for {
+            f <- tmpFile
+            cfg = ShellConfig("http://roundtrip:9090", Some("user@example.com"), Some("s3cr3t!"))
+            _      <- ShellConfig.write(f, cfg)
+            loaded <- ZIO.attempt {
+              val typesafeConfig = ConfigFactory.parseFile(f).withFallback(ConfigFactory.load()).resolve()
+              val provider = TypesafeConfigProvider.fromTypesafeConfig(typesafeConfig)
+              val descriptor = zio.config.magnolia.DeriveConfig.derived[ShellConfig].desc.nested("jorlan", "shell")
+              zio.Runtime.default.unsafe.run(provider.load(descriptor)).getOrThrow()
+            }
+          } yield assertTrue(
+            loaded.serverUrl == cfg.serverUrl,
+            loaded.email == cfg.email,
+            loaded.password == cfg.password,
+          )
+        },
+        test("write creates parent directories if absent") {
+          for {
+            base <- ZIO.succeed(Files.createTempDirectory("jorlan-test-").toFile)
+            deep = new File(base, "nested/deep/config.json")
+            cfg = ShellConfig("http://localhost:8080")
+            _ <- ShellConfig.write(deep, cfg)
+          } yield assertTrue(deep.exists())
+        },
+      ),
+      suite("findReadFile")(
+        test("returns the --config file when it exists") {
+          for {
+            f      <- tmpFile
+            _      <- ZIO.attempt(f.createNewFile())
+            result <- ShellConfig.findReadFile(List("--config", f.getAbsolutePath))
+          } yield assertTrue(result.contains(f))
+        },
+        test("does not return a --config file that does not exist") {
+          for {
+            tmp    <- ZIO.attempt(Files.createTempFile("jorlan-missing-", ".json").toFile)
+            path    = tmp.getAbsolutePath
+            _      <- ZIO.attempt(tmp.delete())
+            result <- ShellConfig.findReadFile(List("--config", path))
+          } yield assertTrue(!result.exists(_.getPath == path))
         },
       ),
     )

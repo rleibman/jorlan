@@ -188,7 +188,7 @@ private class LanternaScreen(
           .attempt {
             val keyOpt: Option[KeyStroke] = Option(screen.pollInput())
             screen.doResizeIfNecessary()
-            val sz: TerminalSize = screen.getTerminalSize()
+            val sz: TerminalSize = screen.getTerminalSize
             val tg: TextGraphics = screen.newTextGraphics()
             drawFrame(tg, sz.getColumns, sz.getRows, s, input)
             screen.refresh()
@@ -338,7 +338,7 @@ private class LanternaScreen(
           wrappedWords.zipWithIndex.map { case (segment, idx) =>
             val linePrefix = if (idx == 0) firstPrefix else wrapIndent
             (fg, TextColor.ANSI.DEFAULT, linePrefix + segment)
-          }.toVector
+          }
         }
     }
   }

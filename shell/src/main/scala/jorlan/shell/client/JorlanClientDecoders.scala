@@ -108,7 +108,7 @@ object JorlanClientDecoders {
   }
 
   private def enumEncoder[A](stringify: A => String): ArgEncoder[A] =
-    (a: A) => ArgEncoder.string.encode(stringify(a))
+    (a: A) => caliban.client.__Value.__EnumValue(stringify(a))
 
   implicit val eventTypeDecoder:      ScalarDecoder[EventType] = enumDecoder(EventType.valueOf, "EventType")
   implicit val sessionStatusDecoder:  ScalarDecoder[SessionStatus] = enumDecoder(SessionStatus.valueOf, "SessionStatus")

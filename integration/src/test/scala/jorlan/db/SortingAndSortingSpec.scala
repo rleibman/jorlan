@@ -10,16 +10,14 @@
 
 package jorlan.db
 
-import jorlan.db.TestFixtures.*
-import jorlan.db.TestFixtures.given
+import jorlan.*
+import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.EventLogFilter
-import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 /** Exercises all sort-branch variants of every Quill repository so scoverage picks them up. */
 object SortingAndSortingSpec extends ZIOSpecDefault {

@@ -13,8 +13,6 @@ package jorlan.db.repository
 import jorlan.*
 import zio.*
 
-import java.sql.{SQLNonTransientException, SQLTransientException}
-
 /** Effect alias used by all ZIO repository implementations: `IO` with `RepositoryError`. */
 type RepositoryTask[A] = IO[RepositoryError, A]
 

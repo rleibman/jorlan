@@ -10,11 +10,9 @@
 
 package jorlan
 
-import _root_.auth.AuthenticatedSession
 import jorlan.domain.*
 import zio.json.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.time.Instant
 import java.util.UUID
@@ -180,7 +178,7 @@ object DomainSpec extends ZIOSpecDefault {
     },
   )
 
-  private def enumRoundtrip[A: JsonEncoder: JsonDecoder](values: Seq[A]): Boolean =
+  private def enumRoundtrip[A: {JsonEncoder, JsonDecoder}](values: Seq[A]): Boolean =
     values.forall(v => v.toJson.fromJson[A].contains(v))
 
   private val orchestratorCodecSuite = suite("OrchestratorIdentity")(

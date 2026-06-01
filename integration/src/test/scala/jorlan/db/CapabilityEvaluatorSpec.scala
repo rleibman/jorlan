@@ -17,7 +17,6 @@ import jorlan.domain.*
 import jorlan.service.*
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object CapabilityEvaluatorSpec extends ZIOSpecDefault {
 
