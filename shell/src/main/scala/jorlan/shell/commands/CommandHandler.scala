@@ -230,13 +230,14 @@ object CommandHandler {
               val formality = if (field.toLowerCase == "formality") value else str("formality")
               val prompt = if (field.toLowerCase == "prompt") value else str("prompt")
               val languages =
-                if (field.toLowerCase == "languages") value.split(",").map(_.trim).toList else arr("languages")
+                if (field.toLowerCase == "languages") value.split(",").map(_.trim).filter(_.nonEmpty).toList
+                else arr("languages")
               val expertise =
                 if (field.toLowerCase == "expertise") value.split(",").map(_.trim).filter(_.nonEmpty).toList
                 else arr("expertise")
 
-              val langArg = languages.map(l => s""""$l"""").mkString("[", ",", "]")
-              val expertArg = expertise.map(e => s""""$e"""").mkString("[", ",", "]")
+              val langArg = Json.Arr(Chunk.fromIterable(languages.map(Json.Str(_)))).toJson
+              val expertArg = Json.Arr(Chunk.fromIterable(expertise.map(Json.Str(_)))).toJson
               val mutation =
                 s"""mutation { updatePersonality(name: ${Json.Str(name).toJson}, formality: ${Json
                     .Str(formality).toJson}, languages: $langArg, expertise: $expertArg, prompt: ${Json
