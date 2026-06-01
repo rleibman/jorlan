@@ -143,9 +143,12 @@ object ShellConfigSpec extends ZIOSpecDefault {
           }
         },
         test("--config arg overrides default") {
-          ShellConfig.resolveWritePath(List("--config", "/tmp/custom.json")).map { file =>
-            assertTrue(file.getPath == "/tmp/custom.json")
-          }
+          for {
+            tmp  <- ZIO.attempt(Files.createTempFile("jorlan-custom-", ".json").toFile)
+            _    <- ZIO.attempt(tmp.delete())
+            file <- ShellConfig.resolveWritePath(List("--config", tmp.getAbsolutePath))
+          } yield assertTrue(file.getPath == tmp.getAbsolutePath)
+        },
         },
       ),
       suite("isFirstRun")(
@@ -203,8 +206,11 @@ object ShellConfigSpec extends ZIOSpecDefault {
         },
         test("does not return a --config file that does not exist") {
           for {
-            result <- ShellConfig.findReadFile(List("--config", "/tmp/nonexistent-jorlan-xyz-abc.json"))
-          } yield assertTrue(!result.exists(_.getPath == "/tmp/nonexistent-jorlan-xyz-abc.json"))
+            tmp    <- ZIO.attempt(Files.createTempFile("jorlan-missing-", ".json").toFile)
+            path    = tmp.getAbsolutePath
+            _      <- ZIO.attempt(tmp.delete())
+            result <- ShellConfig.findReadFile(List("--config", path))
+          } yield assertTrue(!result.exists(_.getPath == path))
         },
       ),
     )

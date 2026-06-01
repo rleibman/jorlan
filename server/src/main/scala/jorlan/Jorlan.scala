@@ -20,7 +20,6 @@ import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.service.*
 import zio.*
 import zio.http.*
-import zio.json.ast.Json
 import zio.logging.backend.SLF4J
 
 import java.util.concurrent.TimeUnit
