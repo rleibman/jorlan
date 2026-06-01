@@ -31,10 +31,23 @@ object ShellConfigSpec extends ZIOSpecDefault {
           // The application.conf in test resources has jorlan.shell.serverUrl = "http://localhost:8080"
           ZIO
             .scoped {
-              ShellConfig.layer.build.map(_.get[ShellConfig])
+              (ZLayer.succeed(ZIOAppArgs(Chunk.empty)) >>> ShellConfig.layer).build
+                .map(_.get[ShellConfig])
             }.map { cfg =>
               assertTrue(cfg.serverUrl == "http://localhost:8080")
             }
+        },
+        test("--config flag is honored by layer when the file exists") {
+          for {
+            f   <- tmpFile
+            cfg  = ShellConfig("http://from-file:7777", Some("cfg@test.com"), None)
+            _   <- ShellConfig.write(f, cfg)
+            loaded <- ZIO.scoped {
+              (ZLayer.succeed(ZIOAppArgs(Chunk("--config", f.getAbsolutePath))) >>> ShellConfig.layer)
+                .build
+                .map(_.get[ShellConfig])
+            }
+          } yield assertTrue(loaded.serverUrl == "http://from-file:7777")
         },
         test("overrides values from a HOCON string") {
           val hocon =

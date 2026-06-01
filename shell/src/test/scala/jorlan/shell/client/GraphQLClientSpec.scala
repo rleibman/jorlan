@@ -108,6 +108,36 @@ object GraphQLClientSpec extends ZIOSpecDefault {
           result <- client.execute("{ __typename }").either
         } yield assertTrue(result.isLeft && result.left.toOption.exists(_.contains("500")))
       },
+      suite("companion accessor")(
+        test("GraphQLClient.execute delegates to the service") {
+          val body = """{"data":{"agents":[]}}"""
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/api/jorlan") =>
+                ResponseStub.adjust(body, StatusCode.Ok)
+            }
+          for {
+            client <- makeClient(stub)
+            result <- GraphQLClient.execute("{ agents { id } }").provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(result.toString.contains("agents"))
+        },
+        test("GraphQLClient.execute companion passes variables through") {
+          val body = """{"data":{"user":{"id":1}}}"""
+          val stub = HttpClientZioBackend.stub
+            .whenRequestMatchesPartial {
+              case req if req.uri.toString.contains("/api/jorlan") =>
+                ResponseStub.adjust(body, StatusCode.Ok)
+            }
+          import zio.json.ast.Json
+          val vars = Some(Json.Obj("id" -> Json.Num(1)))
+          for {
+            client <- makeClient(stub)
+            result <- GraphQLClient
+              .execute("query($id: Long) { user(id: $id) { id } }", vars)
+              .provideLayer(ZLayer.succeed(client))
+          } yield assertTrue(result.toString.contains("user"))
+        },
+      ),
     )
 
 }

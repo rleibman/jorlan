@@ -134,6 +134,23 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         val hub = SessionHub.live
         (fakeGateway ++ hub ++ eventLog) >>> AgentRunnerImpl.live ++ hub ++ eventLog
       } @@ TestAspect.withLiveClock,
+      suite("companion accessors")(
+        test("processMessage companion accessor delegates") {
+          ZIO.scoped {
+            for {
+              hub      <- ZIO.service[SessionHub]
+              innerHub <- hub.getOrCreate(sessionId)
+              dequeue  <- innerHub.subscribe
+              fiber    <- zio.stream.ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
+              _        <- AgentRunner.processMessage(sessionId, "hello", Some(userId))
+              _        <- fiber.join
+            } yield assertCompletes
+          }
+        }.provide(layers(List("ok"))),
+        test("subscribeToSession companion accessor delegates") {
+          AgentRunner.subscribeToSession(sessionId).take(0).runDrain.as(assertCompletes)
+        }.provide(layers(Nil)),
+      ),
     )
 
 }

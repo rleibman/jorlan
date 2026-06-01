@@ -126,6 +126,32 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           // After remove the Ref is cleared, so a fresh Hub is allocated on next getOrCreate
         } yield assertTrue(!(h1 eq h2))
       }.provide(freshLayers),
+      suite("companion accessors")(
+        test("createSession companion accessor") {
+          AgentSessionManager.createSession(userId, None).as(assertCompletes)
+        }.provide(freshLayers),
+        test("getSession companion accessor") {
+          AgentSessionManager.getSession(AgentSessionId(999L)).as(assertCompletes)
+        }.provide(freshLayers),
+        test("suspendSession companion accessor") {
+          for {
+            created <- AgentSessionManager.createSession(userId, None)
+            _       <- AgentSessionManager.suspendSession(created.id)
+          } yield assertCompletes
+        }.provide(freshLayers),
+        test("terminateSession companion accessor") {
+          for {
+            created <- AgentSessionManager.createSession(userId, None)
+            _       <- AgentSessionManager.terminateSession(created.id)
+          } yield assertCompletes
+        }.provide(freshLayers),
+        test("listSessions companion accessor covers impl and companion") {
+          for {
+            created <- AgentSessionManager.createSession(userId, None)
+            results <- AgentSessionManager.listSessions(userId, 0, 10)
+          } yield assertTrue(results.exists(_.id == created.id))
+        }.provide(freshLayers),
+      ),
     )
 
 }

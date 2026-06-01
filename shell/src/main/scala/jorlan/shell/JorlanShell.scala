@@ -34,8 +34,8 @@ object JorlanShell extends ZIOApp {
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
-    Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>>
-      ZLayer.make[Environment](
+    (Runtime.removeDefaultLoggers >>> SLF4J.slf4j) ++
+      ZLayer.makeSome[ZIOAppArgs, Environment](
         ShellConfig.layer,
         AuthClient.live,
         GraphQLClient.live,

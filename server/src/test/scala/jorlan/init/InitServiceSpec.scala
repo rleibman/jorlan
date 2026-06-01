@@ -211,6 +211,69 @@ object InitServiceSpec extends ZIOSpecDefault {
         testLayer(uninitializedSettings, initialized = false),
         initServiceLayer,
       ),
+      // ─── InitTokenStore companion accessors ──────────────────────────────────
+      test("InitTokenStore companion: token, isValid, verify, invalidate") {
+        for {
+          tok      <- InitTokenStore.token
+          valid0   <- InitTokenStore.isValid
+          verified <- InitTokenStore.verify(tok.getOrElse(""))
+          _        <- InitTokenStore.invalidate
+          valid1   <- InitTokenStore.isValid
+          tokAfter <- InitTokenStore.token
+        } yield assertTrue(
+          tok.isDefined,
+          valid0,
+          verified,
+          !valid1,
+          tokAfter.isEmpty,
+        )
+      }.provide(makeTokenStore(false)),
+      // ─── InitTokenStoreImpl.isValid when no token (initialized = true) ───────
+      test("InitTokenStore.isValid returns false when initialized=true") {
+        for {
+          valid <- InitTokenStore.isValid
+        } yield assertTrue(!valid)
+      }.provide(makeTokenStore(true)),
+      // ─── InitService companion accessors ─────────────────────────────────────
+      test("InitService companion: isInitialized") {
+        for {
+          result <- InitService.isInitialized
+        } yield assertTrue(!result)
+      }.provide(
+        testLayer(uninitializedSettings, initialized = false),
+        initServiceLayer,
+      ),
+      test("InitService companion: complete delegates to implementation") {
+        for {
+          tok    <- InitTokenStore.token
+          result <- InitService.complete(tok.getOrElse(""), "MyServer", "admin@example.com", "Admin", "password123!")
+        } yield assertTrue(result == ())
+      }.provide(
+        testLayer(uninitializedSettings, initialized = false),
+        initServiceLayer,
+      ),
+      // ─── ServerSettingsRepository companion accessors ─────────────────────────
+      test("ServerSettingsRepository companion: get and set") {
+        for {
+          _      <- ServerSettingsRepository.set("testKey", Json.Str("hello"))
+          gotten <- ServerSettingsRepository.get("testKey")
+        } yield assertTrue(gotten.contains(Json.Str("hello")))
+      }.provide(uninitializedSettings),
+      test("ServerSettingsRepository companion: isServerInitialized returns true when flag is true") {
+        for {
+          result <- ServerSettingsRepository.isServerInitialized
+        } yield assertTrue(result)
+      }.provide(alreadyInitializedSettings),
+      test("ServerSettingsRepository companion: isServerInitialized returns false when key absent") {
+        for {
+          result <- ServerSettingsRepository.isServerInitialized
+        } yield assertTrue(!result)
+      }.provide(settingsLayer(Map.empty)),
+      test("ServerSettingsRepository companion: isServerInitialized returns false for non-Bool value") {
+        for {
+          result <- ServerSettingsRepository.isServerInitialized
+        } yield assertTrue(!result)
+      }.provide(settingsLayer(Map(ServerSettingsRepository.InitializedKey -> Json.Str("yes")))),
     )
 
 }

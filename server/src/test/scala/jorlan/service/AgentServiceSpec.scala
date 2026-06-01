@@ -231,6 +231,44 @@ object AgentServiceSpec extends ZIOSpecDefault {
           results <- svc.searchSessions(AgentSessionSearch(agentId = Some(aid1)))
         } yield assertTrue(results.length == 1, results.head.agentId == aid1)
       }.provide(freshLayers),
+      suite("companion accessors")(
+        test("getAgent companion accessor") {
+          AgentService.getAgent(AgentId(999L)).as(assertCompletes)
+        }.provide(freshLayers),
+        test("searchAgents companion accessor") {
+          AgentService.searchAgents(AgentSearch()).as(assertCompletes)
+        }.provide(freshLayers),
+        test("upsertAgent companion accessor") {
+          AgentService.upsertAgent(templateAgent, None).as(assertCompletes)
+        }.provide(freshLayers),
+        test("deleteAgent companion accessor") {
+          for {
+            saved <- AgentService.upsertAgent(templateAgent, None)
+            _     <- AgentService.deleteAgent(saved.id, None)
+          } yield assertCompletes
+        }.provide(freshLayers),
+        test("getSession companion accessor") {
+          AgentService.getSession(AgentSessionId(999L)).as(assertCompletes)
+        }.provide(freshLayers),
+        test("searchSessions companion accessor") {
+          AgentService.searchSessions(AgentSessionSearch()).as(assertCompletes)
+        }.provide(freshLayers),
+        test("startSession companion accessor") {
+          AgentService.startSession(templateSession, None).as(assertCompletes)
+        }.provide(freshLayers),
+        test("completeSession companion accessor") {
+          for {
+            started <- AgentService.startSession(templateSession, None)
+            _       <- AgentService.completeSession(started.copy(status = SessionStatus.Completed), None)
+          } yield assertCompletes
+        }.provide(freshLayers),
+        test("failSession companion accessor") {
+          for {
+            started <- AgentService.startSession(templateSession, None)
+            _       <- AgentService.failSession(started.copy(status = SessionStatus.Failed), None, None)
+          } yield assertCompletes
+        }.provide(freshLayers),
+      ),
     )
 
 }

@@ -209,6 +209,17 @@ object MemoryServiceSpec extends ZIOSpecDefault {
           valFound <- svc.getById(valSaved.id)
         } yield assertTrue(count >= 1L, expFound.isEmpty, valFound.isDefined)
       }.provide(freshLayers),
+      suite("MemoryService companion accessors")(
+        test("all companion methods delegate to implementation") {
+          for {
+            saved <- MemoryService.upsert(record("companion-key"), actorId = None, agentId = None)
+            _     <- MemoryService.getById(saved.id)
+            _     <- MemoryService.search(MemorySearch(scope = MemoryScope.User, userId = Some(UserId(1L))))
+            _     <- MemoryService.delete(saved.id)
+            _     <- MemoryService.purgeExpired
+          } yield assertCompletes
+        },
+      ).provide(freshLayers),
     )
 
 }

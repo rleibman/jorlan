@@ -200,6 +200,17 @@ object UserServiceSpec extends ZIOSpecDefault {
           active <- svc.search(UserSearch(active = Some(true)))
         } yield assertTrue(active.exists(_.id == u1.id), !active.exists(_.id == u2.id))
       }.provide(freshLayers),
+      suite("UserService companion accessors")(
+        test("all companion methods delegate to implementation") {
+          for {
+            user <- UserService.createUser("Test", Some("t@t.com"))
+            _    <- UserService.getById(user.id)
+            _    <- UserService.search(UserSearch())
+            _    <- UserService.updateUser(user.id, "Updated", None, active = true)
+            _    <- UserService.setPassword(user.id, "newpassword")
+          } yield assertCompletes
+        },
+      ).provide(freshLayers),
     )
 
 }

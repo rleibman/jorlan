@@ -38,13 +38,17 @@ object ShellConfig {
 
   /** Config file load order:
     *   1. `JORLAN_SHELL_CONFIG` env var (absolute path)
-    *   2. `~/.jorlan/jorlan-shell.json`
-    *   3. `~/.jorlan/jorlan.json` (backwards compatibility — read only, never written)
-    *   4. `application.conf` defaults
+    *   2. `--config <path>` CLI argument
+    *   3. `~/.jorlan/jorlan-shell.json`
+    *   4. `~/.jorlan/jorlan.json` (backwards compatibility — read only, never written)
+    *   5. `application.conf` defaults
+    *
+    * Requires [[ZIOAppArgs]] so the `--config` flag is honored at startup.
     */
-  val layer: TaskLayer[ShellConfig] = ZLayer.fromZIO {
+  val layer: ZLayer[ZIOAppArgs, Throwable, ShellConfig] = ZLayer.fromZIO {
     for {
-      readFile       <- findReadFile(Nil)
+      appArgs        <- ZIOAppArgs.getArgs
+      readFile       <- findReadFile(appArgs.toList)
       typesafeConfig <- ZIO.attempt {
         val base = ConfigFactory.load()
         readFile

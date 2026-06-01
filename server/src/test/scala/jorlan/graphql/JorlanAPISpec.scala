@@ -320,6 +320,27 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result.data.toString.contains("Active"),
       )
     }.provideLayer(makeAppLayer()),
+    test("createSession with explicit modelId uses ArgBuilder[ModelId]") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { createSession(modelId: "llama3") { id status } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("Active"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("listSessions returns created sessions — exercises Schema for AgentId, WorkspaceId, SessionStatus") {
+      for {
+        interp     <- ZIO.service[Interp]
+        _          <- interp.execute("""mutation { createSession { id } }""")
+        listResult <- interp.execute(
+          """{ listSessions { id agentId userId status createdAt updatedAt } }""",
+        )
+      } yield assertTrue(
+        listResult.errors.isEmpty,
+        listResult.data.toString.contains("Active"),
+      )
+    }.provideLayer(makeAppLayer()),
     test("submitMessage mutation succeeds with active session") {
       for {
         interp       <- ZIO.service[Interp]
