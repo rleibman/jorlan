@@ -11,9 +11,8 @@
 package ai
 
 // $COVERAGE-OFF$
-import dev.langchain4j.data.message.{AiMessage, ChatMessage}
+import dev.langchain4j.data.message.ChatMessage
 import dev.langchain4j.model.chat.response.ChatResponse
-import dev.langchain4j.model.output.Response
 
 import java.util
 

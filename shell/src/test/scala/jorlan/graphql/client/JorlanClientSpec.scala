@@ -11,11 +11,15 @@
 package jorlan.graphql.client
 
 import caliban.client.__Value.{__NumberValue, __StringValue}
+import jorlan.domain.{ApprovalStatus, EventType}
+import jorlan.shell.client.JorlanClientDecoders
 import zio.test.*
 import zio.test.Assertion.*
 
-/** P7-043: Tests for the generated client's enum decoders and encoders. These are pure unit tests — no ZIO runtime or
-  * network required.
+/** P7-043: Tests for the client enum decoders and encoders in JorlanClientDecoders.
+  *
+  * The enums were migrated from generated caliban enum types to shared domain scalars so that the shell reuses the same
+  * Scala enum definitions as the server. Decoders and encoders now live in JorlanClientDecoders.
   */
 object JorlanClientSpec extends ZIOSpecDefault {
 
@@ -24,44 +28,38 @@ object JorlanClientSpec extends ZIOSpecDefault {
       suite("ApprovalStatus decoder")(
         test("decodes Pending") {
           assertTrue(
-            JorlanClient.ApprovalStatus.decoder.decode(__StringValue("Pending")) == Right(
-              JorlanClient.ApprovalStatus.Pending,
-            ),
+            JorlanClientDecoders.approvalStatusDecoder.decode(__StringValue("Pending")) == Right(ApprovalStatus.Pending),
           )
         },
         test("fails on unknown status") {
-          val result = JorlanClient.ApprovalStatus.decoder.decode(__StringValue("UnknownStatus"))
+          val result = JorlanClientDecoders.approvalStatusDecoder.decode(__StringValue("UnknownStatus"))
           assertTrue(result.isLeft)
         },
         test("fails on numeric value") {
-          val result = JorlanClient.ApprovalStatus.decoder.decode(__NumberValue(1))
+          val result = JorlanClientDecoders.approvalStatusDecoder.decode(__NumberValue(1))
           assertTrue(result.isLeft)
         },
       ),
       suite("ApprovalStatus encoder")(
         test("encodes Approved to __EnumValue") {
           import caliban.client.__Value.__EnumValue
-          val encoded = JorlanClient.ApprovalStatus.encoder.encode(JorlanClient.ApprovalStatus.Approved)
+          val encoded = JorlanClientDecoders.approvalStatusEncoder.encode(ApprovalStatus.Approved)
           assertTrue(encoded == __EnumValue("Approved"))
         },
       ),
       suite("EventType decoder")(
         test("decodes SkillInvoked") {
           assertTrue(
-            JorlanClient.EventType.decoder.decode(__StringValue("SkillInvoked")) == Right(
-              JorlanClient.EventType.SkillInvoked,
-            ),
+            JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("SkillInvoked")) == Right(EventType.SkillInvoked),
           )
         },
         test("decodes UserCreated") {
           assertTrue(
-            JorlanClient.EventType.decoder.decode(__StringValue("UserCreated")) == Right(
-              JorlanClient.EventType.UserCreated,
-            ),
+            JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("UserCreated")) == Right(EventType.UserCreated),
           )
         },
         test("fails on unknown event type") {
-          val result = JorlanClient.EventType.decoder.decode(__StringValue("NotAnEvent"))
+          val result = JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("NotAnEvent"))
           assertTrue(result.isLeft)
         },
       ),

@@ -59,7 +59,7 @@ object InMemoryRepositories {
     override def login(
       email:    String,
       password: String,
-    ):                                       RepositoryTask[Option[User]] = ZIO.succeed(None)
+    ):                                       RepositoryTask[Option[User]] = ZIO.none
     override def userByEmail(email: String): RepositoryTask[Option[User]] =
       store.get.map(_.values.find(_.email.contains(email)))
     override def changePassword(
@@ -69,7 +69,7 @@ object InMemoryRepositories {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.succeed(None)
+    ): RepositoryTask[Option[User]] = ZIO.none
 
   }
 

@@ -324,40 +324,38 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.3)
 
 **Server:**
 
-- [ ] Flyway migration V017: `server_settings` table (`key VARCHAR(64) PRIMARY KEY, value JSON NOT NULL`);
+- [x] Flyway migration V017: `server_settings` table (`key VARCHAR(64) PRIMARY KEY, value JSON NOT NULL`);
   seed `('initialized', 'false')` and `('serverName', '"Jorlan"')`
-- [ ] `ServerSettingsRepository`: `get(key): UIO[Option[Json]]`, `set(key, value: Json): UIO[Unit]`; wraps
+- [x] `ServerSettingsRepository`: `get(key): UIO[Option[Json]]`, `set(key, value: Json): UIO[Unit]`; wraps
   `server_settings`; used by all Phase 8.x services instead of ad-hoc SQL
-- [ ] `InitService` trait + `InitServiceImpl`: `isInitialized`,
+- [x] `InitService` trait + `InitServiceImpl`: `isInitialized`,
   `complete(token, serverName, adminEmail, adminName, adminPassword)`;
   reads/writes `server_settings` via `ServerSettingsRepository`; invalidates the one-time token on success
-- [ ] `InitTokenStore`: `Ref[Option[String]]` holding a 32-hex random token generated on startup when uninitialized;
+- [x] `InitTokenStore`: `Ref[Option[String]]` holding a 32-hex random token generated on startup when uninitialized;
   printed to stdout in a clearly visible box; discarded after use
-- [ ] `StatusRoutes`: `GET /api/status` (always unauthenticated) — returns `initialized`, `version`, `serverName`
+- [x] `StatusRoutes`: `GET /api/status` (always unauthenticated) — returns `initialized`, `version`, `serverName`
   (from `server_settings`), `uptimeMs`
-- [ ] `InitRoutes`: `POST /api/init` — accepts `token`, `serverName`, `adminEmail`, `adminName`, `adminPassword`;
+- [x] `InitRoutes`: `POST /api/init` — accepts `token`, `serverName`, `adminEmail`, `adminName`, `adminPassword`;
   returns 403 when already initialized or token invalid
-- [ ] `SetupModeHttpApp`: serves `StatusRoutes` + `InitRoutes`; returns 503 for all other paths while uninitialized
-- [ ] `EnvironmentBuilder` updated: after Flyway, check `isInitialized`; if false, mount setup-mode app via
-  `Ref[HttpApp]`; `InitService.complete` atomically swaps in the full application layer (no restart required)
-- [ ] Unit tests for `InitService`: invalid token, duplicate init, successful init flips DB flag and stores server name
-- [ ] Integration test (Testcontainers): fresh DB → setup mode → POST `/api/init` with server name → `initialized: true`
+- [x] `SetupModeApp`: serves `StatusRoutes` + `InitRoutes`; returns 503 for all other paths while uninitialized
+- [x] `Jorlan.run` updated: after Flyway, check `isInitialized`; if false, mount `SetupModeApp` with the one-time token
+- [x] Unit tests for `InitService`: invalid token, duplicate init, successful init flips DB flag and stores server name
+- [x] Integration test (Testcontainers): fresh DB → setup mode → POST `/api/init` with server name → `initialized: true`
   and `serverName` in status response → login with new credentials succeeds
 
 **Shell:**
 
-- [ ] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order:`JORLAN_SHELL_CONFIG`
+- [x] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order: `JORLAN_SHELL_CONFIG`
   env var → `--config` flag → `~/.jorlan/jorlan-shell.json` → `~/.jorlan/jorlan.json` (read-only backwards compat) →
   `application.conf` defaults
-- [ ] `ShellConfig` writer: persists `serverUrl`, `email`, `password` to the resolved config path after successful
+- [x] `ShellConfig` writer: persists `serverUrl`, `email`, `password` to the resolved config path after successful
   first-run
-- [ ] `InitClient`: `checkStatus(serverUrl): IO[String, ServerStatus]`,
+- [x] `InitClient`: `checkStatus(serverUrl): IO[String, ServerStatus]`,
   `complete(serverUrl, token, serverName, adminEmail, adminName, adminPassword): IO[String, Unit]`
-- [ ] `FirstRunWizard`: TUI effect that prompts for server URL → checks `/api/status` → if uninitialized, collects
+- [x] `FirstRunWizard`: TUI effect that prompts for server URL → checks `/api/status` → if uninitialized, collects
   setup token + server name + admin name/email/password (with confirm) → POSTs to `/api/init` → saves config
-- [ ] `JorlanShell.bootstrap` updated: invoke `FirstRunWizard` when config has no `serverUrl`; after successful login,
-  store `serverName` from `/api/status` and display it in the shell status bar
-- [ ] Unit tests for `FirstRunWizard` (via `FakeScreen`): already-initialized path, setup path with bad token then
+- [x] `JorlanShell.run` updated: invokes `FirstRunWizard` when config has no `serverUrl` or config file is absent
+- [x] Unit tests for `FirstRunWizard` (via `FakeScreen`): already-initialized path, setup path with bad token then
   success, connection error retry, password mismatch retry
 
 ---

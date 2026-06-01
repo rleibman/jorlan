@@ -10,7 +10,6 @@
 
 package jorlan.domain
 
-import jorlan.Codecs.given
 import zio.json.ast.Json
 import zio.json.{JsonDecoder, JsonEncoder}
 

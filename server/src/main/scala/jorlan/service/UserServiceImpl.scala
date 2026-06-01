@@ -46,6 +46,12 @@ private class UserServiceImpl(
       )
     } yield user
 
+  override def setPassword(
+    userId:   UserId,
+    password: String,
+  ): IO[JorlanError, Unit] =
+    repo.changePassword(userId, password).mapError(JorlanError(_))
+
   override def updateUser(
     id:          UserId,
     displayName: String,

@@ -12,7 +12,6 @@ package jorlan
 
 import jorlan.db.repository.RepositoryError
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.sql.{SQLNonTransientException, SQLTransientException}
 

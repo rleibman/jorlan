@@ -281,29 +281,29 @@ The `value` column is always valid JSON. Simple scalars (`false`, `"Jorlan"`) ar
 
 ### Server
 
-| ID       | Description |
-|----------|-------------|
-| P8.1-S1  | Flyway V017: `server_settings` table (`key VARCHAR(64) PK, value JSON NOT NULL`); seed `initialized = false` and `serverName = "Jorlan"`. |
-| P8.1-S1a | `ServerSettingsRepository` trait: `get(key): UIO[Option[Json]]`, `set(key, Json): UIO[Unit]`; Quill-backed impl; shared by all Phase 8.x services. |
-| P8.1-S2  | `InitService` trait: `isInitialized: UIO[Boolean]`, `complete(token, serverName, email, name, password): IO[JorlanError, Unit]`. `InitServiceImpl` uses `ServerSettingsRepository` and verifies the token. |
-| P8.1-S3  | `InitTokenStore`: `Ref[Option[String]]` that generates a random 32-hex token on construction when uninitialized; invalidated (set to `None`) on successful `complete`. |
-| P8.1-S4  | `StatusRoutes`: `GET /api/status` — always available, returns `initialized`, version, server name, uptime. |
-| P8.1-S5  | `InitRoutes`: `POST /api/init` — delegates to `InitService`, returns 403 when already initialized or token invalid. |
-| P8.1-S6  | `SetupModeHttpApp`: an `HttpApp` that serves `StatusRoutes` + `InitRoutes` and returns 503 for everything else. |
-| P8.1-S7  | `EnvironmentBuilder` update: after Flyway, check `isInitialized`; if false, build setup-mode app and install into `Ref[HttpApp]`; `InitServiceImpl.complete` atomically swaps it for the full app. |
-| P8.1-S8  | Unit tests for `InitService`: (a) invalid token returns error, (b) duplicate init returns error, (c) successful init flips DB flag and invalidates token. |
-| P8.1-S9  | Integration test (Testcontainers): fresh DB → server enters setup mode → POST `/api/init` → GET `/api/status` returns `initialized: true` → login with new credentials succeeds. |
+| ID       | Done | Description |
+|----------|------|-------------|
+| P8.1-S1  | [x]  | Flyway V017: `server_settings` table (`key VARCHAR(64) PK, value JSON NOT NULL`); seed `initialized = false` and `serverName = "Jorlan"`. |
+| P8.1-S1a | [x]  | `ServerSettingsRepository` trait: `get(key): UIO[Option[Json]]`, `set(key, Json): UIO[Unit]`; Quill-backed impl; shared by all Phase 8.x services. |
+| P8.1-S2  | [x]  | `InitService` trait: `isInitialized: UIO[Boolean]`, `complete(token, serverName, email, name, password): IO[JorlanError, Unit]`. `InitServiceImpl` uses `ServerSettingsRepository` and verifies the token. |
+| P8.1-S3  | [x]  | `InitTokenStore`: `Ref[Option[String]]` that generates a random 32-hex token on construction when uninitialized; invalidated (set to `None`) on successful `complete`. |
+| P8.1-S4  | [x]  | `StatusRoutes`: `GET /api/status` — always available, returns `initialized`, version, server name, uptime. |
+| P8.1-S5  | [x]  | `InitRoutes`: `POST /api/init` — delegates to `InitService`, returns 403 when already initialized or token invalid. |
+| P8.1-S6  | [x]  | `SetupModeApp`: serves `StatusRoutes` + `InitRoutes` and returns 503 for everything else. |
+| P8.1-S7  | [x]  | `Jorlan.run` updated: after Flyway, checks `isInitialized`; if false, builds `SetupModeApp` with the one-time token. |
+| P8.1-S8  | [x]  | Unit tests for `InitService`: (a) invalid token returns error, (b) duplicate init returns error, (c) successful init flips DB flag and invalidates token. |
+| P8.1-S9  | [x]  | Integration test (Testcontainers): fresh DB → `initialized = false` → `InitService.complete` → `initialized: true`, `serverName` persisted, user queryable, token invalidated, second complete fails. |
 
 ### Shell
 
-| ID       | Description |
-|----------|-------------|
-| P8.1-C1  | `ShellConfig.layer` updated: load order described above; add `JORLAN_SHELL_CONFIG` env var and `--config` flag support. |
-| P8.1-C2  | `ShellConfig` writer: write resolved config (serverUrl, email, password) to the determined path after successful first-run. |
-| P8.1-C3  | `InitClient`: `checkStatus(serverUrl): IO[String, ServerStatus]`, `complete(serverUrl, token, email, name, password): IO[String, Unit]`. |
-| P8.1-C4  | `FirstRunWizard`: ZIO effect driving the TUI prompts described in the flow. Runs before `connectWithRetry` when the config file is absent/incomplete. |
-| P8.1-C5  | `JorlanShell.bootstrap` updated: invoke `FirstRunWizard` when config has no `serverUrl`. |
-| P8.1-C6  | Unit tests for `FirstRunWizard` (via `FakeScreen`): (a) server already initialized path, (b) setup path with bad token then success, (c) connection error retry, (d) password mismatch retry. |
+| ID       | Done | Description |
+|----------|------|-------------|
+| P8.1-C1  | [x]  | `ShellConfig.layer` updated: load order described above; add `JORLAN_SHELL_CONFIG` env var and `--config` flag support. |
+| P8.1-C2  | [x]  | `ShellConfig` writer: write resolved config (serverUrl, email, password) to the determined path after successful first-run. |
+| P8.1-C3  | [x]  | `InitClient`: `checkStatus(serverUrl): IO[String, ServerStatus]`, `complete(serverUrl, token, email, name, password): IO[String, Unit]`. |
+| P8.1-C4  | [x]  | `FirstRunWizard`: ZIO effect driving the TUI prompts described in the flow. Runs before `connectWithRetry` when the config file is absent/incomplete. |
+| P8.1-C5  | [x]  | `JorlanShell.run` updated: invokes `FirstRunWizard` when config has no `serverUrl` or config file is absent. |
+| P8.1-C6  | [x]  | Unit tests for `FirstRunWizard` (via `FakeScreen`): (a) server already initialized path, (b) setup path with bad token then success, (c) connection error retry, (d) password mismatch retry. |
 
 ---
 

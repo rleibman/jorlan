@@ -18,7 +18,6 @@ import zio.*
 import zio.json.JsonEncoder
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 import java.time.Instant
 
@@ -68,7 +67,7 @@ object EventLogServiceSpec extends ZIOSpecDefault {
           case Some(Sort(EventLogOrder.Id, OrderDirection.Desc))         => filtered.sortBy(_.id.value).reverse
           case _                                                         => filtered.sortBy(_.occurredAt).reverse
         }
-        sorted.drop(filter.page * filter.pageSize).take(filter.pageSize)
+        sorted.slice(filter.page * filter.pageSize, filter.page * filter.pageSize + filter.pageSize)
       }
 
     override def replaySession(

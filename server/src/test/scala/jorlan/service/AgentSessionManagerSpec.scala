@@ -16,7 +16,6 @@ import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object AgentSessionManagerSpec extends ZIOSpecDefault {
 
@@ -36,7 +35,6 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
               name = "Jorlan Interactive",
               description = Some("Default interactive agent for shell sessions"),
               defaultModel = None,
-              trustLevel = 0,
               createdAt = now,
             ),
           )

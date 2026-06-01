@@ -23,7 +23,7 @@ object RepositoryError {
   def apply(cause: Throwable): RepositoryError =
     cause match {
       case e: SQLTransientException    => RepositoryError(e.getMessage.nn, Some(cause), isTransient = true)
-      case e: SQLNonTransientException => RepositoryError(e.getMessage.nn, Some(cause), isTransient = false)
+      case e: SQLNonTransientException => RepositoryError(e.getMessage.nn, Some(cause))
       case _ => RepositoryError(cause.getMessage.nn, Some(cause))
     }
 

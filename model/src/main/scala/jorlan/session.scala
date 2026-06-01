@@ -31,7 +31,6 @@ object JorlanSession {
     email = Some("server@jorlan.internal"),
     createdAt = Instant.EPOCH,
     updatedAt = Instant.EPOCH,
-    active = true,
   )
 
   val serverSession: JorlanSession = AuthenticatedSession(Some(serverUser), None)

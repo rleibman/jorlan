@@ -18,13 +18,15 @@ import jorlan.domain.*
 import jorlan.service.{EventLogFilter, EventLogOrder}
 import jorlan.{*, given}
 import zio.*
-import zio.json.JsonEncoder
+import zio.json.*
 import zio.json.ast.Json
 
 import java.time.Instant
 import javax.sql.DataSource
 
 object JorlanSchema {
+
+  inline def qServerSettings = quote(querySchema[ServerSettingRow]("server_settings", _.settingKey -> "setting_key"))
 
   inline def qUsers = quote(querySchema[User]("user"))
 
@@ -89,7 +91,7 @@ object JorlanSchema {
 }
 
 // Shared Quill context carrier — one context per datasource, shared across all repos.
-private class QuillCtx(hds: DataSource) {
+private[repository] class QuillCtx(hds: DataSource) {
 
   object ctx extends MysqlZioJdbcContext(MysqlEscape)
   val dataSourceLayer: ULayer[DataSource] = ZLayer.succeed(hds)
@@ -97,7 +99,7 @@ private class QuillCtx(hds: DataSource) {
 }
 
 // Common exec helper shared across all repository classes.
-private abstract class QuillRepoBase(qc: QuillCtx) {
+private[repository] abstract class QuillRepoBase(qc: QuillCtx) {
 
   protected val ds: ULayer[DataSource] = qc.dataSourceLayer
 
@@ -112,7 +114,8 @@ object QuillRepositories {
     DatabaseConfig,
     Nothing,
     UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
-      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository,
+      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository &
+      ServerSettingsRepository,
   ] =
     ZLayer
       .scoped {
@@ -131,10 +134,11 @@ object QuillRepositories {
             new QuillSchedulerRepository(qc),
             new QuillArtifactRepository(qc),
             new QuillPermissionRepository(qc),
+            new QuillServerSettingsRepository(qc),
           )
         }
       }.flatMap { env =>
-        val (ur, ar, cr, sr, mr, elr, schr, artR, pr) = env.get
+        val (ur, ar, cr, sr, mr, elr, schr, artR, pr, ssr) = env.get
         ZLayer.succeed(ur: UserZIORepository) ++
           ZLayer.succeed(ar: AgentZIORepository) ++
           ZLayer.succeed(cr: ConversationZIORepository) ++
@@ -143,7 +147,8 @@ object QuillRepositories {
           ZLayer.succeed(elr: EventLogZIORepository) ++
           ZLayer.succeed(schr: SchedulerZIORepository) ++
           ZLayer.succeed(artR: ArtifactZIORepository) ++
-          ZLayer.succeed(pr: PermissionZIORepository)
+          ZLayer.succeed(pr: PermissionZIORepository) ++
+          ZLayer.succeed(ssr: ServerSettingsRepository)
       }
 
 }
@@ -638,7 +643,6 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
 private class QuillEventLogRepository(qc: QuillCtx) extends QuillRepoBase(qc) with EventLogZIORepository {
 
   import JorlanSchema.*
-  import JorlanSchema.EventLogRow
   import qc.ctx.*
 
   private def encodeResource[R: JsonEncoder](resource: Option[R]): Either[String, Option[Json]] =
@@ -1188,5 +1192,40 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
         ),
       )
     } yield result
+
+}
+
+// ─── ServerSettings ───────────────────────────────────────────────────────────
+
+private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ServerSettingsRepository {
+
+  import JorlanSchema.*
+  import qc.ctx.{*, given}
+
+  override def get(key: String): UIO[Option[Json]] =
+    exec(
+      qc.ctx
+        .run(qServerSettings.filter(_.settingKey == lift(key)))
+        .map(_.headOption.flatMap(row => row.value.fromJson[Json].toOption)),
+    ).orDie
+
+  override def set(
+    key:   String,
+    value: Json,
+  ): UIO[Unit] = {
+    val jsonStr = value.toJson
+    exec(
+      qc.ctx.run(
+        qServerSettings
+          .insertValue(lift(ServerSettingRow(key, jsonStr)))
+          .onConflictUpdate(
+            (
+              t,
+              e,
+            ) => t.value -> e.value,
+          ),
+      ),
+    ).unit.orDie
+  }
 
 }

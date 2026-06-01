@@ -16,7 +16,7 @@ import zio.*
 
 case class EmbeddingStoreWrapper(store: QdrantEmbeddingStore) {
 
-  def close(): Task[Unit] = ZIO.attemptBlocking(store.close())
+  private def close(): Task[Unit] = ZIO.attemptBlocking(store.close())
 
 }
 

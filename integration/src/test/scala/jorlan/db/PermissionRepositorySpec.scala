@@ -10,14 +10,12 @@
 
 package jorlan.db
 
+import jorlan.*
 import jorlan.db.TestFixtures.*
-import jorlan.db.TestFixtures.given
 import jorlan.db.repository.*
 import jorlan.domain.*
-import jorlan.*
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object PermissionRepositorySpec extends ZIOSpecDefault {
 

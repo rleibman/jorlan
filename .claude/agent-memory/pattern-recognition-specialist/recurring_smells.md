@@ -22,6 +22,17 @@ type: project
 ## Suggestions
 - 19 opaque ID companions are structurally identical; a macro or code-generation approach could eliminate the repetition
 - 12 enum JSON codecs follow identical pattern; a shared helper `enumCodec[E](values: Array[E])` would DRY this up
-- `QuillRepositories.live` destructures a 9-tuple — fragile as repositories are added; consider accumulating with `ZLayer.succeed(x) ++ ...` directly
+- `QuillRepositories.live` destructures a 9-tuple (now 10-tuple with ServerSettings) — fragile as repositories are added; consider accumulating with `ZLayer.succeed(x) ++ ...` directly
 - `RepositoryTask` type alias is defined in `db` package — callers outside `db` must spell out `IO[RepositoryError, A]`; consider re-exporting from `model`
 - `F[_]` abstraction in `model/repository.scala` adds complexity with no current non-ZIO consumer; revisit when a second effect type materializes
+
+## Phase 8.1 Findings (2026-05-31)
+- `isInitialized` decoding pattern (settings.get("initialized").map { case Some(Json.Bool(v)) => ... }) duplicated across Jorlan.scala:78, InitServiceImpl:107, and StatusRoutes:52 — should be extracted to `ServerSettingsRepository` or a helper
+- `ServerStatus` and `InitRequest` case classes defined twice: once in `server/init/InitRoutes.scala` and again in `shell/client/InitClient.scala` — structural duplication; modules are independent, but the field names and JSON shape must stay in sync manually
+- `InitServiceImpl` constructed with `new` in `Jorlan.run` (bypasses `InitServiceImpl.live` ZLayer) — inconsistent wiring; the layer exists but is not used at the call site
+- `InitTokenStore` is not a ZIO service (no trait, no companion `ZIO.serviceWithZIO` accessor, no layer type) — cannot be injected via ZIO environment; callers must hold the concrete class directly
+- `ServerSettingRow` placement: belongs to `db` implementation details but is in the `ServerSettingsRepository.scala` trait file — creates a leaky abstraction (the trait file reveals the storage row type)
+- `initLoop` in `FirstRunWizard` is direct recursion with growing call stack — accumulates stack frames on repeated retry cycles; `ZIO.tailRecM` or a `Ref`-based loop would be safer
+- `Jorlan.run` reads `settingsRepo.get("initialized")` and then `buildRoutes` also calls `StatusRoutes.routes(startTime, settingsRepo)` which re-reads it per request — minor double-read at startup, acceptable but noted
+- Password stored in `ShellConfig` as plaintext `Option[String]` — written to disk in JSON by `ShellConfig.write`; this is a security risk (credential exposure on disk)
+- `validateInputs` uses sequential `*>` chaining — only reports the first failing validation; user cannot see all errors at once

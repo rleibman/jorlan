@@ -5,6 +5,23 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of Phase 8.1 review (2026-05-31)
+
+### ShellConfig.layer ignores --config CLI arg during bootstrap
+`ShellConfig.layer` calls `findReadFile(Nil)` — not `findReadFile(args)` — so the `--config` CLI flag is not honoured at config-load time. It is honoured for `isFirstRun` and `resolveWritePath` later in `JorlanShell.run` because those pass `args.toList`. This means the load-path priority in the spec (env var → --config → jorlan-shell.json → jorlan.json) is incomplete at bootstrap.
+
+### isFirstRun check uses empty string rather than default URL
+`ShellConfig.isFirstRun` returns `true` when `cfg.serverUrl.isEmpty`. But `ShellConfig.serverUrl` has a default of `"http://localhost:8080"`, so it will never be empty when loaded from `application.conf` defaults. The correct check is whether the file was absent OR the file existed but lacked a `serverUrl` key. This makes the file-presence branch the only effective trigger.
+
+### InitService.complete does not hash the admin password before storing
+`InitServiceImpl.complete` calls `users.createUser(adminName, Some(adminEmail), None)` — the `adminPassword` parameter is accepted, validated for length, but never passed to `createUser`. The password is dropped on the floor. The newly created admin user has no password, making normal login impossible after first-run setup.
+
+### StatusRoutes object defined but not wired into the full-app build
+`StatusRoutes` is defined in `InitRoutes.scala` but is only used inside `SetupModeApp` (setup-mode only). `buildRoutes` in `Jorlan.scala` does not include `StatusRoutes`, so `GET /api/status` returns 404 (or falls through to a 500) on an initialized server. The spec requires the endpoint to be "live at all times."
+
+### SetupModeApp returns 503 for all validation failures, not 400
+`InitRoutes.scala` maps every `JorlanError` from `InitService.complete` to HTTP 403. Validation errors (bad email, short password, empty server name) should return 400; only token/already-initialized errors should return 403.
+
 ## Patterns observed as of Phase 8 review (2026-05-29)
 
 ### DB layer leaking into server/graphql layer

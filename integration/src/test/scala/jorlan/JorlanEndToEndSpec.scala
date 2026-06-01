@@ -15,13 +15,11 @@ import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import caliban.GraphQLInterpreter
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.QuillRepositories
-import jorlan.domain.{ConnectionId, User, UserId}
-import jorlan.graphql.{JorlanAPI, JorlanRoutes}
 import jorlan.domain.*
+import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import scala.language.unsafeNulls
 
@@ -52,9 +50,10 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
   private val oauthLayer: ZLayer[ConfigurationService, Nothing, OAuthService] =
     ZLayer
       .fromZIO(
-        ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { _ =>
-          OAuthService.live(googleConfig = None, githubConfig = None, discordConfig = None)
-        },
+        ZIO
+          .serviceWithZIO[ConfigurationService](_.appConfig).orDie.as(
+            OAuthService.live(googleConfig = None, githubConfig = None, discordConfig = None),
+          ),
       ).flatten
 
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
@@ -107,7 +106,7 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("Jorlan end-to-end (real DB)")(
       test("Jorlan.buildRoutes succeeds with full environment") {
-        Jorlan.buildRoutes.map(_ => assertTrue(true))
+        Jorlan.buildRoutes().as(assertTrue(true))
       },
       test("seeded server user is returned by users query") {
         for {

@@ -10,7 +10,7 @@
 
 package jorlan.graphql
 
-import auth.{AuthenticatedSession, UnauthenticatedSession}
+import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
 import jorlan.db.repository.AgentZIORepository
@@ -19,7 +19,6 @@ import jorlan.service.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 /** Unit tests for [[JorlanAPI]] using in-memory service stubs. No database required.
   *
@@ -74,7 +73,6 @@ object JorlanAPISpec extends ZIOSpecDefault {
               name = "Jorlan Interactive",
               description = Some("Default interactive agent"),
               defaultModel = None,
-              trustLevel = 0,
               createdAt = now,
             ),
           )

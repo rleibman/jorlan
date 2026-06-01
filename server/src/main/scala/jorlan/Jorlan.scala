@@ -10,20 +10,26 @@
 
 package jorlan
 
-import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.*
+import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.db.FlywayMigration
+import jorlan.db.repository.ServerSettingsRepository
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
+import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.service.*
 import zio.*
 import zio.http.*
+import zio.json.ast.Json
 import zio.logging.backend.SLF4J
+
+import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
   AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & ApprovalService & UserService &
-  PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub & ModelGateway
+  PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub & ModelGateway &
+  ServerSettingsRepository
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -42,14 +48,16 @@ object Jorlan extends ZIOApp {
   /** Build the combined application routes. Extracted so integration tests can wire up the app with a test environment
     * without starting a real HTTP server on a production port.
     */
-  def buildRoutes: ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
+  def buildRoutes(startTime: Long = 0L): ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
     for {
-      authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      authR      <- authServer.authRoutes
-      unauthR    <- authServer.unauthRoutes
-      graphqlR   <- JorlanRoutes.routes.orDie
+      authServer   <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      settingsRepo <- ZIO.service[ServerSettingsRepository]
+      authR        <- authServer.authRoutes
+      unauthR      <- authServer.unauthRoutes
+      graphqlR     <- JorlanRoutes.routes.orDie
+      statusR = StatusRoutes.routes(startTime, settingsRepo)
     } yield {
-      ((healthRoutes ++ authR ++ graphqlR) @@ authServer.bearerSessionProvider ++ unauthR)
+      ((healthRoutes ++ statusR ++ authR ++ graphqlR) @@ authServer.bearerSessionProvider ++ unauthR)
         .handleErrorCause { cause =>
           cause.squash match {
             case ExpiredToken(msg, _) => Response.unauthorized(msg)
@@ -62,11 +70,25 @@ object Jorlan extends ZIOApp {
 
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
     for {
-      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
-      _      <- FlywayMigration.runMigrations
-      _      <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
-      app    <- buildRoutes
-      _      <- Server
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+      _            <- FlywayMigration.runMigrations
+      startTime    <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      settingsRepo <- ZIO.service[ServerSettingsRepository]
+      userService  <- ZIO.service[UserService]
+      initialized  <- settingsRepo.get("initialized").map {
+        case Some(Json.Bool(v)) => v
+        case _                  => false
+      }
+      tokenStore <- InitTokenStore.make(initialized)
+      initService = new InitServiceImpl(settingsRepo, userService, tokenStore)
+      _   <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
+      app <-
+        if (initialized) {
+          buildRoutes(startTime)
+        } else {
+          ZIO.succeed(SetupModeApp.make(startTime, settingsRepo, initService))
+        }
+      _ <- Server
         .serve(app)
         .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
     } yield ()

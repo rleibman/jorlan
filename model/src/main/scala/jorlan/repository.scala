@@ -12,10 +12,8 @@ package jorlan
 
 import jorlan.domain.*
 import jorlan.service.EventLogFilter
+import zio.json.JsonEncoder
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
-
-import java.time.Instant
 
 // ─── Search infrastructure ────────────────────────────────────────────────────
 

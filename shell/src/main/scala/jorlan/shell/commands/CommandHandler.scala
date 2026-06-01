@@ -21,7 +21,7 @@ import zio.json.ast.Json
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
 object CommandHandler {
 
-  type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient
+  private type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient
 
   def handle(
     cmd:  ShellCommand,
