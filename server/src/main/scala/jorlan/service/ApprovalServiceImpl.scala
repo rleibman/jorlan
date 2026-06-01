@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.{EventLogZIORepository, PermissionZIORepository}
 import jorlan.domain.*
 import zio.*
 
@@ -23,31 +24,25 @@ import java.time.Instant
   *   2. [[CapabilityEvaluator.evaluate]] — queries DB
   *   3. Pre-load existing approvals when the grant mode is `Once` or `Session`
   *   4. [[ApprovalPolicyEngine.decide]] — pure
-  *   5. If `PendingApproval`: persist the [[ApprovalRequest]] via [[PermissionService.requestApproval]], which also
-  *      writes the `ApprovalRequested` event
+  *   5. If `PendingApproval`: persist the [[ApprovalRequest]] and write `ApprovalRequested` event
   *   6. For direct `Allowed`/`Denied` results: write a `CapabilityAllowed`/`CapabilityDenied` audit event
   */
 private class ApprovalServiceImpl(
-  riskClassifier:    RiskClassifier,
-  evaluator:         CapabilityEvaluator,
-  policyEngine:      ApprovalPolicyEngine,
-  permissionService: PermissionService,
-  eventLog:          EventLogService,
+  evaluator:      CapabilityEvaluator,
+  permissionRepo: PermissionZIORepository,
+  eventLogRepo:   EventLogZIORepository,
 ) extends ApprovalService {
 
   override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
     for {
       now <- Clock.instant
-      riskClass = riskClassifier.classify(request.capability)
-      evaluation <- evaluator.evaluate(request)
-      // Pre-load existing approvals needed for Once / Session modes.
+      riskClass = RiskClassifier.classify(request.capability)
+      evaluation        <- evaluator.evaluate(request)
       existingApprovals <- loadExistingApprovals(request, evaluation)
-      rawResult = policyEngine.decide(request, evaluation, riskClass, existingApprovals, now)
-      // Persist the approval request and rewrite PendingApproval with the saved record.
+      rawResult = ApprovalPolicyEngine.decide(request, evaluation, riskClass, existingApprovals, now)
       result <- rawResult match {
         case AuthorizationResult.PendingApproval(template, mode) =>
-          permissionService
-            .requestApproval(template, Some(request.requestorId))
+          requestApproval(template, Some(request.requestorId))
             .map(saved => AuthorizationResult.PendingApproval(saved, mode))
         case AuthorizationResult.Allowed =>
           logDecision(request, EventType.CapabilityAllowed, now).as(AuthorizationResult.Allowed)
@@ -57,9 +52,52 @@ private class ApprovalServiceImpl(
     } yield result
 
   override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
-    permissionService.recordApprovalDecision(decision)
+    for {
+      now       <- Clock.instant
+      saved     <- permissionRepo.recordApprovalDecision(decision)
+      eventType <- saved.decision match {
+        case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
+        case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>
+          ZIO.succeed(EventType.ApprovalDenied)
+        case ApprovalStatus.Pending =>
+          ZIO.fail(JorlanError("recordApprovalDecision called with Pending status — invariant violated"))
+      }
+      _ <- eventLogRepo.append(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = eventType,
+          actorId = Some(saved.decidedBy),
+          agentId = None,
+          sessionId = None,
+          resource = Some(saved.approvalRequestId),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield saved
 
-  override def expireStaleRequests(): IO[JorlanError, Long] = permissionService.expireAllStaleApprovalRequests()
+  override def expireStaleRequests(): IO[JorlanError, Long] = permissionRepo.expireAllStaleApprovalRequests()
+
+  private def requestApproval(
+    req:     ApprovalRequest,
+    actorId: Option[UserId],
+  ): IO[JorlanError, ApprovalRequest] =
+    for {
+      now   <- Clock.instant
+      saved <- permissionRepo.createApprovalRequest(req)
+      _     <- eventLogRepo.append(
+        EventLog(
+          id = EventLogId.empty,
+          eventType = EventType.ApprovalRequested,
+          actorId = actorId,
+          agentId = None,
+          sessionId = None,
+          resource = Some(saved.id),
+          payloadJson = None,
+          occurredAt = now,
+        ),
+      )
+    } yield saved
 
   private def loadExistingApprovals(
     request:    CapabilityRequest,
@@ -67,15 +105,10 @@ private class ApprovalServiceImpl(
   ): IO[JorlanError, List[ApprovalRequest]] =
     evaluation match {
       case EvaluationResult.CapabilityGrantAllows(grant) if grant.approvalMode == ApprovalMode.Once =>
-        permissionService
-          .findApprovedRequest(request.capability, request.requestorId, None)
-          .map(_.toList)
+        permissionRepo.findApprovedRequest(request.capability, request.requestorId, None).map(_.toList)
       case EvaluationResult.CapabilityGrantAllows(grant)
           if grant.approvalMode == ApprovalMode.Session && request.sessionId.isDefined =>
-        permissionService
-          .findApprovedRequest(request.capability, request.requestorId, request.sessionId)
-          .map(_.toList)
-      // Session mode with no sessionId: policy engine will deny anyway; skip the DB round-trip.
+        permissionRepo.findApprovedRequest(request.capability, request.requestorId, request.sessionId).map(_.toList)
       case _ => ZIO.succeed(Nil)
     }
 
@@ -84,8 +117,8 @@ private class ApprovalServiceImpl(
     eventType: EventType,
     now:       Instant,
   ): IO[JorlanError, Unit] =
-    eventLog
-      .log(
+    eventLogRepo
+      .append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -102,18 +135,7 @@ private class ApprovalServiceImpl(
 
 object ApprovalServiceImpl {
 
-  val live: URLayer[
-    RiskClassifier & CapabilityEvaluator & ApprovalPolicyEngine & PermissionService & EventLogService,
-    ApprovalService,
-  ] =
-    ZLayer.fromFunction(
-      (
-        rc: RiskClassifier,
-        ev: CapabilityEvaluator,
-        pe: ApprovalPolicyEngine,
-        ps: PermissionService,
-        el: EventLogService,
-      ) => new ApprovalServiceImpl(rc, ev, pe, ps, el),
-    )
+  val live: URLayer[CapabilityEvaluator & PermissionZIORepository & EventLogZIORepository, ApprovalService] =
+    ZLayer.fromFunction(new ApprovalServiceImpl(_, _, _))
 
 }

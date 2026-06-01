@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.{EventLogZIORepository, PermissionZIORepository}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -25,18 +26,11 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
   // ─── Layer helpers ────────────────────────────────────────────────────────────
 
   /** Build a fresh set of layers for each test. All service layers share the same in-memory repositories so that
-    * objects created via PermissionService are visible to CapabilityEvaluator and vice-versa.
+    * objects created via PermissionZIORepository are visible to CapabilityEvaluator and vice-versa.
     */
-  private def freshLayers: ULayer[ApprovalService & PermissionService & EventLogService] = {
-    val permRepoLayer = InMemoryRepositories.InMemoryPermissionRepo.layer
-    val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val eventLogLayer = eventLogRepo >>> EventLogServiceImpl.live
-    val permSvcLayer = (permRepoLayer ++ eventLogLayer) >>> PermissionServiceImpl.live
-    val evaluatorLayer = permRepoLayer >>> CapabilityEvaluatorImpl.live
-    val approvalLayer =
-      (RiskClassifierImpl.live ++ evaluatorLayer ++ ApprovalPolicyEngineImpl.live ++ permSvcLayer ++ eventLogLayer) >>>
-        ApprovalServiceImpl.live
-    permSvcLayer ++ approvalLayer ++ eventLogLayer
+  private def freshLayers: ULayer[ApprovalService & PermissionZIORepository & EventLogZIORepository] = {
+    val base = InMemoryRepositories.InMemoryPermissionRepo.layer ++ InMemoryRepositories.InMemoryEventLogRepo.layer
+    base >+> CapabilityEvaluatorImpl.live >+> ApprovalServiceImpl.live
   }
 
   // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -86,16 +80,16 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     suite("ApprovalService")(
       recordDecisionSuite,
       sessionBranchSuite,
-      companionAccessorSuite,
+      serviceMethodsSuite,
     )
 
   private val recordDecisionSuite = suite("recordDecision")(
-    test("recordDecision delegates to PermissionService and returns the saved decision") {
+    test("recordDecision delegates to PermissionZIORepository and returns the saved decision") {
       for {
-        permSvc <- ZIO.service[PermissionService]
-        svc     <- ZIO.service[ApprovalService]
+        permRepo <- ZIO.service[PermissionZIORepository]
+        svc      <- ZIO.service[ApprovalService]
         // Create a pending approval request to decide on
-        req <- permSvc.requestApproval(
+        req <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("shell.execute"),
@@ -108,7 +102,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             createdAt = T0,
             expiresAt = None,
           ),
-          actorId = Some(UserId(1L)),
         )
         decision = ApprovalDecision(
           id = ApprovalDecisionId.empty,
@@ -127,9 +120,9 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     },
     test("recordDecision with Rejected status is delegated correctly") {
       for {
-        permSvc <- ZIO.service[PermissionService]
-        svc     <- ZIO.service[ApprovalService]
-        req     <- permSvc.requestApproval(
+        permRepo <- ZIO.service[PermissionZIORepository]
+        svc      <- ZIO.service[ApprovalService]
+        req      <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("filesystem.write"),
@@ -142,7 +135,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             createdAt = T0,
             expiresAt = None,
           ),
-          actorId = None,
         )
         decision = ApprovalDecision(
           id = ApprovalDecisionId.empty,
@@ -162,14 +154,14 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
   private val sessionBranchSuite = suite("authorize with sessionId branch")(
     test("Session grant with sessionId in request triggers findApprovedRequest with sessionId") {
       for {
-        permSvc <- ZIO.service[PermissionService]
-        svc     <- ZIO.service[ApprovalService]
+        permRepo <- ZIO.service[PermissionZIORepository]
+        svc      <- ZIO.service[ApprovalService]
         // Add a Session-mode grant for the user
-        _ <- permSvc.upsertCapabilityGrant(sessionGrant)
+        _ <- permRepo.upsertCapabilityGrant(sessionGrant)
         // First call: no existing approval, should return PendingApproval
         result1 <- svc.authorize(capReq("shell.execute", sessionId = Some(sessionId1)))
         // Manually create an approved request for the same session
-        req <- permSvc.requestApproval(
+        req <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("shell.execute"),
@@ -182,7 +174,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             createdAt = T0,
             expiresAt = None,
           ),
-          actorId = None,
         )
         decision = ApprovalDecision(
           id = ApprovalDecisionId.empty,
@@ -192,7 +183,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           scopeOverride = None,
           decidedAt = T0,
         )
-        _ <- permSvc.recordApprovalDecision(decision)
+        _ <- permRepo.recordApprovalDecision(decision)
         // Second call: existing approval for this session, should return Allowed
         result2 <- svc.authorize(capReq("shell.execute", sessionId = Some(sessionId1)))
       } yield assertTrue(
@@ -202,22 +193,23 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     },
     test("Session grant with no sessionId in request returns PendingApproval (no DB round-trip)") {
       for {
-        permSvc <- ZIO.service[PermissionService]
-        svc     <- ZIO.service[ApprovalService]
-        _       <- permSvc.upsertCapabilityGrant(sessionGrant)
+        permRepo <- ZIO.service[PermissionZIORepository]
+        svc      <- ZIO.service[ApprovalService]
+        _        <- permRepo.upsertCapabilityGrant(sessionGrant)
         // Request with no sessionId: loadExistingApprovals falls through to the _ case
         result <- svc.authorize(capReq("shell.execute", sessionId = None))
       } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
     },
   ).provide(freshLayers)
 
-  private val companionAccessorSuite = suite("ApprovalService companion accessors")(
-    test("companion accessors delegate to implementation") {
+  private val serviceMethodsSuite = suite("ApprovalService methods")(
+    test("service methods work end-to-end") {
       for {
-        permSvc <- ZIO.service[PermissionService]
+        permRepo <- ZIO.service[PermissionZIORepository]
+        svc      <- ZIO.service[ApprovalService]
         // Seed a persistent grant so authorize returns Allowed for the final assertion
-        _   <- permSvc.upsertCapabilityGrant(persistentGrant)
-        req <- permSvc.requestApproval(
+        _   <- permRepo.upsertCapabilityGrant(persistentGrant)
+        req <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("memory.read"),
@@ -230,7 +222,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             createdAt = T0,
             expiresAt = None,
           ),
-          actorId = None,
         )
         decision = ApprovalDecision(
           id = ApprovalDecisionId.empty,
@@ -240,9 +231,9 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           scopeOverride = None,
           decidedAt = T0,
         )
-        saved  <- ApprovalService.recordDecision(decision)
-        _      <- ApprovalService.expireStaleRequests()
-        result <- ApprovalService.authorize(capReq("memory.read"))
+        saved  <- svc.recordDecision(decision)
+        _      <- svc.expireStaleRequests()
+        result <- svc.authorize(capReq("memory.read"))
       } yield assertTrue(
         saved.decision == ApprovalStatus.Approved,
         result == AuthorizationResult.Allowed,

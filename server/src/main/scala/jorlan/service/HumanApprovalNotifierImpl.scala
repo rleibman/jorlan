@@ -11,18 +11,19 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.EventLogZIORepository
 import jorlan.domain.*
 import zio.*
 
 /** Phase 8 stub — writes an [[EventType.ApprovalRequested]] event to the audit log. Real delivery (Telegram, in-app) is
   * wired in Phase 11.
   */
-class HumanApprovalNotifierImpl(eventLog: EventLogService) extends HumanApprovalNotifier {
+class HumanApprovalNotifierImpl(eventLogRepo: EventLogZIORepository) extends HumanApprovalNotifier {
 
   override def notifyApprovalRequired(request: ApprovalRequest): IO[JorlanError, Unit] =
     Clock.instant.flatMap { now =>
-      eventLog
-        .log(
+      eventLogRepo
+        .append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.ApprovalRequested,
@@ -41,7 +42,7 @@ class HumanApprovalNotifierImpl(eventLog: EventLogService) extends HumanApproval
 
 object HumanApprovalNotifierImpl {
 
-  val live: URLayer[EventLogService, HumanApprovalNotifier] =
+  val live: URLayer[EventLogZIORepository, HumanApprovalNotifier] =
     ZLayer.fromFunction(new HumanApprovalNotifierImpl(_))
 
 }

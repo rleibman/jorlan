@@ -54,6 +54,24 @@ type: project
 - `JorlanClient.scala` uses `implicit` keyword (Scala 2 style) instead of `given`/`using` (Scala 3) — this is generated Caliban client code and should not be hand-edited. Not a review issue.
 - `resolveCredentials` throws `new RuntimeException("Cancelled")` via `ZIO.fail` — appropriate for signalling cancellation through the `Throwable` error channel, but the message is not distinguishable from other failures at the `catchAll` site in `run`.
 
+## Phase 8.3 Server Personality & Phase 8.4 AI CI Patterns (reviewed 2026-06-01)
+
+- `PersonalityServiceImpl.live` initialises the `Ref` cache atomically via `ZLayer.fromZIO` — correct; DB read and `Ref.make` are sequenced in ZIO, no race on startup.
+- `PersonalityServiceImpl.update` encodes with `p.toJsonAST` and lifts the `Either[String, Json]` via `ZIO.fromEither.mapError(...)` — clean, no exceptions.
+- `PersonalityServiceImpl.live` uses `.getOrElse(Personality.default)` on a failed JSON decode at startup — silently discards a corrupt stored personality rather than surfacing the parse error. Acceptable fallback, but could log a warning.
+- `OllamaModelGateway.getOrCreate` uses `sessions.get.flatMap { ... sessions.update(...) }` — this is a TOCTOU pattern: two separate `Ref` operations allow concurrent callers to both see `None` and both create a new `StreamAssistant` for the same session. The second write overwrites the first, leaking the first assistant. Should use `Ref.modify` to make the check-and-set atomic.
+- `Personality.buildSystemPrompt` is a pure function — no side effects, correct behaviour.
+- `AgentRunnerImpl.processMessage` reads personality then builds `systemPrompt = Personality.buildSystemPrompt(personality)` as a pure val inside the for-comprehension before the model call — correctly sequenced.
+- `serverPersonality` GraphQL query (`JorlanAPI.scala` line 291) calls `PersonalityService.get()` which is `UIO` — it is assigned to type `ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality]`. The `UIO` return widens to the richer error channel automatically, which is fine.
+- `updatePersonality` mutation requires `"admin.personality.update"` capability — gated correctly.
+- `ArgBuilder[Formality]` uses `Formality.valueOf` (line 214) which can throw `IllegalArgumentException` on unknown strings — the same unsafe `valueOf` pattern exists for all enums in the file, established before Phase 8.3.
+- `initialisePostLogin` uses `.orElse(ZIO.succeed(serverUrl))` as a fallback when `checkStatus` fails — semantically correct; serverUrl is the safe default display name.
+- `InMemoryPermissionRepo.expireAllStaleApprovalRequests` (InMemoryRepositories.scala line 189) calls `Instant.now()` directly inside `Ref.modify` — a bare side-effecting clock call inside an otherwise pure state transition. Test-only code but inconsistent with ZIO Clock discipline.
+- `StreamedChatSpec` (`ai/src/test/`) tests only `LangChainConfig` defaults — no stream logic is tested. Documented intentionally; streaming coverage delegated to `AgentRunnerSpec` via `FakeModelGateway`.
+- CI workflow (`scala.yml`) caches `~/.ollama` under key `${{ runner.os }}-ollama-llama3.2-1b` and only pulls on cache miss — correctly avoids re-downloading the model on every run.
+- `ShellCommand.Personality` case is a Scala 3 enum variant with no fields — correct; `/personality` has no parameters.
+- `showPersonality` in `CommandHandler` uses `import scala.language.unsafeNulls` scoped to the `json => { ... }` block — narrowly scoped, acceptable.
+
 ## Phase 8.1 First-Run Init Patterns (reviewed 2026-05-31)
 
 - `QuillServerSettingsRepository` uses `.orDie` to satisfy `UIO` contract in `ServerSettingsRepository` trait — DB errors become defects. Intentional: trait contract is `UIO`, not `IO[RepositoryError, _]`.

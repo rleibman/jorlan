@@ -36,7 +36,10 @@ permissions, durable scheduling, and full observability. See `doc/` for full spe
 
 ## SBT Usage
 
-Always use `--error` option: `sbt --error compile`
+- Always use `--error` option: `sbt --error compile`
+- Any time you're going to compile two modules or more, please use `sbt --error compile test:compile`
+- Use `sbt test` to run all tests 
+  
 
 ## Scala Style
 

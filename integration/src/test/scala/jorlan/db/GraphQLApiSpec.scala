@@ -34,9 +34,6 @@ object GraphQLApiSpec extends ZIOSpecDefault {
 
   private val appLayer =
     JorlanContainer.repositoryLayer >+>
-      EventLogServiceImpl.live >+>
-      PermissionServiceImpl.live >+>
-      UserServiceImpl.live >+>
       stubCapabilityEvaluator >+>
       ZLayer.succeed(JorlanSession.serverSession) >+>
       SessionHub.live >+>

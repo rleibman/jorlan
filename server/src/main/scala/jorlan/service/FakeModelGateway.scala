@@ -27,8 +27,9 @@ class FakeModelGateway(
 ) extends ModelGateway {
 
   override def streamedResponse(
-    sessionId: AgentSessionId,
-    message:   String,
+    sessionId:    AgentSessionId,
+    message:      String,
+    systemPrompt: String = "",
   ): ZStream[Any, ModelError, String] = {
     val base = ZStream.fromIterable(chunks)
     chunkDelay.fold(base)(d => base.tap(_ => ZIO.sleep(d)))
@@ -68,8 +69,9 @@ object FakeModelGateway {
 private class FailingFakeModelGateway(error: ModelError) extends ModelGateway {
 
   override def streamedResponse(
-    sessionId: AgentSessionId,
-    message:   String,
+    sessionId:    AgentSessionId,
+    message:      String,
+    systemPrompt: String = "",
   ): ZStream[Any, ModelError, String] = ZStream.fail(error)
 
   override def availableModels: UIO[List[ModelInfo]] =

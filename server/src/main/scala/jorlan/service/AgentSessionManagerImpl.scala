@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.AgentZIORepository
+import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
 import jorlan.domain.*
 import zio.*
 
@@ -19,7 +19,7 @@ class AgentSessionManagerImpl(
   agentRepo:            AgentZIORepository,
   sessionHub:           SessionHub,
   modelGateway:         ModelGateway,
-  eventLog:             EventLogService,
+  eventLogRepo:         EventLogZIORepository,
   cachedDefaultAgentId: Ref[Option[AgentId]],
 ) extends AgentSessionManager {
 
@@ -66,7 +66,7 @@ class AgentSessionManagerImpl(
       )
       saved <- agentRepo.upsertSession(session).mapError(JorlanError(_))
       _     <- sessionHub.getOrCreate(saved.id).unit
-      _     <- eventLog.log(
+      _     <- eventLogRepo.append(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.SessionCreated,
@@ -97,7 +97,7 @@ class AgentSessionManagerImpl(
       saved <- agentRepo
         .upsertSession(session.copy(status = status, updatedAt = now))
         .mapError(JorlanError(_))
-      _ <- eventLog.log(
+      _ <- eventLogRepo.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -132,15 +132,15 @@ class AgentSessionManagerImpl(
 
 object AgentSessionManagerImpl {
 
-  val live: URLayer[AgentZIORepository & SessionHub & ModelGateway & EventLogService, AgentSessionManager] =
+  val live: URLayer[AgentZIORepository & SessionHub & ModelGateway & EventLogZIORepository, AgentSessionManager] =
     ZLayer.fromZIO(
       for {
         agentRepo    <- ZIO.service[AgentZIORepository]
         sessionHub   <- ZIO.service[SessionHub]
         modelGateway <- ZIO.service[ModelGateway]
-        eventLog     <- ZIO.service[EventLogService]
+        eventLogRepo <- ZIO.service[EventLogZIORepository]
         cached       <- Ref.make(Option.empty[AgentId])
-      } yield new AgentSessionManagerImpl(agentRepo, sessionHub, modelGateway, eventLog, cached),
+      } yield new AgentSessionManagerImpl(agentRepo, sessionHub, modelGateway, eventLogRepo, cached),
     )
 
 }

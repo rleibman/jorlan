@@ -61,12 +61,16 @@ trait ModelGateway {
     *   The active session; chat history is keyed on this ID.
     * @param message
     *   The user message to send to the model.
+    * @param systemPrompt
+    *   Optional system-level instructions injected before the user message. When the prompt changes between calls the
+    *   gateway rebuilds the session assistant (conversation history is reset for that session).
     * @return
     *   A ZStream of string tokens. Callers treat the concatenation of all emitted tokens as the full response.
     */
   def streamedResponse(
-    sessionId: AgentSessionId,
-    message:   String,
+    sessionId:    AgentSessionId,
+    message:      String,
+    systemPrompt: String = "",
   ): ZStream[Any, ModelError, String]
 
   /** Returns metadata for all models the gateway can currently route to. */
@@ -80,18 +84,4 @@ trait ModelGateway {
 
 }
 
-object ModelGateway {
-
-  def streamedResponse(
-    sessionId: AgentSessionId,
-    message:   String,
-  ): ZStream[ModelGateway, ModelError, String] =
-    ZStream.serviceWithStream[ModelGateway](_.streamedResponse(sessionId, message))
-
-  def availableModels: URIO[ModelGateway, List[ModelInfo]] =
-    ZIO.serviceWithZIO[ModelGateway](_.availableModels)
-
-  def invalidateSession(sessionId: AgentSessionId): URIO[ModelGateway, Unit] =
-    ZIO.serviceWithZIO[ModelGateway](_.invalidateSession(sessionId))
-
-}
+object ModelGateway {}

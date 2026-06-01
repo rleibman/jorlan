@@ -10,9 +10,8 @@
 
 package jorlan.db
 
-import jorlan.db.repository.ServerSettingsRepository
+import jorlan.db.repository.{ServerSettingsRepository, UserZIORepository}
 import jorlan.init.{InitService, InitServiceImpl, InitTokenStore}
-import jorlan.service.{EventLogService, EventLogServiceImpl, UserService, UserServiceImpl}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -27,7 +26,7 @@ import scala.language.unsafeNulls
   *   1. Fresh DB (after Flyway V017) has `initialized = false`.
   *   2. `InitService.complete` with valid token and correct inputs succeeds.
   *   3. After completion, `initialized = true` and `serverName` is persisted.
-  *   4. The user created during init is queryable via `UserService`.
+  *   4. The user created during init is queryable via `UserZIORepository`.
   *   5. A second `complete` call fails with "already initialized".
   */
 object InitServiceIntegrationSpec extends ZIOSpecDefault {
@@ -37,19 +36,13 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
   private val tokenStoreLayer: ULayer[InitTokenStore] =
     ZLayer.fromZIO(InitTokenStore.make(false))
 
-  private val initServiceLayer
-    : URLayer[ServerSettingsRepository & UserService & InitTokenStore & EventLogService, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
-
   private val fullLayer: TaskLayer[
-    ServerSettingsRepository & UserService & InitTokenStore & InitService,
+    ServerSettingsRepository & UserZIORepository & InitTokenStore & InitService,
   ] =
-    ZLayer.make[ServerSettingsRepository & UserService & InitTokenStore & InitService](
+    ZLayer.make[ServerSettingsRepository & UserZIORepository & InitTokenStore & InitService](
       dbLayer,
-      EventLogServiceImpl.live,
-      UserServiceImpl.live,
       tokenStoreLayer,
-      initServiceLayer,
+      InitServiceImpl.layer,
     )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -58,7 +51,7 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
         for {
           settings    <- ZIO.service[ServerSettingsRepository]
           initialized <- settings.get("initialized")
-        } yield assertTrue(initialized == Some(Json.Bool(false))) // assert seed row exists, not just that service returns false
+        } yield assertTrue(initialized == Some(Json.Bool(false)))
       },
       test("2. complete with valid token sets initialized = true and persists serverName") {
         for {
@@ -74,10 +67,10 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
           serverName.contains(Json.Str("TestServer")),
         )
       },
-      test("3. admin user created during init is queryable via UserService") {
+      test("3. admin user created during init is queryable via UserZIORepository") {
         for {
-          userService <- ZIO.service[UserService]
-          users       <- userService.search(jorlan.UserSearch())
+          userRepo <- ZIO.service[UserZIORepository]
+          users    <- userRepo.search(jorlan.UserSearch())
         } yield assertTrue(users.exists(_.email.contains("admin@example.com")))
       },
       test("4. second complete fails with already initialized") {

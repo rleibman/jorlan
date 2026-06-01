@@ -62,28 +62,4 @@ trait AgentSessionManager {
 
 }
 
-object AgentSessionManager {
-
-  def createSession(
-    userId:  UserId,
-    modelId: Option[ModelId],
-  ): ZIO[AgentSessionManager, JorlanError, AgentSession] =
-    ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, modelId))
-
-  def getSession(id: AgentSessionId): ZIO[AgentSessionManager, JorlanError, Option[AgentSession]] =
-    ZIO.serviceWithZIO[AgentSessionManager](_.getSession(id))
-
-  def suspendSession(id: AgentSessionId): ZIO[AgentSessionManager, JorlanError, AgentSession] =
-    ZIO.serviceWithZIO[AgentSessionManager](_.suspendSession(id))
-
-  def terminateSession(id: AgentSessionId): ZIO[AgentSessionManager, JorlanError, AgentSession] =
-    ZIO.serviceWithZIO[AgentSessionManager](_.terminateSession(id))
-
-  def listSessions(
-    userId:   UserId,
-    page:     Int,
-    pageSize: Int,
-  ): ZIO[AgentSessionManager, JorlanError, List[AgentSession]] =
-    ZIO.serviceWithZIO[AgentSessionManager](_.listSessions(userId, page, pageSize))
-
-}
+object AgentSessionManager

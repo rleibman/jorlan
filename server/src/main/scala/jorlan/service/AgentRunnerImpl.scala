@@ -11,14 +11,24 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.{EventLogZIORepository, ServerSettingsRepository}
 import jorlan.domain.*
 import zio.*
+import zio.json.*
 import zio.stream.ZStream
 
+/** [[AgentRunner]] implementation. On each [[processMessage]] call it reads the current personality from
+  * [[ServerSettingsRepository]], builds the system prompt, and streams the model response token-by-token through
+  * [[SessionHub]].
+  *
+  * @param settingsRepo
+  *   Read on every `processMessage` call so personality changes take effect on the next message without a restart.
+  */
 class AgentRunnerImpl(
   modelGateway: ModelGateway,
   sessionHub:   SessionHub,
-  eventLog:     EventLogService,
+  eventLogRepo: EventLogZIORepository,
+  settingsRepo: ServerSettingsRepository,
 ) extends AgentRunner {
 
   override def processMessage(
@@ -26,12 +36,12 @@ class AgentRunnerImpl(
     content:   String,
     actorId:   Option[UserId],
   ): IO[JorlanError, Unit] =
-    // errorRef is hoisted above the entire for-comprehension so that failures at any
-    // step (event log write, stream processing) are captured and reflected in the sentinel.
     Ref.make(Option.empty[String]).flatMap { errorRef =>
       val work = for {
+        personality <- loadPersonality
+        systemPrompt = Personality.buildSystemPrompt(personality)
         now <- Clock.instant
-        _   <- eventLog.log(
+        _   <- eventLogRepo.append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.UserMessageReceived,
@@ -45,7 +55,7 @@ class AgentRunnerImpl(
         )
         _ <- ZIO.scoped {
           modelGateway
-            .streamedResponse(sessionId, content)
+            .streamedResponse(sessionId, content, systemPrompt)
             .mapError(e => JorlanError(e.msg, Some(e)))
             .tapError(e => errorRef.set(Some(e.getMessage)))
             .foreach { chunk =>
@@ -54,7 +64,6 @@ class AgentRunnerImpl(
         }
       } yield ()
 
-      // Capture any failure not already recorded by tapError (e.g. event log write failure).
       work
         .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
         .ensuring {
@@ -65,8 +74,8 @@ class AgentRunnerImpl(
             }
             sessionHub.publish(sentinel) *>
               Clock.instant.flatMap { completedAt =>
-                eventLog
-                  .log(
+                eventLogRepo
+                  .append(
                     EventLog(
                       id = EventLogId.empty,
                       eventType = EventType.AgentResponseCompleted,
@@ -87,11 +96,23 @@ class AgentRunnerImpl(
   override def subscribeToSession(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk] =
     sessionHub.subscribe(sessionId)
 
+  private val loadPersonality: UIO[Personality] =
+    settingsRepo.get(ServerSettingsRepository.PersonalityKey).flatMap {
+      case Some(json) =>
+        json.as[Personality] match {
+          case Right(p)  => ZIO.succeed(p)
+          case Left(err) =>
+            ZIO.logWarning(s"Corrupt personality in server_settings: $err. Using default.") *>
+              ZIO.succeed(Personality.default)
+        }
+      case None => ZIO.succeed(Personality.default)
+    }
+
 }
 
 object AgentRunnerImpl {
 
-  val live: URLayer[ModelGateway & SessionHub & EventLogService, AgentRunner] =
-    ZLayer.fromFunction(new AgentRunnerImpl(_, _, _))
+  val live: URLayer[ModelGateway & SessionHub & EventLogZIORepository & ServerSettingsRepository, AgentRunner] =
+    ZLayer.fromFunction(new AgentRunnerImpl(_, _, _, _))
 
 }

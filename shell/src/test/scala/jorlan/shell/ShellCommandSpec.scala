@@ -62,10 +62,26 @@ object ShellCommandSpec extends ZIOSpecDefault {
       test("leading slash without name") {
         assertTrue(ShellCommand.parse("/") == ShellCommand.Unknown("/"))
       },
+      test("/personality without args") {
+        assertTrue(ShellCommand.parse("/personality") == ShellCommand.Personality)
+      },
+      test("/personality set with field and single-word value") {
+        assertTrue(
+          ShellCommand.parse("/personality set formality Casual") == ShellCommand.PersonalitySet("formality", "Casual"),
+        )
+      },
+      test("/personality set with field and multi-word value") {
+        assertTrue(
+          ShellCommand.parse("/personality set name Jorlan The Bot") == ShellCommand
+            .PersonalitySet("name", "Jorlan The Bot"),
+        )
+      },
+      test("/personality set without value falls back to Personality") {
+        assertTrue(ShellCommand.parse("/personality set formality") == ShellCommand.Personality)
+      },
       // P7-041: Edge cases documented by tests to pin current parser behaviour.
-      test("/trace with extra words — everything after /trace is the level string") {
-        // split("\\s+", 2) gives ["trace", "info extra"], so level = "info extra"
-        assertTrue(ShellCommand.parse("/trace info extra") == ShellCommand.Trace("info extra"))
+      test("/trace with extra words — only the first word is the level") {
+        assertTrue(ShellCommand.parse("/trace info extra") == ShellCommand.Trace("info"))
       },
       test("//comment — double slash produces Unknown(\"//comment\")") {
         assertTrue(ShellCommand.parse("//comment") == ShellCommand.Unknown("//comment"))

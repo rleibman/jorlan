@@ -13,7 +13,12 @@ package jorlan
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.db.FlywayMigration
-import jorlan.db.repository.ServerSettingsRepository
+import jorlan.db.repository.{
+  EventLogZIORepository,
+  PermissionZIORepository,
+  ServerSettingsRepository,
+  UserZIORepository,
+}
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
@@ -25,10 +30,10 @@ import zio.logging.backend.SLF4J
 import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
-type JorlanEnvironment = ConfigurationService & FlywayMigration & EventLogService &
-  AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & ApprovalService & UserService &
-  PermissionService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub & ModelGateway &
-  ServerSettingsRepository
+type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
+  OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
+  SessionHub & ModelGateway & ServerSettingsRepository & UserZIORepository & PermissionZIORepository &
+  EventLogZIORepository
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -73,11 +78,14 @@ object Jorlan extends ZIOApp {
       _            <- FlywayMigration.runMigrations
       startTime    <- Clock.currentTime(TimeUnit.MILLISECONDS)
       settingsRepo <- ZIO.service[ServerSettingsRepository]
-      userService  <- ZIO.service[UserService]
-      eventLogSvc  <- ZIO.service[EventLogService]
-      initialized  <- ServerSettingsRepository.isServerInitialized.provide(ZLayer.succeed(settingsRepo))
-      tokenStore   <- InitTokenStore.make(initialized)
-      initService = new InitServiceImpl(settingsRepo, userService, tokenStore, eventLogSvc)
+      userRepo     <- ZIO.service[UserZIORepository]
+      eventLogRepo <- ZIO.service[EventLogZIORepository]
+      initialized  <- settingsRepo.get(ServerSettingsRepository.InitializedKey).map {
+        case Some(zio.json.ast.Json.Bool(v)) => v
+        case _                               => false
+      }
+      tokenStore <- InitTokenStore.make(initialized)
+      initService = new InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo)
       _   <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       app <-
         if (initialized) {

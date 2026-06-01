@@ -17,6 +17,7 @@ import ai.given_Conversion_ChatMemory_ChatMemory
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
+import jorlan.db.repository.EventLogZIORepository
 import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
@@ -24,22 +25,40 @@ import zio.stream.ZStream
 import scala.language.unsafeNulls
 
 // Future: consider how much of this belongs in the ai module and how much of it should should be using it directly.
+
+/** Holds one LangChain4j assistant and the system prompt it was built with.
+  *
+  * If the personality changes and `systemPrompt` differs from the stored one, the entry is rebuilt. This resets the
+  * session's [[MessageWindowChatMemory]] and conversation history is lost for that session.
+  */
+private case class SessionEntry(
+  assistant:    StreamAssistant,
+  systemPrompt: String,
+)
+
 /** [[ModelGateway]] implementation backed by a local Ollama endpoint via LangChain4j.
   *
   * A single [[ai.StreamingChatLanguageModel]] (and its HTTP connection pool) is shared across all sessions. Each
   * session gets its own [[ai.StreamAssistant]] wrapping an isolated [[MessageWindowChatMemory]].
   *
-  * The `sessions` map is kept in a [[Ref]] and all reads/writes use [[Ref.modify]] to avoid TOCTOU races under
-  * concurrent session creation.
+  * The `sessions` map is kept in a [[Ref]]. The fast path (existing assistant, unchanged prompt) does a plain
+  * [[Ref.get]]. The rebuild path builds a candidate assistant and commits it via [[Ref.modify]] so the write is atomic.
+  * A concurrent fiber that wins the race is used; the losing candidate is discarded.
+  *
+  * **Note:** a personality update causes the next call for any active session to rebuild its assistant, discarding
+  * conversation history for that session.
   */
 private class OllamaModelGateway(
-  config:      LangChainConfig,
-  sharedModel: StreamingChatLanguageModel,
-  sessions:    Ref[Map[AgentSessionId, StreamAssistant]],
-  eventLog:    EventLogService,
+  config:       LangChainConfig,
+  sharedModel:  StreamingChatLanguageModel,
+  sessions:     Ref[Map[AgentSessionId, SessionEntry]],
+  eventLogRepo: EventLogZIORepository,
 ) extends ModelGateway {
 
-  private def buildAssistant(sessionId: AgentSessionId): UIO[StreamAssistant] =
+  private def buildAssistant(
+    sessionId:    AgentSessionId,
+    systemPrompt: String,
+  ): UIO[StreamAssistant] =
     ZIO.attempt {
       val memory = ChatMemory.fromJava(
         MessageWindowChatMemory
@@ -49,30 +68,46 @@ private class OllamaModelGateway(
           .chatMemoryStore(new InMemoryChatMemoryStore())
           .build(),
       )
-      dev.langchain4j.service.AiServices
+      val builder = dev.langchain4j.service.AiServices
         .builder(classOf[StreamAssistant])
         .streamingChatModel(sharedModel.toJava)
         .chatMemory(memory)
-        .build(): StreamAssistant
+      val withPrompt =
+        if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
+        else builder
+      withPrompt.build(): StreamAssistant
     }.orDie
 
-  private def getOrCreate(sessionId: AgentSessionId): UIO[StreamAssistant] =
-    buildAssistant(sessionId).flatMap { fresh =>
-      sessions.modify { map =>
-        map.get(sessionId) match {
-          case Some(existing) => (existing, map)
-          case None           => (fresh, map + (sessionId -> fresh))
-        }
+  private def getOrCreate(
+    sessionId:    AgentSessionId,
+    systemPrompt: String,
+  ): UIO[StreamAssistant] =
+    sessions.get.flatMap { map =>
+      map.get(sessionId) match {
+        case Some(SessionEntry(existing, storedPrompt)) if storedPrompt == systemPrompt =>
+          ZIO.succeed(existing)
+        case _ =>
+          buildAssistant(sessionId, systemPrompt).flatMap { fresh =>
+            val entry = SessionEntry(fresh, systemPrompt)
+            // Atomic commit: if another fiber already installed a compatible entry, use theirs.
+            sessions.modify { m =>
+              m.get(sessionId) match {
+                case Some(winner @ SessionEntry(_, sp)) if sp == systemPrompt => (winner.assistant, m)
+                case _                                                        => (fresh, m + (sessionId -> entry))
+              }
+            }
+          }
       }
     }
 
   override def streamedResponse(
-    sessionId: AgentSessionId,
-    message:   String,
+    sessionId:    AgentSessionId,
+    message:      String,
+    systemPrompt: String = "",
   ): ZStream[Any, ModelError, String] = {
     val logStarted = Clock.instant.flatMap { now =>
-      eventLog
-        .log(
+      eventLogRepo
+        .append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.ModelCallStarted,
@@ -88,8 +123,8 @@ private class OllamaModelGateway(
     }
 
     val logCompleted = Clock.instant.flatMap { now =>
-      eventLog
-        .log(
+      eventLogRepo
+        .append(
           EventLog(
             id = EventLogId.empty,
             eventType = EventType.ModelCallCompleted,
@@ -106,8 +141,8 @@ private class OllamaModelGateway(
 
     def logFailed(err: Throwable) =
       Clock.instant.flatMap { now =>
-        eventLog
-          .log(
+        eventLogRepo
+          .append(
             EventLog(
               id = EventLogId.empty,
               eventType = EventType.ModelCallFailed,
@@ -125,7 +160,7 @@ private class OllamaModelGateway(
     ZStream.unwrap(
       Ref.make(false).map { errored =>
         ZStream
-          .fromZIO(logStarted *> getOrCreate(sessionId))
+          .fromZIO(logStarted *> getOrCreate(sessionId, systemPrompt))
           .flatMap { assistant =>
             ZStream
               .async[Any, Throwable, String] { cb =>
@@ -157,18 +192,18 @@ private class OllamaModelGateway(
     )
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] =
-    sessions.update(_ - sessionId)
+    sessions.update(_.removed(sessionId))
 
 }
 
 object OllamaModelGateway {
 
-  val live: URLayer[LangChainConfig & EventLogService, ModelGateway] =
+  val live: URLayer[LangChainConfig & EventLogZIORepository, ModelGateway] =
     ZLayer.fromZIO(
       for {
-        config   <- ZIO.service[LangChainConfig]
-        eventLog <- ZIO.service[EventLogService]
-        model    <- ZIO.attempt {
+        config       <- ZIO.service[LangChainConfig]
+        eventLogRepo <- ZIO.service[EventLogZIORepository]
+        model        <- ZIO.attempt {
           StreamingChatLanguageModel.fromJava(
             dev.langchain4j.model.ollama.OllamaStreamingChatModel.builder
               .baseUrl(config.ollamaBaseUrl)
@@ -180,8 +215,8 @@ object OllamaModelGateway {
               .build,
           )
         }.orDie
-        sessions <- Ref.make(Map.empty[AgentSessionId, StreamAssistant])
-      } yield new OllamaModelGateway(config, model, sessions, eventLog),
+        sessions <- Ref.make(Map.empty[AgentSessionId, SessionEntry])
+      } yield new OllamaModelGateway(config, model, sessions, eventLogRepo),
     )
 
 }

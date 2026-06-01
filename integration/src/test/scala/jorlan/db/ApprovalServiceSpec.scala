@@ -24,11 +24,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
 
   private val appLayer =
     JorlanContainer.repositoryLayer >+>
-      EventLogServiceImpl.live >+>
-      PermissionServiceImpl.live >+>
-      RiskClassifierImpl.live >+>
       CapabilityEvaluatorImpl.live >+>
-      ApprovalPolicyEngineImpl.live >+>
       ApprovalServiceImpl.live
 
   private def capReq(
@@ -47,12 +43,12 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     suite("ApprovalService integration")(
       test("Persistent grant → Allowed and CapabilityAllowed event written") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          permRepo <- ZIO.service[PermissionZIORepository]
-          eventSvc <- ZIO.service[EventLogService]
-          svc      <- ZIO.service[ApprovalService]
-          user     <- userRepo.upsert(User(UserId.empty, "ASUser1", None, T0, T0))
-          _        <- permRepo.upsertCapabilityGrant(
+          userRepo     <- ZIO.service[UserZIORepository]
+          permRepo     <- ZIO.service[PermissionZIORepository]
+          eventLogRepo <- ZIO.service[EventLogZIORepository]
+          svc          <- ZIO.service[ApprovalService]
+          user         <- userRepo.upsert(User(UserId.empty, "ASUser1", None, T0, T0))
+          _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("memory.write"),
@@ -66,7 +62,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             ),
           )
           result <- svc.authorize(capReq(user.id, "memory.write"))
-          events <- eventSvc.query(EventLogFilter(eventType = Some(EventType.CapabilityAllowed), pageSize = 100))
+          events <- eventLogRepo.search(EventLogFilter(eventType = Some(EventType.CapabilityAllowed), pageSize = 100))
         } yield assertTrue(
           result == AuthorizationResult.Allowed,
           events.exists(_.actorId.contains(user.id)),
@@ -74,12 +70,12 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       },
       test("Denied grant → Denied and CapabilityDenied event written") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          permRepo <- ZIO.service[PermissionZIORepository]
-          eventSvc <- ZIO.service[EventLogService]
-          svc      <- ZIO.service[ApprovalService]
-          user     <- userRepo.upsert(User(UserId.empty, "ASUser2", None, T0, T0))
-          _        <- permRepo.upsertCapabilityGrant(
+          userRepo     <- ZIO.service[UserZIORepository]
+          permRepo     <- ZIO.service[PermissionZIORepository]
+          eventLogRepo <- ZIO.service[EventLogZIORepository]
+          svc          <- ZIO.service[ApprovalService]
+          user         <- userRepo.upsert(User(UserId.empty, "ASUser2", None, T0, T0))
+          _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
               CapabilityName("shell.execute"),
@@ -93,7 +89,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
             ),
           )
           result <- svc.authorize(capReq(user.id, "shell.execute"))
-          events <- eventSvc.query(EventLogFilter(eventType = Some(EventType.CapabilityDenied), pageSize = 100))
+          events <- eventLogRepo.search(EventLogFilter(eventType = Some(EventType.CapabilityDenied), pageSize = 100))
         } yield assertTrue(
           result.isInstanceOf[AuthorizationResult.Denied],
           events.exists(_.actorId.contains(user.id)),
