@@ -90,17 +90,45 @@ trait ConfigurationService {
 
 object ConfigurationServiceImpl {
 
+  private val requiredEnvVars: List[(String, String)] = List(
+    "JORLAN_AUTH_SECRET_KEY" -> "JWT signing secret (generate with: openssl rand -hex 32)",
+  )
+
+  private val validateEnvVars: IO[ConfigLoadError, Unit] = {
+    val missing = requiredEnvVars.filter { case (key, _) =>
+      Option(System.getenv(key)).forall(_.nn.isBlank)
+    }
+    if (missing.isEmpty) ZIO.unit
+    else {
+      val lines = missing.map { case (k, desc) => s"  $k — $desc" }.mkString("\n")
+      ZIO.fail(
+        ConfigLoadError(
+          s"""|Jorlan cannot start: missing required environment variables.
+              |
+              |$lines
+              |
+              |Copy .env.example to .env, fill in the values, and source it before starting:
+              |  cp .env.example .env
+              |  # edit .env
+              |  source .env
+              |""".stripMargin,
+        ),
+      )
+    }
+  }
+
   val live: ZLayer[Any, Nothing, ConfigurationService] = ZLayer.succeed(new ConfigurationService {
 
     override val appConfig: IO[ConfigurationError, AppConfig] =
-      ZIO
-        .attempt {
-          Option(System.getProperty("application.conf"))
-            .map(path => ConfigFactory.parseFile(new File(path)).withFallback(ConfigFactory.load()).resolve())
-            .getOrElse(ConfigFactory.load().resolve())
-        }
-        .mapError(e => ConfigLoadError(e.getMessage.nn, Some(e)))
-        .flatMap(AppConfig.read)
+      validateEnvVars *>
+        ZIO
+          .attempt {
+            Option(System.getProperty("application.conf"))
+              .map(path => ConfigFactory.parseFile(new File(path)).withFallback(ConfigFactory.load()).resolve())
+              .getOrElse(ConfigFactory.load().resolve())
+          }
+          .mapError(e => ConfigLoadError(e.getMessage.nn, Some(e)))
+          .flatMap(AppConfig.read)
 
   })
 

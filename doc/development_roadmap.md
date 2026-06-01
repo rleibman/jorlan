@@ -365,10 +365,10 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.3)
 **Goal:** The empty MariaDB database and application user exist before Phase 8.1's in-process wizard runs. This is
 the only step that requires MySQL root credentials; everything after it is handled by the server itself.
 
-- [ ] `init-db.sh` script in `server/src/main/scripts/`: creates MariaDB database and application user with correct
+- [x] `init-db.sh` script in `server/src/main/scripts/`: creates MariaDB database and application user with correct
   grants; requires temporary MySQL root credentials; run once before first server start
-- [ ] `.env.example` kept up-to-date with all required and optional variables
-- [ ] Validation: server startup fails fast with a human-readable error if required env vars are missing (not a
+- [x] `.env.example` kept up-to-date with all required and optional variables
+- [x] Validation: server startup fails fast with a human-readable error if required env vars are missing (not a
   silent NPE or confusing stack trace)
 
 ---
