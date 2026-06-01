@@ -130,9 +130,12 @@ object ShellConfigSpec extends ZIOSpecDefault {
           }
         },
         test("--config arg overrides default") {
-          ShellConfig.resolveWritePath(List("--config", "/tmp/custom.json")).map { file =>
-            assertTrue(file.getPath == "/tmp/custom.json")
-          }
+          for {
+            tmp  <- ZIO.attempt(Files.createTempFile("jorlan-custom-", ".json").toFile)
+            _    <- ZIO.attempt(tmp.delete())
+            file <- ShellConfig.resolveWritePath(List("--config", tmp.getAbsolutePath))
+          } yield assertTrue(file.getPath == tmp.getAbsolutePath)
+        },
         },
       ),
       suite("isFirstRun")(
