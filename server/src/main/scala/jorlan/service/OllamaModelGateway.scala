@@ -167,7 +167,7 @@ private class OllamaModelGateway(
                 assistant
                   .chat(message)
                   .onPartialResponse(str => cb(ZIO.succeed(Chunk(str))))
-                  .onCompleteResponse(_ => cb(ZIO.succeed(Chunk.empty)))
+                  .onCompleteResponse(_ => cb(ZIO.fail(None)))
                   .onError(err => cb(ZIO.fail(Some(err))))
                   .start()
               }

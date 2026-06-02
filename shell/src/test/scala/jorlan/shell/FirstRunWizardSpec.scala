@@ -17,6 +17,7 @@ import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*
+import zio.test.TestAspect.*
 
 import java.io.File
 import java.nio.file.Files
@@ -121,7 +122,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
             path.exists(),
           )
         }
-      },
+      } @@ withLiveClock,
       test("password mismatch retry") {
         for {
           screen <- FakeScreen.make
@@ -152,7 +153,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
             msgs.exists(_.content.contains("Passwords do not match")),
           )
         }
-      },
+      } @@ withLiveClock,
       test("connection error — retries after user presses enter") {
         for {
           screen <- FakeScreen.make

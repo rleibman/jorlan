@@ -38,6 +38,8 @@ class AgentRunnerImpl(
   ): IO[JorlanError, Unit] =
     Ref.make(Option.empty[String]).flatMap { errorRef =>
       val work = for {
+        _           <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars): $content")
+        _           <- sessionHub.getOrCreate(sessionId) // ensure queue exists even after a server restart
         personality <- loadPersonality
         systemPrompt = Personality.buildSystemPrompt(personality)
         now <- Clock.instant
@@ -58,6 +60,7 @@ class AgentRunnerImpl(
             .streamedResponse(sessionId, content, systemPrompt)
             .mapError(e => JorlanError(e.msg, Some(e)))
             .tapError(e => errorRef.set(Some(e.getMessage)))
+            .tap(chunk => ZIO.logDebug(s"[session:$sessionId] LLM token: $chunk")) // TODO This is very chatty. Instead of this, let's keep a session log (by session id) with all the communication.
             .foreach { chunk =>
               sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
             }
@@ -72,7 +75,10 @@ class AgentRunnerImpl(
               case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
               case None      => ResponseChunk(sessionId, "", finished = true)
             }
-            sessionHub.publish(sentinel) *>
+            ZIO.logDebug(
+              s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
+            ) *>
+              sessionHub.publish(sentinel) *>
               Clock.instant.flatMap { completedAt =>
                 eventLogRepo
                   .append(

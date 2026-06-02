@@ -10,7 +10,17 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{AuthClient, GraphQLClient, InitClient, LoginResult, SubscriptionClient}
+import jorlan.domain.{AgentSessionId, SessionStatus}
+import jorlan.graphql.client.JorlanClient
+import jorlan.shell.client.{
+  AuthClient,
+  GraphQLClient,
+  InitClient,
+  JorlanClientDecoders,
+  LoginResult,
+  SubscriptionClient,
+}
+import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -67,6 +77,7 @@ object JorlanShell extends ZIOApp {
         } else {
           ZIO.succeed(effectiveCfg)
         }
+      _ <- screen.setInputPrompt("❯ ")
 
       _ <- screen.addMessage(MessageKind.System, s"Connecting to ${activeCfg.serverUrl} …")
 
@@ -75,6 +86,7 @@ object JorlanShell extends ZIOApp {
       loginResult <- connectWithRetry(email, password, activeCfg.serverUrl)
 
       _ <- initialisePostLogin(loginResult, activeCfg.serverUrl)
+      _ <- loadOrCreateSession(screen)
 
       exitPromise    <- Promise.make[Nothing, Unit]
       loopFiber      <- processLoop(screen, exitPromise).fork
@@ -92,16 +104,24 @@ object JorlanShell extends ZIOApp {
     } yield ()
 
     // On any fatal error: display it for 3s then close cleanly.
-    mainFlow.catchAll { err =>
-      ZIO.serviceWithZIO[JorlanScreen](screen =>
-        screen.addMessage(
-          MessageKind.Error,
-          s"Fatal: ${Option(err.getMessage).getOrElse(err.getClass.getName)}",
-        ) *>
-          ZIO.sleep(3.seconds) *>
-          screen.shutdown,
+    // The .ensuring guarantees sys.exit(0) fires on success, failure, AND interruption
+    // (Ctrl-C sends SIGINT which ZIO converts to fiber interruption, bypassing catchAll).
+    // Without this, Lanterna and sttp threads are non-daemon and keep the JVM alive indefinitely.
+    mainFlow
+      .catchAll { err =>
+        ZIO.serviceWithZIO[JorlanScreen](screen =>
+          screen.addMessage(
+            MessageKind.Error,
+            s"Fatal: ${Option(err.getMessage).getOrElse(err.getClass.getName)}",
+          ) *>
+            ZIO.sleep(3.seconds) *>
+            screen.shutdown,
+        )
+      }
+      .ensuring(
+        ZIO.serviceWithZIO[JorlanScreen](_.shutdown) *>
+          ZIO.succeed(sys.exit(0)),
       )
-    }
   }
 
   // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -128,6 +148,40 @@ object JorlanShell extends ZIOApp {
         s"Connected to $serverName as ${loginResult.displayName}. Type /help for commands.",
       )
     } yield ()
+  }
+
+  /** After login, resume the most recent active session or create a new one. */
+  private def loadOrCreateSession(screen: JorlanScreen): ZIO[Environment, Nothing, Unit] = {
+
+    def applySession(
+      id:  Long,
+      msg: String,
+    ): ZIO[ShellState & JorlanScreen, Nothing, Unit] =
+      ZIO.serviceWithZIO[ShellState](_.setSessionId(AgentSessionId(id))) *>
+        screen.setModeStatus(s" [session: $id]  [model: default]") *>
+        screen.addMessage(MessageKind.System, msg)
+
+    def createNew: ZIO[GraphQLClient & ShellState & JorlanScreen, Nothing, Unit] =
+      ZIO
+        .serviceWithZIO[GraphQLClient](
+          _.run(JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view)),
+        ).either.flatMap {
+          case Right(Some(session)) => applySession(session.id.value, s"Session ${session.id.value} started.")
+          case Right(None)          => screen.addMessage(MessageKind.Error, "Server returned no session.")
+          case Left(err)            => screen.addMessage(MessageKind.Error, s"Failed to create session: $err")
+        }
+
+    ZIO
+      .serviceWithZIO[GraphQLClient](
+        _.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view)),
+      ).either.flatMap {
+        case Right(Some(sessions)) =>
+          sessions.find(_.status == SessionStatus.Active) match {
+            case Some(s) => applySession(s.id.value, s"Resumed session ${s.id.value}.")
+            case None    => createNew
+          }
+        case _ => createNew
+      }
   }
 
   /** Show goodbye message, interrupt background fibers, and shut the screen down. */
@@ -185,19 +239,22 @@ object JorlanShell extends ZIOApp {
     ZIO
       .serviceWithZIO[JorlanScreen](_.readLine)
       .flatMap { raw =>
-        val cmd = ShellCommand.parse(raw)
-        screen
-          .addMessage(MessageKind.User, raw)
-          .zipRight(
-            CommandHandler
-              .handle(cmd, exitPromise)
-              .catchAllDefect(t =>
-                screen.addMessage(
-                  MessageKind.Error,
-                  s"Command error: ${Option(t.getMessage).getOrElse(t.getClass.getName)}",
+        if (raw.isEmpty) ZIO.unit
+        else {
+          val cmd = ShellCommand.parse(raw)
+          screen
+            .addMessage(MessageKind.User, raw)
+            .zipRight(
+              CommandHandler
+                .handle(cmd, exitPromise)
+                .catchAllDefect(t =>
+                  screen.addMessage(
+                    MessageKind.Error,
+                    s"Command error: ${Option(t.getMessage).getOrElse(t.getClass.getName)}",
+                  ),
                 ),
-              ),
-          )
+            )
+        }
       }
       .forever
       .unit

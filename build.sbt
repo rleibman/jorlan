@@ -58,23 +58,23 @@ enablePlugins(
 )
 
 val betterFilesVersion = "3.9.2"
-val calibanClientVersion = "3.1.1"
+val calibanClientVersion = "3.1.2"
 val calibanVersion = "3.1.1"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "12.6.2"
+val flywayVersion = "12.7.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
 val jsoniterVersion = "2.38.9"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.15.0"
-val langchainCoreVersion = "1.15.0"
-val langchainLibrariesVersion = "1.15.0-beta25"
+val langchain4jOllamaVersion = "1.15.1"
+val langchainCoreVersion = "1.15.1"
+val langchainLibrariesVersion = "1.15.1-beta25"
 val lanternaVersion = "3.1.5"
-val logbackVersion = "1.5.33"
+val logbackVersion = "1.5.34"
 val mariadbVersion = "3.5.8"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
@@ -82,7 +82,7 @@ val quillVersion = "4.8.6"
 val scalablytypedRuntimeVersion = "2.4.2"
 val scalacssVersion = "1.0.0"
 val scalaJavaTimeVersion = "2.6.0"
-val sttpClient4Version = "4.0.24"
+val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.5"
 val zioCacheVersion = "0.2.8"
@@ -100,7 +100,7 @@ lazy val commonSettings = Seq(
   organization     := "net.leibman",
   startYear        := Some(2024),
   organizationName := "Roberto Leibman",
-  headerLicense := Some(
+  headerLicense    := Some(
     HeaderLicense.Custom(
       """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
         |
@@ -335,9 +335,15 @@ lazy val shell = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
     // so Lanterna can put the terminal into raw mode and receive keystrokes.
-    run / fork              := true,
-    run / connectInput      := true,
-    coverageExcludedFiles   := ".*JorlanClient.*;.*LanternaScreen.*",
+    fork                  := true,
+    run / fork            := true,
+    run / connectInput    := true,
+    coverageExcludedFiles := ".*JorlanClient.*;.*LanternaScreen.*",
+    assembly / mainClass := Some("jorlan.shell.JorlanShell"),
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case x => MergeStrategy.preferProject
+    }
   )
   .dependsOn(model)
 
@@ -471,7 +477,7 @@ lazy val root = project
     name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
-    headerLicense := Some(
+    headerLicense  := Some(
       HeaderLicense.Custom(
         """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
           |

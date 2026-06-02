@@ -11,14 +11,15 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
+import jorlan.domain.{AgentSessionId, ModelId, ResponseChunk}
+import jorlan.graphql.client.JorlanClient
 import jorlan.shell.ShellConfig
 import jorlan.shell.ShellState
-import jorlan.shell.client.{AuthClient, GraphQLClient, SubscriptionClient}
+import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
+import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
 import zio.*
-import zio.json.EncoderOps
-import zio.json.ast.Json
 
 import scala.language.unsafeNulls
 
@@ -68,27 +69,47 @@ object CommandHandler {
           ),
         )
       case Some(sessionId) =>
-        val mutation =
-          s"""mutation { submitMessage(sessionId: ${sessionId.value}, content: ${Json.Str(text).toJson}) }"""
-        gql(_.execute(mutation))
-          .foldZIO(
-            err => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err")),
-            _ =>
-              ZIO.scoped {
-                SubscriptionClient
-                  .agentResponseStream(sessionId)
-                  .foreach { chunk =>
-                    if (chunk.finished && !chunk.isError) ZIO.unit
-                    else if (chunk.isError)
-                      screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
-                    else screen(_.addMessage(MessageKind.Server, chunk.content))
+        // Open the subscription BEFORE submitting so we never miss tokens published between
+        // the mutation returning and the WS start frame being processed on the server.
+        ZIO.scoped {
+          for {
+            // Fork the subscription stream so it starts listening while we submit.
+            chunkQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
+            subFiber   <- SubscriptionClient
+              .agentResponseStream(sessionId)
+              .foreach { chunk =>
+                if (chunk.finished) chunkQueue.offer(Right(None)).unit
+                else chunkQueue.offer(Right(Some(chunk))).unit
+              }
+              .foldZIO(
+                err => chunkQueue.offer(Left(err)).unit,
+                _ => ZIO.unit,
+              )
+              .forkScoped
+            // Submit the message now that the subscription fiber is running.
+            submitResult <- gql(_.run(JorlanClient.Mutations.submitMessage(sessionId, text))).either
+            _            <- submitResult match {
+              case Left(err) =>
+                subFiber.interrupt *>
+                  screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
+              case Right(_) =>
+                // Drain the subscription queue until finished or error.
+                // Tokens are appended to the same Server message so the response
+                // appears as a single paragraph rather than one entry per token.
+                def drain: ZIO[JorlanScreen, Nothing, Unit] =
+                  chunkQueue.take.flatMap {
+                    case Left(err)   => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
+                    case Right(None) => ZIO.unit // finished sentinel
+                    case Right(Some(chunk: ResponseChunk)) =>
+                      val display =
+                        if (chunk.isError) screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
+                        else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
+                      display *> drain
                   }
-                  .foldZIO(
-                    err => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err")),
-                    _ => ZIO.unit,
-                  )
-              },
-          )
+                drain
+            }
+          } yield ()
+        }
     }
 
   private val showHelp: ZIO[Env, Nothing, Unit] =
@@ -123,10 +144,8 @@ object CommandHandler {
   private val showStatus: ZIO[Env, Nothing, Unit] =
     for {
       serverUrl <- cfg(_.serverUrl)
-      gqlResult <- ZIO
-        .serviceWithZIO[GraphQLClient](
-          _.execute("""{ __typename }"""),
-        )
+      // Use a raw introspection query for the connectivity check — no domain SelectionBuilder exists for __typename.
+      gqlResult <- gql(_.execute("{ __typename }"))
         .fold(
           err => s"✗ GraphQL unreachable: $err",
           _ => "✔ GraphQL API reachable",
@@ -153,33 +172,20 @@ object CommandHandler {
     } yield ()
 
   private def handleNewSession(modelId: Option[String]): ZIO[Env, Nothing, Unit] = {
-    val modelArg = modelId.map(m => s"""modelId: "$m"""").getOrElse("modelId: null")
-    val mutation = s"""mutation { createSession($modelArg) { id modelId status } }"""
-
-    def parseSessionId(json: zio.json.ast.Json): Option[Long] =
-      for {
-        obj        <- json.asObject
-        data       <- obj.get("createSession")
-        sessionObj <- data.asObject
-        idField    <- sessionObj.get("id")
-        n          <- idField.asNumber
-      } yield n.value.longValue
-
     for {
-      result <- gql(_.execute(mutation)).either
-      _      <- result match {
-        case Left(err)   => screen(_.addMessage(MessageKind.Error, s"Failed to create session: $err"))
-        case Right(json) =>
-          parseSessionId(json) match {
-            case None     => screen(_.addMessage(MessageKind.Error, "Could not parse session ID from response"))
-            case Some(id) =>
-              import jorlan.domain.AgentSessionId
-              ZIO.serviceWithZIO[ShellState](_.setSessionId(AgentSessionId(id))) *>
-                ZIO.serviceWithZIO[JorlanScreen](
-                  _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
-                ) *>
-                screen(_.addMessage(MessageKind.System, s"Session $id started."))
-          }
+      result <- gql(
+        _.run(JorlanClient.Mutations.createSession(modelId.map(ModelId(_)))(JorlanClient.AgentSession.view)),
+      ).either
+      _ <- result match {
+        case Left(err)            => screen(_.addMessage(MessageKind.Error, s"Failed to create session: $err"))
+        case Right(None)          => screen(_.addMessage(MessageKind.Error, "Server returned no session"))
+        case Right(Some(session)) =>
+          val id = session.id.value
+          ZIO.serviceWithZIO[ShellState](_.setSessionId(session.id)) *>
+            ZIO.serviceWithZIO[JorlanScreen](
+              _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
+            ) *>
+            screen(_.addMessage(MessageKind.System, s"Session $id started."))
       }
     } yield ()
   }
@@ -193,10 +199,14 @@ object CommandHandler {
   private val listModels: ZIO[Env, Nothing, Unit] =
     screen(_.addMessage(MessageKind.System, "Model listing requires a running Phase 8 server."))
 
-  private val personalityQuery = """{ serverPersonality { name formality languages expertise prompt } }"""
-
-  private def fetchCurrentPersonality: ZIO[GraphQLClient, String, Json] =
-    gql(_.execute(personalityQuery))
+  private val showPersonality: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch personality: $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.Error, "Server returned no personality"))
+        case Some(p) => screen(_.addMessage(MessageKind.System, formatPersonality(p)))
+      },
+    )
 
   private def setPersonalityField(
     field: String,
@@ -211,84 +221,42 @@ object CommandHandler {
         ),
       )
     } else {
-      fetchCurrentPersonality.foldZIO(
+      gql(_.run(JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view))).foldZIO(
         err => screen(_.addMessage(MessageKind.Error, s"Could not fetch current personality: $err")),
-        currentJson => {
-          val pObjOpt = for {
-            obj  <- currentJson.asObject
-            p    <- obj.get("serverPersonality")
-            pObj <- p.asObject
-          } yield pObj
+        {
+          case None    => screen(_.addMessage(MessageKind.Error, "Server returned no personality"))
+          case Some(p) =>
+            val name = if (field.toLowerCase == "name") value else p.name
+            val formality = if (field.toLowerCase == "formality") value else p.formality
+            val prompt = if (field.toLowerCase == "prompt") value else p.prompt
+            val languages =
+              if (field.toLowerCase == "languages") value.split(",").map(_.trim).filter(_.nonEmpty).toList
+              else p.languages
+            val expertise =
+              if (field.toLowerCase == "expertise") value.split(",").map(_.trim).filter(_.nonEmpty).toList
+              else p.expertise
 
-          pObjOpt match {
-            case None =>
-              screen(_.addMessage(MessageKind.Error, "Could not parse current personality response"))
-            case Some(pObj) =>
-              val str = (k: String) => pObj.get(k).flatMap(_.asString).getOrElse("")
-              val arr = (k: String) => pObj.get(k).flatMap(_.asArray).map(_.flatMap(_.asString).toList).getOrElse(Nil)
-              val name = if (field.toLowerCase == "name") value else str("name")
-              val formality = if (field.toLowerCase == "formality") value else str("formality")
-              val prompt = if (field.toLowerCase == "prompt") value else str("prompt")
-              val languages =
-                if (field.toLowerCase == "languages") value.split(",").map(_.trim).filter(_.nonEmpty).toList
-                else arr("languages")
-              val expertise =
-                if (field.toLowerCase == "expertise") value.split(",").map(_.trim).filter(_.nonEmpty).toList
-                else arr("expertise")
-
-              val langArg = Json.Arr(Chunk.fromIterable(languages.map(Json.Str(_)))).toJson
-              val expertArg = Json.Arr(Chunk.fromIterable(expertise.map(Json.Str(_)))).toJson
-              val mutation =
-                s"""mutation { updatePersonality(name: ${Json.Str(name).toJson}, formality: ${Json
-                    .Str(formality).toJson}, languages: $langArg, expertise: $expertArg, prompt: ${Json
-                    .Str(prompt).toJson}) { name formality prompt } }"""
-
-              gql(_.execute(mutation)).foldZIO(
-                err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
-                json =>
-                  screen(
-                    _.addMessage(
-                      MessageKind.System,
-                      parsePersonalityText(
-                        json.asObject
-                          .flatMap(_.get("updatePersonality")).map(p => Json.Obj("serverPersonality" -> p)).getOrElse(
-                            json,
-                          ),
-                      ).getOrElse(s"Personality $field updated to: $value"),
-                    ),
-                  ),
-              )
-          }
+            gql(
+              _.run(
+                JorlanClient.Mutations.updatePersonality(name, formality, languages, expertise, prompt)(
+                  JorlanClient.Personality.view,
+                ),
+              ),
+            ).foldZIO(
+              err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
+              {
+                case None          => screen(_.addMessage(MessageKind.System, s"Personality $field updated to: $value"))
+                case Some(updated) => screen(_.addMessage(MessageKind.System, formatPersonality(updated)))
+              },
+            )
         },
       )
     }
   }
 
-  private def parsePersonalityText(json: Json): Option[String] =
-    for {
-      obj  <- json.asObject
-      p    <- obj.get("serverPersonality")
-      pObj <- p.asObject
-      name = pObj.get("name").flatMap(_.asString).getOrElse("?")
-      formality = pObj.get("formality").flatMap(_.asString).getOrElse("?")
-      languages = pObj
-        .get("languages").flatMap(_.asArray).map(_.flatMap(_.asString).mkString(", ")).getOrElse("?")
-      expertise = pObj
-        .get("expertise").flatMap(_.asArray).map(a =>
-          if (a.isEmpty) "(none)" else a.flatMap(_.asString).mkString(", "),
-        ).getOrElse("?")
-      prompt = pObj.get("prompt").flatMap(_.asString).getOrElse("?")
-    } yield s"Server personality:\n  name:       $name\n  formality:  $formality\n  languages:  $languages\n  expertise:  $expertise\n  prompt:     $prompt"
-
-  private val showPersonality: ZIO[Env, Nothing, Unit] = {
-    val query = """{ serverPersonality { name formality languages expertise prompt } }"""
-    gql(_.execute(query)).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch personality: $err")),
-      json =>
-        screen(
-          _.addMessage(MessageKind.System, parsePersonalityText(json).getOrElse("Could not parse personality response")),
-        ),
-    )
+  private def formatPersonality(p: JorlanClient.Personality.PersonalityView): String = {
+    val expertiseStr = if (p.expertise.isEmpty) "(none)" else p.expertise.mkString(", ")
+    s"Server personality:\n  name:       ${p.name}\n  formality:  ${p.formality}\n  languages:  ${p.languages.mkString(", ")}\n  expertise:  $expertiseStr\n  prompt:     ${p.prompt}"
   }
 
   private val traceLevels: Map[String, Level] = Map(

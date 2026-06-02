@@ -10,27 +10,10 @@
 
 package jorlan.shell.client
 
-import caliban.client.{ArgEncoder, ScalarDecoder}
 import caliban.client.CalibanClientError.DecodingError
 import caliban.client.__Value.{__NumberValue, __StringValue}
-import jorlan.domain.{
-  AgentId,
-  AgentSessionId,
-  ApprovalMode,
-  ApprovalRequestId,
-  ApprovalStatus,
-  CapabilityName,
-  ChannelType,
-  EventLogId,
-  EventType,
-  ModelId,
-  PermissionId,
-  RiskClass,
-  RoleId,
-  SessionStatus,
-  UserId,
-  WorkspaceId,
-}
+import caliban.client.{ArgEncoder, ScalarDecoder}
+import jorlan.domain.*
 
 import scala.util.Try
 

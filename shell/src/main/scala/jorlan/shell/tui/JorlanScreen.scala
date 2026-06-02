@@ -50,6 +50,14 @@ trait JorlanScreen {
     content: String,
   ): UIO[Unit]
 
+  /** Append text to the last message of the given kind, or start a new one if the last message is a different kind.
+    * Used for streaming token accumulation so all tokens appear in a single message line.
+    */
+  def appendToLastMessage(
+    kind:  MessageKind,
+    extra: String,
+  ): UIO[Unit]
+
   /** Update the status bar text. Thread-safe. */
   def setStatus(text: String): UIO[Unit]
 
@@ -155,6 +163,25 @@ private class LanternaScreen(
     }
   }
 
+  override def appendToLastMessage(
+    kind:  MessageKind,
+    extra: String,
+  ): UIO[Unit] =
+    Clock.currentDateTime.flatMap { odt =>
+      val time = odt.toLocalTime.format(timeFmt)
+      state.update { s =>
+        s.messages.lastOption match {
+          case Some(last) if last.kind == kind =>
+            s.copy(messages = s.messages.init :+ last.copy(content = last.content + extra))
+          case _ =>
+            val next = s.messages :+ MessageEntry(kind, extra, time)
+            val msgs =
+              if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
+            s.copy(messages = msgs)
+        }
+      }
+    }
+
   override def setStatus(text: String): UIO[Unit] = state.update(_.copy(statusText = text))
 
   override def setInputPrompt(label: String): UIO[Unit] = state.update(_.copy(inputPrompt = label))
@@ -220,10 +247,7 @@ private class LanternaScreen(
       case KeyType.Delete =>
         ZIO.unit // cursor is always end-of-line; no character to delete forward
       case KeyType.Enter =>
-        inputBuf.getAndSet("").flatMap { line =>
-          if (line.trim.nonEmpty) inputQueue.offer(line.trim).unit
-          else ZIO.unit
-        }
+        inputBuf.getAndSet("").flatMap(line => inputQueue.offer(line.trim).unit)
       case KeyType.PageUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
       case KeyType.PageDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
       case KeyType.Home     => state.update(_.copy(scrollOffset = Int.MaxValue))

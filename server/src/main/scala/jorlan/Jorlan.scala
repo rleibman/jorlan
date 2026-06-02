@@ -80,22 +80,35 @@ object Jorlan extends ZIOApp {
       settingsRepo <- ZIO.service[ServerSettingsRepository]
       userRepo     <- ZIO.service[UserZIORepository]
       eventLogRepo <- ZIO.service[EventLogZIORepository]
+      permRepo     <- ZIO.service[PermissionZIORepository]
       initialized  <- settingsRepo.get(ServerSettingsRepository.InitializedKey).map {
         case Some(zio.json.ast.Json.Bool(v)) => v
         case _                               => false
       }
       tokenStore <- InitTokenStore.make(initialized)
-      initService = new InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo)
-      _   <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
-      app <-
+      initService = new InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo, permRepo)
+      _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
+      _ <-
         if (initialized) {
-          buildRoutes(startTime)
+          for {
+            routes <- buildRoutes(startTime)
+            _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
+          } yield ()
         } else {
-          ZIO.succeed(SetupModeApp.make(startTime, settingsRepo, initService))
+          for {
+            initDone <- Promise.make[Nothing, Unit]
+            setupApp = SetupModeApp.make(startTime, settingsRepo, initService, tokenStore, Some(initDone))
+            serverFiber <- Server
+              .serve(setupApp)
+              .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
+              .fork
+            _      <- initDone.await
+            _      <- serverFiber.interrupt
+            _      <- ZIO.logInfo("Server initialized — switching to full application routes")
+            routes <- buildRoutes(startTime)
+            _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
+          } yield ()
         }
-      _ <- Server
-        .serve(app)
-        .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
     } yield ()
 
 }

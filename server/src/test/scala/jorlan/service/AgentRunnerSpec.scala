@@ -31,21 +31,17 @@ object AgentRunnerSpec extends ZIOSpecDefault {
     (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
   }
 
-  /** Pre-creates the hub subscription BEFORE triggering processMessage to avoid publish-before-subscribe races. */
   private def runWithSubscription(
     chunks:  List[String],
     message: String,
   ): ZIO[AgentRunner & SessionHub & EventLogZIORepository, Any, Chunk[ResponseChunk]] =
-    ZIO.scoped {
-      for {
-        hub      <- ZIO.service[SessionHub]
-        innerHub <- hub.getOrCreate(sessionId)
-        dequeue  <- innerHub.subscribe
-        fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
-        _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, message, Some(userId)))
-        result   <- fiber.join
-      } yield result
-    }
+    for {
+      hub    <- ZIO.service[SessionHub]
+      _      <- hub.getOrCreate(sessionId) // pre-create so publish never drops chunks
+      fiber  <- hub.subscribe(sessionId).runCollect.fork
+      _      <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, message, Some(userId)))
+      result <- fiber.join
+    } yield result
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("AgentRunner")(
@@ -85,16 +81,13 @@ object AgentRunnerSpec extends ZIOSpecDefault {
         } yield assertTrue(received.length == 1, received.head.finished)
       }.provide(layers(Nil)),
       test("processMessage publishes finished sentinel on ModelGateway failure") {
-        ZIO.scoped {
-          for {
-            hub      <- ZIO.service[SessionHub]
-            innerHub <- hub.getOrCreate(sessionId)
-            dequeue  <- innerHub.subscribe
-            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
-            _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hi", Some(userId))).ignore
-            received <- fiber.join
-          } yield assertTrue(received.nonEmpty, received.last.finished, received.last.isError)
-        }
+        for {
+          hub      <- ZIO.service[SessionHub]
+          _        <- hub.getOrCreate(sessionId)
+          fiber    <- hub.subscribe(sessionId).runCollect.fork
+          _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hi", Some(userId))).ignore
+          received <- fiber.join
+        } yield assertTrue(received.nonEmpty, received.last.finished, received.last.isError)
       }.provide {
         val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
         val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
@@ -132,16 +125,13 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       suite("service methods")(
         test("processMessage delegates to implementation") {
-          ZIO.scoped {
-            for {
-              hub      <- ZIO.service[SessionHub]
-              innerHub <- hub.getOrCreate(sessionId)
-              dequeue  <- innerHub.subscribe
-              fiber    <- zio.stream.ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.forkScoped
-              _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
-              _        <- fiber.join
-            } yield assertCompletes
-          }
+          for {
+            hub   <- ZIO.service[SessionHub]
+            _     <- hub.getOrCreate(sessionId)
+            fiber <- hub.subscribe(sessionId).runCollect.fork
+            _     <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
+            _     <- fiber.join
+          } yield assertCompletes
         }.provide(layers(List("ok"))),
         test("subscribeToSession delegates to implementation") {
           ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(sessionId)).take(0).runDrain.as(assertCompletes)

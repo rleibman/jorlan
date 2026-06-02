@@ -89,7 +89,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
             """mutation { createUser(displayName: "GraphQLUser2") { id displayName } }""",
           )
           id = extractLongField(createResult.data.toString, "id")
-          queryResult <- interp.execute(s"""{ user(id: $id) { id displayName } }""")
+          queryResult <- interp.execute(s"""{ user(value: $id) { id displayName } }""")
         } yield assertTrue(
           createResult.errors.isEmpty,
           queryResult.errors.isEmpty,
@@ -99,7 +99,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("user(id) returns null for non-existent id") {
         for {
           interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          result <- interp.execute("""{ user(id: 999999) { id displayName } }""")
+          result <- interp.execute("""{ user(value: 999999) { id displayName } }""")
         } yield assertTrue(
           result.errors.isEmpty,
           result.data.toString.contains("null"),
@@ -115,7 +115,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
           updateResult <- interp.execute(
             s"""mutation { updateUser(id: $id, displayName: "Updated", email: "updated@test.com", active: true) { id displayName email } }""",
           )
-          refetchResult <- interp.execute(s"""{ user(id: $id) { id displayName email } }""")
+          refetchResult <- interp.execute(s"""{ user(value: $id) { id displayName email } }""")
         } yield assertTrue(
           createResult.errors.isEmpty,
           updateResult.errors.isEmpty,
@@ -139,7 +139,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("role(id) returns null for non-existent id") {
         for {
           interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          result <- interp.execute("""{ role(id: 999999) { id name } }""")
+          result <- interp.execute("""{ role(value: 999999) { id name } }""")
         } yield assertTrue(
           result.errors.isEmpty,
           result.data.toString.contains("null"),
@@ -186,7 +186,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
           interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute("""mutation { createRole(name: "gql-specific") { id name } }""")
           roleId = extractLongField(createResult.data.toString, "id")
-          queryResult <- interp.execute(s"""{ role(id: $roleId) { id name } }""")
+          queryResult <- interp.execute(s"""{ role(value: $roleId) { id name } }""")
         } yield assertTrue(
           createResult.errors.isEmpty,
           queryResult.errors.isEmpty,
@@ -234,7 +234,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
             s"""mutation { grantPermission(resource: "memory", action: "read", userId: $userId) { id } }""",
           )
           permId = extractLongField(grantResult.data.toString, "id")
-          revokeResult <- interp.execute(s"""mutation { revokePermission(id: $permId) }""")
+          revokeResult <- interp.execute(s"""mutation { revokePermission(value: $permId) }""")
           permsResult  <- interp.execute(s"""{ permissions(userId: $userId) { id resource action } }""")
         } yield assertTrue(
           userResult.errors.isEmpty,

@@ -137,13 +137,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("user(id) returns null for non-existent id") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ user(id: 99999) { id displayName } }""")
+        result <- interp.execute("""{ user(value: 99999) { id displayName } }""")
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("null"))
     },
     test("role(id) returns null for non-existent id") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ role(id: 99999) { id name } }""")
+        result <- interp.execute("""{ role(value: 99999) { id name } }""")
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("null"))
     },
     test("roles(userId) returns empty list for user with no roles") {
@@ -278,7 +278,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
           s"""mutation { grantPermission(resource: "net", action: "fetch", userId: $userId) { id } }""",
         )
         permId = extractLong(grantResult.data.toString, "id")
-        revokeResult <- interp.execute(s"""mutation { revokePermission(id: $permId) }""")
+        revokeResult <- interp.execute(s"""mutation { revokePermission(value: $permId) }""")
       } yield assertTrue(
         grantResult.errors.isEmpty,
         revokeResult.errors.isEmpty,
@@ -322,7 +322,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("createSession returns a session with Active status") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""mutation { createSession { id status } }""")
+        result <- interp.execute("""mutation { createSession(value: null) { id status } }""")
       } yield assertTrue(
         result.errors.isEmpty,
         result.data.toString.contains("Active"),
@@ -331,7 +331,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("createSession with explicit modelId uses ArgBuilder[ModelId]") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""mutation { createSession(modelId: "llama3") { id status } }""")
+        result <- interp.execute("""mutation { createSession(value: "llama3") { id status } }""")
       } yield assertTrue(
         result.errors.isEmpty,
         result.data.toString.contains("Active"),
@@ -340,7 +340,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("listSessions returns created sessions — exercises Schema for AgentId, WorkspaceId, SessionStatus") {
       for {
         interp     <- ZIO.service[Interp]
-        _          <- interp.execute("""mutation { createSession { id } }""")
+        _          <- interp.execute("""mutation { createSession(value: null) { id } }""")
         listResult <- interp.execute(
           """{ listSessions { id agentId userId status createdAt updatedAt } }""",
         )
@@ -352,7 +352,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("submitMessage mutation succeeds with active session") {
       for {
         interp       <- ZIO.service[Interp]
-        createResult <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute("""mutation { createSession(value: null) { id } }""")
         sessionId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(
           s"""mutation { submitMessage(sessionId: $sessionId, content: "hello") }""",

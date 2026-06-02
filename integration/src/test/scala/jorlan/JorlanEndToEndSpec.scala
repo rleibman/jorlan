@@ -122,7 +122,7 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(createResult.data.toString).map(_.group(1).toLong).getOrElse(-1L)
           }
-          queryResult <- interp.execute(s"""{ user(id: $id) { id displayName email } }""")
+          queryResult <- interp.execute(s"""{ user(value: $id) { id displayName email } }""")
         } yield assertTrue(
           createResult.errors.isEmpty,
           queryResult.errors.isEmpty,

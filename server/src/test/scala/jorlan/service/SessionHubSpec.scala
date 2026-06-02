@@ -35,29 +35,37 @@ object SessionHubSpec extends ZIOSpecDefault {
           ResponseChunk(sid1, " world", false),
           ResponseChunk(sid1, "", true),
         )
-        ZIO.scoped {
-          for {
-            hub      <- ZIO.service[SessionHub]
-            innerHub <- hub.getOrCreate(sid1)
-            dequeue  <- innerHub.subscribe
-            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.fork
-            _        <- ZIO.foreachDiscard(chunks)(hub.publish)
-            received <- fiber.join
-          } yield assertTrue(received.toList == chunks)
-        }
+        for {
+          hub      <- ZIO.service[SessionHub]
+          _        <- hub.getOrCreate(sid1) // pre-create so publish doesn't race the forked stream
+          fiber    <- hub.subscribe(sid1).runCollect.fork
+          _        <- ZIO.foreachDiscard(chunks)(hub.publish)
+          received <- fiber.join
+        } yield assertTrue(received.toList == chunks)
+      }.provide(SessionHub.live),
+      test("late subscriber gets all buffered chunks (Queue semantics)") {
+        val chunks = List(
+          ResponseChunk(sid1, "a", false),
+          ResponseChunk(sid1, "b", false),
+          ResponseChunk(sid1, "", true),
+        )
+        for {
+          hub <- ZIO.service[SessionHub]
+          _   <- hub.getOrCreate(sid1)
+          // Publish everything before subscribing — chunks must not be lost
+          _        <- ZIO.foreachDiscard(chunks)(hub.publish)
+          received <- hub.subscribe(sid1).runCollect
+        } yield assertTrue(received.toList == chunks)
       }.provide(SessionHub.live),
       test("subscribe stream terminates on finished sentinel") {
-        ZIO.scoped {
-          for {
-            hub      <- ZIO.service[SessionHub]
-            innerHub <- hub.getOrCreate(sid1)
-            dequeue  <- innerHub.subscribe
-            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.fork
-            _        <- hub.publish(ResponseChunk(sid1, "a", false))
-            _        <- hub.publish(ResponseChunk(sid1, "", true))
-            result   <- fiber.join
-          } yield assertTrue(result.length == 2, result.last.finished)
-        }
+        for {
+          hub    <- ZIO.service[SessionHub]
+          _      <- hub.getOrCreate(sid1)
+          fiber  <- hub.subscribe(sid1).runCollect.fork
+          _      <- hub.publish(ResponseChunk(sid1, "a", false))
+          _      <- hub.publish(ResponseChunk(sid1, "", true))
+          result <- fiber.join
+        } yield assertTrue(result.length == 2, result.last.finished)
       }.provide(SessionHub.live),
       test("distinct sessions have independent hubs") {
         for {
@@ -85,18 +93,15 @@ object SessionHubSpec extends ZIOSpecDefault {
           ResponseChunk(sid2, "first", false),
           ResponseChunk(sid2, "second", false),
           ResponseChunk(sid2, "third", false),
+          ResponseChunk(sid2, "", true),
         )
-        ZIO.scoped {
-          for {
-            hub      <- ZIO.service[SessionHub]
-            innerHub <- hub.getOrCreate(sid2)
-            dequeue  <- innerHub.subscribe
-            fiber    <- ZStream.fromQueue(dequeue).takeUntil(_.finished).runCollect.fork
-            _        <- ZIO.foreachDiscard(chunks)(hub.publish)
-            _        <- hub.publish(ResponseChunk(sid2, "", true))
-            received <- fiber.join
-          } yield assertTrue(received.toList == chunks :+ ResponseChunk(sid2, "", true))
-        }
+        for {
+          hub      <- ZIO.service[SessionHub]
+          _        <- hub.getOrCreate(sid2)
+          fiber    <- hub.subscribe(sid2).runCollect.fork
+          _        <- ZIO.foreachDiscard(chunks)(hub.publish)
+          received <- fiber.join
+        } yield assertTrue(received.toList == chunks)
       }.provide(SessionHub.live),
     )
 

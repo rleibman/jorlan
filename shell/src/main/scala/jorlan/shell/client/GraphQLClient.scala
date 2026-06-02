@@ -10,6 +10,8 @@
 
 package jorlan.shell.client
 
+import caliban.client.{Operations, SelectionBuilder}
+import caliban.client.Operations.IsOperation
 import jorlan.shell.ShellConfig
 import sttp.client4.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend
@@ -18,19 +20,20 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-/** Thin sttp-based GraphQL client. Executes arbitrary queries/mutations against the Jorlan server and returns the raw
-  * `data` JSON, failing with an error string if the server returns GraphQL errors or an HTTP error.
-  *
-  * P7-033: Phase 8 will add more server interactions. At that point, consider extracting a shared `JorlanHttpClient`
-  * service that owns the HTTP backend and JWT lifecycle, with `AuthClient` and `GraphQLClient` becoming thin facades
-  * over it.
+/** Thin sttp-based GraphQL client. Supports both raw string queries (for introspection) and typed
+  * [[SelectionBuilder]]-based execution.
   */
 trait GraphQLClient {
 
+  /** Execute a raw GraphQL query string. Reserved for introspection queries that have no SelectionBuilder equivalent.
+    */
   def execute(
     query:     String,
     variables: Option[Json] = None,
   ): IO[String, Json]
+
+  /** Execute a typed [[SelectionBuilder]] query or mutation and return the decoded result. */
+  def run[Origin: IsOperation, A](selection: SelectionBuilder[Origin, A]): IO[String, A]
 
 }
 
@@ -41,7 +44,9 @@ object GraphQLClient {
     variables: Option[Json] = None,
   ): ZIO[GraphQLClient, String, Json] = ZIO.serviceWithZIO[GraphQLClient](_.execute(query, variables))
 
-  // P7-001: Backend is acquired once at layer construction time via ZLayer.scoped.
+  def run[Origin: IsOperation, A](selection: SelectionBuilder[Origin, A]): ZIO[GraphQLClient, String, A] =
+    ZIO.serviceWithZIO[GraphQLClient](_.run(selection))
+
   val live: ZLayer[ShellConfig & AuthClient, Throwable, GraphQLClient] = ZLayer.scoped {
     for {
       cfg     <- ZIO.service[ShellConfig]
@@ -50,7 +55,6 @@ object GraphQLClient {
     } yield GraphQLClientImpl(cfg, auth, backend)
   }
 
-  // Factory for tests — allows injecting a stub backend without a real HTTP server.
   private[client] def makeForTesting(
     cfg:     ShellConfig,
     auth:    AuthClient,
@@ -71,7 +75,6 @@ private case class GQLResponse(
   errors: Option[List[GQLError]] = None,
 ) derives JsonDecoder
 
-// Made private[client] so tests can construct instances with a stub backend.
 private[client] class GraphQLClientImpl(
   cfg:     ShellConfig,
   auth:    AuthClient,
@@ -108,6 +111,18 @@ private[client] class GraphQLClientImpl(
             }
       }
     } yield data
+  }
+
+  override def run[Origin: IsOperation, A](selection: SelectionBuilder[Origin, A]): IO[String, A] = {
+    for {
+      token <- auth.currentToken
+      resp  <- selection
+        .toRequest(uri"${cfg.serverUrl}/api/jorlan")
+        .headers(token.map(t => Header("Authorization", s"Bearer $t")).toList*)
+        .send(backend)
+        .mapError(e => s"HTTP error on GraphQL request: ${e.getMessage}")
+      result <- ZIO.fromEither(resp.body).mapError(_.getMessage)
+    } yield result
   }
 
 }

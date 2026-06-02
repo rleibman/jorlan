@@ -14,19 +14,20 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 
-/** Maintains a [[Hub]] per active agent session. [[AgentRunner]] publishes response chunks; Caliban subscriptions
-  * subscribe and stream them to clients.
+/** Maintains a per-session [[Queue]] of [[ResponseChunk]] tokens.
+  *
+  * Unlike a [[Hub]], a [[Queue]] buffers all published chunks until they are consumed. This means a subscriber that
+  * connects after the LLM has already finished generating will still receive every token — which is the correct
+  * behaviour for the request-response model used by the shell client.
+  *
+  * [[AgentRunner]] publishes tokens; Caliban subscriptions consume them.
   */
-class SessionHub private (hubs: Ref[Map[AgentSessionId, Hub[ResponseChunk]]]) {
+class SessionHub private (queues: Ref[Map[AgentSessionId, Queue[ResponseChunk]]]) {
 
-  /** Returns the hub for `sessionId`, creating a new bounded hub if none exists yet.
-    *
-    * Allocation is atomic: a fresh `Hub` is eagerly allocated and discarded if a concurrent fiber already inserted one,
-    * ensuring no subscriber is silently connected to an orphaned hub.
-    */
-  def getOrCreate(sessionId: AgentSessionId): UIO[Hub[ResponseChunk]] =
-    Hub.bounded[ResponseChunk](256).flatMap { fresh =>
-      hubs.modify { map =>
+  /** Returns the queue for `sessionId`, creating an unbounded queue if none exists yet. */
+  def getOrCreate(sessionId: AgentSessionId): UIO[Queue[ResponseChunk]] =
+    Queue.unbounded[ResponseChunk].flatMap { fresh =>
+      queues.modify { map =>
         map.get(sessionId) match {
           case Some(existing) => (existing, map)
           case None           => (fresh, map + (sessionId -> fresh))
@@ -34,33 +35,28 @@ class SessionHub private (hubs: Ref[Map[AgentSessionId, Hub[ResponseChunk]]]) {
       }
     }
 
-  /** Publishes a chunk to the hub for `sessionId`. No-op if no hub exists yet. */
+  /** Publishes a chunk to the queue for `sessionId`. No-op if no queue exists yet. */
   def publish(chunk: ResponseChunk): UIO[Unit] =
-    hubs.get.flatMap { map =>
+    queues.get.flatMap { map =>
       map.get(chunk.sessionId) match {
-        case Some(h) => h.publish(chunk).unit
+        case Some(q) => q.offer(chunk).unit
         case None    => ZIO.unit
       }
     }
 
-  /** Returns a [[ZStream]] that emits chunks for `sessionId` until the `finished` sentinel arrives.
+  /** Returns a [[ZStream]] that emits all buffered and future chunks for `sessionId` until the `finished` sentinel.
     *
-    * The hub subscription is scoped inside the stream — it is released when the stream ends or is interrupted.
+    * Because chunks are stored in a queue, this stream replays any tokens already published before the subscriber
+    * started — no chunks are lost due to subscription timing.
     */
   def subscribe(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk] =
-    ZStream.unwrapScoped(
-      getOrCreate(sessionId).flatMap { hub =>
-        hub.subscribe.map { subscription =>
-          ZStream
-            .fromQueue(subscription)
-            .takeUntil(_.finished)
-        }
-      },
-    )
+    ZStream.fromZIO(getOrCreate(sessionId)).flatMap { queue =>
+      ZStream.fromQueue(queue).takeUntil(_.finished)
+    }
 
-  /** Removes the hub for `sessionId`. Called on session termination to release the bounded buffer. */
+  /** Removes the queue for `sessionId`. Called on session termination. */
   def remove(sessionId: AgentSessionId): UIO[Unit] =
-    hubs.update(_ - sessionId)
+    queues.update(_ - sessionId)
 
 }
 
@@ -68,7 +64,7 @@ object SessionHub {
 
   val live: ULayer[SessionHub] =
     ZLayer.fromZIO(
-      Ref.make(Map.empty[AgentSessionId, Hub[ResponseChunk]]).map(new SessionHub(_)),
+      Ref.make(Map.empty[AgentSessionId, Queue[ResponseChunk]]).map(new SessionHub(_)),
     )
 
 }

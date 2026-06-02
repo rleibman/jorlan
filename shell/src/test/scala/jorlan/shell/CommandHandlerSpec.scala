@@ -51,6 +51,11 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           variables: Option[Json],
         ): IO[String, Json] =
           ZIO.fromEither(result)
+
+        override def run[Origin: caliban.client.Operations.IsOperation, A](
+          selection: caliban.client.SelectionBuilder[Origin, A],
+        ): IO[String, A] =
+          ZIO.fail("run not implemented in fake")
       }
     }
 

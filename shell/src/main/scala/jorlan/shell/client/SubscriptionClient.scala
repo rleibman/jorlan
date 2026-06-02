@@ -11,7 +11,9 @@
 package jorlan.shell.client
 
 import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.graphql.client.JorlanClient
 import jorlan.shell.ShellConfig
+import jorlan.shell.client.JorlanClientDecoders.*
 import sttp.client4.*
 import sttp.client4.ws.async.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend
@@ -24,12 +26,13 @@ import zio.stream.ZStream
 
 import scala.language.unsafeNulls
 
-/** Implements the graphql-ws protocol over sttp WebSocket to stream [[ResponseChunk]] tokens from the server.
+/** Implements the subscriptions-transport-ws protocol over sttp WebSocket to stream [[ResponseChunk]] tokens from the
+  * server.
   *
   * A single [[Backend]] is acquired once at layer construction time (via [[SubscriptionClient.live]]) and reused across
   * all subscriptions — avoiding the P7-001 pattern of creating a new thread pool per call.
   *
-  * Protocol sequence: connection_init → connection_ack → subscribe → next* → complete
+  * Protocol sequence: connection_init → connection_ack → start → data* → complete
   */
 trait SubscriptionClient {
 
@@ -70,10 +73,11 @@ private case class ChunkData(
   sessionId: AgentSessionId,
   content:   String,
   finished:  Boolean,
+  isError:   Boolean = false,
 ) derives JsonDecoder
 
 private case class AgentResponseData(agentResponseStream: ChunkData) derives JsonDecoder
-private case class NextPayload(data: AgentResponseData) derives JsonDecoder
+private case class DataPayload(data: AgentResponseData) derives JsonDecoder
 
 private class SubscriptionClientImpl(
   cfg:     ShellConfig,
@@ -88,64 +92,88 @@ private class SubscriptionClientImpl(
       .replaceFirst("^https://", "wss://")
       .replaceFirst("^http://", "ws://") + "/api/jorlan/ws"
 
-    val subscribeMsg = WsMsg(
-      `type` = "subscribe",
+    // Use SelectionBuilder to generate the subscription query — avoids manual string construction.
+    val gqlQuery = JorlanClient.Subscriptions
+      .agentResponseStream(sessionId)(JorlanClient.ResponseChunk.view)
+      .toGraphQL(useVariables = false)
+      .query
+
+    // subscriptions-transport-ws protocol uses "start" (not the newer "subscribe").
+    val startMsg = WsMsg(
+      `type` = "start",
       id = Some(subscriptionId),
-      payload = Some(
-        Json.Obj(
-          "query" -> Json.Str(
-            s"""subscription { agentResponseStream(sessionId: ${sessionId.value}) { sessionId content finished isError } }""",
-          ),
-        ),
-      ),
+      payload = Some(Json.Obj("query" -> Json.Str(gqlQuery))),
     ).toJson
 
     ZStream.unwrapScoped(
       for {
         token <- auth.currentToken
+        _     <- ZIO.logDebug(s"[WS] connecting to $wsUrl (auth=${token.isDefined})")
         queue <- Queue.bounded[Option[Either[String, ResponseChunk]]](1024)
-        _     <- basicRequest
+        fiber <- basicRequest
           .get(uri"$wsUrl")
           .headers(token.map(t => Map("Authorization" -> s"Bearer $t")).getOrElse(Map.empty))
           .response(
             asWebSocketAlways[Task, Unit] { ws =>
-              val sendInit = ws.sendText(WsMsg(`type` = "connection_init").toJson)
+              val sendInit = ws.sendText(WsMsg(`type` = "connection_init").toJson) *>
+                ZIO.logDebug("[WS] sent connection_init")
               val frameLoop = ZStream
                 .repeatZIO(ws.receive())
                 .mapZIO {
                   case WebSocketFrame.Text(text, _, _) =>
-                    ZIO
-                      .fromEither(text.fromJson[WsMsg])
-                      .mapError(new RuntimeException(_))
-                      .flatMap {
-                        case WsMsg("connection_ack", _, _) => ws.sendText(subscribeMsg)
-                        case WsMsg("next", _, Some(p))     =>
-                          ZIO
-                            .fromEither(p.toJson.fromJson[NextPayload])
-                            .mapError(new RuntimeException(_))
-                            .flatMap { np =>
-                              val cd = np.data.agentResponseStream
-                              queue.offer(
-                                Some(Right(ResponseChunk(cd.sessionId, cd.content, cd.finished))),
-                              )
-                            }
-                            .unit
-                        case WsMsg("complete", Some(`subscriptionId`), _) =>
-                          queue.offer(None).unit
-                        case WsMsg("error", _, Some(e)) =>
-                          queue.offer(Some(Left(s"GQL error: $e"))).unit
-                        case _ => ZIO.unit
-                      }
-                  case _: WebSocketFrame.Close => queue.offer(None).unit
-                  case _ => ZIO.unit
+                    ZIO.logDebug(s"[WS] frame: $text") *>
+                      ZIO
+                        .fromEither(text.fromJson[WsMsg])
+                        .mapError(new RuntimeException(_))
+                        .flatMap {
+                          case WsMsg("connection_ack", _, _) =>
+                            ZIO.logDebug("[WS] connection_ack → sending start") *>
+                              ws.sendText(startMsg) *>
+                              ZIO.logDebug(s"[WS] start sent: $startMsg")
+                          // subscriptions-transport-ws uses "data" (not the newer "next").
+                          case WsMsg("data", _, Some(p)) =>
+                            ZIO.logDebug(s"[WS] data payload: ${p.toJson}") *>
+                              ZIO
+                                .fromEither(p.toJson.fromJson[DataPayload])
+                                .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
+                                .mapError(new RuntimeException(_))
+                                .flatMap { dp =>
+                                  val cd = dp.data.agentResponseStream
+                                  ZIO.logDebug(
+                                    s"[WS] chunk: session=${cd.sessionId.value} content='${cd.content}' finished=${cd.finished} isError=${cd.isError}",
+                                  ) *>
+                                    queue
+                                      .offer(
+                                        Some(
+                                          Right(ResponseChunk(cd.sessionId, cd.content, cd.finished, cd.isError)),
+                                        ),
+                                      ).unit
+                                }
+                          case WsMsg("complete", Some(`subscriptionId`), _) =>
+                            ZIO.logDebug("[WS] complete") *> queue.offer(None).unit
+                          case WsMsg("error", _, Some(e)) =>
+                            ZIO.logWarning(s"[WS] error frame: $e") *>
+                              queue.offer(Some(Left(s"GQL error: $e"))).unit
+                          case other =>
+                            ZIO.logDebug(s"[WS] unhandled message type: ${other.`type`}")
+                        }
+                  case _: WebSocketFrame.Close =>
+                    ZIO.logDebug("[WS] close frame") *> queue.offer(None).unit
+                  case other =>
+                    ZIO.logDebug(s"[WS] non-text frame: $other")
                 }
                 .runDrain
               sendInit *> frameLoop
             },
           )
           .send(backend)
+          .tapError(e => ZIO.logError(s"[WS] request failed: ${e.getMessage}"))
           .mapError(e => s"WebSocket request failed: ${e.getMessage}")
           .forkScoped
+        _ <- fiber.await.flatMap {
+          case Exit.Failure(cause) => ZIO.logError(s"[WS] fiber exited with failure: ${cause.prettyPrint}")
+          case Exit.Success(_)     => ZIO.logDebug("[WS] fiber exited cleanly")
+        }.forkScoped
       } yield ZStream
         .repeatZIO(queue.take)
         .collectWhile { case Some(v) => v }
