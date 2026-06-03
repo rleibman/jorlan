@@ -26,6 +26,17 @@ type: project
 - `RepositoryTask` type alias is defined in `db` package — callers outside `db` must spell out `IO[RepositoryError, A]`; consider re-exporting from `model`
 - `F[_]` abstraction in `model/repository.scala` adds complexity with no current non-ZIO consumer; revisit when a second effect type materializes
 
+## Phase 8.5 Findings (2026-06-02)
+- `SessionHub` still injected into `AgentSessionManagerImpl` even though it is no longer used by that class (createSession no longer calls getOrCreate); dead dependency in the layer and constructor
+- `AgentSessionManagerImpl` and `AgentRunnerImpl` both receive `SessionHub` yet it is only used in `AgentRunnerImpl` — `AgentSessionManagerImpl.live` should remove it from its URLayer signature
+- `ConversationLogger` uses SLF4J MDC directly inside `ZIO.succeed` — safe only if MDC is thread-local (Logback uses ThreadLocal MDC), but ZIO fibers can be multiplexed across OS threads; the doc comment claims safety but is subtly wrong for non-blocking Logback appenders
+- `SessionHub` uses `Queue.sliding(1024)` — the switch from `Hub` is documented as "buffers all chunks", but `sliding` silently drops oldest entries when the queue is full; the class javadoc claims no chunks are lost, which is wrong under backpressure
+- `JorlanClient.Formality` is typed as `String` in the client type aliases — loses the closed enum constraint that the server-side `Formality` enum provides; a stringly-typed argument is passed to `updatePersonality` with no validation
+- Caliban `OverallWrapper` implemented with anonymous `new OverallWrapper` syntax instead of the idiomatic `EffectWrapper`/`OverallWrapper` Caliban DSL helpers; minor but inconsistent with Caliban documentation style
+- `createSession` mutation type in JorlanAPI.scala: the Mutations struct says `CreateSessionInput => ...` but the diff comment says "Removes CreateSessionInput wrapper"; the code still has CreateSessionInput — partial cleanup left an intermediate inconsistency (one side uses the wrapper, other removed it in the PR diff context)
+- `logRequests` wrapper logs the full query body at DEBUG — for long messages or production prompts this can be an unbounded log entry; consider truncation
+- `loadOrCreateSession` in JorlanShell.scala duplicates the subscription fiber fork setup found identically in `handleNewSession` in CommandHandler.scala — the LiveSession setup code (Queue.bounded + ZIO.scoped + SubscriptionClient.agentResponseStream + forkScoped + setLiveSession) appears in two places; extraction to a shared helper is needed
+
 ## Phase 8.3/8.4 Findings (2026-06-01)
 - Inline anonymous `PersonalityService` duplicated in 3 test files (AgentRunnerSpec, JorlanAPISpec, GraphQLApiSpec) — should be extracted to `FakePersonalityService.layer` in `FakeModelGateway.scala` alongside the existing `FakeModelGateway`
 - `serverPersonality` query has NO authentication or capability guard — any unauthenticated caller can read the server personality; inconsistent with `listSessions` which calls `actorIdFromSession` + `requireCapability`

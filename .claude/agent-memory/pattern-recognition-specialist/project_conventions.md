@@ -46,6 +46,16 @@ type: project
 - `QuillRepositories.live` now destructures a 10-tuple; pattern is established but becoming fragile
 - Error branching in `InitRoutes.SetupModeApp`: `ValidationError` → 400, all other `JorlanError` → 403 (not 500) — this is wrong; non-validation errors that aren't "forbidden" (e.g., a DB error) should map to 500
 
+## Phase 8.5 Conventions Added (2026-06-02)
+- `SessionHub` redesigned: Hub[ResponseChunk] → per-connection Queue[ResponseChunk] keyed by (AgentSessionId, ConnectionId); each subscriber gets its own queue; `SubscriberEntry` is the private pairing type
+- `AgentRunner.subscribeToSession` now takes a `ConnectionId` parameter; the GraphQL resolver generates one via `ConnectionId.randomZIO` per subscription call
+- `ConversationLogger` is a plain `object` (no ZIO service pattern) with direct SLF4J usage inside `ZIO.succeed`; acceptable because it is purely a side-channel log and carries no injected state
+- `VersionCheck` is a pure object with only `check(...)`: Either[String, Unit]; correct separation of pure version logic from ZIO shell code
+- `OverallWrapper` used for request/error logging in JorlanAPI; wrappers applied at schema construction with `@@`
+- `JorlanClient` now contains `Personality` type alias + `PersonalityView` case class, mirrors pattern used for `AgentSession` and `ResponseChunk`
+- `loadOrCreateSession` in JorlanShell establishes the long-lived WS subscription fiber at login time; `handleNewSession` in CommandHandler re-establishes it for `/new` — logic is duplicated (known issue flagged)
+- `SetupModeApp.make` now accepts `initDone: Option[Promise[Nothing, Unit]]` and `tokenStore: InitTokenStore`; Promise is used to signal Jorlan.run to switch from setup mode to full routes without a restart
+
 ## Known Technical Debt (updated 2026-05-29)
 - `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
 - `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module

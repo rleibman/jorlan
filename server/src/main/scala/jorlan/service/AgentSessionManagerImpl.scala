@@ -15,9 +15,13 @@ import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
 import jorlan.domain.*
 import zio.*
 
+/** Concrete [[AgentSessionManager]] implementation. Session lifecycle is managed via DB CRUD and event-log writes.
+  *
+  * The default agent is resolved from the V016 migration seed ("Jorlan Interactive") and cached after the first lookup.
+  * [[terminateSession]] also calls [[ModelGateway.invalidateSession]] to release any in-memory model state.
+  */
 class AgentSessionManagerImpl(
   agentRepo:            AgentZIORepository,
-  sessionHub:           SessionHub,
   modelGateway:         ModelGateway,
   eventLogRepo:         EventLogZIORepository,
   cachedDefaultAgentId: Ref[Option[AgentId]],
@@ -65,7 +69,6 @@ class AgentSessionManagerImpl(
         updatedAt = now,
       )
       saved <- agentRepo.upsertSession(session).mapError(JorlanError(_))
-      _     <- sessionHub.getOrCreate(saved.id).unit
       _     <- eventLogRepo.append(
         EventLog(
           id = EventLogId.empty,
@@ -116,7 +119,6 @@ class AgentSessionManagerImpl(
 
   override def terminateSession(id: AgentSessionId): IO[JorlanError, AgentSession] =
     updateStatus(id, SessionStatus.Completed, EventType.SessionTerminated) <*
-      sessionHub.remove(id) <*
       modelGateway.invalidateSession(id)
 
   override def listSessions(
@@ -132,15 +134,15 @@ class AgentSessionManagerImpl(
 
 object AgentSessionManagerImpl {
 
-  val live: URLayer[AgentZIORepository & SessionHub & ModelGateway & EventLogZIORepository, AgentSessionManager] =
+  /** Constructs the layer. Allocates a [[Ref]] for the cached default agent ID. */
+  val live: URLayer[AgentZIORepository & ModelGateway & EventLogZIORepository, AgentSessionManager] =
     ZLayer.fromZIO(
       for {
         agentRepo    <- ZIO.service[AgentZIORepository]
-        sessionHub   <- ZIO.service[SessionHub]
         modelGateway <- ZIO.service[ModelGateway]
         eventLogRepo <- ZIO.service[EventLogZIORepository]
         cached       <- Ref.make(Option.empty[AgentId])
-      } yield new AgentSessionManagerImpl(agentRepo, sessionHub, modelGateway, eventLogRepo, cached),
+      } yield new AgentSessionManagerImpl(agentRepo, modelGateway, eventLogRepo, cached),
     )
 
 }

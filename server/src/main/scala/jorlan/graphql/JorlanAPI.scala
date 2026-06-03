@@ -11,10 +11,9 @@
 package jorlan.graphql
 
 import caliban.*
-import caliban.interop.zio.json.*
 import caliban.schema.*
 import caliban.schema.Schema.auto.*
-import caliban.schema.ArgBuilder.auto.*
+import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.{
@@ -35,6 +34,49 @@ import java.time.Instant
 /** Caliban GraphQL schema for the Jorlan control-plane API. */
 object JorlanAPI {
 
+  private val logErrors: OverallWrapper[Any] =
+    new OverallWrapper[Any] {
+      def wrap[R1 <: Any](
+        process: GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]],
+      ): GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]] =
+        request =>
+          process(request)
+            .map { response =>
+              if (response.errors.isEmpty) response
+              else {
+                val fixed = response.errors.map {
+                  case CalibanError.ExecutionError("Effect failure", path, locs, Some(t), ext) =>
+                    CalibanError.ExecutionError(
+                      Option(t.getMessage).getOrElse(t.getClass.getName),
+                      path,
+                      locs,
+                      Some(t),
+                      ext,
+                    )
+                  case other => other
+                }
+                response.copy(errors = fixed)
+              }
+            }
+            .tap { response =>
+              ZIO.foreachDiscard(response.errors)(err => ZIO.logErrorCause(Cause.fail(err)))
+            }
+    }
+
+  private val logRequests: OverallWrapper[Any] =
+    new OverallWrapper[Any] {
+      def wrap[R1 <: Any](
+        process: GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]],
+      ): GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]] =
+        request =>
+          ZIO.logDebug {
+            val preview = request.query.getOrElse("").take(120).replaceAll("\\s+", " ")
+            val ellipsis = if (request.query.exists(_.length > 120)) "…" else ""
+            s"GraphQL ${request.operationName.getOrElse("request")}: $preview$ellipsis"
+          } *>
+            process(request)
+    }
+
   type JorlanApiEnv =
     UserZIORepository & PermissionZIORepository & EventLogZIORepository & ServerSettingsRepository &
       CapabilityEvaluator & AgentSessionManager & AgentRunner
@@ -50,17 +92,9 @@ object JorlanAPI {
   private given ArgBuilder[WorkspaceId] = ArgBuilder.long.map(WorkspaceId(_))
   private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
   private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
+  private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
 
   // ─── Query input types ────────────────────────────────────────────────────────
-
-  /** Input for `user(id)` */
-  case class UserByIdInput(id: UserId) derives Schema.SemiAuto, ArgBuilder
-
-  /** Input for `role(id)` */
-  case class RoleByIdInput(id: RoleId) derives Schema.SemiAuto, ArgBuilder
-
-  /** Input for `revokePermission(id)` */
-  case class PermissionByIdInput(id: PermissionId) derives Schema.SemiAuto, ArgBuilder
 
   /** Standard pagination input used by list queries. Defaults: `page = 0`, `pageSize = 20`. */
   case class PaginationInput(
@@ -118,9 +152,9 @@ object JorlanAPI {
     roleId:   Option[RoleId],
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** Input for `createSession`. `modelId = null` uses the agent's configured default model. */
+  /** Input for `createSession` — optional model override; if absent, the agent's default model is used. */
   case class CreateSessionInput(
-    modelId: Option[ModelId],
+    modelId: Option[ModelId] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Input for `submitMessage` — sends a user message to the active agent session. */
@@ -129,32 +163,12 @@ object JorlanAPI {
     content:   String,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** Input for the `agentResponseStream` subscription. */
-  case class AgentResponseStreamInput(
-    sessionId: AgentSessionId,
-  ) derives Schema.SemiAuto, ArgBuilder
-
-  /** Input for `updatePersonality`. All fields are required — send the complete personality object. */
-  case class UpdatePersonalityInput(
-    name:      String,
-    formality: Formality,
-    languages: List[String],
-    expertise: List[String],
-    prompt:    String,
-  ) derives Schema.SemiAuto, ArgBuilder
-
-  extension (i: UpdatePersonalityInput) {
-
-    def toPersonality: Personality = Personality(i.name, i.formality, i.languages, i.expertise, i.prompt)
-
-  }
-
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
-    user:         UserByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
+    user:         UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
     users:        PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
-    role:         RoleByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
+    role:         RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
     roles:        RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     permissions:  PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
     listSessions: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[AgentSession]],
@@ -163,23 +177,22 @@ object JorlanAPI {
   )
 
   case class Mutations(
-    createUser:       CreateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
-    updateUser:       UpdateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
-    createRole:       CreateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
-    assignRole:       AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
-    revokeRole:       AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
-    grantPermission:  GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
-    revokePermission: PermissionByIdInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
-    createSession:    CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
-    submitMessage:    SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
-    /** Replaces the server personality. Requires `admin.personality.update` capability. */
-    updatePersonality: UpdatePersonalityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
+    createUser:        CreateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
+    updateUser:        UpdateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
+    createRole:        CreateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
+    assignRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
+    revokeRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
+    grantPermission:   GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
+    revokePermission:  PermissionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
+    createSession:     CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
+    submitMessage:     SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
+    updatePersonality: Personality => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
   )
 
   case class Subscriptions(
     approvalNotifications: ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
     eventLogTail:          ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
-    agentResponseStream:   AgentResponseStreamInput => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
+    agentResponseStream:   AgentSessionId => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
   )
 
   // ─── Schema instances ─────────────────────────────────────────────────────────
@@ -290,12 +303,12 @@ object JorlanAPI {
     ](
       RootResolver(
         Queries(
-          user = input => ZIO.serviceWithZIO[UserZIORepository](_.getById(input.id)),
+          user = input => ZIO.serviceWithZIO[UserZIORepository](_.getById(input)),
           users = input =>
             ZIO.serviceWithZIO[UserZIORepository](
               _.search(UserSearch(page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(20))),
             ),
-          role = input => ZIO.serviceWithZIO[PermissionZIORepository](_.getRole(input.id)),
+          role = input => ZIO.serviceWithZIO[PermissionZIORepository](_.getRole(input)),
           roles = input =>
             ZIO.serviceWithZIO[PermissionZIORepository](
               _.searchRoles(
@@ -399,7 +412,7 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.revoke", actorId)
               now     <- Clock.instant
-              count   <- ZIO.serviceWithZIO[PermissionZIORepository](_.deletePermission(input.id))
+              count   <- ZIO.serviceWithZIO[PermissionZIORepository](_.deletePermission(input))
               _       <- logEvent(EventType.PermissionRevoked, Some(actorId), None, now)
             } yield count,
           createSession = input =>
@@ -414,23 +427,31 @@ object JorlanAPI {
               _       <- requireCapability("agent.message", actorId)
               _       <- ZIO
                 .serviceWithZIO[AgentRunner](_.processMessage(input.sessionId, input.content, Some(actorId)))
-                .tapError(e => ZIO.logError(s"AgentRunner failed for session ${input.sessionId}: ${e.getMessage}"))
                 .forkDaemon
             } yield (),
           updatePersonality = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.personality.update", actorId)
-              personality = input.toPersonality
-              _ <- ServerSettingsRepository.setPersonality(personality)
-            } yield personality,
+              _       <- ServerSettingsRepository.setPersonality(input)
+            } yield input,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,
           eventLogTail = ZStream.empty,
-          agentResponseStream = input => ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(input.sessionId)),
+          agentResponseStream = sessionId =>
+            ZStream.unwrap(
+              for {
+                connId <- ConnectionId.randomZIO
+                _ <- ZIO.logInfo(s"[API] agentResponseStream subscription starting: session=$sessionId conn=$connId")
+                runner <- ZIO.service[AgentRunner]
+                stream <- runner.subscribeToSession(sessionId, connId)
+              } yield stream.ensuring(
+                ZIO.logInfo(s"[API] agentResponseStream subscription ended: session=$sessionId conn=$connId"),
+              ),
+            ),
         ),
       ),
-    ) @@ maxFields(200) @@ maxDepth(20)
+    ) @@ maxFields(200) @@ maxDepth(20) @@ logRequests @@ logErrors
 
 }

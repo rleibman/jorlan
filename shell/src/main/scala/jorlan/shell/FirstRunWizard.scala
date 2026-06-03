@@ -115,15 +115,27 @@ object FirstRunWizard {
     } yield cfg
   }
 
+  private def isLocalhost(serverUrl: String): Boolean =
+    scala.util.Try(new java.net.URI(serverUrl).getHost).toOption.exists { h =>
+      h == "localhost" || h == "127.0.0.1" || h == "::1"
+    }
   private def initLoop(
     serverUrl:         String,
     defaultServerName: String,
     writePath:         File,
     screen:            JorlanScreen,
   ): ZIO[InitClient, Throwable, ShellConfig] = {
+    val skipToken = isLocalhost(serverUrl)
     for {
-      _       <- screen.setInputPrompt("Setup token: ")
-      token   <- screen.readLine
+      token <-
+        if (skipToken) {
+          screen.addMessage(
+            MessageKind.System,
+            "Localhost detected — token not required.",
+          ) *> ZIO.succeed("")
+        } else {
+          screen.setInputPrompt("Setup token: ") *> screen.readLine
+        }
       _       <- screen.setInputPrompt(s"Server name [$defaultServerName]: ")
       nameRaw <- screen.readLine
       serverName = if (nameRaw.trim.isEmpty) defaultServerName else nameRaw.trim
@@ -145,7 +157,9 @@ object FirstRunWizard {
               _ => {
                 val cfg = ShellConfig(serverUrl, Some(adminEmail), Some(password))
                 (ShellConfig.write(writePath, cfg) *>
-                  screen.addMessage(MessageKind.System, s"Server initialized. Config saved to ${writePath.getPath}."))
+                  screen.addMessage(MessageKind.System, s"Server initialized. Config saved to ${writePath.getPath}.") *>
+                  screen.addMessage(MessageKind.System, "Waiting for server to switch to full mode…") *>
+                  ZIO.sleep(5.seconds))
                   .as(cfg)
               },
             )

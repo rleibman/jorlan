@@ -7,15 +7,45 @@
     </encoder>
   </appender>
 
+  <!--
+    Conversation log: one file per AgentSessionId under logs/conversations/.
+    The SiftingAppender uses the 'sessionId' MDC key set by ConversationLogger.
+    To disable, set level="OFF" on the jorlan.conversation logger below.
+    To redirect all sessions to a single file, replace with a plain RollingFileAppender.
+  -->
+  <appender name="CONVERSATION" class="ch.qos.logback.classic.sift.SiftingAppender">
+    <discriminator>
+      <key>sessionId</key>
+      <defaultValue>unknown</defaultValue>
+    </discriminator>
+    <sift>
+      <appender name="CONV-${sessionId}" class="ch.qos.logback.core.FileAppender">
+        <file>logs/conversations/session-${sessionId}.log</file>
+        <append>true</append>
+        <encoder>
+          <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %msg%n</pattern>
+        </encoder>
+      </appender>
+    </sift>
+  </appender>
+
   <!-- Suppress noisy third-party loggers -->
   <logger name="com.zaxxer.hikari" level="WARN"/>
   <logger name="org.mariadb" level="WARN"/>
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="io.getquill" level="WARN"/>
   <logger name="io.netty" level="WARN"/>
+  <!-- Uncomment these to diagnose WebSocket disconnections: -->
+  <!-- <logger name="io.netty.handler.codec.http.websocketx" level="DEBUG"/> -->
+  <!-- <logger name="io.netty.channel" level="DEBUG"/> -->
   <logger name="reactor" level="WARN"/>
 
   <logger name="jorlan" level="DEBUG"/>
+
+  <!-- Conversation log goes only to its own appender, not to CONSOLE -->
+  <logger name="jorlan.conversation" level="DEBUG" additivity="false">
+    <appender-ref ref="CONVERSATION"/>
+  </logger>
 
   <root level="INFO">
     <appender-ref ref="CONSOLE"/>

@@ -10,21 +10,10 @@
 
 package jorlan.shell.client
 
-import caliban.client.ScalarDecoder
+import caliban.client.{ArgEncoder, ScalarDecoder}
 import caliban.client.__Value.{__NumberValue, __StringValue}
-import caliban.client.ArgEncoder
-import jorlan.domain.{
-  AgentId,
-  AgentSessionId,
-  ApprovalRequestId,
-  CapabilityName,
-  EventLogId,
-  PermissionId,
-  RoleId,
-  UserId,
-}
+import jorlan.domain.*
 import zio.test.*
-import zio.test.Assertion.*
 
 /** Pure unit tests for [[JorlanClientDecoders]]. No ZIO runtime or network required.
   *
@@ -32,7 +21,7 @@ import zio.test.Assertion.*
   */
 object JorlanClientDecodersSpec extends ZIOSpecDefault {
 
-  import JorlanClientDecoders._
+  import JorlanClientDecoders.*
 
   override def spec: Spec[Any, Nothing] =
     suite("JorlanClientDecoders")(

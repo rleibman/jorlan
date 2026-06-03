@@ -14,53 +14,74 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 
-/** Maintains a [[Hub]] per active agent session. [[AgentRunner]] publishes response chunks; Caliban subscriptions
-  * subscribe and stream them to clients.
+private case class SubscriberEntry(
+  connectionId: ConnectionId,
+  queue:        Queue[ResponseChunk],
+)
+
+/** Maintains per-connection [[Queue]]s of [[ResponseChunk]] tokens, keyed by [[AgentSessionId]].
+  *
+  * Each subscriber gets its own independent `Queue.bounded(1024)` queue. When full, `offer` back-pressures the
+  * publisher until the subscriber catches up (it does not drop items like `Queue.sliding`). This bound exists to cap
+  * per-subscriber heap usage; in practice the shell consumer drains much faster than LLM token rates.
+  *
+  * Because callers subscribe before submitting the message mutation, no tokens are lost due to subscription timing.
+  * Tokens published before the queue is registered are the only ones that can be missed — callers must ensure
+  * `subscribe` completes before sending the message.
+  *
+  * Multiple connections subscribed to the same [[AgentSessionId]] each receive their own independent copy of the
+  * stream. Termination of one subscriber (normal or interrupted) does not affect others.
+  *
+  * [[AgentRunner]] publishes chunks via [[publish]]; Caliban subscriptions consume them via [[subscribe]].
   */
-class SessionHub private (hubs: Ref[Map[AgentSessionId, Hub[ResponseChunk]]]) {
+class SessionHub private (subs: Ref[Map[AgentSessionId, List[SubscriberEntry]]]) {
 
-  /** Returns the hub for `sessionId`, creating a new bounded hub if none exists yet.
+  /** Creates a per-connection bounded queue, registers it under `(sessionId, connectionId)`, and returns a [[ZStream]]
+    * that drains it until the `finished` sentinel.
     *
-    * Allocation is atomic: a fresh `Hub` is eagerly allocated and discarded if a concurrent fiber already inserted one,
-    * ensuring no subscriber is silently connected to an orphaned hub.
+    * The queue is registered atomically as part of the returned [[UIO]], before any streaming begins. Callers must call
+    * this and obtain the stream before submitting the message that triggers publishing — otherwise tokens published
+    * before the queue is registered are lost.
+    *
+    * The stream's `ensuring` block removes just this connection's queue entry when the stream terminates (normally or
+    * via interruption), leaving other subscribers for the same session unaffected.
     */
-  def getOrCreate(sessionId: AgentSessionId): UIO[Hub[ResponseChunk]] =
-    Hub.bounded[ResponseChunk](256).flatMap { fresh =>
-      hubs.modify { map =>
-        map.get(sessionId) match {
-          case Some(existing) => (existing, map)
-          case None           => (fresh, map + (sessionId -> fresh))
-        }
-      }
-    }
+  def subscribe(
+    sessionId:    AgentSessionId,
+    connectionId: ConnectionId,
+  ): UIO[ZStream[Any, Nothing, ResponseChunk]] =
+    for {
+      queue <- Queue.bounded[ResponseChunk](1024)
+      count <- subs
+        .updateAndGet { map =>
+          val existing = map.getOrElse(sessionId, Nil)
+          map + (sessionId -> (SubscriberEntry(connectionId, queue) :: existing))
+        }.map(_.getOrElse(sessionId, Nil).size)
+      _ <- ZIO.logDebug(s"[SessionHub] subscriber ADDED: session=$sessionId conn=$connectionId totalForSession=$count")
+    } yield ZStream
+      .fromQueue(queue)
+      .ensuring(
+        ZIO.logDebug(s"[SessionHub] subscriber REMOVED: session=$sessionId conn=$connectionId") *>
+          queue.shutdown *>
+          subs.update { map =>
+            val updated = map.getOrElse(sessionId, Nil).filterNot(_.connectionId == connectionId)
+            if (updated.isEmpty) map - sessionId
+            else map + (sessionId -> updated)
+          },
+      )
 
-  /** Publishes a chunk to the hub for `sessionId`. No-op if no hub exists yet. */
+  /** Broadcasts `chunk` to all queues currently subscribed to `chunk.sessionId` in parallel.
+    *
+    * No-op if no subscribers exist for that session.
+    */
   def publish(chunk: ResponseChunk): UIO[Unit] =
-    hubs.get.flatMap { map =>
-      map.get(chunk.sessionId) match {
-        case Some(h) => h.publish(chunk).unit
-        case None    => ZIO.unit
-      }
+    subs.get.flatMap { map =>
+      val entries = map.getOrElse(chunk.sessionId, Nil)
+      ZIO.when(entries.isEmpty)(
+        ZIO.logInfo(s"[SessionHub] publish with NO subscribers: session=${chunk.sessionId} finished=${chunk.finished}"),
+      ) *>
+        ZIO.foreachParDiscard(entries)(_.queue.offer(chunk).unit)
     }
-
-  /** Returns a [[ZStream]] that emits chunks for `sessionId` until the `finished` sentinel arrives.
-    *
-    * The hub subscription is scoped inside the stream — it is released when the stream ends or is interrupted.
-    */
-  def subscribe(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk] =
-    ZStream.unwrapScoped(
-      getOrCreate(sessionId).flatMap { hub =>
-        hub.subscribe.map { subscription =>
-          ZStream
-            .fromQueue(subscription)
-            .takeUntil(_.finished)
-        }
-      },
-    )
-
-  /** Removes the hub for `sessionId`. Called on session termination to release the bounded buffer. */
-  def remove(sessionId: AgentSessionId): UIO[Unit] =
-    hubs.update(_ - sessionId)
 
 }
 
@@ -68,7 +89,7 @@ object SessionHub {
 
   val live: ULayer[SessionHub] =
     ZLayer.fromZIO(
-      Ref.make(Map.empty[AgentSessionId, Hub[ResponseChunk]]).map(new SessionHub(_)),
+      Ref.make(Map.empty[AgentSessionId, List[SubscriberEntry]]).map(new SessionHub(_)),
     )
 
 }

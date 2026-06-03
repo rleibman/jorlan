@@ -38,7 +38,13 @@ object StatusRoutes {
           initialized = initializedJson.collect { case Json.Bool(v) => v }.getOrElse(false)
           name = nameJson.collect { case Json.Str(s) => s }.getOrElse("Jorlan")
           now <- Clock.currentTime(TimeUnit.MILLISECONDS)
-          status = ServerStatus(initialized, jorlan.BuildInfo.version, name, now - startTime)
+          status = ServerStatus(
+            initialized,
+            jorlan.BuildInfo.version,
+            jorlan.BuildInfo.buildTime,
+            name,
+            now - startTime,
+          )
         } yield Response.json(status.toJson)
       },
     )
@@ -67,6 +73,8 @@ object SetupModeApp {
     startTime:          Long,
     serverSettingsRepo: ServerSettingsRepository,
     initService:        InitService,
+    tokenStore:         InitTokenStore,
+    initDone:           Option[Promise[Nothing, Unit]] = None,
   ): Routes[Any, Nothing] = {
     val catchAll = Routes(
       Method.ANY / trailing -> handler {
@@ -82,35 +90,44 @@ object SetupModeApp {
 
     val initR: Routes[Any, Nothing] = Routes(
       Method.POST / "api" / "init" -> handler { (req: Request) =>
+        val isLocalhost = req.remoteAddress.exists(_.isLoopbackAddress)
         for {
           body   <- req.body.asString.orDie
           result <- body.fromJson[InitRequest] match {
             case Left(err) =>
               ZIO.succeed(Response.badRequest(Map("error" -> err).toJson))
             case Right(r) =>
-              initService
-                .complete(r.token, r.serverName, r.adminEmail, r.adminName, r.adminPassword)
-                .foldZIO(
-                  {
-                    // TODO extract this into a method called mapError
-                    case v: ValidationError =>
-                      ZIO.succeed(
-                        Response(Status.BadRequest, body = Body.fromString(Map("error" -> v.getMessage).toJson)),
-                      )
-                    case _: RepositoryError =>
-                      ZIO.succeed(
-                        Response(
-                          Status.InternalServerError,
-                          body = Body.fromString(Map("error" -> "Internal server error during initialization").toJson),
-                        ),
-                      )
-                    case err =>
-                      ZIO.succeed(
-                        Response(Status.Forbidden, body = Body.fromString(Map("error" -> err.getMessage).toJson)),
-                      )
-                  },
-                  _ => ZIO.succeed(Response.json("""{"success":true}""")),
-                )
+              for {
+                effectiveToken <-
+                  if (isLocalhost && r.token.isEmpty) tokenStore.token.map(_.getOrElse(""))
+                  else ZIO.succeed(r.token)
+                resp <- initService
+                  .complete(effectiveToken, r.serverName, r.adminEmail, r.adminName, r.adminPassword)
+                  .foldZIO(
+                    {
+                      case v: ValidationError =>
+                        ZIO.succeed(
+                          Response(Status.BadRequest, body = Body.fromString(Map("error" -> v.getMessage).toJson)),
+                        )
+                      case _: RepositoryError =>
+                        ZIO.succeed(
+                          Response(
+                            Status.InternalServerError,
+                            body = Body.fromString(
+                              Map("error" -> "Internal server error during initialization").toJson,
+                            ),
+                          ),
+                        )
+                      case err =>
+                        ZIO.succeed(
+                          Response(Status.Forbidden, body = Body.fromString(Map("error" -> err.getMessage).toJson)),
+                        )
+                    },
+                    _ =>
+                      ZIO.foreachDiscard(initDone)(_.succeed(())) *>
+                        ZIO.succeed(Response.json("""{"success":true}""")),
+                  )
+              } yield resp
           }
         } yield result
       },

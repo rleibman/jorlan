@@ -42,13 +42,26 @@ trait AgentRunner {
     actorId:   Option[UserId],
   ): IO[JorlanError, Unit]
 
-  /** Subscribe to the response stream for `sessionId`.
+  /** Eagerly registers a per-connection subscriber queue and returns a [[ZStream]] that drains it.
     *
-    * The stream emits tokens until a `finished=true` [[ResponseChunk]] is received. This is the subscription entry
-    * point used by the GraphQL `agentResponseStream` resolver — keeping it on `AgentRunner` prevents `SessionHub` from
-    * leaking into the GraphQL layer.
+    * The queue is created and registered in the returned [[UIO]] — callers must evaluate this effect before submitting
+    * any message that would trigger publishing, otherwise tokens published before subscription are lost.
+    *
+    * The returned stream emits tokens until the `finished=true` [[ResponseChunk]] sentinel, then terminates. Cleanup of
+    * the subscriber queue happens automatically when the stream ends.
+    *
+    * This is the subscription entry point used by the GraphQL `agentResponseStream` resolver — keeping it on
+    * [[AgentRunner]] prevents [[SessionHub]] from leaking into the GraphQL layer.
+    *
+    * @param sessionId
+    *   The session to subscribe to.
+    * @param connectionId
+    *   A unique identifier for this subscriber connection (e.g. one per browser tab or shell process).
     */
-  def subscribeToSession(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk]
+  def subscribeToSession(
+    sessionId:    AgentSessionId,
+    connectionId: ConnectionId,
+  ): UIO[ZStream[Any, Nothing, ResponseChunk]]
 
 }
 

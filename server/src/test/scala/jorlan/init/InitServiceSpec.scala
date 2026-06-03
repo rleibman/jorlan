@@ -13,6 +13,7 @@ package jorlan.init
 import jorlan.*
 import jorlan.db.repository.{
   EventLogZIORepository,
+  PermissionZIORepository,
   RepositoryError,
   RepositoryTask,
   ServerSettingsRepository,
@@ -84,7 +85,8 @@ object InitServiceSpec extends ZIOSpecDefault {
     ): RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
   })
 
-  private type TestEnv = ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository
+  private type TestEnv =
+    ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository & PermissionZIORepository
 
   private def makeTokenStore(initialized: Boolean): ZLayer[Any, Nothing, InitTokenStore] =
     ZLayer.fromZIO(InitTokenStore.make(initialized))
@@ -95,14 +97,17 @@ object InitServiceSpec extends ZIOSpecDefault {
   private val userRepoLayer: ULayer[UserZIORepository] =
     InMemoryRepositories.InMemoryUserRepo.layer
 
+  private val permRepoLayer: ULayer[PermissionZIORepository] =
+    InMemoryRepositories.InMemoryPermissionRepo.layer
+
   private def testLayer(
     settingsLayer: ULayer[ServerSettingsRepository],
     initialized:   Boolean,
   ): ULayer[TestEnv] =
-    settingsLayer ++ userRepoLayer ++ makeTokenStore(initialized) ++ eventLogLayer
+    settingsLayer ++ userRepoLayer ++ makeTokenStore(initialized) ++ eventLogLayer ++ permRepoLayer
 
   private val initServiceLayer: URLayer[TestEnv, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
+    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _, _))
 
   // ─── Tests ─────────────────────────────────────────────────────────────────
 
@@ -198,7 +203,8 @@ object InitServiceSpec extends ZIOSpecDefault {
         settingsLayer(Map(ServerSettingsRepository.InitializedKey -> Json.Bool(false))) ++
           failingUserRepo ++
           makeTokenStore(false) ++
-          eventLogLayer,
+          eventLogLayer ++
+          permRepoLayer,
         initServiceLayer,
       ),
       // P8.1-020: blank/whitespace serverName
@@ -211,6 +217,39 @@ object InitServiceSpec extends ZIOSpecDefault {
         } yield assertTrue(
           result.isLeft,
           result.left.toOption.exists(_.getMessage.contains("Server name")),
+        )
+      }.provide(
+        testLayer(uninitializedSettings, initialized = false),
+        initServiceLayer,
+      ),
+      // P85-033: all 12 admin capability grants are seeded after successful init
+      test("successful init seeds all 12 admin capability grants") {
+        val expectedCapabilities = Set(
+          "agent.session.create",
+          "agent.session.list",
+          "agent.message",
+          "admin.personality.read",
+          "admin.personality.update",
+          "user.create",
+          "user.update",
+          "role.create",
+          "role.assign",
+          "role.revoke",
+          "permission.grant",
+          "permission.revoke",
+        )
+        for {
+          tokenStore <- ZIO.service[InitTokenStore]
+          validToken <- tokenStore.token.map(_.getOrElse(""))
+          svc        <- ZIO.service[InitService]
+          _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
+          permRepo   <- ZIO.service[PermissionZIORepository]
+          // Find the user that was created (id=1 from InMemoryUserRepo)
+          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.domain.UserId(1L)))
+          grantedCaps = grants.map(_.capability.value).toSet
+        } yield assertTrue(
+          grantedCaps == expectedCapabilities,
+          grants.size == expectedCapabilities.size,
         )
       }.provide(
         testLayer(uninitializedSettings, initialized = false),

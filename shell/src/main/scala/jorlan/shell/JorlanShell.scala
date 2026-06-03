@@ -10,7 +10,17 @@
 
 package jorlan.shell
 
-import jorlan.shell.client.{AuthClient, GraphQLClient, InitClient, LoginResult, SubscriptionClient}
+import jorlan.domain.{AgentSessionId, SessionStatus}
+import jorlan.graphql.client.JorlanClient
+import jorlan.shell.client.{
+  AuthClient,
+  GraphQLClient,
+  InitClient,
+  JorlanClientDecoders,
+  LoginResult,
+  SubscriptionClient,
+}
+import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -67,6 +77,7 @@ object JorlanShell extends ZIOApp {
         } else {
           ZIO.succeed(effectiveCfg)
         }
+      _ <- screen.setInputPrompt("❯ ")
 
       _ <- screen.addMessage(MessageKind.System, s"Connecting to ${activeCfg.serverUrl} …")
 
@@ -75,6 +86,7 @@ object JorlanShell extends ZIOApp {
       loginResult <- connectWithRetry(email, password, activeCfg.serverUrl)
 
       _ <- initialisePostLogin(loginResult, activeCfg.serverUrl)
+      _ <- loadOrCreateSession(screen)
 
       exitPromise    <- Promise.make[Nothing, Unit]
       loopFiber      <- processLoop(screen, exitPromise).fork
@@ -85,40 +97,62 @@ object JorlanShell extends ZIOApp {
       _ <- shutdownCleanly(loopFiber, heartbeatFiber, screen)
       _ <- renderFiber.interrupt
 
-      // ZIO.succeed rather than ZIO.attempt: sys.exit does not fail in practice.
       // P7-020: After P7-001 the HTTP backends are closed by ZLayer.scoped before this
       // point, so this only needs to kill ZIO's blocking thread pool.
-      _ <- ZIO.succeed(sys.exit(0))
+      _ <- ZIO.attempt(sys.exit(0)).orDie
     } yield ()
 
     // On any fatal error: display it for 3s then close cleanly.
-    mainFlow.catchAll { err =>
-      ZIO.serviceWithZIO[JorlanScreen](screen =>
-        screen.addMessage(
-          MessageKind.Error,
-          s"Fatal: ${Option(err.getMessage).getOrElse(err.getClass.getName)}",
-        ) *>
-          ZIO.sleep(3.seconds) *>
-          screen.shutdown,
+    // The .ensuring guarantees sys.exit(0) fires on success, failure, AND interruption
+    // (Ctrl-C sends SIGINT which ZIO converts to fiber interruption, bypassing catchAll).
+    // Without this, Lanterna and sttp threads are non-daemon and keep the JVM alive indefinitely.
+    mainFlow
+      .catchAll { err =>
+        ZIO.serviceWithZIO[JorlanScreen](screen =>
+          screen.addMessage(
+            MessageKind.Error,
+            s"Fatal: ${Option(err.getMessage).getOrElse(err.getClass.getName)}",
+          ) *>
+            ZIO.sleep(3.seconds) *>
+            screen.shutdown,
+        )
+      }
+      .ensuring(
+        ZIO.serviceWithZIO[JorlanScreen](_.shutdown) *>
+          ZIO.attempt(sys.exit(0)).orDie,
       )
-    }
   }
 
   // ─── Phase helpers ────────────────────────────────────────────────────────────
 
-  /** Set status and mode bars to the post-login connected state. Fetches the server name from `/api/status` to display
-    * in the title bar; falls back to the server URL on failure.
+  /** Set status and mode bars to the post-login connected state.
+    *
+    * Fetches `GET /api/status` to obtain the server name, version, and build time. Fails with a descriptive
+    * [[RuntimeException]] if the server version is incompatible with this client — the failure propagates to
+    * `mainFlow.catchAll` which displays the message and exits.
+    *
+    * If `/api/status` is unreachable the version check is skipped and the server URL is used as the display name.
     */
   private def initialisePostLogin(
     loginResult: LoginResult,
     serverUrl:   String,
-  ): ZIO[JorlanScreen & InitClient, Nothing, Unit] = {
+  ): ZIO[JorlanScreen & InitClient, Throwable, Unit] = {
     for {
-      screen     <- ZIO.service[JorlanScreen]
-      serverName <- InitClient
-        .checkStatus(serverUrl)
-        .map(_.serverName)
-        .orElse(ZIO.succeed(serverUrl))
+      screen    <- ZIO.service[JorlanScreen]
+      statusOpt <- InitClient.checkStatus(serverUrl).option
+      _         <- ZIO.foreach(statusOpt) { status =>
+        ZIO
+          .fromEither(
+            VersionCheck.check(
+              jorlan.BuildInfo.version,
+              jorlan.BuildInfo.buildTime,
+              status.version,
+              status.buildTime,
+            ),
+          )
+          .mapError(msg => VersionIncompatibleError(s"Version incompatibility with server at $serverUrl — $msg"))
+      }
+      serverName = statusOpt.map(_.serverName).getOrElse(serverUrl)
       _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [$serverUrl]")
       _ <- screen.setModeStatus(
         s" [connected: $serverName]  [user: ${loginResult.displayName}]  [no session]",
@@ -130,20 +164,66 @@ object JorlanShell extends ZIOApp {
     } yield ()
   }
 
-  /** Show goodbye message, interrupt background fibers, and shut the screen down. */
+  /** After login, resume the most recent active session or create a new one. */
+  private def loadOrCreateSession(screen: JorlanScreen): ZIO[Environment, Nothing, Unit] = {
+
+    def applySession(
+      sessionId: AgentSessionId,
+      msg:       String,
+    ): ZIO[ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
+      for {
+        ls <- LiveSession.start(sessionId)
+        _  <- screen.setModeStatus(s" [session: ${ls.sessionId.value}]  [model: default]")
+        _  <- screen.addMessage(MessageKind.System, msg)
+      } yield ()
+
+    def createNew: ZIO[GraphQLClient & ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
+      ZIO
+        .serviceWithZIO[GraphQLClient](
+          _.run(JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view)),
+        ).either.flatMap {
+          case Right(Some(session)) => applySession(session.id, s"Session ${session.id.value} started.")
+          case Right(None)          => screen.addMessage(MessageKind.Error, "Server returned no session.")
+          case Left(err)            => screen.addMessage(MessageKind.Error, s"Failed to create session: $err")
+        }
+
+    ZIO
+      .serviceWithZIO[GraphQLClient](
+        _.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view)),
+      ).either.flatMap {
+        case Right(Some(sessions)) =>
+          sessions.find(_.status == SessionStatus.Active) match {
+            case Some(s) => applySession(s.id, s"Resumed session ${s.id.value}.")
+            case None    => createNew
+          }
+        case _ => createNew
+      }
+  }
+
+  /** Show goodbye message, interrupt background fibers, and shut the screen down.
+    *
+    * The subscription fiber is interrupted and awaited first so that the long-lived WebSocket connection is closed
+    * before `sys.exit` is called. sttp's HTTP client registers a JVM shutdown hook that waits for open connections; if
+    * the WS is still open when the hook fires, the process hangs indefinitely.
+    */
   private def shutdownCleanly(
     loopFiber:      Fiber.Runtime[?, ?],
     heartbeatFiber: Fiber.Runtime[?, ?],
     screen:         JorlanScreen,
-  ): ZIO[Any, Nothing, Unit] = {
-    // Fire-and-forget interrupts so we never block on a fiber inside a slow TCP call.
-    loopFiber.interrupt.fork *>
-      heartbeatFiber.interrupt.fork *>
-      screen.addMessage(MessageKind.Raw, "") *>
-      screen.addMessage(MessageKind.Raw, "  Goodbye!  Thanks for using Jorlan Shell.") *>
-      screen.addMessage(MessageKind.Raw, "") *>
-      ZIO.sleep(1500.millis) *>
-      screen.shutdown
+  ): ZIO[ShellState, Nothing, Unit] = {
+    for {
+      // Await the subscription fiber interrupt so the WS connection closes before the JVM exits.
+      liveSession <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
+      _           <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interrupt)
+      // Loop and heartbeat fibers are fire-and-forget; we don't need to wait.
+      _ <- loopFiber.interrupt.fork
+      _ <- heartbeatFiber.interrupt.fork
+      _ <- screen.addMessage(MessageKind.Raw, "")
+      _ <- screen.addMessage(MessageKind.Raw, "  Goodbye!  Thanks for using Jorlan Shell.")
+      _ <- screen.addMessage(MessageKind.Raw, "")
+      _ <- ZIO.sleep(1500.millis)
+      _ <- screen.shutdown
+    } yield ()
   }
 
   // ─── Pure ASCII welcome art (0x20–0x7E only) ─────────────────────────────────
@@ -161,8 +241,8 @@ object JorlanShell extends ZIOApp {
     "       █████                    ████",
     "      ░░███                    ░░███",
     "       ░███   ██████  ████████  ░███   ██████   ████████",
-    "       ░███  ███░░███░░███ ░███  ░░░░░███ ░░███░░███",
-    "       ░███ ░███ ░███ ░░░  ░███   ███████  ░███ ░░░",
+    "       ░███  ███░░███░░███░░███ ░███  ░░░░░███ ░░███░░███",
+    "       ░███ ░███ ░███ ░███ ░░░  ░███   ███████  ░███ ░███",
     " ███   ░███ ░███ ░███ ░███      ░███  ███░░███  ░███ ░███",
     "░░████████  ░░██████  █████     █████░░████████ ████ █████",
     " ░░░░░░░░    ░░░░░░  ░░░░░     ░░░░░  ░░░░░░░░ ░░░░ ░░░░░",
@@ -185,19 +265,22 @@ object JorlanShell extends ZIOApp {
     ZIO
       .serviceWithZIO[JorlanScreen](_.readLine)
       .flatMap { raw =>
-        val cmd = ShellCommand.parse(raw)
-        screen
-          .addMessage(MessageKind.User, raw)
-          .zipRight(
-            CommandHandler
-              .handle(cmd, exitPromise)
-              .catchAllDefect(t =>
-                screen.addMessage(
-                  MessageKind.Error,
-                  s"Command error: ${Option(t.getMessage).getOrElse(t.getClass.getName)}",
+        if (raw.isEmpty) ZIO.unit
+        else {
+          val cmd = ShellCommand.parse(raw)
+          screen
+            .addMessage(MessageKind.User, raw)
+            .zipRight(
+              CommandHandler
+                .handle(cmd, exitPromise)
+                .catchAllDefect(t =>
+                  screen.addMessage(
+                    MessageKind.Error,
+                    s"Command error: ${Option(t.getMessage).getOrElse(t.getClass.getName)}",
+                  ),
                 ),
-              ),
-          )
+            )
+        }
       }
       .forever
       .unit

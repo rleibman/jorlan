@@ -34,7 +34,8 @@ object InitClientSpec extends ZIOSpecDefault {
     suite("InitClient")(
       suite("checkStatus")(
         test("decodes a valid 200 response into ServerStatus") {
-          val body = """{"initialized":false,"version":"1.0","serverName":"Jorlan","uptimeMs":123}"""
+          val body =
+            """{"initialized":false,"version":"1.0","buildTime":1700000000000,"serverName":"Jorlan","uptimeMs":123}"""
           val stub = makeClient.whenRequestMatchesPartial {
             case r if r.uri.path.endsWith(List("status")) =>
               ResponseStub.adjust(body, StatusCode.Ok)
@@ -116,6 +117,7 @@ object InitClientSpec extends ZIOSpecDefault {
           val json = Map(
             "initialized" -> "true",
             "version"     -> "\"1.2.3\"",
+            "buildTime"   -> "1700000000000",
             "serverName"  -> "\"TestServer\"",
             "uptimeMs"    -> "9876",
           ).map { case (k, v) => s""""$k":$v""" }.mkString("{", ",", "}")
@@ -132,6 +134,12 @@ object InitClientSpec extends ZIOSpecDefault {
         test("missing field produces a decode error") {
           val json = """{"initialized":true,"version":"1.0","uptimeMs":100}"""
           assertTrue(json.fromJson[ServerStatus].isLeft)
+        },
+        test("decodes buildTime field correctly") {
+          val json =
+            """{"initialized":true,"version":"2.0.0","buildTime":1750000000000,"serverName":"Srv","uptimeMs":0}"""
+          val decoded = json.fromJson[ServerStatus]
+          assertTrue(decoded.toOption.exists(_.buildTime == 1750000000000L))
         },
       ),
     )

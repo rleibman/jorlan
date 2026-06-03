@@ -18,6 +18,8 @@ import jorlan.shell.client.JorlanClientDecoders._
 
 object JorlanClient {
 
+  type Formality = String
+
   type AgentSession
   object AgentSession {
 
@@ -203,6 +205,35 @@ object JorlanClient {
 
   }
 
+  type Personality
+  object Personality {
+
+    final case class PersonalityView(
+      name:      String,
+      formality: Formality,
+      languages: List[String],
+      expertise: List[String],
+      prompt:    String,
+    )
+
+    type ViewSelection = SelectionBuilder[Personality, PersonalityView]
+
+    def view: ViewSelection =
+      (name ~ formality ~ languages ~ expertise ~ prompt).map { case (name, formality, languages, expertise, prompt) =>
+        PersonalityView(name, formality, languages, expertise, prompt)
+      }
+
+    def name: SelectionBuilder[Personality, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+    def formality: SelectionBuilder[Personality, Formality] =
+      _root_.caliban.client.SelectionBuilder.Field("formality", Scalar())
+    def languages: SelectionBuilder[Personality, List[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("languages", ListOf(Scalar()))
+    def expertise: SelectionBuilder[Personality, List[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("expertise", ListOf(Scalar()))
+    def prompt: SelectionBuilder[Personality, String] = _root_.caliban.client.SelectionBuilder.Field("prompt", Scalar())
+
+  }
+
   type ResponseChunk
   object ResponseChunk {
 
@@ -289,13 +320,13 @@ object JorlanClient {
   object Queries {
 
     def user[A](
-      id: jorlan.domain.UserId,
+      value: jorlan.domain.UserId,
     )(
       innerSelection:    SelectionBuilder[User, A],
     )(implicit encoder0: ArgEncoder[jorlan.domain.UserId],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder
-        .Field("user", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "UserId!")))
+        .Field("user", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "UserId!")))
     def users[A](
       page:     scala.Option[Int] = None,
       pageSize: scala.Option[Int] = None,
@@ -309,13 +340,13 @@ object JorlanClient {
         arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")),
       )
     def role[A](
-      id: jorlan.domain.RoleId,
+      value: jorlan.domain.RoleId,
     )(
       innerSelection:    SelectionBuilder[Role, A],
     )(implicit encoder0: ArgEncoder[jorlan.domain.RoleId],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder
-        .Field("role", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "RoleId!")))
+        .Field("role", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "RoleId!")))
     def roles[A](
       userId:   jorlan.domain.UserId,
       page:     scala.Option[Int] = None,
@@ -366,6 +397,9 @@ object JorlanClient {
         OptionOf(ListOf(Obj(innerSelection))),
         arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")),
       )
+    def serverPersonality[A](innerSelection: SelectionBuilder[Personality, A])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field("serverPersonality", OptionOf(Obj(innerSelection)))
 
   }
 
@@ -469,21 +503,22 @@ object JorlanClient {
           Argument("roleId", roleId, "RoleId"),
         ),
       )
-    def revokePermission(id: jorlan.domain.PermissionId)(implicit encoder0: ArgEncoder[jorlan.domain.PermissionId])
+    def revokePermission(value: jorlan.domain.PermissionId)(implicit encoder0: ArgEncoder[jorlan.domain.PermissionId])
       : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Long]] =
       _root_.caliban.client.SelectionBuilder
-        .Field("revokePermission", OptionOf(Scalar()), arguments = List(Argument("id", id, "PermissionId!")))
+        .Field("revokePermission", OptionOf(Scalar()), arguments = List(Argument("value", value, "PermissionId!")))
     def createSession[A](
       modelId: scala.Option[jorlan.domain.ModelId] = None,
     )(
       innerSelection:    SelectionBuilder[AgentSession, A],
     )(implicit encoder0: ArgEncoder[scala.Option[jorlan.domain.ModelId]],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
-      _root_.caliban.client.SelectionBuilder.Field(
-        "createSession",
-        OptionOf(Obj(innerSelection)),
-        arguments = List(Argument("modelId", modelId, "ModelId")),
-      )
+      _root_.caliban.client.SelectionBuilder
+        .Field(
+          "createSession",
+          OptionOf(Obj(innerSelection)),
+          arguments = List(Argument("modelId", modelId, "ModelId")),
+        )
     def submitMessage(
       sessionId: jorlan.domain.AgentSessionId,
       content:   String,
@@ -495,6 +530,29 @@ object JorlanClient {
         "submitMessage",
         OptionOf(Scalar()),
         arguments = List(Argument("sessionId", sessionId, "AgentSessionId!"), Argument("content", content, "String!")),
+      )
+    def updatePersonality[A](
+      name:      String,
+      formality: Formality,
+      languages: List[String] = Nil,
+      expertise: List[String] = Nil,
+      prompt:    String,
+    )(
+      innerSelection: SelectionBuilder[Personality, A],
+    )(implicit
+      encoder0: ArgEncoder[String],
+      encoder1: ArgEncoder[List[String]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "updatePersonality",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(
+          Argument("name", name, "String!"),
+          Argument("formality", formality, "Formality!"),
+          Argument("languages", languages, "[String!]!"),
+          Argument("expertise", expertise, "[String!]!"),
+          Argument("prompt", prompt, "String!"),
+        ),
       )
 
   }
@@ -509,7 +567,7 @@ object JorlanClient {
       : SelectionBuilder[_root_.caliban.client.Operations.RootSubscription, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder.Field("eventLogTail", OptionOf(Obj(innerSelection)))
     def agentResponseStream[A](
-      sessionId: jorlan.domain.AgentSessionId,
+      value: jorlan.domain.AgentSessionId,
     )(
       innerSelection:    SelectionBuilder[ResponseChunk, A],
     )(implicit encoder0: ArgEncoder[jorlan.domain.AgentSessionId],
@@ -517,7 +575,7 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field(
         "agentResponseStream",
         OptionOf(Obj(innerSelection)),
-        arguments = List(Argument("sessionId", sessionId, "AgentSessionId!")),
+        arguments = List(Argument("value", value, "AgentSessionId!")),
       )
 
   }

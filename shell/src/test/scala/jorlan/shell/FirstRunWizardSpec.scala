@@ -17,6 +17,7 @@ import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*
+import zio.test.TestAspect.*
 
 import java.io.File
 import java.nio.file.Files
@@ -49,9 +50,9 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
   ): ULayer[InitClient] = ZLayer.succeed(new FakeInitClient(status, complete))
 
   private val initializedStatus =
-    ServerStatus(initialized = true, version = "1.0", serverName = "Jorlan", uptimeMs = 100)
+    ServerStatus(initialized = true, version = "1.0", buildTime = 0L, serverName = "Jorlan", uptimeMs = 100)
   private val uninitializedStatus =
-    ServerStatus(initialized = false, version = "1.0", serverName = "Jorlan", uptimeMs = 100)
+    ServerStatus(initialized = false, version = "1.0", buildTime = 0L, serverName = "Jorlan", uptimeMs = 100)
 
   // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
             path.exists(),
           )
         }
-      },
+      } @@ withLiveClock,
       test("password mismatch retry") {
         for {
           screen <- FakeScreen.make
@@ -152,7 +153,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
             msgs.exists(_.content.contains("Passwords do not match")),
           )
         }
-      },
+      } @@ withLiveClock,
       test("connection error — retries after user presses enter") {
         for {
           screen <- FakeScreen.make

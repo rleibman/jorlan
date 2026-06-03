@@ -11,8 +11,13 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.{EventLogZIORepository, ServerSettingsRepository, UserZIORepository}
-import jorlan.domain.{EventLog, EventLogId, EventType, User, UserId}
+import jorlan.db.repository.{
+  EventLogZIORepository,
+  PermissionZIORepository,
+  ServerSettingsRepository,
+  UserZIORepository,
+}
+import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 
@@ -138,6 +143,7 @@ class InitServiceImpl(
   userRepo:     UserZIORepository,
   tokenStore:   InitTokenStore,
   eventLogRepo: EventLogZIORepository,
+  permRepo:     PermissionZIORepository,
 ) extends InitService {
 
   override def isInitialized: UIO[Boolean] =
@@ -162,6 +168,7 @@ class InitServiceImpl(
       now         <- Clock.instant
       createdUser <- userRepo.upsert(User(UserId.empty, adminName, Some(adminEmail), now, now))
       _           <- userRepo.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
+      _           <- seedAdminGrants(createdUser.id, now)
       _           <- settings.set(ServerSettingsRepository.InitializedKey, Json.Bool(true))
       _           <- settings.set(ServerSettingsRepository.ServerNameKey, Json.Str(serverName))
       _           <- tokenStore.invalidate
@@ -178,6 +185,43 @@ class InitServiceImpl(
         ),
       )
     } yield ()
+
+  private val adminCapabilities: List[CapabilityName] = List(
+    CapabilityName("agent.session.create"),
+    CapabilityName("agent.session.list"),
+    CapabilityName("agent.message"),
+    CapabilityName("admin.personality.read"),
+    CapabilityName("admin.personality.update"),
+    CapabilityName("user.create"),
+    CapabilityName("user.update"),
+    CapabilityName("role.create"),
+    CapabilityName("role.assign"),
+    CapabilityName("role.revoke"),
+    CapabilityName("permission.grant"),
+    CapabilityName("permission.revoke"),
+  )
+
+  private def seedAdminGrants(
+    userId: UserId,
+    now:    java.time.Instant,
+  ): IO[JorlanError, Unit] =
+    ZIO
+      .foreachDiscard(adminCapabilities) { cap =>
+        permRepo.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = cap,
+            scopeJson = None,
+            granteeId = userId,
+            grantorId = None,
+            approvalMode = ApprovalMode.Persistent,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = now,
+          ),
+        )
+      }
+      .mapError(JorlanError(_))
 
   private def validateInputs(
     serverName:    String,
@@ -200,8 +244,10 @@ object InitServiceImpl {
   // this layer. `InitTokenStore` requires the `initialized` flag read from the DB after Flyway has run,
   // which is not available at ZLayer bootstrap time. This layer is available for test code that
   // provides a pre-built `InitTokenStore` via its own setup logic.
-  val layer
-    : URLayer[ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _))
+  val layer: URLayer[
+    ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository & PermissionZIORepository,
+    InitService,
+  ] =
+    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _, _))
 
 }

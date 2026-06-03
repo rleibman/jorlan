@@ -54,6 +54,21 @@ type: project
 - `JorlanClient.scala` uses `implicit` keyword (Scala 2 style) instead of `given`/`using` (Scala 3) — this is generated Caliban client code and should not be hand-edited. Not a review issue.
 - `resolveCredentials` throws `new RuntimeException("Cancelled")` via `ZIO.fail` — appropriate for signalling cancellation through the `Throwable` error channel, but the message is not distinguishable from other failures at the `catchAll` site in `run`.
 
+## Phase 8.5 Manual Testing / Session Connection Redesign (reviewed 2026-06-02)
+
+- `SessionHub` evolved through three iterations in a single branch: Hub→Queue (committed) → per-connection Queue with ConnectionId (unstaged). The final design is correct: sliding Queue per connection, finalizer removes only that connection's entry, broadcasts via `ZIO.foreachDiscard`.
+- `ConversationLogger` uses `ZIO.succeed { withMdc(sessionId) { ... } }` wrapping a `try/finally` MDC restore. The `try/finally` inside `ZIO.succeed` is a legitimate interop boundary for a synchronous SLF4J operation — not a purity violation, but the block performs real I/O (file writes via logback) which ideally belongs in `ZIO.attemptBlocking`. Accepted as intentional given the comment in the file.
+- `SubscriptionClient` (unstaged) adds `pingLoop` via `ZStream.tick(15.seconds)` and races it with `frameLoop` — correct use of `.race` for concurrent keepalive without leaking a fiber. Uses `.forkScoped` for the WS fiber.
+- `AgentRunnerImpl` (unstaged) accumulates tokens in a `Ref[Vector[String]]` for `ConversationLogger.logAgentResponse` — this Ref is local to a single `processMessage` invocation, so it is safe and not shared mutable state.
+- `VersionCheck.scala` is a purely functional file: no ZIO, no side effects, correctly returns `Either[String, Unit]`.
+- `initialisePostLogin` in `JorlanShell.scala` now returns `IO[Throwable, Unit]` and fails with a `RuntimeException` on version mismatch — this propagates through `mainFlow.catchAll` which expects `Throwable`. Using `new RuntimeException` inside `ZIO.fromEither(...).mapError(msg => new RuntimeException(...))` is idiomatic for lifting a string error into the typed `Throwable` channel.
+- `logErrors` / `logRequests` `OverallWrapper`s in `JorlanAPI.scala` use `Option(t.getMessage).getOrElse(t.getClass.getName)` — correct null-safe guard required by Java interop; `getMessage` can return null.
+- `JorlanClient.scala` — `Formality` type alias (`type Formality = String`) is a Caliban-generated file convention; no strong typing here is intentional for the client-side generated layer.
+- `ShellState.scala` refactored to hold `LiveSession` (sessionId + tokenQueue + subscriptionFiber). The `Queue` and `Fiber` are ZIO-managed types, which is correct functional state-holding.
+- `CommandHandler.handleMessage` now drains `liveSession.tokenQueue` directly instead of opening a new subscription per message — this is the key correctness improvement of the session connection redesign.
+- `appendToLastMessage` in `LanternaScreen` correctly uses `Clock.currentDateTime` (not `LocalTime.now()`) — fixes the previously noted side-effect issue from Phase 7 review.
+- `VersionCheck.parse` guard `case List(maj, min, pat) if maj != null && min != null && pat != null` — with `-Yexplicit-nulls`, `unapplySeq` on `Regex` returns `Option[List[String | Null]]`, so the null guard is forced by the compiler. Not a style issue.
+
 ## Phase 8.3 Server Personality & Phase 8.4 AI CI Patterns (reviewed 2026-06-01)
 
 - `PersonalityServiceImpl.live` initialises the `Ref` cache atomically via `ZLayer.fromZIO` — correct; DB read and `Ref.make` are sequenced in ZIO, no race on startup.

@@ -31,6 +31,17 @@ class FakeScreen(
   ): UIO[Unit] =
     capturedMessages.update(_ :+ MessageEntry(kind, content, "00:00:00"))
 
+  override def appendToLastMessage(
+    kind:  MessageKind,
+    extra: String,
+  ): UIO[Unit] =
+    capturedMessages.update { msgs =>
+      msgs.lastOption match {
+        case Some(last) if last.kind == kind => msgs.init :+ last.copy(content = last.content + extra)
+        case _                               => msgs :+ MessageEntry(kind, extra, "00:00:00")
+      }
+    }
+
   override def setStatus(text:       String): UIO[Unit] = statusRef.set(text)
   override def setModeStatus(text:   String): UIO[Unit] = modeRef.set(text)
   override def setInputPrompt(label: String): UIO[Unit] = promptRef.set(label)

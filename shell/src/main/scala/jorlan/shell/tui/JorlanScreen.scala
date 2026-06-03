@@ -50,6 +50,14 @@ trait JorlanScreen {
     content: String,
   ): UIO[Unit]
 
+  /** Append text to the last message of the given kind, or start a new one if the last message is a different kind.
+    * Used for streaming token accumulation so all tokens appear in a single message line.
+    */
+  def appendToLastMessage(
+    kind:  MessageKind,
+    extra: String,
+  ): UIO[Unit]
+
   /** Update the status bar text. Thread-safe. */
   def setStatus(text: String): UIO[Unit]
 
@@ -75,11 +83,14 @@ trait JorlanScreen {
 // observes a consistent snapshot and partial-observation windows are eliminated.
 
 private case class ScreenState(
-  messages:     Vector[MessageEntry],
-  statusText:   String,
-  inputPrompt:  String,
-  modeText:     String,
-  scrollOffset: Int,
+  messages: Vector[MessageEntry],
+  // The currently-streaming response held outside `messages` to avoid O(n_messages) Vector.init per token.
+  // Flushed into `messages` when the kind changes or when addMessage is called.
+  inProgressMessage: Option[MessageEntry],
+  statusText:        String,
+  inputPrompt:       String,
+  modeText:          String,
+  scrollOffset:      Int,
 )
 
 object JorlanScreen {
@@ -106,6 +117,7 @@ object JorlanScreen {
           state <- Ref.make(
             ScreenState(
               messages = Vector.empty,
+              inProgressMessage = None,
               statusText = " ● Jorlan Shell  [disconnected]",
               inputPrompt = "❯ ",
               modeText = " [no session]  [disconnected]",
@@ -148,12 +160,39 @@ private class LanternaScreen(
     Clock.currentDateTime.flatMap { odt =>
       val time = odt.toLocalTime.format(timeFmt)
       state.update { s =>
-        val next = s.messages :+ MessageEntry(kind, content, time)
+        // Flush any in-progress streaming message before adding the new one.
+        val base = s.inProgressMessage.fold(s.messages) { ip =>
+          val next = s.messages :+ ip
+          if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
+        }
+        val next = base :+ MessageEntry(kind, content, time)
         val msgs = if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
-        s.copy(messages = msgs)
+        s.copy(messages = msgs, inProgressMessage = None)
       }
     }
   }
+
+  override def appendToLastMessage(
+    kind:  MessageKind,
+    extra: String,
+  ): UIO[Unit] =
+    Clock.currentDateTime.flatMap { odt =>
+      val time = odt.toLocalTime.format(timeFmt)
+      state.update { s =>
+        s.inProgressMessage match {
+          case Some(ip) if ip.kind == kind =>
+            // Same kind: update inProgressMessage in-place. O(1) — no Vector rebuild.
+            s.copy(inProgressMessage = Some(ip.copy(content = ip.content + extra)))
+          case existing =>
+            // Kind changed or no in-progress: flush existing to messages and start a new one.
+            val base = existing.fold(s.messages) { ip =>
+              val next = s.messages :+ ip
+              if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
+            }
+            s.copy(messages = base, inProgressMessage = Some(MessageEntry(kind, extra, time)))
+        }
+      }
+    }
 
   override def setStatus(text: String): UIO[Unit] = state.update(_.copy(statusText = text))
 
@@ -220,10 +259,7 @@ private class LanternaScreen(
       case KeyType.Delete =>
         ZIO.unit // cursor is always end-of-line; no character to delete forward
       case KeyType.Enter =>
-        inputBuf.getAndSet("").flatMap { line =>
-          if (line.trim.nonEmpty) inputQueue.offer(line.trim).unit
-          else ZIO.unit
-        }
+        inputBuf.getAndSet("").flatMap(line => inputQueue.offer(line.trim).unit)
       case KeyType.PageUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
       case KeyType.PageDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
       case KeyType.Home     => state.update(_.copy(scrollOffset = Int.MaxValue))
@@ -266,7 +302,8 @@ private class LanternaScreen(
     val areaHeight = (height - 5) max 0
     tg.setBackgroundColor(TextColor.ANSI.DEFAULT)
     if (areaHeight > 0) {
-      val lines = expandMessages(s.messages, width)
+      val allMessages = s.messages ++ s.inProgressMessage.toVector
+      val lines = expandMessages(allMessages, width)
       val totalLines = lines.size
       val scrolled = s.scrollOffset min (totalLines - areaHeight) max 0
       val visible = lines.slice(totalLines - areaHeight - scrolled, totalLines - scrolled)
@@ -332,10 +369,17 @@ private class LanternaScreen(
         val maxWrap = width - wrapIndent.length
 
         if (maxFirst <= 0) {
-          Vector((fg, TextColor.ANSI.DEFAULT, m.content.take(width)))
+          Vector((fg, TextColor.ANSI.DEFAULT, m.content.filterNot(_ == '\r').take(width)))
         } else {
-          val wrappedWords = wordWrap(m.content, maxFirst, maxWrap)
-          wrappedWords.zipWithIndex.map { case (segment, idx) =>
+          // Split on newlines first so embedded \n from LLM responses become real line
+          // breaks rather than raw control characters inside putString (which causes
+          // the terminal cursor to jump mid-row and overwrite adjacent screen regions).
+          val paragraphs = m.content.filterNot(_ == '\r').split('\n').toVector
+          val allSegments: Vector[String] = paragraphs.zipWithIndex.flatMap { case (para, pIdx) =>
+            val firstW = if (pIdx == 0) maxFirst else maxWrap
+            wordWrap(para, firstW, maxWrap)
+          }
+          allSegments.zipWithIndex.map { case (segment, idx) =>
             val linePrefix = if (idx == 0) firstPrefix else wrapIndent
             (fg, TextColor.ANSI.DEFAULT, linePrefix + segment)
           }

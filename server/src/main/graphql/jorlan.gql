@@ -18,6 +18,8 @@ scalar EventLogId
 
 scalar EventType
 
+scalar Formality
+
 "An instantaneous point on the time-line represented by a standard date time string"
 scalar Instant
 
@@ -81,9 +83,10 @@ type Mutations {
   assignRole(userId: UserId!, roleId: RoleId!): Unit
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
-  revokePermission(id: PermissionId!): Long
-  createSession(modelId: ModelId): AgentSession
+  revokePermission(value: PermissionId!): Long
+  createSession(value: ModelId): AgentSession
   submitMessage(sessionId: AgentSessionId!, content: String!): Unit
+  updatePersonality(name: String!, formality: Formality!, languages: [String!]!, expertise: [String!]!, prompt: String!): Personality
 }
 
 type Permission {
@@ -95,13 +98,22 @@ type Permission {
   scope: String
 }
 
+type Personality {
+  name: String!
+  formality: Formality!
+  languages: [String!]!
+  expertise: [String!]!
+  prompt: String!
+}
+
 type Queries {
-  user(id: UserId!): User
+  user(value: UserId!): User
   users(page: Int, pageSize: Int): [User!]
-  role(id: RoleId!): Role
+  role(value: RoleId!): Role
   roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
   permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
   listSessions(page: Int, pageSize: Int): [AgentSession!]
+  serverPersonality: Personality
 }
 
 type ResponseChunk {
@@ -120,7 +132,7 @@ type Role {
 type Subscriptions {
   approvalNotifications: ApprovalRequest
   eventLogTail: EventLogJson
-  agentResponseStream(sessionId: AgentSessionId!): ResponseChunk
+  agentResponseStream(value: AgentSessionId!): ResponseChunk
 }
 
 type User {

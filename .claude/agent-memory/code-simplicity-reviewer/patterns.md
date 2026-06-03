@@ -110,3 +110,14 @@ type: project
 - Shared `runQ` helper in a base Quill repo class would reduce per-method boilerplate significantly
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders
 - `QuillRepositories.live` ZLayer fan-out could use `ZLayer.succeedEnvironment(ZEnvironment(...))` to avoid 9 separate `ZLayer.succeed` concatenations
+
+## Phase 8.5 Manual Testing Branch Observations (2026-06-02)
+- `logErrors` / `logRequests` wrappers in JorlanAPI: inline `new OverallWrapper[Any]` bodies are verbose; Caliban supports `wrapper` via `OverallWrapper.apply` or the `wrap` DSL. Both wrappers currently use nearly identical boilerplate.
+- `AgentRunnerImpl.processMessage` uses nested `Ref.make.flatMap { … Ref.make.flatMap { … } }` — extracting both Refs before the for-comp is cleaner.
+- `setPersonalityField` in CommandHandler fetches personality from server AND re-sends the full 5 fields — a pattern repeated identically in `showPersonality`; the fetch is duplicated.
+- `loadOrCreateSession` in JorlanShell and `handleNewSession` in CommandHandler both call `applySession`-like code (set live session, update status bar, add message) with nearly identical logic. The only difference is the message string.
+- `SessionHub.subscribe` logs info (not debug) on every subscriber add/remove — will be very noisy in production even without debug logging enabled.
+- `SubscriptionClient` frameLoop for fragmentBuf is correct but nesting depth is 6+ levels inside the `asWebSocketAlways` block; extracting `processFrame(text: String)` would cut nesting by 2.
+- `ConversationLogger.withMdc` correctly saves/restores MDC but uses `java.util.Collections.emptyMap` — `new java.util.HashMap[String, String]()` or just `MDC.clear()` is simpler.
+- `VersionCheck.parse` uses `semver.unapplySeq(v).flatMap { case List(...) if ... != null => ... }` — null guards are unidiomatic with `-Yexplicit-nulls`; prefer `.collect { case List(maj, min, pat) => ... }`.
+- `InitRoutes.initR` handler has nested `for` inside a `match` arm — a known pattern in this codebase; acceptable but the double `yield result` at the end (`yield resp` inner, `yield result` outer) is redundant — the outer yield adds no value and can be collapsed.

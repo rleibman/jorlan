@@ -115,15 +115,12 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           result <- mgr.suspendSession(AgentSessionId(999L)).flip
         } yield assertTrue(result.isInstanceOf[JorlanError])
       }.provide(freshLayers),
-      test("terminateSession removes session hub entry (fresh hub after termination)") {
+      test("terminateSession transitions session status to Completed") {
         for {
-          mgr     <- ZIO.service[AgentSessionManager]
-          hub     <- ZIO.service[SessionHub]
-          created <- mgr.createSession(userId, None)
-          h1      <- hub.getOrCreate(created.id)
-          _       <- mgr.terminateSession(created.id)
-          h2      <- hub.getOrCreate(created.id)
-        } yield assertTrue(!(h1 eq h2))
+          mgr        <- ZIO.service[AgentSessionManager]
+          created    <- mgr.createSession(userId, None)
+          terminated <- mgr.terminateSession(created.id)
+        } yield assertTrue(terminated.status == SessionStatus.Completed)
       }.provide(freshLayers),
       suite("service methods")(
         test("createSession works") {
