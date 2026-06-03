@@ -222,6 +222,39 @@ object InitServiceSpec extends ZIOSpecDefault {
         testLayer(uninitializedSettings, initialized = false),
         initServiceLayer,
       ),
+      // P85-033: all 12 admin capability grants are seeded after successful init
+      test("successful init seeds all 12 admin capability grants") {
+        val expectedCapabilities = Set(
+          "agent.session.create",
+          "agent.session.list",
+          "agent.message",
+          "admin.personality.read",
+          "admin.personality.update",
+          "user.create",
+          "user.update",
+          "role.create",
+          "role.assign",
+          "role.revoke",
+          "permission.grant",
+          "permission.revoke",
+        )
+        for {
+          tokenStore <- ZIO.service[InitTokenStore]
+          validToken <- tokenStore.token.map(_.getOrElse(""))
+          svc        <- ZIO.service[InitService]
+          _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
+          permRepo   <- ZIO.service[PermissionZIORepository]
+          // Find the user that was created (id=1 from InMemoryUserRepo)
+          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.domain.UserId(1L)))
+          grantedCaps = grants.map(_.capability.value).toSet
+        } yield assertTrue(
+          grantedCaps == expectedCapabilities,
+          grants.size == expectedCapabilities.size,
+        )
+      }.provide(
+        testLayer(uninitializedSettings, initialized = false),
+        initServiceLayer,
+      ),
       // ─── InitTokenStore companion accessors ──────────────────────────────────
       test("InitTokenStore companion: token, isValid, verify, invalidate") {
         for {

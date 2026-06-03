@@ -11,7 +11,7 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.{ModelId, ResponseChunk}
+import jorlan.domain.ModelId
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.{LiveSession, ShellConfig, ShellState}
 import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
@@ -67,22 +67,28 @@ object CommandHandler {
           ),
         )
       case Some(liveSession) =>
+        // Drain any stale tokens/sentinels left from a previous response before submitting.
+        // Without this a stale Right(None) sentinel would cause the new response to be invisible.
+        val drainStale: ZIO[Any, Nothing, Unit] =
+          liveSession.tokenQueue.takeAll.unit
         // Submit the message; tokens are already streaming via the session's long-lived WS subscription.
-        gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either.flatMap {
-          case Left(err) => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
-          case Right(_)  =>
-            def drain: ZIO[JorlanScreen, Nothing, Unit] =
-              liveSession.tokenQueue.take.flatMap {
-                case Left(err)          => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
-                case Right(None)        => ZIO.unit
-                case Right(Some(chunk)) =>
-                  val display =
-                    if (chunk.isError) screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
-                    else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
-                  display *> drain
-              }
-            drain
-        }
+        // ZIO evaluates the drain recursive function tail-recursively via trampolining — no stack risk at LLM token rates.
+        drainStale *>
+          gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either.flatMap {
+            case Left(err) => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
+            case Right(_)  =>
+              def drain: ZIO[JorlanScreen, Nothing, Unit] =
+                liveSession.tokenQueue.take.flatMap {
+                  case Left(err)          => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
+                  case Right(None)        => ZIO.unit
+                  case Right(Some(chunk)) =>
+                    val display =
+                      if (chunk.isError) screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
+                      else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
+                    display *> drain
+                }
+              drain
+          }
     }
 
   private val showHelp: ZIO[Env, Nothing, Unit] =
@@ -158,32 +164,8 @@ object CommandHandler {
             // Tear down any existing session's subscription fiber before replacing it.
             existing <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
             _        <- ZIO.foreachDiscard(existing)(ls => ls.subscriptionFiber.interrupt)
-            // Create the queue that handleMessage will drain per-message.
-            tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
-            // Fork one long-lived WS subscription for the whole session.
-            // ZIO.scoped gives the fiber its own Scope; interrupting the fiber closes the WS.
-            fiber <- ZIO
-              .scoped(
-                SubscriptionClient
-                  .agentResponseStream(session.id)
-                  .ensuring(ZIO.logInfo(s"[Shell] subscription stream ended for session=${session.id.value}"))
-                  .foreach { chunk =>
-                    if (chunk.finished) tokenQueue.offer(Right(None)).unit
-                    else tokenQueue.offer(Right(Some(chunk))).unit
-                  }
-                  .foldZIO(
-                    err =>
-                      ZIO.logError(s"[Shell] subscription error for session=${session.id.value}: $err") *>
-                        tokenQueue.offer(Left(s"$err — type /new to reconnect")).unit,
-                    _ =>
-                      ZIO.logInfo(s"[Shell] subscription completed normally for session=${session.id.value}") *>
-                        tokenQueue.offer(Left("Connection to server was lost — type /new to reconnect")).unit,
-                  ),
-              )
-              .ensuring(ZIO.serviceWithZIO[ShellState](_.clearLiveSession))
-              .fork
-            _ <- ZIO.serviceWithZIO[ShellState](_.setLiveSession(LiveSession(session.id, tokenQueue, fiber)))
-            _ <- ZIO.serviceWithZIO[JorlanScreen](
+            _        <- LiveSession.start(session.id)
+            _        <- ZIO.serviceWithZIO[JorlanScreen](
               _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
             )
             _ <- screen(_.addMessage(MessageKind.System, s"Session $id started."))
@@ -228,15 +210,13 @@ object CommandHandler {
         {
           case None    => screen(_.addMessage(MessageKind.Error, "Server returned no personality"))
           case Some(p) =>
-            val name = if (field.toLowerCase == "name") value else p.name
-            val formality = if (field.toLowerCase == "formality") value else p.formality
-            val prompt = if (field.toLowerCase == "prompt") value else p.prompt
-            val languages =
-              if (field.toLowerCase == "languages") value.split(",").map(_.trim).filter(_.nonEmpty).toList
-              else p.languages
-            val expertise =
-              if (field.toLowerCase == "expertise") value.split(",").map(_.trim).filter(_.nonEmpty).toList
-              else p.expertise
+            val f = field.toLowerCase
+            val splitList = value.split(",").map(_.trim).filter(_.nonEmpty).toList
+            val name = if (f == "name") value else p.name
+            val formality = if (f == "formality") value else p.formality
+            val prompt = if (f == "prompt") value else p.prompt
+            val languages = if (f == "languages") splitList else p.languages
+            val expertise = if (f == "expertise") splitList else p.expertise
 
             gql(
               _.run(

@@ -10,7 +10,8 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.domain.{AgentId, AgentSessionId, ResponseChunk, SessionStatus, UserId}
+import jorlan.graphql.client.JorlanClient
 import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.testing.FakeScreen
@@ -20,6 +21,8 @@ import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 import zio.test.Assertion.*
+
+import java.time.Instant
 
 object CommandHandlerSpec extends ZIOSpecDefault {
 
@@ -56,6 +59,61 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           selection: caliban.client.SelectionBuilder[Origin, A],
         ): IO[String, A] =
           ZIO.fail("run not implemented in fake")
+      }
+    }
+
+  /** Fake GQL where `run` always returns the given value (unchecked cast). Sufficient for tests where only one `run`
+    * call type is expected and the return type is known by the test.
+    */
+  def fakeGQLRunReturning[A](value: A): ULayer[GraphQLClient] =
+    ZLayer.succeed {
+      new GraphQLClient {
+        override def execute(
+          query:     String,
+          variables: Option[Json],
+        ): IO[String, Json] = ZIO.succeed(Json.Obj())
+
+        override def run[Origin: caliban.client.Operations.IsOperation, B](
+          selection: caliban.client.SelectionBuilder[Origin, B],
+        ): IO[String, B] = ZIO.succeed(value.asInstanceOf[B])
+      }
+    }
+
+  /** Fake GQL where `run` always fails with the given error message. */
+  def fakeGQLRunFailing(err: String): ULayer[GraphQLClient] =
+    ZLayer.succeed {
+      new GraphQLClient {
+        override def execute(
+          query:     String,
+          variables: Option[Json],
+        ): IO[String, Json] = ZIO.succeed(Json.Obj())
+
+        override def run[Origin: caliban.client.Operations.IsOperation, A](
+          selection: caliban.client.SelectionBuilder[Origin, A],
+        ): IO[String, A] = ZIO.fail(err)
+      }
+    }
+
+  /** Fake GQL whose `run` also offers `tokens` to `tokenQueue` before returning `Some(())`. This simulates the
+    * subscription fiber pushing tokens right after submitMessage is processed — needed because `handleMessage` drains
+    * stale queue contents before calling `run`, so pre-populating the queue would cause the stale-drain to remove the
+    * test tokens before `drain` reads them.
+    */
+  def fakeGQLSubmitWithTokens(
+    tokenQueue: Queue[Either[String, Option[ResponseChunk]]],
+    tokens:     List[Either[String, Option[ResponseChunk]]],
+  ): ULayer[GraphQLClient] =
+    ZLayer.succeed {
+      new GraphQLClient {
+        override def execute(
+          query:     String,
+          variables: Option[Json],
+        ): IO[String, Json] = ZIO.succeed(Json.Obj())
+
+        override def run[Origin: caliban.client.Operations.IsOperation, A](
+          selection: caliban.client.SelectionBuilder[Origin, A],
+        ): IO[String, A] =
+          ZIO.foreachDiscard(tokens)(tokenQueue.offer) *> ZIO.succeed(Some(()).asInstanceOf[A])
       }
     }
 
@@ -131,11 +189,49 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("/new"))
       },
-      test("/new creates a new session") {
+      test("/new when GQL run fails emits Error message") {
         for {
-          (fs, _) <- runCmd(ShellCommand.NewSession(None))
-          msgs    <- fs.messages
-        } yield assertTrue(msgs.nonEmpty)
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.NewSession(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("connection refused") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Failed to create session"))
+      },
+      test("/new with successful GQL run starts session and shows System message") {
+        val sessionView = JorlanClient.AgentSession.AgentSessionView(
+          id = AgentSessionId(99L),
+          agentId = AgentId(1L),
+          userId = UserId(1L),
+          workspaceId = None,
+          status = SessionStatus.Active,
+          modelId = None,
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.NewSession(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(sessionView)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Session 99 started"))
       },
       test("/model without active session prompts to create one") {
         for {
@@ -262,6 +358,85 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("401"))
+      },
+      // ─── Active-session handleMessage tests ──────────────────────────────────
+      // Note: tokens are offered inside fakeGQLSubmitWithTokens.run rather than pre-populating
+      // the queue, because handleMessage calls drainStale (Queue.takeAll) before submitMessage,
+      // which would empty any pre-populated tokens before drain can read them.
+      test("handleMessage with active session drains Server chunks from tokenQueue") {
+        val sid = AgentSessionId(1L)
+        for {
+          fs         <- FakeScreen.make
+          exit       <- Promise.make[Nothing, Unit]
+          tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
+          fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
+          state      <- ShellState.make
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          tokens = List(
+            Right(Some(ResponseChunk(sid, "hello", finished = false))),
+            Right(Some(ResponseChunk(sid, " world", finished = false))),
+            Right(None),
+          )
+          _ <- CommandHandler
+            .handle(ShellCommand.Message("hi"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
+                defaultCfg ++
+                ZLayer.succeed[ShellState](state) ++
+                fakeSubscriptionClient,
+            )
+          serverMsgs <- fs.messagesOfKind(MessageKind.Server)
+          serverText = serverMsgs.map(_.content).mkString
+          _ <- fiber.interrupt
+        } yield assertTrue(serverMsgs.nonEmpty, serverText.contains("hello"))
+      },
+      test("handleMessage with active session — Left(err) in queue shows Streaming error") {
+        val sid = AgentSessionId(2L)
+        for {
+          fs         <- FakeScreen.make
+          exit       <- Promise.make[Nothing, Unit]
+          tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
+          fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
+          state      <- ShellState.make
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          tokens = List(Left("connection lost"))
+          _ <- CommandHandler
+            .handle(ShellCommand.Message("hello"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
+                defaultCfg ++
+                ZLayer.succeed[ShellState](state) ++
+                fakeSubscriptionClient,
+            )
+          errMsgs <- fs.messagesOfKind(MessageKind.Error)
+          errText = errMsgs.map(_.content).mkString
+          _ <- fiber.interrupt
+        } yield assertTrue(errText.contains("Streaming error"))
+      },
+      test("handleMessage submit failure shows Submit failed error") {
+        val sid = AgentSessionId(3L)
+        for {
+          fs         <- FakeScreen.make
+          exit       <- Promise.make[Nothing, Unit]
+          tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
+          fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
+          state      <- ShellState.make
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- CommandHandler
+            .handle(ShellCommand.Message("hello"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("server error") ++
+                defaultCfg ++
+                ZLayer.succeed[ShellState](state) ++
+                fakeSubscriptionClient,
+            )
+          errMsgs <- fs.messagesOfKind(MessageKind.Error)
+          errText = errMsgs.map(_.content).mkString
+          _ <- fiber.interrupt
+        } yield assertTrue(errText.contains("Submit failed"))
       },
     )
 

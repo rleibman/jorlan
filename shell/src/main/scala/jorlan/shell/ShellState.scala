@@ -11,6 +11,7 @@
 package jorlan.shell
 
 import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.shell.client.SubscriptionClient
 import zio.*
 
 /** Holds the state of a live agent session from the shell's perspective.
@@ -51,7 +52,45 @@ class ShellState private (liveSessionRef: Ref[Option[LiveSession]]) {
 
 object ShellState {
 
-  val live: ULayer[ShellState] =
-    ZLayer.fromZIO(Ref.make(Option.empty[LiveSession]).map(new ShellState(_)))
+  val make: UIO[ShellState] = Ref.make(Option.empty[LiveSession]).map(new ShellState(_))
+
+  val live: ULayer[ShellState] = ZLayer.fromZIO(make)
+
+}
+
+object LiveSession {
+
+  /** Creates a token queue, forks the long-lived subscription fiber, and registers the resulting [[LiveSession]] in
+    * [[ShellState]]. Call this before submitting any message — tokens published before subscription are buffered.
+    *
+    * The caller is responsible for UI updates (status bar, system message) after this completes.
+    */
+  def start(sessionId: AgentSessionId): ZIO[ShellState & SubscriptionClient, Nothing, LiveSession] =
+    for {
+      tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
+      // Fork before setLiveSession is safe: the queue is already in scope so early tokens are buffered.
+      fiber <- ZIO
+        .scoped(
+          SubscriptionClient
+            .agentResponseStream(sessionId)
+            .ensuring(ZIO.logInfo(s"[Shell] subscription stream ended for session=${sessionId.value}"))
+            .foreach { chunk =>
+              if (chunk.finished) tokenQueue.offer(Right(None)).unit
+              else tokenQueue.offer(Right(Some(chunk))).unit
+            }
+            .foldZIO(
+              err =>
+                ZIO.logError(s"[Shell] subscription error for session=${sessionId.value}: $err") *>
+                  tokenQueue.offer(Left(s"$err — type /new to reconnect")).unit,
+              _ =>
+                ZIO.logInfo(s"[Shell] subscription completed normally for session=${sessionId.value}") *>
+                  tokenQueue.offer(Left("Connection to server was lost — type /new to reconnect")).unit,
+            ),
+        )
+        .ensuring(ZIO.serviceWithZIO[ShellState](_.clearLiveSession))
+        .fork
+      ls = LiveSession(sessionId, tokenQueue, fiber)
+      _ <- ZIO.serviceWithZIO[ShellState](_.setLiveSession(ls))
+    } yield ls
 
 }

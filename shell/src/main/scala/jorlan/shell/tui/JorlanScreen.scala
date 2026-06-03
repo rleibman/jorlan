@@ -83,11 +83,14 @@ trait JorlanScreen {
 // observes a consistent snapshot and partial-observation windows are eliminated.
 
 private case class ScreenState(
-  messages:     Vector[MessageEntry],
-  statusText:   String,
-  inputPrompt:  String,
-  modeText:     String,
-  scrollOffset: Int,
+  messages: Vector[MessageEntry],
+  // The currently-streaming response held outside `messages` to avoid O(n_messages) Vector.init per token.
+  // Flushed into `messages` when the kind changes or when addMessage is called.
+  inProgressMessage: Option[MessageEntry],
+  statusText:        String,
+  inputPrompt:       String,
+  modeText:          String,
+  scrollOffset:      Int,
 )
 
 object JorlanScreen {
@@ -114,6 +117,7 @@ object JorlanScreen {
           state <- Ref.make(
             ScreenState(
               messages = Vector.empty,
+              inProgressMessage = None,
               statusText = " ● Jorlan Shell  [disconnected]",
               inputPrompt = "❯ ",
               modeText = " [no session]  [disconnected]",
@@ -156,9 +160,14 @@ private class LanternaScreen(
     Clock.currentDateTime.flatMap { odt =>
       val time = odt.toLocalTime.format(timeFmt)
       state.update { s =>
-        val next = s.messages :+ MessageEntry(kind, content, time)
+        // Flush any in-progress streaming message before adding the new one.
+        val base = s.inProgressMessage.fold(s.messages) { ip =>
+          val next = s.messages :+ ip
+          if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
+        }
+        val next = base :+ MessageEntry(kind, content, time)
         val msgs = if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
-        s.copy(messages = msgs)
+        s.copy(messages = msgs, inProgressMessage = None)
       }
     }
   }
@@ -170,14 +179,17 @@ private class LanternaScreen(
     Clock.currentDateTime.flatMap { odt =>
       val time = odt.toLocalTime.format(timeFmt)
       state.update { s =>
-        s.messages.lastOption match {
-          case Some(last) if last.kind == kind =>
-            s.copy(messages = s.messages.init :+ last.copy(content = last.content + extra))
-          case _ =>
-            val next = s.messages :+ MessageEntry(kind, extra, time)
-            val msgs =
+        s.inProgressMessage match {
+          case Some(ip) if ip.kind == kind =>
+            // Same kind: update inProgressMessage in-place. O(1) — no Vector rebuild.
+            s.copy(inProgressMessage = Some(ip.copy(content = ip.content + extra)))
+          case existing =>
+            // Kind changed or no in-progress: flush existing to messages and start a new one.
+            val base = existing.fold(s.messages) { ip =>
+              val next = s.messages :+ ip
               if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
-            s.copy(messages = msgs)
+            }
+            s.copy(messages = base, inProgressMessage = Some(MessageEntry(kind, extra, time)))
         }
       }
     }
@@ -290,7 +302,8 @@ private class LanternaScreen(
     val areaHeight = (height - 5) max 0
     tg.setBackgroundColor(TextColor.ANSI.DEFAULT)
     if (areaHeight > 0) {
-      val lines = expandMessages(s.messages, width)
+      val allMessages = s.messages ++ s.inProgressMessage.toVector
+      val lines = expandMessages(allMessages, width)
       val totalLines = lines.size
       val scrolled = s.scrollOffset min (totalLines - areaHeight) max 0
       val visible = lines.slice(totalLines - areaHeight - scrolled, totalLines - scrolled)

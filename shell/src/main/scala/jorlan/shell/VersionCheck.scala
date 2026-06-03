@@ -12,6 +12,9 @@ package jorlan.shell
 
 import scala.util.matching.Regex
 
+/** Thrown when the shell version is incompatible with the server. Distinct from unexpected runtime errors. */
+final case class VersionIncompatibleError(msg: String) extends RuntimeException(msg)
+
 /** Pure version-compatibility logic for the shell ↔ server handshake.
   *
   * Two strategies are applied depending on whether both versions are proper semver:
@@ -30,19 +33,23 @@ object VersionCheck {
     patch: Int,
   )
 
-  private def parse(v: String): Option[SemVer] =
-    semver.unapplySeq(v).flatMap {
-      case List(maj, min, pat) if maj != null && min != null && pat != null =>
-        Some(SemVer(maj.toInt, min.toInt, pat.toInt))
-      case _ => None
+  private def parse(v: String): Option[SemVer] = {
+    import scala.language.unsafeNulls
+    semver.unapplySeq(v).collect { case List(maj, min, pat) =>
+      SemVer(maj.toInt, min.toInt, pat.toInt)
     }
+  }
 
   /** Returns `Right(())` if the client is compatible with the server, or `Left(humanReadableReason)` if not.
+    *
+    * When both versions are semver, compatibility requires identical major and minor versions, and client patch ≥
+    * server patch (a newer client patch is acceptable). When either version is non-semver, compatibility requires
+    * `clientBuildTime >= serverBuildTime` (equal build times are compatible; a newer client build is acceptable).
     *
     * @param clientVersion
     *   Version string from the client's [[jorlan.BuildInfo]].
     * @param clientBuildTime
-    *   Epoch-millis from the client's [[jorlan.BuildInfo]].
+    *   Epoch-millis from the client's [[jorlan.BuildInfo]]. Must be ≥ `serverBuildTime` in the non-semver fallback.
     * @param serverVersion
     *   Version string returned by the server's `/api/status`.
     * @param serverBuildTime

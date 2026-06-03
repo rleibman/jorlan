@@ -59,11 +59,7 @@ object JorlanAPI {
               }
             }
             .tap { response =>
-              ZIO.when(response.errors.nonEmpty)(
-                ZIO.foreach(response.errors) { err =>
-                  ZIO.logErrorCause(Cause.fail(err))
-                },
-              )
+              ZIO.foreachDiscard(response.errors)(err => ZIO.logErrorCause(Cause.fail(err)))
             }
     }
 
@@ -73,7 +69,11 @@ object JorlanAPI {
         process: GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]],
       ): GraphQLRequest => ZIO[R1, Nothing, GraphQLResponse[CalibanError]] =
         request =>
-          ZIO.logDebug(s"GraphQL ${request.operationName.getOrElse("request")}: ${request.query.getOrElse("")}") *>
+          ZIO.logDebug {
+            val preview = request.query.getOrElse("").take(120).replaceAll("\\s+", " ")
+            val ellipsis = if (request.query.exists(_.length > 120)) "…" else ""
+            s"GraphQL ${request.operationName.getOrElse("request")}: $preview$ellipsis"
+          } *>
             process(request)
     }
 
@@ -416,18 +416,17 @@ object JorlanAPI {
               _       <- logEvent(EventType.PermissionRevoked, Some(actorId), None, now)
             } yield count,
           createSession = input =>
-            (for {
+            for {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.session.create", actorId)
               session <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(actorId, input.modelId))
-            } yield session).tapError(e => ZIO.logError(s"createSession failed: ${e.getMessage}")),
+            } yield session,
           submitMessage = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.message", actorId)
               _       <- ZIO
                 .serviceWithZIO[AgentRunner](_.processMessage(input.sessionId, input.content, Some(actorId)))
-                .tapError(e => ZIO.logError(s"AgentRunner failed for session ${input.sessionId}: ${e.getMessage}"))
                 .forkDaemon
             } yield (),
           updatePersonality = input =>

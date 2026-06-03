@@ -4,8 +4,8 @@
 
 # Session / Connection Redesign Spec
 
-**Branch:** `manualTesting1`  
-**Status:** Approved design, pending implementation  
+**Branch:** `phase-8.5/manual-testing`  
+**Status:** Implemented in Phase 8.5 — 2026-06-02  
 **Date:** 2026-06-01
 
 ---
@@ -70,7 +70,7 @@ case class SubscriberEntry(connectionId: ConnectionId, queue: Queue[ResponseChun
 
 | Method      | Signature                                                                                       | Behaviour                                                                                                                                                                                     |
 |-------------|-------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `subscribe` | `(sessionId: AgentSessionId, connectionId: ConnectionId): ZStream[Any, Nothing, ResponseChunk]` | Creates a sliding/unbounded queue, registers it under `(sessionId, connectionId)`, returns a `ZStream.fromQueue` with an `ensuring` block that removes just this entry on stream termination. |
+| `subscribe` | `(sessionId: AgentSessionId, connectionId: ConnectionId): UIO[ZStream[Any, Nothing, ResponseChunk]]` | Atomically creates a bounded queue, registers it under `(sessionId, connectionId)`, returns a `UIO` that resolves to a `ZStream.fromQueue` with an `ensuring` block that removes just this entry on stream termination. The two-step return (`UIO` then `ZStream`) guarantees no tokens are lost between subscription and publishing. |
 | `publish`   | `(chunk: ResponseChunk): UIO[Unit]`                                                             | Broadcasts `chunk` to **all** entries whose `sessionId` matches `chunk.sessionId`. No-op if no subscribers exist.                                                                             |
 
 **Removed methods:** `getOrCreate(sessionId)` and `remove(sessionId)`. Queue lifecycle
@@ -167,9 +167,10 @@ If the subscription fiber exits with an error (network drop, server restart), pu
 | `server/src/main/scala/jorlan/service/FakeModelGateway.scala`     | Update `subscribeToSession` signature if it implements `AgentRunner`.                                |
 | `server/src/main/scala/jorlan/graphql/JorlanAPI.scala`            | Subscription resolver: mint `ConnectionId.randomZIO`, call `subscribeToSession(sessionId, connId)`.  |
 | `shell/src/main/scala/jorlan/shell/ShellState.scala`              | Add `LiveSession` case class and `Ref[Option[LiveSession]]`.                                         |
-| `shell/src/main/scala/jorlan/shell/commands/CommandHandler.scala` | `handleNewSession`: fork subscription fiber. `handleMessage`: dr ain from session token queue.       || `server/src/test/scala/jorla     n/service/SessionHubSpec.scala` | Rewrite tests for new API. |
+| `shell/src/main/scala/jorlan/shell/commands/CommandHandler.scala` | `handleNewSession`: fork subscription fiber. `handleMessage`: drain from session token queue.        |
+| `server/src/test/scala/jorlan/service/SessionHubSpec.scala`       | Rewrite tests for new API.                                                                           |
 | `server/src/test/scala/jorlan/service/AgentRunnerSpec.scala`      | Update `subscribeToSession` calls to pass `connectionId`.                                            |
-| `shell/ src/test/scala/jorlan/shell/CommandHandlerSpec.scala`     | Up         date `handleMessage` tests for the new drain-from-queue pattern.                          |
+| `shell/src/test/scala/jorlan/shell/CommandHandlerSpec.scala`      | Update `handleMessage` tests for the new drain-from-queue pattern.                                   |
 | `shell/src/test/scala/jorlan/shell/ShellStateSpec.scala`          | Add tests for `LiveSession` accessors.                                                               |
 
 ---

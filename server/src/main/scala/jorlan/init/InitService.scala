@@ -186,19 +186,19 @@ class InitServiceImpl(
       )
     } yield ()
 
-  private val adminCapabilities: List[String] = List(
-    "agent.session.create",
-    "agent.session.list",
-    "agent.message",
-    "admin.personality.read",
-    "admin.personality.update",
-    "user.create",
-    "user.update",
-    "role.create",
-    "role.assign",
-    "role.revoke",
-    "permission.grant",
-    "permission.revoke",
+  private val adminCapabilities: List[CapabilityName] = List(
+    CapabilityName("agent.session.create"),
+    CapabilityName("agent.session.list"),
+    CapabilityName("agent.message"),
+    CapabilityName("admin.personality.read"),
+    CapabilityName("admin.personality.update"),
+    CapabilityName("user.create"),
+    CapabilityName("user.update"),
+    CapabilityName("role.create"),
+    CapabilityName("role.assign"),
+    CapabilityName("role.revoke"),
+    CapabilityName("permission.grant"),
+    CapabilityName("permission.revoke"),
   )
 
   private def seedAdminGrants(
@@ -210,7 +210,7 @@ class InitServiceImpl(
         permRepo.upsertCapabilityGrant(
           CapabilityGrant(
             id = CapabilityGrantId.empty,
-            capability = CapabilityName(cap),
+            capability = cap,
             scopeJson = None,
             granteeId = userId,
             grantorId = None,

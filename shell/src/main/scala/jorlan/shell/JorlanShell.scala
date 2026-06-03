@@ -10,7 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentSessionId, ResponseChunk, SessionStatus}
+import jorlan.domain.{AgentSessionId, SessionStatus}
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.client.{
   AuthClient,
@@ -97,10 +97,9 @@ object JorlanShell extends ZIOApp {
       _ <- shutdownCleanly(loopFiber, heartbeatFiber, screen)
       _ <- renderFiber.interrupt
 
-      // ZIO.succeed rather than ZIO.attempt: sys.exit does not fail in practice.
       // P7-020: After P7-001 the HTTP backends are closed by ZLayer.scoped before this
       // point, so this only needs to kill ZIO's blocking thread pool.
-      _ <- ZIO.succeed(sys.exit(0))
+      _ <- ZIO.attempt(sys.exit(0)).orDie
     } yield ()
 
     // On any fatal error: display it for 3s then close cleanly.
@@ -120,7 +119,7 @@ object JorlanShell extends ZIOApp {
       }
       .ensuring(
         ZIO.serviceWithZIO[JorlanScreen](_.shutdown) *>
-          ZIO.succeed(sys.exit(0)),
+          ZIO.attempt(sys.exit(0)).orDie,
       )
   }
 
@@ -151,7 +150,7 @@ object JorlanShell extends ZIOApp {
               status.buildTime,
             ),
           )
-          .mapError(msg => new RuntimeException(s"Version incompatibility with server at $serverUrl — $msg"))
+          .mapError(msg => VersionIncompatibleError(s"Version incompatibility with server at $serverUrl — $msg"))
       }
       serverName = statusOpt.map(_.serverName).getOrElse(serverUrl)
       _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [$serverUrl]")
@@ -173,23 +172,9 @@ object JorlanShell extends ZIOApp {
       msg:       String,
     ): ZIO[ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
       for {
-        tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
-        fiber      <- ZIO
-          .scoped(
-            SubscriptionClient
-              .agentResponseStream(sessionId)
-              .foreach { chunk =>
-                if (chunk.finished) tokenQueue.offer(Right(None)).unit
-                else tokenQueue.offer(Right(Some(chunk))).unit
-              }
-              .foldZIO(
-                err => tokenQueue.offer(Left(err)).unit,
-                _ => ZIO.unit,
-              ),
-          ).fork
-        _ <- ZIO.serviceWithZIO[ShellState](_.setLiveSession(LiveSession(sessionId, tokenQueue, fiber)))
-        _ <- screen.setModeStatus(s" [session: ${sessionId.value}]  [model: default]")
-        _ <- screen.addMessage(MessageKind.System, msg)
+        ls <- LiveSession.start(sessionId)
+        _  <- screen.setModeStatus(s" [session: ${ls.sessionId.value}]  [model: default]")
+        _  <- screen.addMessage(MessageKind.System, msg)
       } yield ()
 
     def createNew: ZIO[GraphQLClient & ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =

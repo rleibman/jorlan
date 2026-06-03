@@ -11,52 +11,49 @@
 package jorlan.service
 
 import jorlan.domain.{AgentSessionId, UserId}
-import org.slf4j.{LoggerFactory, MDC}
 import zio.*
 
-import scala.language.unsafeNulls
-
-/** Logs complete user↔agent exchanges to a dedicated SLF4J logger (`jorlan.conversation`).
+/** Logs complete user↔agent exchanges via ZIO's structured logging.
   *
-  * Logback routes this logger to a `SiftingAppender` keyed on the `sessionId` MDC entry, producing one log file per
-  * [[AgentSessionId]] under `logs/conversations/`. The MDC key is set and restored within a single `ZIO.succeed` block
-  * so it never leaks across fiber hops.
+  * Log entries carry two annotations that flow through the ZIO fiber context:
+  *
+  *   - `sessionId` — used by Logback's `SiftingAppender` (via the SLF4J bridge MDC) to route output to
+  *     `logs/conversations/session-<id>.log`.
+  *   - logger name `"jorlan.conversation"` — maps to the SLF4J logger name so logback.xml can set its level and
+  *     appender independently of the main `jorlan` logger.
+  *
+  * Because ZIO propagates annotations through the fiber context (not thread-locals), both methods are fully fiber-safe
+  * and require no blocking I/O — the SLF4J bridge is invoked synchronously on the ZIO thread pool under the
+  * `SLF4J.slf4j` backend, which is already configured in `Jorlan.bootstrap`.
   *
   * Enable or disable by configuring the `jorlan.conversation` logger level in logback.xml.
   */
 object ConversationLogger {
 
-  private val logger = LoggerFactory.getLogger("jorlan.conversation")
-
+  /** Logs an inbound user message. `actorId = None` is logged as `"unknown"`. */
   def logUserMessage(
     sessionId: AgentSessionId,
     actorId:   Option[UserId],
     content:   String,
-  ): UIO[Unit] =
-    ZIO.succeed {
-      withMdc(sessionId) {
-        val who = actorId.map(id => s"actor=${id.value}").getOrElse("unknown")
-        logger.info(s"USER [$who]: $content")
-      }
-    }
+  ): UIO[Unit] = {
+    val who = actorId.map(id => s"actor=${id.value}").getOrElse("unknown")
+    ZIO.logInfo(s"USER [$who]: $content") @@
+      ZIOAspect.annotated("sessionId", sessionId.value.toString) @@
+      zio.logging.loggerName("jorlan.conversation")
+  }
 
+  /** Logs a completed agent response. When `isError = true` the entry is emitted at ERROR level, routing it to
+    * error-specific appenders in addition to the session conversation log.
+    */
   def logAgentResponse(
     sessionId: AgentSessionId,
     response:  String,
     isError:   Boolean,
-  ): UIO[Unit] =
-    ZIO.succeed {
-      withMdc(sessionId) {
-        if (isError) logger.error(s"AGENT ERROR: $response")
-        else logger.info(s"AGENT: $response")
-      }
-    }
-
-  private def withMdc(sessionId: AgentSessionId)(block: => Unit): Unit = {
-    val prev = Option(MDC.getCopyOfContextMap).getOrElse(java.util.Collections.emptyMap[String, String]())
-    MDC.put("sessionId", sessionId.value.toString)
-    try block
-    finally MDC.setContextMap(prev)
+  ): UIO[Unit] = {
+    val log = if (isError) ZIO.logError(s"AGENT ERROR: $response") else ZIO.logInfo(s"AGENT: $response")
+    log @@
+      ZIOAspect.annotated("sessionId", sessionId.value.toString) @@
+      zio.logging.loggerName("jorlan.conversation")
   }
 
 }

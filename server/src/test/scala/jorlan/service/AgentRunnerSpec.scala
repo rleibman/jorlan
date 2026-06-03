@@ -145,6 +145,16 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           } yield assertCompletes
         }.provide(layers(Nil)),
       ),
+      // P85-034: actorId = None path
+      test("processMessage with actorId=None succeeds and publishes sentinel") {
+        for {
+          connId <- ConnectionId.randomZIO
+          stream <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
+          fiber  <- stream.takeUntil(_.finished).runCollect.fork
+          _      <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "anonymous", actorId = None))
+          result <- fiber.join
+        } yield assertTrue(result.last.finished)
+      }.provide(layers(List("resp"))),
     )
 
 }

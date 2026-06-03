@@ -121,7 +121,7 @@ private[client] class GraphQLClientImpl(
         .headers(token.map(t => Header("Authorization", s"Bearer $t")).toList*)
         .send(backend)
         .mapError(e => s"HTTP error on GraphQL request: ${e.getMessage}")
-      result <- ZIO.fromEither(resp.body).mapError(_.getMessage)
+      result <- ZIO.fromEither(resp.body).mapError(e => Option(e.getMessage).getOrElse(e.getClass.getName))
     } yield result
   }
 
