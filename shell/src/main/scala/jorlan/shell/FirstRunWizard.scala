@@ -116,8 +116,9 @@ object FirstRunWizard {
   }
 
   private def isLocalhost(serverUrl: String): Boolean =
-    serverUrl.contains("localhost") || serverUrl.contains("127.0.0.1") || serverUrl.contains("::1")
-
+    scala.util.Try(new java.net.URI(serverUrl).getHost).toOption.exists { h =>
+      h == "localhost" || h == "127.0.0.1" || h == "::1"
+    }
   private def initLoop(
     serverUrl:         String,
     defaultServerName: String,
