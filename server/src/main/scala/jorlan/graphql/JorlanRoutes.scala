@@ -27,7 +27,7 @@ object JorlanRoutes {
 
   def routes: ZIO[JorlanApiEnv, CalibanError, Routes[JorlanApiEnv & JorlanSession, Nothing]] =
     JorlanAPI.api.interpreter.map { interp =>
-      val adapter = QuickAdapter(interp)
+      val adapter: QuickAdapter[JorlanApiEnv & JorlanSession] = QuickAdapter(interp)
       Routes(
         Method.ANY / "api" / "jorlan" ->
           adapter.handlers.api,

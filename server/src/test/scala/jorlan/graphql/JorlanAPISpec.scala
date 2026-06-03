@@ -322,7 +322,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("createSession returns a session with Active status") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""mutation { createSession(value: null) { id status } }""")
+        result <- interp.execute("""mutation { createSession(modelId: null) { id status } }""")
       } yield assertTrue(
         result.errors.isEmpty,
         result.data.toString.contains("Active"),
@@ -331,7 +331,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("createSession with explicit modelId uses ArgBuilder[ModelId]") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""mutation { createSession(value: "llama3") { id status } }""")
+        result <- interp.execute("""mutation { createSession(modelId: "llama3") { id status } }""")
       } yield assertTrue(
         result.errors.isEmpty,
         result.data.toString.contains("Active"),
@@ -340,7 +340,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("listSessions returns created sessions — exercises Schema for AgentId, WorkspaceId, SessionStatus") {
       for {
         interp     <- ZIO.service[Interp]
-        _          <- interp.execute("""mutation { createSession(value: null) { id } }""")
+        _          <- interp.execute("""mutation { createSession(modelId: null) { id } }""")
         listResult <- interp.execute(
           """{ listSessions { id agentId userId status createdAt updatedAt } }""",
         )
@@ -352,7 +352,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("submitMessage mutation succeeds with active session") {
       for {
         interp       <- ZIO.service[Interp]
-        createResult <- interp.execute("""mutation { createSession(value: null) { id } }""")
+        createResult <- interp.execute("""mutation { createSession(modelId: null) { id } }""")
         sessionId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(
           s"""mutation { submitMessage(sessionId: $sessionId, content: "hello") }""",

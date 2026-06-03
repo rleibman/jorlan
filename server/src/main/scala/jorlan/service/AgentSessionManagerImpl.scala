@@ -65,7 +65,6 @@ class AgentSessionManagerImpl(
         updatedAt = now,
       )
       saved <- agentRepo.upsertSession(session).mapError(JorlanError(_))
-      _     <- sessionHub.getOrCreate(saved.id).unit
       _     <- eventLogRepo.append(
         EventLog(
           id = EventLogId.empty,
@@ -116,7 +115,6 @@ class AgentSessionManagerImpl(
 
   override def terminateSession(id: AgentSessionId): IO[JorlanError, AgentSession] =
     updateStatus(id, SessionStatus.Completed, EventType.SessionTerminated) <*
-      sessionHub.remove(id) <*
       modelGateway.invalidateSession(id)
 
   override def listSessions(

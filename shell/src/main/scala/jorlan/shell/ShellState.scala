@@ -10,28 +10,48 @@
 
 package jorlan.shell
 
-import jorlan.domain.AgentSessionId
+import jorlan.domain.{AgentSessionId, ResponseChunk}
 import zio.*
 
-/** Holds ephemeral shell session state. Currently tracks which [[AgentSessionId]] is active so that plain-text messages
-  * are routed to the right session.
+/** Holds the state of a live agent session from the shell's perspective.
+  *
+  * @param sessionId
+  *   The durable [[AgentSessionId]] for the active LLM conversation (the "what").
+  * @param tokenQueue
+  *   A queue fed by the long-lived WebSocket subscription fiber. `handleMessage` drains this until `Right(None)`
+  *   (finished) or `Left(error)` for each user message.
+  * @param subscriptionFiber
+  *   The forked fiber that keeps the WebSocket subscription alive for the duration of the session. Interrupted when the
+  *   user starts a new session with `/new`.
   */
-class ShellState private (sessionIdRef: Ref[Option[AgentSessionId]]) {
+case class LiveSession(
+  sessionId:         AgentSessionId,
+  tokenQueue:        Queue[Either[String, Option[ResponseChunk]]],
+  subscriptionFiber: Fiber[Nothing, Unit],
+)
 
-  /** Returns the currently active session ID, or `None` if no session has been started. */
-  def getSessionId: UIO[Option[AgentSessionId]] = sessionIdRef.get
+/** Holds ephemeral shell session state. Tracks which agent session is active and owns the long-lived WebSocket
+  * subscription fiber that streams tokens back from the server.
+  */
+class ShellState private (liveSessionRef: Ref[Option[LiveSession]]) {
 
-  /** Sets the active session ID. Called after a successful `createSession` mutation. */
-  def setSessionId(id: AgentSessionId): UIO[Unit] = sessionIdRef.set(Some(id))
+  /** Returns the currently active [[LiveSession]], or `None` if no session has been started. */
+  def getLiveSession: UIO[Option[LiveSession]] = liveSessionRef.get
 
-  /** Clears the active session ID. Called on session termination or shell reconnect. */
-  def clearSessionId: UIO[Unit] = sessionIdRef.set(None)
+  /** Sets the active session. Called after a successful `createSession` mutation and subscription setup. */
+  def setLiveSession(ls: LiveSession): UIO[Unit] = liveSessionRef.set(Some(ls))
+
+  /** Clears the active session. Called on session termination or shell reconnect. */
+  def clearLiveSession: UIO[Unit] = liveSessionRef.set(None)
+
+  /** Convenience accessor for the active session ID, used by display commands such as `/model`. */
+  def getSessionId: UIO[Option[AgentSessionId]] = liveSessionRef.get.map(_.map(_.sessionId))
 
 }
 
 object ShellState {
 
   val live: ULayer[ShellState] =
-    ZLayer.fromZIO(Ref.make(Option.empty[AgentSessionId]).map(new ShellState(_)))
+    ZLayer.fromZIO(Ref.make(Option.empty[LiveSession]).map(new ShellState(_)))
 
 }

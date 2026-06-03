@@ -31,14 +31,18 @@ object AgentRunnerSpec extends ZIOSpecDefault {
     (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live ++ hub ++ eventLogRepo
   }
 
+  /** Subscribe to the session (eagerly registering the queue), then fork the stream drain, then run processMessage.
+    *
+    * The eager `subscribeToSession` call ensures the queue exists before `processMessage` publishes any tokens.
+    */
   private def runWithSubscription(
     chunks:  List[String],
     message: String,
   ): ZIO[AgentRunner & SessionHub & EventLogZIORepository, Any, Chunk[ResponseChunk]] =
     for {
-      hub    <- ZIO.service[SessionHub]
-      _      <- hub.getOrCreate(sessionId) // pre-create so publish never drops chunks
-      fiber  <- hub.subscribe(sessionId).runCollect.fork
+      connId <- ConnectionId.randomZIO
+      stream <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
+      fiber  <- stream.takeUntil(_.finished).runCollect.fork
       _      <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, message, Some(userId)))
       result <- fiber.join
     } yield result
@@ -82,9 +86,9 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       }.provide(layers(Nil)),
       test("processMessage publishes finished sentinel on ModelGateway failure") {
         for {
-          hub      <- ZIO.service[SessionHub]
-          _        <- hub.getOrCreate(sessionId)
-          fiber    <- hub.subscribe(sessionId).runCollect.fork
+          connId   <- ConnectionId.randomZIO
+          stream   <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
+          fiber    <- stream.takeUntil(_.finished).runCollect.fork
           _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hi", Some(userId))).ignore
           received <- fiber.join
         } yield assertTrue(received.nonEmpty, received.last.finished, received.last.isError)
@@ -126,15 +130,19 @@ object AgentRunnerSpec extends ZIOSpecDefault {
       suite("service methods")(
         test("processMessage delegates to implementation") {
           for {
-            hub   <- ZIO.service[SessionHub]
-            _     <- hub.getOrCreate(sessionId)
-            fiber <- hub.subscribe(sessionId).runCollect.fork
-            _     <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
-            _     <- fiber.join
+            connId <- ConnectionId.randomZIO
+            stream <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
+            fiber  <- stream.takeUntil(_.finished).runCollect.fork
+            _      <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
+            _      <- fiber.join
           } yield assertCompletes
         }.provide(layers(List("ok"))),
         test("subscribeToSession delegates to implementation") {
-          ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(sessionId)).take(0).runDrain.as(assertCompletes)
+          for {
+            connId <- ConnectionId.randomZIO
+            stream <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
+            _      <- stream.take(0).runDrain
+          } yield assertCompletes
         }.provide(layers(Nil)),
       ),
     )

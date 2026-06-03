@@ -152,6 +152,11 @@ object JorlanAPI {
     roleId:   Option[RoleId],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `createSession` — optional model override; if absent, the agent's default model is used. */
+  case class CreateSessionInput(
+    modelId: Option[ModelId] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `submitMessage` — sends a user message to the active agent session. */
   case class SubmitMessageInput(
     sessionId: AgentSessionId,
@@ -179,7 +184,7 @@ object JorlanAPI {
     revokeRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     grantPermission:   GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
     revokePermission:  PermissionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Long],
-    createSession:     Option[ModelId] => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
+    createSession:     CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
     submitMessage:     SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     updatePersonality: Personality => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
   )
@@ -414,7 +419,7 @@ object JorlanAPI {
             (for {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.session.create", actorId)
-              session <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(actorId, input))
+              session <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(actorId, input.modelId))
             } yield session).tapError(e => ZIO.logError(s"createSession failed: ${e.getMessage}")),
           submitMessage = input =>
             for {
@@ -435,7 +440,17 @@ object JorlanAPI {
         Subscriptions(
           approvalNotifications = ZStream.empty,
           eventLogTail = ZStream.empty,
-          agentResponseStream = sessionId => ZStream.serviceWithStream[AgentRunner](_.subscribeToSession(sessionId)),
+          agentResponseStream = sessionId =>
+            ZStream.unwrap(
+              for {
+                connId <- ConnectionId.randomZIO
+                _ <- ZIO.logInfo(s"[API] agentResponseStream subscription starting: session=$sessionId conn=$connId")
+                runner <- ZIO.service[AgentRunner]
+                stream <- runner.subscribeToSession(sessionId, connId)
+              } yield stream.ensuring(
+                ZIO.logInfo(s"[API] agentResponseStream subscription ended: session=$sessionId conn=$connId"),
+              ),
+            ),
         ),
       ),
     ) @@ maxFields(200) @@ maxDepth(20) @@ logRequests @@ logErrors

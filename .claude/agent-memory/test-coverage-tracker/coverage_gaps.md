@@ -1,95 +1,12 @@
 ---
 name: coverage-gaps
-description: Known untested areas by package as of 2026-05-27 (~75% aggregate scoverage)
+description: Known untested areas by package as of 2026-06-02
 metadata:
   type: project
 ---
 
-## Phase 8 Agent Session Runtime — Coverage Gaps (added 2026-05-29)
+## Phase 8.5 Session Connection Redesign — Coverage Gaps (added 2026-06-02)
 See dedicated section below.
-
-## Phase 6 GraphQL API — Coverage Gaps (added 2026-05-27)
-See dedicated section below.
-
-## Package Coverage Summary (2026-05-27)
-- jorlan (model/domain): 34.72% — 265 statements
-- jorlan.auth: 0% — 59 statements (JorlanAuthServer.scala entirely untested)
-- jorlan.db: 37.90% — 248 statements
-- jorlan.db.repository: 36.44% — 483 statements (QuillRepositories.scala)
-- jorlan.domain: 25.23% — 214 statements
-- jorlan.service: 100% — 45 statements
-
-## Critical Untested Areas
-1. `JorlanAuthServer` — entire auth layer at 0%: login, changePassword, createOAuthUser, linkOAuthToUser, userByPK, userByOAuthProvider, createUser (expected failure), sendEmail (noop), activateUser (noop)
-2. `UserZIORepository.login` / `changePassword` — security-critical SQL logic never integration-tested
-3. `RepositoryError.apply(Throwable)` — SQLTransient/SQLNonTransient branching untested
-
-## High Priority Untested Areas
-1. `jorlan.domain` enums JSON roundtrip — ApprovalMode, ApprovalStatus, SessionStatus, MessageRole, EventType, MemoryScope, SkillTier, SkillStatus, ConnectorType, JobStatus, TriggerType, ChannelType (non-fromProvider values) all lack codec tests
-2. `MemorySearch` scoped by Workspace/Private/Agent — only User and Shared scopes tested
-3. Search pagination (page > 0) — `page` parameter not exercised in any search test
-4. `MemoryRepository.getById` — never called in tests
-5. `AgentRepository` — session `getSession` only called once; `getById` for agent not tested standalone
-
-## Medium Priority
-1. `EventLogFilter` pagination (page > 0 in integration)
-2. `SkillRepository` — `getConnector(id)` tested but standalone `getById(SkillId)` not tested in isolation
-3. `quillUtil.scala` — Quill encodings for PublicKey, SemVer, URI, MediaType (exercised indirectly but coverage is low)
-4. `configuration.scala` — AppConfig / DataSourceConfig parsing
-5. `FlywayMigration.scala` — not directly tested (exercised implicitly by container startup)
-
-## Phase 5 Capability Kernel — Unit Test Gaps (2026-05-27)
-
-### RiskClassifierImpl — untested capabilities
-- `permission.revoke` exact override (Privileged) — in exactOverrides but no test
-- `filesystem.remove.*` prefix (Destructive) — only `filesystem.delete` tested
-- `filesystem.list.*` prefix (ReadOnly) — untested
-- `filesystem.*` fallback prefix (WorkspaceWrite) — untested
-- `memory.delete.*` prefix (Destructive) — only `memory.forget` tested
-- `memory.read.*` prefix (ReadOnly) — only `memory.search` tested
-- `memory.*` fallback prefix (WorkspaceWrite) — untested
-- `network.send.*` / `network.external.*` (ExternalEffect) — untested
-- `network.*` fallback prefix (WorkspaceWrite) — untested
-- `role.remove.*` (Privileged) — untested; `role.*` fallback (Privileged) untested
-- `permission.*` prefix (Privileged) — `permission.grant` tested as exact override but not prefix fallback
-- `capability.*` prefix (SecuritySensitive) fallback — untested (only `capability.grant` exact override tested)
-- `skill.install`, `skill.approve` (ExternalEffect) — untested
-- `skill.*` fallback (WorkspaceWrite) — untested
-- `scheduler.*` prefix (WorkspaceWrite) — untested
-- `agent.*` prefix (WorkspaceWrite) — untested
-- `shell.sudo.*` prefix (SecuritySensitive) — `shell.sudo.execute` tested but `shell.sudo.anything` prefix fallback not
-- Boundary: name exactly equal to prefix with no trailing dot (e.g. `"shell"` alone — no test)
-- Boundary: empty string capability name — no test
-- Boundary: name that is a strict prefix of a registered prefix (e.g. `"shel"`) — no test
-
-### ApprovalPolicyEngineImpl — untested scenarios
-- `Once` mode: existingApprovals present but all have `ApprovalStatus.Rejected` / `Pending` / `Expired` — currently the check is `.nonEmpty`, so a rejected approval incorrectly grants access; no test exposes this
-- `Session` mode: request has `sessionId = None` — both sides of the match are untested with null session
-- `Timed` mode: expiry instant exactly equal to `now` (boundary — `isAfter` is strict, so this falls to PendingApproval; no test for the boundary)
-- `buildRequest` fields: `capability` in template uses `request.capability` not `grant.capability` — no test where they differ to prove the request field is copied correctly
-- `buildRequest` fields: `scopeJson` comes from `grant.scopeJson` — not tested with a non-None scope
-- `Denied` mode reason string content — test only checks `isInstanceOf`, not the reason text
-- `DefaultDeny` reason string content — same issue
-
-### CapabilityEvaluatorImpl — integration test gaps (no unit tests at all)
-- Happy path: explicit deny grant present → returns ExplicitDeny
-- Happy path: direct user permission present → returns ResourcePermissionAllows
-- Happy path: role permission present (no direct) → returns RolePermissionAllows
-- Happy path: non-denied grant present (no direct/role permission) → returns CapabilityGrantAllows
-- Happy path: nothing matches → returns DefaultDeny
-- Multiple grants including a Denied one — ordering check (Denied wins regardless of other grants)
-- `splitCapability` for no-dot name — resource = full name, action = "use"
-- `splitCapability` for multi-dot name — only first dot is the split point
-
-### ApprovalServiceImpl — integration test gaps (no unit tests at all)
-- Full `authorize` pipeline for all seven EvaluationResult paths
-- PendingApproval result: persisted template has id replaced by saved record id
-- Allowed result: CapabilityAllowed event is written to event log
-- Denied result: CapabilityDenied event is written to event log
-- `loadExistingApprovals` short-circuits to Nil for all non-Once/Session evaluation results (no DB call)
-- `recordDecision` delegates to permissionService.recordApprovalDecision
-- `expireStaleRequests` sums expired counts across multiple records
-- `expireStaleRequests` with empty result set → returns 0
 
 ## Phase 8.3 Server Personality / Phase 8.4 AI CI Testing Coverage Gaps (2026-06-01)
 
@@ -103,31 +20,24 @@ See dedicated section below.
 - update() persists to repo and refreshes cache: COVERED
 - `PersonalityServiceImpl.live` layer INIT FROM PRE-POPULATED STORE: NOT TESTED (always starts from empty InMemoryServerSettingsRepo — the code path `case Some(json) => json.as[Personality]` is never exercised in unit tests)
 
-### GraphQL serverPersonality query: NOT TESTED
-- No test in JorlanAPISpec or GraphQLApiSpec calls `{ serverPersonality { ... } }`
-- Both specs use a fakePersonality stub, bypassing the real service
-
-### GraphQL updatePersonality mutation: NOT TESTED
-- No test calls `mutation { updatePersonality(...) }`
-- The admin capability check (`admin.personality.update`) is NOT tested for deny/allow paths
-- The mutation is entirely absent from JorlanAPISpec and GraphQLApiSpec
+### GraphQL serverPersonality query / updatePersonality mutation: COVERED in JorlanAPISpec (Phase 8.5)
+- serverPersonality query returns default: COVERED
+- serverPersonality fails when unauthenticated: COVERED
+- serverPersonality fails when capability denied: COVERED
+- updatePersonality succeeds: COVERED
+- updatePersonality fails (denyAll): COVERED
+- updatePersonality fails (unauthenticated): COVERED
 
 ### OllamaModelGateway system-prompt rebuild: NOT DIRECTLY TESTABLE
 - Entire file is `$COVERAGE-OFF$` / `$COVERAGE-ON$`; requires live Ollama
-- The `getOrCreate` session rebuild when systemPrompt changes IS the key logic but cannot be unit-tested
-- No integration test covers this behavior
 
 ### AgentRunnerImpl personality integration: COVERED ONLY BY PROXY
 - AgentRunnerSpec uses fakePersonality returning `Personality.default`; personality is fetched on every processMessage call
 - The fact that `buildSystemPrompt` output is passed to `modelGateway.streamedResponse` is structurally exercised but never verified by asserting on systemPrompt content
 
 ### Shell /personality command (CommandHandler.showPersonality): NOT TESTED
-- `ShellCommand.Personality` case is present in CommandHandler.handle dispatch
-- CommandHandlerSpec has zero tests for `ShellCommand.Personality`
-- The GQL query path, JSON parsing, and both success/failure branches are untested
-
-### Shell /commands listing includes /personality: IMPLICITLY COVERED
-- The showCommands test checks `text.contains("/personality")` indirectly via the commands listing
+- `ShellCommand.Personality` case is present in CommandHandler.handle dispatch but CommandHandlerSpec has zero tests for it
+- `ShellCommand.PersonalitySet(field, v)` also not tested
 
 ### JorlanShell status bar server name (initialisePostLogin): NOT TESTED
 - `initialisePostLogin` fetches serverName via `InitClient.checkStatus`, formats it into status/mode bars
@@ -135,109 +45,182 @@ See dedicated section below.
 
 ### V018 migration and PersonalityKey constant: NOT COVERED BY INTEGRATION TESTS
 - V018__personality.sql seeds the default personality row — no integration test queries `PersonalityKey`
-- GraphQLApiSpec uses `fakePersonality` stub, so V018 row is never read through the real service
-- `ServerSettingsRepository.PersonalityKey` constant is used only in PersonalityServiceImpl; covered by unit tests only
 
-### StreamedChatSpec (Phase 8.4 AI CI): WELL COVERED
-- 5 tests covering LangChainConfig default values and field overrides
-- `streamedChat` bridge itself is excluded ($COVERAGE-OFF$) — reasonable as it needs live Ollama
+## Phase 8.5 Session Connection Redesign — Coverage Gaps (2026-06-02)
 
-## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29)
+### ConversationLogger — NO TESTS
+- `ConversationLogger.logUserMessage` is called inside `AgentRunnerImpl.processMessage`; the AgentRunnerSpec exercises it indirectly (via processMessage) but never asserts on its behavior
+- `ConversationLogger.logAgentResponse` — called in the `.ensuring` block of processMessage; isError=true path only exercised when ModelGateway fails, but no test verifies the log output
+- `ConversationLogger.withMdc` — internal method; the MDC set/restore pattern is never verified (no assertion that MDC is clean after the effect)
+- There are NO direct tests for ConversationLogger as a unit
+
+### SessionHub — REDESIGNED (Hub→per-connection Queue), tests UPDATED
+- Subscribe before publish (buffered delivery): COVERED
+- Multiple subscribers per session each receive all chunks: COVERED
+- Independent sessions: COVERED
+- Publish to non-existent session: COVERED (was a gap, now tested)
+- Subscriber cleanup on interruption: COVERED
+- Ordering: COVERED
+- Stream continues across messages (long-lived WS model): COVERED
+- subscribe() returns `UIO[ZStream]` (not `ZStream` directly) — the new signature means callers must await the UIO before collecting; tests correctly use this form
+- **STILL MISSING**: subscriber count after remove (no test checks that `subs` Ref is empty after all subscribers disconnect)
+- **STILL MISSING**: sliding queue overflow behavior (queue is bounded/sliding(1024)); no test publishes >1024 chunks to verify oldest are dropped rather than blocking
+
+### AgentRunnerImpl — IMPROVED
+- processMessage publishes all chunks then finished sentinel: COVERED
+- processMessage writes UserMessageReceived and AgentResponseCompleted events: COVERED
+- processMessage with ModelGateway failure publishes finished+isError sentinel: COVERED
+- AgentResponseCompleted written even on failure: COVERED
+- `getOrCreate` call at top of processMessage (ensures queue exists after restart): exercised indirectly — NOT directly tested in isolation
+- ConversationLogger calls in processMessage: not asserted (see ConversationLogger above)
+- `actorId = None` path: NOT TESTED (only Some(userId) used)
+
+### AgentSessionManager — UPDATED tests
+- createSession Active status: COVERED
+- createSession logs SessionCreated event: COVERED
+- getSession happy path: COVERED
+- getSession unknown id: COVERED
+- suspendSession → Paused: COVERED
+- terminateSession → Completed: COVERED
+- createSession reuses default agent: COVERED
+- suspendSession with unknown id → JorlanError: COVERED
+- listSessions: COVERED
+- **STILL MISSING**: terminateSession hub removal not verified (hub entries not checked after terminate)
+- **STILL MISSING**: suspendSession does not remove hub — no test verifies hub entries preserved after suspend
+
+### JorlanAPI (GraphQL layer) — IMPROVED
+- createSession mutation: COVERED (was gap, now tested)
+- createSession with explicit modelId: COVERED
+- submitMessage mutation: COVERED (was gap, now tested)
+- listSessions: COVERED
+- agentResponseStream subscription schema check: COVERED
+- approvalNotifications empty stream: COVERED
+- **STILL MISSING**: `agentResponseStream` subscription actual stream content — only schema is checked; no test verifies tokens flow through the subscription
+- **STILL MISSING**: `submitMessage` with non-existent sessionId — error path
+- **STILL MISSING**: `logErrors` wrapper — no test triggers a GraphQL execution error and verifies the error message is rewritten from "Effect failure" to the underlying cause message
+- **STILL MISSING**: `logRequests` wrapper — no test verifies request logging fires
+
+### InitRoutes — UPDATED
+- New `tokenStore` parameter added to `SetupModeApp.make` — all tests updated with noopTokenStore stub
+- Localhost token bypass (`isLocalhost && r.token.isEmpty → use stored token`): NOT TESTED
+  - Tests use `ZIO.scoped(routes.run(...))` which does not simulate a real IP address; the `req.remoteAddress` check always fails in test context
+- `initDone` Promise completion on success: NOT TESTED
+  - All tests pass `initDone = None`; no test wires up a real Promise and verifies it's satisfied
+
+### InitService — IMPROVED
+- New `seedAdminGrants` method seeds 12 capability grants after admin user creation: exercised in the "successful init" test but NO assertion verifies the grants were actually written to the permRepo — only the settings flag is checked
+- The `adminCapabilities` list content (12 entries): no test enumerates or asserts on specific capability names
+
+### JorlanShell — NEW `loadOrCreateSession` logic, UNTESTED
+- `loadOrCreateSession` — lists sessions, resumes Active one or creates new: NO TESTS
+  - applySession (resume path): NOT TESTED
+  - createNew (no active session path): NOT TESTED
+  - listSessions error/Left path → falls through to createNew: NOT TESTED
+  - server returns None from listSessions: NOT TESTED
+- `shutdownCleanly` — interrupts subscription fiber before sys.exit: NOT TESTED (and untestable without live screen)
+- `ensuring(sys.exit(0))` pattern: NOT TESTED
+
+### CommandHandler — SIGNIFICANTLY REDESIGNED, PARTIALLY TESTED
+- handleMessage with active LiveSession (new path): NOT TESTED
+  - tokenQueue drain happy path: NOT TESTED
+  - tokenQueue drain error (Left): NOT TESTED
+  - tokenQueue drain finished sentinel (Right(None)): NOT TESTED
+- handleNewSession now uses `JorlanClient.Mutations.createSession` (typed SelectionBuilder), tears down existing session, forks long-lived WS fiber: NOT TESTED for the success branch
+  - GQL failure branch (Left): NOT TESTED for new path (old stub returns `run not implemented in fake`)
+  - `Right(None)` branch ("Server returned no session"): NOT TESTED
+  - Existing session teardown (subscriptionFiber.interrupt): NOT TESTED
+- showPersonality: NOT TESTED (CommandHandlerSpec has no test for ShellCommand.Personality)
+- setPersonalityField: NOT TESTED (CommandHandlerSpec has no test for ShellCommand.PersonalitySet)
+- **fakeGQL.run always returns `ZIO.fail("run not implemented in fake")`** — this means ALL tests exercising handleNewSession, handleMessage with active session, showPersonality, and setPersonalityField via the standard testLayer will silently fail the GQL call; tests use `runCmd(ShellCommand.NewSession(None))` which hits `fakeGQL.run` and fails → the `Left(err)` branch is exercised, not the success branch
+
+### VersionCheck — WELL COVERED (new file + new spec)
+- Both semver identical: COVERED
+- Client patch newer: COVERED
+- Client patch equal (different buildTime): COVERED
+- Client patch older: COVERED
+- Minor mismatch: COVERED
+- Major mismatch: COVERED
+- Error message non-empty: COVERED
+- Non-semver client newer buildTime: COVERED
+- Non-semver client equal buildTime: COVERED
+- Non-semver client older: COVERED
+- Semver vs hash fallback: COVERED
+- Hash vs semver fallback: COVERED
+- **MISSING**: `VersionCheck.check` with an empty string for either version
+- **MISSING**: Version string with extra components (e.g. "1.2.3.4" — parse returns None → falls to buildTime path)
+
+### ShellState — IMPROVED (was entirely untested, now MOSTLY COVERED)
+- getLiveSession returns None initially: COVERED
+- setLiveSession makes session available: COVERED
+- getSessionId returns None: COVERED
+- getSessionId after setLiveSession: COVERED
+- clearLiveSession: COVERED
+- **MISSING**: clearLiveSession when already None (idempotency): NOT TESTED
+- **MISSING**: setLiveSession replaces existing (interrupt old fiber): NOT TESTED
+
+### SubscriptionClient — STILL ZERO UNIT TESTS
+- Protocol now uses subscriptions-transport-ws "start"/"data" frames (not newer graphql-ws "subscribe"/"next")
+- `isError` field added to `ChunkData` decoder — not unit-tested
+- No test for WS reconnection or authentication header injection
+
+## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29) — partially superseded by Phase 8.5
 
 ### OllamaModelGateway
 - Entire file excluded with $COVERAGE-OFF$ / $COVERAGE-ON$ — appropriate because it requires a live Ollama process.
 
-### FakeModelGateway
-- `chunkDelay` branch (tap + ZIO.sleep) — never exercised; only the no-delay path is tested indirectly via AgentRunnerSpec.
-- `availableModels` — never directly asserted.
-
-### SessionHub
-- `publish` to a non-existent session (no hub created) — the None branch is untested; only the Some branch is exercised.
-- `subscribe` stream integration via `SessionHub.subscribe()` method directly — tests use `hub.getOrCreate` + `innerHub.subscribe` directly, bypassing `SessionHub.subscribe`.
-
-### AgentRunner
-- ModelGateway failure path — when `streamedResponse` emits an error, the `.ensuring` block must still publish the finished sentinel; this is not tested.
-- `actorId = None` path — only tested with `Some(userId)`.
-- `AgentResponseCompleted` event written AFTER model failure (vs. success) — no test.
-
-### AgentSessionManager
-- `suspendSession` does NOT remove the hub (only `terminateSession` does); no test verifies hub is still accessible after suspend.
-- `terminateSession` hub removal — no test verifies the hub is gone from the Ref after terminate.
-- `ensureDefaultAgent` when multiple agents exist (only one named "Jorlan Interactive") — tested only when store is empty or already has the default.
-- `updateStatus` when session not found — `ZIO.fromOption(_).orElseFail(JorlanError(...))` error path never tested (both suspendSession and terminateSession).
-- `createSession` with modelId = None — only `Some(ModelId("test-model"))` path is tested in most tests.
-
 ### HumanApprovalNotifier
 - Zero tests. Single method `notifyApprovalRequired` writes an `ApprovalRequested` event — entirely untested.
 
-### GraphQL mutations createSession / submitMessage / agentResponseStream
-- `createSession` mutation — NOT tested in JorlanAPISpec.
-- `submitMessage` mutation — NOT tested in JorlanAPISpec.
-- `agentResponseStream` subscription — NOT tested in JorlanAPISpec.
+## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29) — RESOLVED
 
-### Shell CommandHandler (Phase 8 behaviors)
-- `handleMessage` with active session (Some(sessionId)) — both the success path (GQL ok → subscription stream) and the GQL failure path (`Submit failed`) are untested. Tests only check the no-session branch.
-- `handleNewSession` GQL success path — tested to check the "Phase 8" stub, but the real implementation (parsing session JSON, calling `setSessionId`) is not exercised in tests.
-- `handleNewSession` parse failure path (`Could not parse session response`) — untested.
-- `showModelInfo` with active session — untested (only "No active session" path is tested).
+### SessionHub
+- `publish` to a non-existent session: NOW COVERED (test "publish to non-existent session is a no-op")
+- Multiple subscribers per session: NOW COVERED
 
-### ShellState
-- Zero tests. All three methods (`getSessionId`, `setSessionId`, `clearSessionId`) are untested.
+### AgentRunner
+- ModelGateway failure path + finished sentinel: NOW COVERED
+- AgentResponseCompleted on model failure: NOW COVERED
 
-### SubscriptionClient
-- Zero tests. Requires WebSocket infrastructure; excluded from unit testing is reasonable, but no integration test covers it either.
+### AgentSessionManager
+- suspendSession unknown ID: NOW COVERED
+- listSessions: NOW COVERED
 
-## Phase 6 GraphQL API Coverage Gaps
+### GraphQL mutations createSession / submitMessage
+- createSession: NOW COVERED in JorlanAPISpec
 
-### Queries — coverage
-- `users` — COVERED (test: "users query includes the seeded server user")
-- `user(id)` happy path — COVERED (test: "user(value) query returns a specific user")
-- `user(id)` NOT FOUND path — NOT TESTED (None result path)
-- `roles(userId)` — COVERED indirectly (test: "assignRole and roles(value) round-trip")
-- `role(id)` happy path — COVERED (test: "role(value) returns a specific role by id")
-- `role(id)` NOT FOUND path — NOT TESTED
-- `permissions(userId)` — COVERED (test: "grantPermission and permissions(value) round-trip")
-- `permissions(userId)` empty / no permissions — covered only via revokePermission test
+## Phase 6 GraphQL API Coverage Gaps (still open as of 2026-06-02)
 
 ### Mutations — coverage
-- `createUser` — COVERED
-- `updateUser` — NOT TESTED (no test whatsoever)
-- `createRole` — COVERED
-- `assignRole` — COVERED
-- `revokeRole` — NOT TESTED (no test whatsoever)
-- `grantPermission` — COVERED
-- `revokePermission` — COVERED
+- `revokePermission` — signature changed to `PermissionId => ...` (no wrapper input type); tests pass `value:` arg — still COVERED
 
 ### Subscriptions
-- `approvalNotifications` — NOT TESTED (stub ZStream.empty; low priority until Phase 8)
-- `eventLogTail` — NOT TESTED (stub ZStream.empty; low priority until Phase 8)
-
-### Schema validation
-- Schema render sanity check — COVERED (test: "schema renders with expected types")
-
-### getRole (repository + service)
-- `PermissionRepository.getRole` — COVERED via role(id) GraphQL test and indirectly
-- `PermissionServiceImpl.getRole` — COVERED via role(id) GraphQL test
-- `getRole` NOT FOUND branch — NOT TESTED (only happy path tested)
-
-### Untested error paths (GraphQL layer)
-- `user(id)` for non-existent ID — None is returned but no test asserts this
-- `role(id)` for non-existent ID — None is returned but no test asserts this
-- `createUser` with duplicate email — no constraint violation test
-- `revokePermission(id)` for non-existent id — delete returns 0 but not asserted
+- `approvalNotifications` — stub ZStream.empty; COVERED (empty stream asserted)
+- `eventLogTail` — stub ZStream.empty; NOT TESTED (schema only)
+- `agentResponseStream` — schema field present but actual stream content NOT TESTED
 
 ### JorlanRoutes.scala
 - HTTP route bindings: NOT TESTED via HTTP (all GraphQL tests bypass HTTP, use interpreter directly)
 - WebSocket subscription route: NOT TESTED
 - GraphiQL route: NOT TESTED
 
-### SchemaGen.scala
-- `main()` method: NOT TESTED (trivially calls render; low priority)
-
 ### Jorlan.scala (server wiring)
 - Server startup + GraphQL route integration: NOT TESTED via HTTP end-to-end
 
+## Package Coverage Summary (stale, from 2026-05-27)
+- jorlan (model/domain): 34.72% — 265 statements
+- jorlan.auth: 0% — 59 statements (JorlanAuthServer.scala entirely untested)
+- jorlan.db: 37.90% — 248 statements
+- jorlan.db.repository: 36.44% — 483 statements (QuillRepositories.scala)
+- jorlan.domain: 25.23% — 214 statements
+- jorlan.service: 100% — 45 statements
+
+## Critical Untested Areas (carry-forward from Phase 6)
+1. `JorlanAuthServer` — entire auth layer at 0%: login, changePassword, createOAuthUser, linkOAuthToUser, userByPK, userByOAuthProvider, createUser (expected failure), sendEmail (noop), activateUser (noop)
+2. `UserZIORepository.login` / `changePassword` — security-critical SQL logic never integration-tested
+3. `RepositoryError.apply(Throwable)` — SQLTransient/SQLNonTransient branching untested
+
 ## Patterns
 - No error-path tests anywhere in integration layer (constraint violations, duplicate keys, etc.)
-- `ChannelType` values Shell, Telegram, Slack, Email, WhatsApp, Sms, GraphQL never appear in `fromProvider` tests (they return None — currently untested)
-- `OrchestratorIdentity` domain type has no tests whatsoever
+- `fakeGQL.run` in CommandHandlerSpec always fails — all `JorlanClient.run(...)` paths in CommandHandler implicitly exercise only error branches in tests
+- ConversationLogger is systematically skipped: no direct unit tests and no assertion on log output in indirect tests
+- InitRoutes new behaviors (localhost bypass, initDone Promise) are untested because test helpers don't simulate real IP addresses

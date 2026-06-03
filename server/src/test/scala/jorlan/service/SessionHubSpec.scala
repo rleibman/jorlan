@@ -20,16 +20,17 @@ object SessionHubSpec extends ZIOSpecDefault {
   private val sid1 = AgentSessionId(1L)
   private val sid2 = AgentSessionId(2L)
 
+  /** Collect chunks up to and including the first finished sentinel.
+    *
+    * `SessionHub.subscribe` keeps the stream open for the session lifetime (multiple messages). Tests that want to
+    * observe a complete single-message response use this helper to bound the collect.
+    */
+  private def collectOneResponse(stream: zio.stream.ZStream[Any, Nothing, ResponseChunk]): UIO[Chunk[ResponseChunk]] =
+    stream.takeUntil(_.finished).runCollect
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("SessionHub")(
-      test("getOrCreate returns the same hub on repeated calls") {
-        for {
-          hub <- ZIO.service[SessionHub]
-          h1  <- hub.getOrCreate(sid1)
-          h2  <- hub.getOrCreate(sid1)
-        } yield assertTrue(h1 eq h2)
-      }.provide(SessionHub.live),
-      test("publish delivers chunks to subscriber") {
+      test("subscribe registers queue before returning — publish after subscribe delivers chunks") {
         val chunks = List(
           ResponseChunk(sid1, "hello", false),
           ResponseChunk(sid1, " world", false),
@@ -37,56 +38,98 @@ object SessionHubSpec extends ZIOSpecDefault {
         )
         for {
           hub      <- ZIO.service[SessionHub]
-          _        <- hub.getOrCreate(sid1) // pre-create so publish doesn't race the forked stream
-          fiber    <- hub.subscribe(sid1).runCollect.fork
+          connId   <- ConnectionId.randomZIO
+          stream   <- hub.subscribe(sid1, connId) // eagerly registers queue
+          fiber    <- collectOneResponse(stream).fork
           _        <- ZIO.foreachDiscard(chunks)(hub.publish)
           received <- fiber.join
         } yield assertTrue(received.toList == chunks)
       }.provide(SessionHub.live),
-      test("late subscriber gets all buffered chunks (Queue semantics)") {
+      test("subscribe stream emits data chunks before the finished sentinel") {
+        for {
+          hub    <- ZIO.service[SessionHub]
+          connId <- ConnectionId.randomZIO
+          stream <- hub.subscribe(sid1, connId)
+          fiber  <- collectOneResponse(stream).fork
+          _      <- hub.publish(ResponseChunk(sid1, "a", false))
+          _      <- hub.publish(ResponseChunk(sid1, "", true))
+          result <- fiber.join
+        } yield assertTrue(result.length == 2, result.last.finished)
+      }.provide(SessionHub.live),
+      test("stream continues after a finished sentinel — second message is also received") {
+        val msg1 = List(ResponseChunk(sid1, "first", false), ResponseChunk(sid1, "", true))
+        val msg2 = List(ResponseChunk(sid1, "second", false), ResponseChunk(sid1, "", true))
+        for {
+          hub    <- ZIO.service[SessionHub]
+          connId <- ConnectionId.randomZIO
+          stream <- hub.subscribe(sid1, connId)
+          // Mirror production: one long-lived fiber piping chunks into an auxiliary queue.
+          // handleMessage.drain would read from this auxiliary queue per-message.
+          aux   <- Queue.unbounded[ResponseChunk]
+          fiber <- stream.foreach(c => aux.offer(c).unit).fork
+          _     <- ZIO.foreachDiscard(msg1)(hub.publish)
+          res1  <- ZStream.fromQueue(aux).takeUntil(_.finished).runCollect
+          _     <- ZIO.foreachDiscard(msg2)(hub.publish)
+          res2  <- ZStream.fromQueue(aux).takeUntil(_.finished).runCollect
+          _     <- fiber.interrupt
+        } yield assertTrue(res1.toList == msg1 && res2.toList == msg2)
+      }.provide(SessionHub.live),
+      test("publish to non-existent session is a no-op") {
+        for {
+          hub <- ZIO.service[SessionHub]
+          _   <- hub.publish(ResponseChunk(AgentSessionId(999L), "test", false))
+        } yield assertCompletes
+      }.provide(SessionHub.live),
+      test("distinct sessions have independent subscriber lists") {
+        val chunk1 = ResponseChunk(sid1, "for-1", true)
+        val chunk2 = ResponseChunk(sid2, "for-2", true)
+        for {
+          hub     <- ZIO.service[SessionHub]
+          connId1 <- ConnectionId.randomZIO
+          connId2 <- ConnectionId.randomZIO
+          stream1 <- hub.subscribe(sid1, connId1)
+          stream2 <- hub.subscribe(sid2, connId2)
+          fiber1  <- collectOneResponse(stream1).fork
+          fiber2  <- collectOneResponse(stream2).fork
+          _       <- hub.publish(chunk1)
+          _       <- hub.publish(chunk2)
+          result1 <- fiber1.join
+          result2 <- fiber2.join
+        } yield assertTrue(
+          result1.toList == List(chunk1),
+          result2.toList == List(chunk2),
+        )
+      }.provide(SessionHub.live),
+      test("multiple subscribers for same session each receive all chunks") {
         val chunks = List(
           ResponseChunk(sid1, "a", false),
           ResponseChunk(sid1, "b", false),
           ResponseChunk(sid1, "", true),
         )
         for {
-          hub <- ZIO.service[SessionHub]
-          _   <- hub.getOrCreate(sid1)
-          // Publish everything before subscribing — chunks must not be lost
-          _        <- ZIO.foreachDiscard(chunks)(hub.publish)
-          received <- hub.subscribe(sid1).runCollect
-        } yield assertTrue(received.toList == chunks)
+          hub     <- ZIO.service[SessionHub]
+          connId1 <- ConnectionId.randomZIO
+          connId2 <- ConnectionId.randomZIO
+          stream1 <- hub.subscribe(sid1, connId1)
+          stream2 <- hub.subscribe(sid1, connId2)
+          fiber1  <- collectOneResponse(stream1).fork
+          fiber2  <- collectOneResponse(stream2).fork
+          _       <- ZIO.foreachDiscard(chunks)(hub.publish)
+          result1 <- fiber1.join
+          result2 <- fiber2.join
+        } yield assertTrue(result1.toList == chunks && result2.toList == chunks)
       }.provide(SessionHub.live),
-      test("subscribe stream terminates on finished sentinel") {
+      test("subscriber entry is cleaned up after the queue is shut down") {
         for {
           hub    <- ZIO.service[SessionHub]
-          _      <- hub.getOrCreate(sid1)
-          fiber  <- hub.subscribe(sid1).runCollect.fork
-          _      <- hub.publish(ResponseChunk(sid1, "a", false))
-          _      <- hub.publish(ResponseChunk(sid1, "", true))
-          result <- fiber.join
-        } yield assertTrue(result.length == 2, result.last.finished)
-      }.provide(SessionHub.live),
-      test("distinct sessions have independent hubs") {
-        for {
-          hub <- ZIO.service[SessionHub]
-          h1  <- hub.getOrCreate(sid1)
-          h2  <- hub.getOrCreate(sid2)
-        } yield assertTrue(!(h1 eq h2))
-      }.provide(SessionHub.live),
-      test("remove clears the hub entry so a fresh hub is created next time") {
-        for {
-          hub <- ZIO.service[SessionHub]
-          h1  <- hub.getOrCreate(sid1)
-          _   <- hub.remove(sid1)
-          h2  <- hub.getOrCreate(sid1)
-        } yield assertTrue(!(h1 eq h2))
-      }.provide(SessionHub.live),
-      test("publish to non-existent session is a no-op (does not fail)") {
-        for {
-          hub <- ZIO.service[SessionHub]
-          _   <- hub.publish(ResponseChunk(AgentSessionId(999L), "test", false))
-        } yield assertTrue(true)
+          connId <- ConnectionId.randomZIO
+          stream <- hub.subscribe(sid1, connId)
+          // Interrupt the fiber to trigger ensuring-cleanup
+          fiber <- stream.runDrain.fork
+          _     <- fiber.interrupt
+          // After cleanup, publish should be a no-op (no active subscribers)
+          _ <- hub.publish(ResponseChunk(sid1, "after-cleanup", false))
+        } yield assertCompletes
       }.provide(SessionHub.live),
       test("subscribe returns chunks in insertion order") {
         val chunks = List(
@@ -97,8 +140,9 @@ object SessionHubSpec extends ZIOSpecDefault {
         )
         for {
           hub      <- ZIO.service[SessionHub]
-          _        <- hub.getOrCreate(sid2)
-          fiber    <- hub.subscribe(sid2).runCollect.fork
+          connId   <- ConnectionId.randomZIO
+          stream   <- hub.subscribe(sid2, connId)
+          fiber    <- collectOneResponse(stream).fork
           _        <- ZIO.foreachDiscard(chunks)(hub.publish)
           received <- fiber.join
         } yield assertTrue(received.toList == chunks)

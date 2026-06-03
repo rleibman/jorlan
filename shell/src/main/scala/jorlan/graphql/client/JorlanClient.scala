@@ -508,13 +508,17 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder
         .Field("revokePermission", OptionOf(Scalar()), arguments = List(Argument("value", value, "PermissionId!")))
     def createSession[A](
-      value: scala.Option[jorlan.domain.ModelId] = None,
+      modelId: scala.Option[jorlan.domain.ModelId] = None,
     )(
       innerSelection:    SelectionBuilder[AgentSession, A],
     )(implicit encoder0: ArgEncoder[scala.Option[jorlan.domain.ModelId]],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder
-        .Field("createSession", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "ModelId")))
+        .Field(
+          "createSession",
+          OptionOf(Obj(innerSelection)),
+          arguments = List(Argument("modelId", modelId, "ModelId")),
+        )
     def submitMessage(
       sessionId: jorlan.domain.AgentSessionId,
       content:   String,

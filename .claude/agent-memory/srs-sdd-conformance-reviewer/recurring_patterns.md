@@ -5,6 +5,14 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of Phase 8.5 review (2026-06-02)
+
+### Dead constructor dependencies
+`AgentSessionManagerImpl` injects `SessionHub` but never calls any method on it after the redesign removed session-level teardown. When a redesign removes a use-site, audit all constructor parameters of affected classes to see if any became unused.
+
+### Test coverage gap: `CommandHandlerSpec` missing drain-from-queue happy path
+The `handleMessage` drain pattern was redesigned (tokens now flow from a pre-created queue rather than a per-message WS), but the `CommandHandlerSpec` test covering message dispatch does not exercise the case where a session IS active and the queue has tokens. The design doc explicitly listed `CommandHandlerSpec` as a file requiring updates. Pattern: when a design doc's "Files to Change" table lists a test file, verify the named test scenarios are covered, not just that the file exists.
+
 ## Patterns observed as of Phase 8.3/8.4 review (2026-06-01)
 
 ### Flyway migration seeding lowercase enum values while Scala derives PascalCase JSON

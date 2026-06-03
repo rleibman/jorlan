@@ -15,6 +15,7 @@ import zio.json.{JsonDecoder, JsonEncoder}
 case class ServerStatus(
   initialized: Boolean,
   version:     String,
+  buildTime:   Long,
   serverName:  String,
   uptimeMs:    Long,
 ) derives JsonEncoder, JsonDecoder

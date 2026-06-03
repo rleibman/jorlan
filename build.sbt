@@ -127,6 +127,11 @@ lazy val model = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name             := "jorlan-model",
     buildInfoPackage := "jorlan",
+    buildInfoKeys ++= Seq[BuildInfoKey](
+      BuildInfoKey.action("buildTime") {
+        System.currentTimeMillis
+      },
+    ),
     commonSettings,
     libraryDependencies ++= Seq(
       "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
@@ -335,15 +340,15 @@ lazy val shell = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
     // so Lanterna can put the terminal into raw mode and receive keystrokes.
-    fork                  := true,
-    run / fork            := true,
-    run / connectInput    := true,
-    coverageExcludedFiles := ".*JorlanClient.*;.*LanternaScreen.*",
-    assembly / mainClass := Some("jorlan.shell.JorlanShell"),
+    fork                             := true,
+    run / fork                       := true,
+    run / connectInput               := true,
+    coverageExcludedFiles            := ".*JorlanClient.*;.*LanternaScreen.*",
+    assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case x => MergeStrategy.preferProject
-    }
+      case x                             => MergeStrategy.preferProject
+    },
   )
   .dependsOn(model)
 

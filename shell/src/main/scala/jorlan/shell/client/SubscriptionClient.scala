@@ -116,54 +116,88 @@ private class SubscriptionClientImpl(
           .response(
             asWebSocketAlways[Task, Unit] { ws =>
               val sendInit = ws.sendText(WsMsg(`type` = "connection_init").toJson) *>
-                ZIO.logDebug("[WS] sent connection_init")
-              val frameLoop = ZStream
-                .repeatZIO(ws.receive())
-                .mapZIO {
-                  case WebSocketFrame.Text(text, _, _) =>
-                    ZIO.logDebug(s"[WS] frame: $text") *>
-                      ZIO
-                        .fromEither(text.fromJson[WsMsg])
-                        .mapError(new RuntimeException(_))
-                        .flatMap {
-                          case WsMsg("connection_ack", _, _) =>
-                            ZIO.logDebug("[WS] connection_ack → sending start") *>
-                              ws.sendText(startMsg) *>
-                              ZIO.logDebug(s"[WS] start sent: $startMsg")
-                          // subscriptions-transport-ws uses "data" (not the newer "next").
-                          case WsMsg("data", _, Some(p)) =>
-                            ZIO.logDebug(s"[WS] data payload: ${p.toJson}") *>
-                              ZIO
-                                .fromEither(p.toJson.fromJson[DataPayload])
-                                .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
-                                .mapError(new RuntimeException(_))
-                                .flatMap { dp =>
-                                  val cd = dp.data.agentResponseStream
-                                  ZIO.logDebug(
-                                    s"[WS] chunk: session=${cd.sessionId.value} content='${cd.content}' finished=${cd.finished} isError=${cd.isError}",
-                                  ) *>
-                                    queue
-                                      .offer(
-                                        Some(
-                                          Right(ResponseChunk(cd.sessionId, cd.content, cd.finished, cd.isError)),
-                                        ),
-                                      ).unit
-                                }
-                          case WsMsg("complete", Some(`subscriptionId`), _) =>
-                            ZIO.logDebug("[WS] complete") *> queue.offer(None).unit
-                          case WsMsg("error", _, Some(e)) =>
-                            ZIO.logWarning(s"[WS] error frame: $e") *>
-                              queue.offer(Some(Left(s"GQL error: $e"))).unit
-                          case other =>
-                            ZIO.logDebug(s"[WS] unhandled message type: ${other.`type`}")
-                        }
-                  case _: WebSocketFrame.Close =>
-                    ZIO.logDebug("[WS] close frame") *> queue.offer(None).unit
-                  case other =>
-                    ZIO.logDebug(s"[WS] non-text frame: $other")
-                }
-                .runDrain
-              sendInit *> frameLoop
+                ZIO.logInfo("[WS] sent connection_init")
+              // Send a WebSocket-level Ping every 15 s so Netty auto-replies with Pong.
+              // This keeps NAT table entries alive and detects half-open TCP connections
+              // (if ws.send throws, the error propagates and the subscription is torn down).
+              val pingLoop = ws
+                .send(WebSocketFrame.ping).delay(15.seconds)
+                .repeat(Schedule.forever)
+                .unit
+              for {
+                // Java HttpClient may deliver fragmented WebSocket messages as multiple
+                // Text frames with finalFragment=false.  We accumulate them here and
+                // only parse once we receive the final fragment.
+                fragmentBuf <- Ref.make("")
+                frameLoop = ZStream
+                  .repeatZIO(ws.receive())
+                  .mapZIO {
+                    case WebSocketFrame.Text(text, finalFragment, _) =>
+                      ZIO.logInfo(
+                        s"[WS] text frame: finalFragment=$finalFragment len=${text.length} preview=${text.take(120)}",
+                      ) *>
+                        (if (!finalFragment) {
+                           fragmentBuf.update(_ + text)
+                         } else {
+                           fragmentBuf.getAndSet("").flatMap { prev =>
+                             val fullText = prev + text
+                             if (fullText.isEmpty) {
+                               ZIO.logWarning("[WS] received empty text frame — ignoring")
+                             } else {
+                               ZIO
+                                 .fromEither(fullText.fromJson[WsMsg])
+                                 .mapError(e =>
+                                   new RuntimeException(
+                                     s"JSON parse failed (len=${fullText.length}): $e — text=${fullText.take(200)}",
+                                   ),
+                                 )
+                                 .flatMap {
+                                   case WsMsg("connection_ack", _, _) =>
+                                     ZIO.logInfo("[WS] connection_ack → sending start") *>
+                                       ws.sendText(startMsg) *>
+                                       ZIO.logDebug(s"[WS] start sent: $startMsg")
+                                   // subscriptions-transport-ws uses "data" (not the newer "next").
+                                   case WsMsg("data", _, Some(p)) =>
+                                     ZIO
+                                       .fromEither(p.toJson.fromJson[DataPayload])
+                                       .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
+                                       .mapError(new RuntimeException(_))
+                                       .flatMap { dp =>
+                                         val cd = dp.data.agentResponseStream
+                                         ZIO.logDebug(
+                                           s"[WS] chunk: session=${cd.sessionId.value} finished=${cd.finished} isError=${cd.isError}",
+                                         ) *>
+                                           queue
+                                             .offer(
+                                               Some(
+                                                 Right(
+                                                   ResponseChunk(cd.sessionId, cd.content, cd.finished, cd.isError),
+                                                 ),
+                                               ),
+                                             ).unit
+                                       }
+                                   case WsMsg("complete", Some(`subscriptionId`), _) =>
+                                     ZIO.logInfo("[WS] server sent complete — subscription stream ended") *>
+                                       queue.offer(None).unit
+                                   case WsMsg("error", _, Some(e)) =>
+                                     ZIO.logWarning(s"[WS] error frame: $e") *>
+                                       queue.offer(Some(Left(s"GQL error: $e"))).unit
+                                   case other =>
+                                     ZIO.logDebug(s"[WS] unhandled message type: ${other.`type`}")
+                                 }
+                             }
+                           }
+                         })
+                    case _: WebSocketFrame.Close =>
+                      ZIO.logInfo("[WS] close frame received") *> queue.offer(None).unit
+                    case _: WebSocketFrame.Pong =>
+                      ZIO.logDebug("[WS] pong received")
+                    case other =>
+                      ZIO.logInfo(s"[WS] unexpected non-text frame: $other")
+                  }
+                  .runDrain
+                _ <- sendInit *> frameLoop.race(pingLoop)
+              } yield ()
             },
           )
           .send(backend)
@@ -171,8 +205,13 @@ private class SubscriptionClientImpl(
           .mapError(e => s"WebSocket request failed: ${e.getMessage}")
           .forkScoped
         _ <- fiber.await.flatMap {
-          case Exit.Failure(cause) => ZIO.logError(s"[WS] fiber exited with failure: ${cause.prettyPrint}")
-          case Exit.Success(_)     => ZIO.logDebug("[WS] fiber exited cleanly")
+          case Exit.Failure(cause) =>
+            val errMsg = cause.failureOption.getOrElse(cause.prettyPrint)
+            ZIO.logError(s"[WS] fiber exited with failure: ${cause.prettyPrint}") *>
+              queue.offer(Some(Left(errMsg))).unit
+          case Exit.Success(_) =>
+            ZIO.logDebug("[WS] fiber exited cleanly") *>
+              queue.offer(None).unit
         }.forkScoped
       } yield ZStream
         .repeatZIO(queue.take)
@@ -180,8 +219,7 @@ private class SubscriptionClientImpl(
         .flatMap {
           case Left(err)    => ZStream.fail(err)
           case Right(chunk) => ZStream.succeed(chunk)
-        }
-        .takeUntil(_.finished),
+        },
     )
   }
 

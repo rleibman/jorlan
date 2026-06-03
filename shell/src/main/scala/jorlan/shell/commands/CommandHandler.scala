@@ -11,10 +11,9 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.{AgentSessionId, ModelId, ResponseChunk}
+import jorlan.domain.{ModelId, ResponseChunk}
 import jorlan.graphql.client.JorlanClient
-import jorlan.shell.ShellConfig
-import jorlan.shell.ShellState
+import jorlan.shell.{LiveSession, ShellConfig, ShellState}
 import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
 import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -54,13 +53,12 @@ object CommandHandler {
   private def authCli[A](f: AuthClient => IO[String, A]): ZIO[AuthClient, String, A] = ZIO.serviceWithZIO[AuthClient](f)
   private def gql[A](f: GraphQLClient => IO[String, A]):  ZIO[GraphQLClient, String, A] =
     ZIO.serviceWithZIO[GraphQLClient](f)
-  private def cfg[A](f:   ShellConfig => A):     URIO[ShellConfig, A] = ZIO.serviceWith[ShellConfig](f)
-  private def state[A](f: ShellState => UIO[A]): URIO[ShellState, A] = ZIO.serviceWithZIO[ShellState](f)
+  private def cfg[A](f: ShellConfig => A): URIO[ShellConfig, A] = ZIO.serviceWith[ShellConfig](f)
 
   // ─── Built-in command implementations ───────────────────────────────────────
 
   private def handleMessage(text: String): ZIO[Env, Nothing, Unit] =
-    ZIO.serviceWithZIO[ShellState](_.getSessionId).flatMap {
+    ZIO.serviceWithZIO[ShellState](_.getLiveSession).flatMap {
       case None =>
         screen(
           _.addMessage(
@@ -68,47 +66,22 @@ object CommandHandler {
             "No active session — type /new to start one.",
           ),
         )
-      case Some(sessionId) =>
-        // Open the subscription BEFORE submitting so we never miss tokens published between
-        // the mutation returning and the WS start frame being processed on the server.
-        ZIO.scoped {
-          for {
-            // Fork the subscription stream so it starts listening while we submit.
-            chunkQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
-            subFiber   <- SubscriptionClient
-              .agentResponseStream(sessionId)
-              .foreach { chunk =>
-                if (chunk.finished) chunkQueue.offer(Right(None)).unit
-                else chunkQueue.offer(Right(Some(chunk))).unit
+      case Some(liveSession) =>
+        // Submit the message; tokens are already streaming via the session's long-lived WS subscription.
+        gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either.flatMap {
+          case Left(err) => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
+          case Right(_)  =>
+            def drain: ZIO[JorlanScreen, Nothing, Unit] =
+              liveSession.tokenQueue.take.flatMap {
+                case Left(err)          => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
+                case Right(None)        => ZIO.unit
+                case Right(Some(chunk)) =>
+                  val display =
+                    if (chunk.isError) screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
+                    else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
+                  display *> drain
               }
-              .foldZIO(
-                err => chunkQueue.offer(Left(err)).unit,
-                _ => ZIO.unit,
-              )
-              .forkScoped
-            // Submit the message now that the subscription fiber is running.
-            submitResult <- gql(_.run(JorlanClient.Mutations.submitMessage(sessionId, text))).either
-            _            <- submitResult match {
-              case Left(err) =>
-                subFiber.interrupt *>
-                  screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
-              case Right(_) =>
-                // Drain the subscription queue until finished or error.
-                // Tokens are appended to the same Server message so the response
-                // appears as a single paragraph rather than one entry per token.
-                def drain: ZIO[JorlanScreen, Nothing, Unit] =
-                  chunkQueue.take.flatMap {
-                    case Left(err)   => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
-                    case Right(None) => ZIO.unit // finished sentinel
-                    case Right(Some(chunk: ResponseChunk)) =>
-                      val display =
-                        if (chunk.isError) screen(_.addMessage(MessageKind.Error, s"Agent error: ${chunk.content}"))
-                        else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
-                      display *> drain
-                  }
-                drain
-            }
-          } yield ()
+            drain
         }
     }
 
@@ -181,11 +154,40 @@ object CommandHandler {
         case Right(None)          => screen(_.addMessage(MessageKind.Error, "Server returned no session"))
         case Right(Some(session)) =>
           val id = session.id.value
-          ZIO.serviceWithZIO[ShellState](_.setSessionId(session.id)) *>
-            ZIO.serviceWithZIO[JorlanScreen](
+          for {
+            // Tear down any existing session's subscription fiber before replacing it.
+            existing <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
+            _        <- ZIO.foreachDiscard(existing)(ls => ls.subscriptionFiber.interrupt)
+            // Create the queue that handleMessage will drain per-message.
+            tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
+            // Fork one long-lived WS subscription for the whole session.
+            // ZIO.scoped gives the fiber its own Scope; interrupting the fiber closes the WS.
+            fiber <- ZIO
+              .scoped(
+                SubscriptionClient
+                  .agentResponseStream(session.id)
+                  .ensuring(ZIO.logInfo(s"[Shell] subscription stream ended for session=${session.id.value}"))
+                  .foreach { chunk =>
+                    if (chunk.finished) tokenQueue.offer(Right(None)).unit
+                    else tokenQueue.offer(Right(Some(chunk))).unit
+                  }
+                  .foldZIO(
+                    err =>
+                      ZIO.logError(s"[Shell] subscription error for session=${session.id.value}: $err") *>
+                        tokenQueue.offer(Left(s"$err — type /new to reconnect")).unit,
+                    _ =>
+                      ZIO.logInfo(s"[Shell] subscription completed normally for session=${session.id.value}") *>
+                        tokenQueue.offer(Left("Connection to server was lost — type /new to reconnect")).unit,
+                  ),
+              )
+              .ensuring(ZIO.serviceWithZIO[ShellState](_.clearLiveSession))
+              .fork
+            _ <- ZIO.serviceWithZIO[ShellState](_.setLiveSession(LiveSession(session.id, tokenQueue, fiber)))
+            _ <- ZIO.serviceWithZIO[JorlanScreen](
               _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
-            ) *>
-            screen(_.addMessage(MessageKind.System, s"Session $id started."))
+            )
+            _ <- screen(_.addMessage(MessageKind.System, s"Session $id started."))
+          } yield ()
       }
     } yield ()
   }

@@ -50,9 +50,9 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
   ): ULayer[InitClient] = ZLayer.succeed(new FakeInitClient(status, complete))
 
   private val initializedStatus =
-    ServerStatus(initialized = true, version = "1.0", serverName = "Jorlan", uptimeMs = 100)
+    ServerStatus(initialized = true, version = "1.0", buildTime = 0L, serverName = "Jorlan", uptimeMs = 100)
   private val uninitializedStatus =
-    ServerStatus(initialized = false, version = "1.0", serverName = "Jorlan", uptimeMs = 100)
+    ServerStatus(initialized = false, version = "1.0", buildTime = 0L, serverName = "Jorlan", uptimeMs = 100)
 
   // ─── Test helpers ─────────────────────────────────────────────────────────────
 

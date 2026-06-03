@@ -38,7 +38,13 @@ object StatusRoutes {
           initialized = initializedJson.collect { case Json.Bool(v) => v }.getOrElse(false)
           name = nameJson.collect { case Json.Str(s) => s }.getOrElse("Jorlan")
           now <- Clock.currentTime(TimeUnit.MILLISECONDS)
-          status = ServerStatus(initialized, jorlan.BuildInfo.version, name, now - startTime)
+          status = ServerStatus(
+            initialized,
+            jorlan.BuildInfo.version,
+            jorlan.BuildInfo.buildTime,
+            name,
+            now - startTime,
+          )
         } yield Response.json(status.toJson)
       },
     )

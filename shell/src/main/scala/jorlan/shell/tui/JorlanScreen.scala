@@ -356,10 +356,17 @@ private class LanternaScreen(
         val maxWrap = width - wrapIndent.length
 
         if (maxFirst <= 0) {
-          Vector((fg, TextColor.ANSI.DEFAULT, m.content.take(width)))
+          Vector((fg, TextColor.ANSI.DEFAULT, m.content.filterNot(_ == '\r').take(width)))
         } else {
-          val wrappedWords = wordWrap(m.content, maxFirst, maxWrap)
-          wrappedWords.zipWithIndex.map { case (segment, idx) =>
+          // Split on newlines first so embedded \n from LLM responses become real line
+          // breaks rather than raw control characters inside putString (which causes
+          // the terminal cursor to jump mid-row and overwrite adjacent screen regions).
+          val paragraphs = m.content.filterNot(_ == '\r').split('\n').toVector
+          val allSegments: Vector[String] = paragraphs.zipWithIndex.flatMap { case (para, pIdx) =>
+            val firstW = if (pIdx == 0) maxFirst else maxWrap
+            wordWrap(para, firstW, maxWrap)
+          }
+          allSegments.zipWithIndex.map { case (segment, idx) =>
             val linePrefix = if (idx == 0) firstPrefix else wrapIndent
             (fg, TextColor.ANSI.DEFAULT, linePrefix + segment)
           }

@@ -37,70 +37,79 @@ class AgentRunnerImpl(
     actorId:   Option[UserId],
   ): IO[JorlanError, Unit] =
     Ref.make(Option.empty[String]).flatMap { errorRef =>
-      val work = for {
-        _           <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars): $content")
-        _           <- sessionHub.getOrCreate(sessionId) // ensure queue exists even after a server restart
-        personality <- loadPersonality
-        systemPrompt = Personality.buildSystemPrompt(personality)
-        now <- Clock.instant
-        _   <- eventLogRepo.append(
-          EventLog(
-            id = EventLogId.empty,
-            eventType = EventType.UserMessageReceived,
-            actorId = actorId,
-            agentId = None,
-            sessionId = Some(sessionId),
-            resource = Some(sessionId),
-            payloadJson = None,
-            occurredAt = now,
-          ),
-        )
-        _ <- ZIO.scoped {
-          modelGateway
-            .streamedResponse(sessionId, content, systemPrompt)
-            .mapError(e => JorlanError(e.msg, Some(e)))
-            .tapError(e => errorRef.set(Some(e.getMessage)))
-            .tap(chunk => ZIO.logDebug(s"[session:$sessionId] LLM token: $chunk")) // TODO This is very chatty. Instead of this, let's keep a session log (by session id) with all the communication.
-            .foreach { chunk =>
-              sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
-            }
-        }
-      } yield ()
-
-      work
-        .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
-        .ensuring {
-          errorRef.get.flatMap { errMsg =>
-            val sentinel = errMsg match {
-              case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
-              case None      => ResponseChunk(sessionId, "", finished = true)
-            }
-            ZIO.logDebug(
-              s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
-            ) *>
-              sessionHub.publish(sentinel) *>
-              Clock.instant.flatMap { completedAt =>
-                eventLogRepo
-                  .append(
-                    EventLog(
-                      id = EventLogId.empty,
-                      eventType = EventType.AgentResponseCompleted,
-                      actorId = actorId,
-                      agentId = None,
-                      sessionId = Some(sessionId),
-                      resource = Some(sessionId),
-                      payloadJson = None,
-                      occurredAt = completedAt,
-                    ),
-                  )
-                  .ignore
+      Ref.make(Vector.empty[String]).flatMap { tokensRef =>
+        val work = for {
+          _           <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars)")
+          _           <- ConversationLogger.logUserMessage(sessionId, actorId, content)
+          personality <- loadPersonality
+          systemPrompt = Personality.buildSystemPrompt(personality)
+          now <- Clock.instant
+          _   <- eventLogRepo.append(
+            EventLog(
+              id = EventLogId.empty,
+              eventType = EventType.UserMessageReceived,
+              actorId = actorId,
+              agentId = None,
+              sessionId = Some(sessionId),
+              resource = Some(sessionId),
+              payloadJson = None,
+              occurredAt = now,
+            ),
+          )
+          _ <- ZIO.scoped {
+            modelGateway
+              .streamedResponse(sessionId, content, systemPrompt)
+              .mapError(e => JorlanError(e.msg, Some(e)))
+              .tapError(e => errorRef.set(Some(e.getMessage)))
+              .foreach { chunk =>
+                tokensRef.update(_ :+ chunk) *>
+                  sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
               }
           }
-        }
+        } yield ()
+
+        work
+          .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
+          .ensuring {
+            errorRef.get.flatMap { errMsg =>
+              tokensRef.get.flatMap { tokens =>
+                val fullResponse = tokens.mkString
+                val sentinel = errMsg match {
+                  case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
+                  case None      => ResponseChunk(sessionId, "", finished = true)
+                }
+                ZIO.logDebug(
+                  s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
+                ) *>
+                  sessionHub.publish(sentinel) *>
+                  ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined) *>
+                  Clock.instant.flatMap { completedAt =>
+                    eventLogRepo
+                      .append(
+                        EventLog(
+                          id = EventLogId.empty,
+                          eventType = EventType.AgentResponseCompleted,
+                          actorId = actorId,
+                          agentId = None,
+                          sessionId = Some(sessionId),
+                          resource = Some(sessionId),
+                          payloadJson = None,
+                          occurredAt = completedAt,
+                        ),
+                      )
+                      .ignore
+                  }
+              }
+            }
+          }
+      }
     }
 
-  override def subscribeToSession(sessionId: AgentSessionId): ZStream[Any, Nothing, ResponseChunk] =
-    sessionHub.subscribe(sessionId)
+  override def subscribeToSession(
+    sessionId:    AgentSessionId,
+    connectionId: ConnectionId,
+  ): UIO[ZStream[Any, Nothing, ResponseChunk]] =
+    sessionHub.subscribe(sessionId, connectionId)
 
   private val loadPersonality: UIO[Personality] =
     settingsRepo.get(ServerSettingsRepository.PersonalityKey).flatMap {
