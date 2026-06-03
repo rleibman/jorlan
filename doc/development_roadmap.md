@@ -451,20 +451,76 @@ Fields:
 
 **Goal:** Agents remember relevant context across sessions; checkpoints are committed at the right moments.
 
-- [ ] `MemoryService` ZIO layer: `store(record)`, `query(scope, userId, text)`, `forget(id)`,
-  `checkpoint(sessionId, trigger)`
-- [ ] `CheckpointPolicy`: defines when to checkpoint (configurable: before/after external effect, timed interval,
-  session end, user request)
-- [ ] `CheckpointSummarizer`: uses `ModelGateway` to summarize conversation context into a `MemoryRecord`
-- [ ] `MemoryClassifier`: assigns `scope` (User / Shared / Workspace / Private) to summarized chunk based on content
-  heuristics
-- [ ] `MemoryAccessPolicy`: governs which memory records are visible to which users/agents (prevents cross-user leakage)
-- [ ] Wire memory retrieval into `Planner` context building (inject relevant records before model call)
-- [ ] `MemorySkill` (Tier 0): `memory.remember`, `memory.search`, `memory.forget`, `memory.mark_shared`,
-  `memory.mark_private`
-- [ ] Tests >80%
+See `doc/mini-designs/phase9-memory-system.md` for full design.
 
-**Note:** Vector/semantic search deferred to Phase 16.
+### 9.1 — Conversation History (Layer 1)
+
+- [ ] V016 migration: `chat_message` table (session_id FK, role, content, created_at, index on session+time)
+- [ ] `ChatMessage` domain type + `ChatMessageId` opaque type in `model`
+- [ ] `ConversationRepository` trait: `append`, `loadHistory(sessionId, limit)`, `deleteSession`
+- [ ] `ConversationRepositoryImpl` (Quill/MariaDB) in `db`
+- [ ] `AgentRunner.processMessage`: load history from `ConversationRepository` before model call
+- [ ] `AgentRunner.processMessage`: persist user message + assistant response after model call
+- [ ] Session resume: shell `/new` with existing session ID reloads history correctly
+- [ ] Unit test: `ConversationRepositorySpec` (in-memory)
+- [ ] Integration test: round-trip persist + reload via Testcontainers
+
+### 9.2 — Long-term Episodic Memory (Layer 2)
+
+- [ ] V017 migration: `memory_record` table (user_id, agent_id, scope, content, source_session_id, expires_at, FULLTEXT index)
+- [ ] `MemoryRecord` domain type + `MemoryRecordId` opaque type + `MemoryScope` enum in `model`
+- [ ] `MemoryService` trait: `store`, `query(scope, userId, text)`, `forget(id)`, `checkpoint(sessionId, trigger)`
+- [ ] `MemoryServiceImpl` (MariaDB FULLTEXT keyword search) in `db`
+- [ ] `MemoryAccessPolicy` trait + default impl (User/Private/Shared/Workspace rules)
+- [ ] `MemoryService.query` applies `MemoryAccessPolicy` before returning results
+- [ ] Unit test: `MemoryServiceSpec`
+- [ ] Integration test: store → query → forget cycle
+
+### 9.3 — Checkpoint Pipeline
+
+- [ ] `CheckpointTrigger` enum: `SessionEnd`, `TimedInterval`, `UserRequest`, `BeforeExternalEffect`
+- [ ] `CheckpointPolicy` trait + configurable default impl (session end + 30-min interval)
+- [ ] `CheckpointSummarizer` trait: `summarize(history): IO[SummarizerError, List[MemoryRecord]]`
+- [ ] `CheckpointSummarizerImpl`: calls `ModelGateway` with a fixed summarization system prompt
+- [ ] `MemoryClassifier` trait + heuristic impl (keyword PII → Private; share language → Shared; default → User)
+- [ ] Wire checkpoint into `AgentRunner`: after response, evaluate `CheckpointPolicy` → summarize → classify → store
+- [ ] Unit test: `CheckpointSummarizerSpec` with `FakeModelGateway`
+- [ ] Unit test: `MemoryClassifierSpec`
+
+### 9.4 — Context Injection
+
+- [ ] `AgentRunner.processMessage`: query `MemoryService` for relevant records before model call
+- [ ] Inject retrieved records as a `System` context block in `ChatMemory` (before conversation history)
+- [ ] Integration test: verify injected memory appears in model call context
+
+### 9.5 — `MemorySkill` (Tier 0)
+
+- [ ] `memory.remember` tool: explicit fact → `MemoryService.store`
+- [ ] `memory.search` tool: text query → `MemoryService.query` → return results to agent
+- [ ] `memory.forget` tool: id → `MemoryService.forget`
+- [ ] `memory.mark_shared` tool: id → update scope to `Shared`
+- [ ] `memory.mark_private` tool: id → update scope to `Private`
+- [ ] Register `MemorySkill` in `SkillRegistry` as Tier 0 (always available)
+- [ ] Unit test: each tool invocation
+
+### 9.6 — GraphQL & Shell Surface
+
+- [ ] `listMemory(scope: MemoryScope): [MemoryRecord!]!` query
+- [ ] `forgetMemory(id: ID!): Boolean!` mutation
+- [ ] `markMemoryShared(id: ID!): MemoryRecord!` mutation
+- [ ] `markMemoryPrivate(id: ID!): MemoryRecord!` mutation
+- [ ] Shell `/memory list` command
+- [ ] Shell `/memory search <query>` command
+- [ ] Shell `/memory forget <id>` command
+- [ ] Shell `/capabilities` command (list current grants)
+
+### 9.7 — Tests & Cleanup
+
+- [ ] Overall test coverage ≥ 80% for new Phase 9 code
+- [ ] `sbt scalafmtAll` clean before merge
+- [ ] Update `development_roadmap.md` checkboxes as items complete
+
+**Note:** Vector/semantic search (Qdrant embeddings) deferred to Phase 16.
 
 ---
 
