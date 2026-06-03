@@ -133,9 +133,7 @@ private class SubscriptionClientImpl(
                   .repeatZIO(ws.receive())
                   .mapZIO {
                     case WebSocketFrame.Text(text, finalFragment, _) =>
-                      ZIO.logInfo(
-                        s"[WS] text frame: finalFragment=$finalFragment len=${text.length} preview=${text.take(120)}",
-                      ) *>
+                      ZIO.logDebug(s"[WS] text frame: finalFragment=$finalFragment len=${text.length}") *>
                         (if (!finalFragment) {
                            fragmentBuf.update(_ + text)
                          } else {
