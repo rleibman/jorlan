@@ -578,9 +578,8 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
         .filter(r => lift(s.agentId).forall(aid => r.agentId.contains(aid)))
         .filter(r => lift(s.key).forall(k => r.recordKey == k)),
     )
-    // When textSearch is active skip the SQL LIMIT so the in-memory filter sees all matching rows.
-    // TODO: replace with a FULLTEXT MATCH ... AGAINST SQL predicate (requires Quill infix support).
-    val limited = if (s.textSearch.isEmpty) quote(base.drop(lift(offset)).take(lift(ps))) else base
+    // NOTE: textSearch is currently applied in-memory below; keep SQL paging to avoid unbounded fetches.
+    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[MemoryRecord]] = s.sorts match {
       case Some(Sort(MemoryOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
       case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Asc))  => quote(limited.sortBy(_.recordKey)(Ord.asc))
