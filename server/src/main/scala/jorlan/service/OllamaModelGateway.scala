@@ -14,6 +14,7 @@ package jorlan.service
 
 import ai.*
 import ai.given_Conversion_ChatMemory_ChatMemory
+import dev.langchain4j.data.message.{AiMessage, SystemMessage, UserMessage}
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
@@ -105,47 +106,13 @@ private class OllamaModelGateway(
     message:      String,
     systemPrompt: String = "",
   ): ZStream[Any, ModelError, String] = {
-    val logStarted = Clock.instant.flatMap { now =>
-      eventLogRepo
-        .append(
-          EventLog(
-            id = EventLogId.empty,
-            eventType = EventType.ModelCallStarted,
-            actorId = None,
-            agentId = None,
-            sessionId = Some(sessionId),
-            resource = Some(sessionId),
-            payloadJson = None,
-            occurredAt = now,
-          ),
-        )
-        .ignore
-    }
-
-    val logCompleted = Clock.instant.flatMap { now =>
-      eventLogRepo
-        .append(
-          EventLog(
-            id = EventLogId.empty,
-            eventType = EventType.ModelCallCompleted,
-            actorId = None,
-            agentId = None,
-            sessionId = Some(sessionId),
-            resource = Some(sessionId),
-            payloadJson = None,
-            occurredAt = now,
-          ),
-        )
-        .ignore
-    }
-
-    def logFailed(err: Throwable) =
+    def logEvent(eventType: EventType): UIO[Unit] =
       Clock.instant.flatMap { now =>
         eventLogRepo
           .append(
             EventLog(
               id = EventLogId.empty,
-              eventType = EventType.ModelCallFailed,
+              eventType = eventType,
               actorId = None,
               agentId = None,
               sessionId = Some(sessionId),
@@ -157,26 +124,24 @@ private class OllamaModelGateway(
           .ignore
       }
 
-    ZStream.unwrap(
-      Ref.make(false).map { errored =>
-        ZStream
-          .fromZIO(logStarted *> getOrCreate(sessionId, systemPrompt))
-          .flatMap { assistant =>
-            ZStream
-              .async[Any, Throwable, String] { cb =>
-                assistant
-                  .chat(message)
-                  .onPartialResponse(str => cb(ZIO.succeed(Chunk(str))))
-                  .onCompleteResponse(_ => cb(ZIO.fail(None)))
-                  .onError(err => cb(ZIO.fail(Some(err))))
-                  .start()
-              }
-              .tapError(e => errored.set(true) *> logFailed(e))
-              .mapError(e => ModelUnavailable(Option(e.getMessage).getOrElse(e.getClass.getName)))
-          }
-          .ensuring(errored.get.flatMap(failed => logCompleted.unless(failed)))
-      },
-    )
+    ZStream.fromZIO(Ref.make(false)).flatMap { errored =>
+      ZStream
+        .fromZIO(logEvent(EventType.ModelCallStarted) *> getOrCreate(sessionId, systemPrompt))
+        .flatMap { assistant =>
+          ZStream
+            .async[Any, Throwable, String] { cb =>
+              assistant
+                .chat(message)
+                .onPartialResponse(str => cb(ZIO.succeed(Chunk(str))))
+                .onCompleteResponse(_ => cb(ZIO.fail(None)))
+                .onError(err => cb(ZIO.fail(Some(err))))
+                .start()
+            }
+            .tapError(e => errored.set(true) *> logEvent(EventType.ModelCallFailed))
+            .mapError(e => ModelUnavailable(Option(e.getMessage).getOrElse(e.getClass.getName)))
+        }
+        .ensuring(errored.get.flatMap(failed => logEvent(EventType.ModelCallCompleted).unless(failed)))
+    }
   }
 
   override def availableModels: UIO[List[ModelInfo]] =
@@ -190,6 +155,45 @@ private class OllamaModelGateway(
         ),
       ),
     )
+
+  override def seedHistory(
+    sessionId:    AgentSessionId,
+    messages:     List[jorlan.domain.Message],
+    systemPrompt: String,
+  ): UIO[Unit] =
+    sessions.get.flatMap { map =>
+      if (map.contains(sessionId) || messages.isEmpty) ZIO.unit
+      else
+        ZIO
+          .attempt {
+            val store = new InMemoryChatMemoryStore()
+            val memory = MessageWindowChatMemory
+              .builder()
+              .id(sessionId.value.toString)
+              .maxMessages(config.maxMessages)
+              .chatMemoryStore(store)
+              .build()
+            messages.foreach { msg =>
+              val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
+                case MessageRole.Assistant => AiMessage.from(msg.content)
+                case MessageRole.System    => SystemMessage.from(msg.content)
+                case _                     => UserMessage.from(msg.content)
+              }
+              memory.add(lc4j)
+            }
+            val scalaMem = ChatMemory.fromJava(memory)
+            val builder = dev.langchain4j.service.AiServices
+              .builder(classOf[StreamAssistant])
+              .streamingChatModel(sharedModel.toJava)
+              .chatMemory(scalaMem)
+            val withPrompt =
+              if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
+              else builder
+            SessionEntry(withPrompt.build(): StreamAssistant, systemPrompt)
+          }.orDie.flatMap { entry =>
+            sessions.update(m => if (m.contains(sessionId)) m else m + (sessionId -> entry))
+          }
+    }
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] =
     sessions.update(_.removed(sessionId))

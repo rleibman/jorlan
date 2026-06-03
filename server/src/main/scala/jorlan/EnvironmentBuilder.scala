@@ -19,6 +19,7 @@ import jorlan.db.repository.QuillRepositories
 import jorlan.service.*
 import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
 
+// $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
 
   private val databaseConfigLayer: ZLayer[ConfigurationService, ConfigurationError, DatabaseConfig] =
@@ -84,7 +85,14 @@ object EnvironmentBuilder {
         SessionHub.live,
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
+        MemoryClassifierImpl.live,
+        MemoryAccessPolicyImpl.live,
+        CheckpointSummarizerImpl.live,
+        ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+        MemoryServiceImpl.live,
+        MemorySkill.live,
         AgentRunnerImpl.live,
       ).orDie
 
 }
+// $COVERAGE-ON$

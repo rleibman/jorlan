@@ -33,6 +33,17 @@ enum ShellCommand {
     field: String,
     value: String,
   )
+  case MemoryList(scope: Option[String])
+  case MemorySearch(text: String)
+  case MemoryForget(id: Long)
+  case MemoryShare(id: Long)
+  case MemoryPrivatize(id: Long)
+  case MemoryRemember(
+    key:   String,
+    text:  String,
+    scope: Option[String] = None,
+  )
+  case Capabilities
   case Unknown(raw: String)
 
 }
@@ -41,7 +52,6 @@ object ShellCommand {
 
   /** Parse a raw input line into a [[ShellCommand]]. Starts with `/` → command; otherwise → message. */
   def parse(line: String): ShellCommand = {
-    // P7-006: Use if-else expression — non-idiomatic `return` removed.
     if (!line.startsWith("/")) {
       Message(line)
     } else {
@@ -62,8 +72,19 @@ object ShellCommand {
         case "trace" :: Nil                                           => Trace("info")
         case "personality" :: "set" :: field :: rest if rest.nonEmpty => PersonalitySet(field, rest.mkString(" "))
         case "personality" :: _                                       => Personality
-        case other :: _                                               => Unknown(s"/$other")
-        case Nil                                                      => Unknown("/")
+        case "memory" :: "list" :: scope :: _                         => MemoryList(Some(scope))
+        case "memory" :: "list" :: Nil                                => MemoryList(None)
+        case "memory" :: "search" :: rest if rest.nonEmpty            => MemorySearch(rest.mkString(" "))
+        case "memory" :: "forget" :: idStr :: _ if idStr.toLongOption.isDefined    => MemoryForget(idStr.toLong)
+        case "memory" :: "share" :: idStr :: _ if idStr.toLongOption.isDefined     => MemoryShare(idStr.toLong)
+        case "memory" :: "privatize" :: idStr :: _ if idStr.toLongOption.isDefined => MemoryPrivatize(idStr.toLong)
+        case "memory" :: "remember" :: key :: "--scope" :: scope :: rest if rest.nonEmpty =>
+          MemoryRemember(key, rest.mkString(" "), Some(scope))
+        case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil => Unknown(s"/memory remember")
+        case "memory" :: "remember" :: key :: rest if rest.nonEmpty     => MemoryRemember(key, rest.mkString(" "))
+        case "capabilities" :: _                                        => Capabilities
+        case other :: _                                                 => Unknown(s"/$other")
+        case Nil                                                        => Unknown("/")
       }
     }
   }

@@ -578,6 +578,7 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
         .filter(r => lift(s.agentId).forall(aid => r.agentId.contains(aid)))
         .filter(r => lift(s.key).forall(k => r.recordKey == k)),
     )
+    // NOTE: textSearch is currently applied in-memory below; keep SQL paging to avoid unbounded fetches.
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[MemoryRecord]] = s.sorts match {
       case Some(Sort(MemoryOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
@@ -589,7 +590,12 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
       case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.updatedAt)(Ord.desc))
       case _                                                      => quote(limited.sortBy(_.id)(Ord.asc))
     }
-    exec(qc.ctx.run(sorted))
+    exec(qc.ctx.run(sorted)).map { records =>
+      s.textSearch.fold(records) { text =>
+        val lower = text.toLowerCase
+        records.filter(r => r.value.toString.toLowerCase.contains(lower) || r.recordKey.toLowerCase.contains(lower))
+      }
+    }
   }
 
   override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
@@ -606,6 +612,10 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
               (
                 t,
                 e,
+              ) => t.scope -> e.scope,
+              (
+                t,
+                e,
               ) => t.ttl -> e.ttl,
               (
                 t,
@@ -615,6 +625,23 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
             .returningGenerated(_.id),
         ).map(id => record.copy(id = id)),
     )
+
+  override def updateScope(
+    id:    MemoryRecordId,
+    scope: MemoryScope,
+  ): RepositoryTask[Long] =
+    Clock.instant.flatMap { now =>
+      exec(
+        qc.ctx.run(
+          qMemoryRecords
+            .filter(_.id == lift(id))
+            .update(
+              _.scope -> lift(scope),
+              _.updatedAt -> lift(now),
+            ),
+        ),
+      )
+    }
 
   override def delete(id: MemoryRecordId): RepositoryTask[Long] =
     exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id)).delete))

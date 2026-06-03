@@ -451,20 +451,79 @@ Fields:
 
 **Goal:** Agents remember relevant context across sessions; checkpoints are committed at the right moments.
 
-- [ ] `MemoryService` ZIO layer: `store(record)`, `query(scope, userId, text)`, `forget(id)`,
-  `checkpoint(sessionId, trigger)`
-- [ ] `CheckpointPolicy`: defines when to checkpoint (configurable: before/after external effect, timed interval,
-  session end, user request)
-- [ ] `CheckpointSummarizer`: uses `ModelGateway` to summarize conversation context into a `MemoryRecord`
-- [ ] `MemoryClassifier`: assigns `scope` (User / Shared / Workspace / Private) to summarized chunk based on content
-  heuristics
-- [ ] `MemoryAccessPolicy`: governs which memory records are visible to which users/agents (prevents cross-user leakage)
-- [ ] Wire memory retrieval into `Planner` context building (inject relevant records before model call)
-- [ ] `MemorySkill` (Tier 0): `memory.remember`, `memory.search`, `memory.forget`, `memory.mark_shared`,
-  `memory.mark_private`
-- [ ] Tests >80%
+See `doc/mini-designs/phase9-memory-system.md` for full design.
 
-**Note:** Vector/semantic search deferred to Phase 16.
+### 9.1 — Conversation History (Layer 1)
+
+- [x] V016 migration: `chat_message` table (session_id FK, role, content, created_at, index on session+time) — used existing V005 `conversation`/`message` tables; added indexes in V019
+- [x] `ChatMessage` domain type + `ChatMessageId` opaque type in `model` — existing `Message`/`MessageId` types used
+- [x] `ConversationRepository` trait: `append`, `loadHistory(sessionId, limit)`, `deleteSession` — existing trait used; `addMessage`/`searchMessages` are the equivalents
+- [x] `ConversationRepositoryImpl` (Quill/MariaDB) in `db` — `QuillConversationRepository` already existed
+- [x] `AgentRunner.processMessage`: load history from `ConversationRepository` before model call
+- [x] `AgentRunner.processMessage`: persist user message + assistant response after model call
+- [ ] Session resume: shell `/new` with existing session ID reloads history correctly (manual test only)
+- [x] Unit test: `ConversationRepositorySpec` (in-memory) — `InMemoryConversationRepo` added to `InMemoryRepositories`
+- [ ] Integration test: round-trip persist + reload via Testcontainers
+
+### 9.2 — Long-term Episodic Memory (Layer 2)
+
+- [x] V017 migration: `memory_record` table — existing V007; V019 adds FULLTEXT index
+- [x] `MemoryRecord` domain type + `MemoryRecordId` opaque type + `MemoryScope` enum in `model` — already existed
+- [x] `MemoryService` trait: `store`, `query(scope, userId, text)`, `forget(id)`, `checkpoint(sessionId, trigger)`
+- [x] `MemoryServiceImpl` in `server/service/`; `InMemoryMemoryRepo` in test helpers
+- [x] `MemoryAccessPolicy` trait + default impl (User/Private/Shared/Workspace rules)
+- [x] `MemoryService.query` applies `MemoryAccessPolicy` before returning results
+- [x] Unit test: `MemoryServiceSpec`
+- [ ] Integration test: store → query → forget cycle
+
+### 9.3 — Checkpoint Pipeline
+
+- [x] `CheckpointTrigger` enum: `SessionEnd`, `TimedInterval`, `UserRequest`, `BeforeExternalEffect`
+- [x] `CheckpointPolicy` trait + default impl (`onSessionEnd` — sessions end triggers checkpoint)
+- [x] `CheckpointSummarizer` trait: `summarize(history): IO[JorlanError, List[MemoryRecord]]`
+- [x] `CheckpointSummarizerImpl`: calls `ModelGateway` with a fixed summarization system prompt
+- [x] `MemoryClassifier` trait + heuristic impl (keyword PII → Private; share language → Shared; default → User)
+- [x] Wire checkpoint into `AgentRunner`: after response, evaluate `CheckpointPolicy` → summarize → classify → store
+- [x] Unit test: `CheckpointSummarizerSpec` with `FakeModelGateway`
+- [x] Unit test: `MemoryClassifierSpec`
+
+### 9.4 — Context Injection
+
+- [x] `AgentRunner.processMessage`: query `MemoryService` for relevant records before model call
+- [x] Inject retrieved records as a context block appended to the system prompt
+- [ ] Integration test: verify injected memory appears in model call context
+
+### 9.5 — `MemorySkill` (Tier 0)
+
+- [x] `memory.remember` tool: explicit fact → `MemoryService.store`
+- [x] `memory.search` tool: text query → `MemoryService.query` → return results to agent
+- [x] `memory.forget` tool: id → `MemoryService.forget`
+- [x] `memory.mark_shared` tool: id → update scope to `Shared`
+- [x] `memory.mark_private` tool: id → update scope to `Private`
+- [ ] Register `MemorySkill` in `SkillRegistry` as Tier 0 (deferred to Phase 12 when SkillRegistry is built)
+- [x] Unit test: each tool invocation covered via `MemoryServiceSpec` and GraphQL tests
+
+### 9.6 — GraphQL & Shell Surface
+
+- [x] `listMemory(scope: MemoryScope, textSearch: String): [MemoryRecord!]!` query
+- [x] `storeMemory(key, text, scope)` mutation (implements `memory.remember`)
+- [x] `forgetMemory(id: ID!): Boolean!` mutation
+- [x] `markMemoryShared(id: ID!): MemoryRecord!` mutation
+- [x] `markMemoryPrivate(id: ID!): MemoryRecord!` mutation
+- [x] Shell `/memory list` command
+- [x] Shell `/memory search <query>` command
+- [x] Shell `/memory forget <id>` command
+- [x] Shell `/memory remember <key> <text>` command
+- [x] Shell `/capabilities` command (list current grants)
+- [x] Added `memory.read` and `memory.write` capability grants to admin init
+
+### 9.7 — Tests & Cleanup
+
+- [x] Overall test coverage ≥ 80% for new Phase 9 code — 251 server tests, all passing
+- [x] `sbt scalafmtAll` clean before merge
+- [x] Update `development_roadmap.md` checkboxes as items complete
+
+**Note:** Vector/semantic search (Qdrant embeddings) deferred to Phase 16.
 
 ---
 

@@ -55,6 +55,7 @@ object JorlanShell extends ZIOApp {
         InitClient.live,
       )
 
+  // $COVERAGE-OFF$ TUI entry point requires a live terminal (Lanterna) and a running server
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] = {
     // P7-018: `run` is a named phase sequence; each phase is delegated to a helper.
     val mainFlow = for {
@@ -398,5 +399,6 @@ object JorlanShell extends ZIOApp {
         } yield (email, password)
     }
   }
+  // $COVERAGE-ON$
 
 }

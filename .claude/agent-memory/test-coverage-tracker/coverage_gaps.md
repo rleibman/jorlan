@@ -5,8 +5,108 @@ metadata:
   type: project
 ---
 
+## Phase 9 Memory System — Coverage Gaps (added 2026-06-03)
+See dedicated section below.
+
 ## Phase 8.5 Session Connection Redesign — Coverage Gaps (added 2026-06-02)
 See dedicated section below.
+
+## Phase 9 Memory System — Coverage Gaps (2026-06-03)
+
+### MemoryAccessPolicyImpl — PARTIALLY COVERED
+- User scope: own user visible, other user invisible: COVERED
+- Private scope: wrong user invisible: COVERED
+- Shared scope: visible to all: NOT TESTED (no unit test; the `MemoryScope.Shared` branch in `filter` is `true` unconditionally but never directly asserted)
+- Workspace scope: visible to all: NOT TESTED (no unit test at all for `MemoryScope.Workspace`)
+- Private scope: own user + wrong agentId invisible: NOT TESTED (only wrong userId is tested, not wrong agentId with correct userId)
+- Private scope: records with `agentId = None` should be invisible to any agent: NOT TESTED
+- User scope: records with `userId = None` should be invisible to any requesting user: NOT TESTED
+
+### MemoryClassifierImpl — WELL COVERED
+- PII keywords → Private: COVERED ("password", "secret", "private key")
+- Sharing keywords → Shared: COVERED ("everyone", "share with all", "public")
+- Neutral → User: COVERED
+- MISSING: Case-insensitivity boundary ("PASSWORD" in uppercase): relies on `lower.contains` but no test verifies a full-uppercase PII keyword
+- MISSING: Simultaneous PII + sharing keywords — which wins (PII check runs first, but no test confirms precedence)
+- MISSING: Empty string → defaults to User: NOT TESTED
+
+### MemoryServiceImpl — PARTIALLY COVERED
+- store and query happy path: COVERED
+- forget happy path: COVERED
+- markShared happy path: COVERED
+- markPrivate happy path: COVERED
+- markShared non-existent id → failure: COVERED
+- markPrivate non-existent id → failure: COVERED
+- checkpoint with non-SessionEnd trigger → no-op: COVERED
+- checkpoint with SessionEnd trigger → stores records: COVERED (two forms)
+- MISSING: checkpoint with empty messages list: tested in CheckpointSummarizerSpec but NOT in MemoryServiceSpec (the `summarizer.summarize(Nil,...)` early-return path; MemoryServiceSpec uses NoOpSummarizer which always returns Nil regardless)
+- MISSING: checkpoint writes classifier-assigned scope (not the summarizer's default `User` scope): tested indirectly only; no assertion that a PII bullet gets stored as `Private`
+- MISSING: query with textSearch parameter: MemoryServiceSpec calls `svc.query(scope, userId, agentId)` (no text filter) — the text-search branch in `InMemoryMemoryRepo.search` and `QuillMemoryRepository.search` is exercised only by MemorySkillSpec (via `search("prefers Scala", ...)`)
+- MISSING: store returns record with assigned id (id != MemoryRecordId.empty after insert): the unit test stores but does not assert the returned record's id
+- MISSING: query isolation — two different userId records stored; query for one user must not return other user's records: not directly tested in MemoryServiceSpec (only "other user sees nothing" for Private scope)
+
+### CheckpointSummarizerImpl — PARTIALLY COVERED
+- Empty messages → Nil: COVERED
+- FakeModelGateway bullet response → records: COVERED
+- MISSING: LLM returns blank/whitespace response → Nil: not tested (the `summary.isBlank` branch)
+- MISSING: LLM returns non-bullet text (no "- " prefix) → Nil: not tested
+- MISSING: LLM stream error → IO failure propagated: not tested (FakeModelGateway.failingLayer not used here)
+- MISSING: recordKey is "episodic.checkpoint" on all produced records: test asserts `forall(_.recordKey == "episodic.checkpoint")` — COVERED, but userId/agentId fields on produced records not verified
+
+### MemorySkill — MOSTLY COVERED
+- remember + search: COVERED
+- forget: COVERED
+- markShared: COVERED
+- markPrivate: COVERED
+- search empty: COVERED
+- MISSING: markShared/markPrivate on non-existent id → propagated error: not tested in MemorySkillSpec
+
+### AgentRunnerImpl (memory integration) — MISSING
+- buildMemoryContext with no sessions → empty string: NOT TESTED (NoOpMemoryService always returns Nil so no context is injected; behavior with real sessions unknown)
+- buildMemoryContext with sessions + records → context injected into systemPrompt: NOT TESTED (systemPrompt content never asserted)
+- buildMemoryContext with sessions but empty records → empty string: NOT TESTED
+- buildMemoryContext error path (`catchAll(_ => "")` swallows errors silently): NOT TESTED — a failing MemoryService is never wired in for this path
+- checkpoint triggered at SessionEnd via AgentRunner: NOT TESTED (AgentRunner does not explicitly call checkpoint in the visible code paths reviewed)
+
+### NoOpMemoryService — FIDELITY ISSUE
+- `markShared` returns `ZIO.fail(JorlanError("not implemented"))` instead of succeeding
+- `markPrivate` returns `ZIO.fail(JorlanError("not implemented"))` instead of succeeding
+- These will cause AgentRunnerSpec tests to fail if any code path in AgentRunner ever calls markShared/markPrivate (currently none does, but it's a divergence from real behavior)
+- `store` returns the record unchanged (no id assignment), diverging from real behavior which assigns an auto-incremented id: tests that store via NoOp and then query by id will get wrong results
+
+### GraphQL Memory API — NOT INTEGRATION-TESTED
+- `listMemory` query: NO integration test (GraphQLApiSpec has no memory queries/mutations)
+- `storeMemory` mutation: NO integration test
+- `forgetMemory` mutation: NO integration test
+- `markMemoryShared` mutation: NO integration test
+- `markMemoryPrivate` mutation: NO integration test
+- Capability enforcement (`memory.read` / `memory.write`): NO test for denied access paths
+- `agentId` fallback to `AgentId.empty` when no sessions exist: NO test
+
+### QuillMemoryRepository — PARTIALLY COVERED (via SortingAndSortingSpec)
+- sort by id desc: COVERED
+- sort by recordKey asc/desc: COVERED
+- sort by createdAt asc/desc: COVERED
+- sort by updatedAt asc/desc: COVERED (likely, given pattern)
+- MISSING: `purgeExpired` with and without expired records: NOT integration-tested
+- MISSING: `getById` for existing and non-existent record: NOT integration-tested
+- MISSING: `textSearch` filter (post-query in-memory filter in QuillMemoryRepository.search): NOT integration-tested
+- MISSING: `delete` by id: NOT integration-tested
+- MISSING: upsert with existing id (conflict update path): NOT integration-tested
+
+### Shell memory commands (CommandHandlerSpec) — MOSTLY COVERED
+- /memory list with records: COVERED
+- /memory list empty: COVERED
+- /memory list GQL failure: COVERED
+- /memory search matching: COVERED
+- /memory search empty: COVERED
+- /memory forget success: COVERED
+- /memory forget GQL failure: COVERED
+- /memory remember success (record returned): COVERED
+- /memory remember server returns None: COVERED
+- /memory remember GQL failure: COVERED
+- MISSING: /memory list with explicit scope argument (e.g. "Private"): `ShellCommand.MemoryList(Some("Private"))` path not tested
+- MISSING: /memory search GQL failure path: NOT TESTED
 
 ## Phase 8.3 Server Personality / Phase 8.4 AI CI Testing Coverage Gaps (2026-06-01)
 
@@ -129,8 +229,8 @@ See dedicated section below.
   - GQL failure branch (Left): NOT TESTED for new path (old stub returns `run not implemented in fake`)
   - `Right(None)` branch ("Server returned no session"): NOT TESTED
   - Existing session teardown (subscriptionFiber.interrupt): NOT TESTED
-- showPersonality: NOT TESTED (CommandHandlerSpec has no test for ShellCommand.Personality)
-- setPersonalityField: NOT TESTED (CommandHandlerSpec has no test for ShellCommand.PersonalitySet)
+- showPersonality: NOW TESTED in Phase 9 CommandHandlerSpec (3 tests for Personality, 3 for PersonalitySet)
+- setPersonalityField: NOW TESTED in Phase 9 CommandHandlerSpec
 - **fakeGQL.run always returns `ZIO.fail("run not implemented in fake")`** — this means ALL tests exercising handleNewSession, handleMessage with active session, showPersonality, and setPersonalityField via the standard testLayer will silently fail the GQL call; tests use `runCmd(ShellCommand.NewSession(None))` which hits `fakeGQL.run` and fails → the `Left(err)` branch is exercised, not the success branch
 
 ### VersionCheck — WELL COVERED (new file + new spec)

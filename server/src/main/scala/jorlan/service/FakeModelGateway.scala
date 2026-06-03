@@ -47,6 +47,12 @@ class FakeModelGateway(
       ),
     )
 
+  override def seedHistory(
+    sessionId:    AgentSessionId,
+    messages:     List[jorlan.domain.Message],
+    systemPrompt: String,
+  ): UIO[Unit] = ZIO.unit
+
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
 
 }
@@ -62,6 +68,43 @@ object FakeModelGateway {
   /** Factory for a failing model gateway (for testing error paths). */
   def failingLayer(error: ModelError): ULayer[ModelGateway] =
     ZLayer.succeed(new FailingFakeModelGateway(error))
+
+  /** Creates a gateway that records every system prompt passed to [[streamedResponse]] into a [[Ref]]. Useful for
+    * asserting that memory context or personality is injected correctly.
+    */
+  def capturingLayer(
+    chunks:          List[String],
+    capturedPrompts: Ref[List[String]],
+  ): ULayer[ModelGateway] =
+    ZLayer.succeed(new CapturingFakeModelGateway(chunks, capturedPrompts))
+
+}
+
+/** A [[ModelGateway]] that captures system prompts for assertion in tests. */
+private class CapturingFakeModelGateway(
+  chunks:          List[String],
+  capturedPrompts: Ref[List[String]],
+) extends ModelGateway {
+
+  override def streamedResponse(
+    sessionId:    AgentSessionId,
+    message:      String,
+    systemPrompt: String = "",
+  ): ZStream[Any, ModelError, String] =
+    ZStream.fromZIO(capturedPrompts.update(_ :+ systemPrompt)).drain ++
+      ZStream.fromIterable(chunks)
+
+  override def availableModels: UIO[List[ModelInfo]] =
+    ZIO.succeed(List(ModelInfo(ModelId("fake-model"), "fake", 4096, supportsStreaming = true)))
+
+  override def seedHistory(
+    sessionId:    AgentSessionId,
+    messages:     List[Message],
+    systemPrompt: String,
+  ): UIO[Unit] =
+    ZIO.unit
+
+  override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
 
 }
 
@@ -85,6 +128,12 @@ private class FailingFakeModelGateway(error: ModelError) extends ModelGateway {
         ),
       ),
     )
+
+  override def seedHistory(
+    sessionId:    AgentSessionId,
+    messages:     List[jorlan.domain.Message],
+    systemPrompt: String,
+  ): UIO[Unit] = ZIO.unit
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
 

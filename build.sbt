@@ -263,6 +263,7 @@ lazy val server = project
       "dev.zio"      %% "zio-test-sbt"                 % zioVersion           % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    coverageExcludedFiles            := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -343,7 +344,7 @@ lazy val shell = project
     fork                             := true,
     run / fork                       := true,
     run / connectInput               := true,
-    coverageExcludedFiles            := ".*JorlanClient.*;.*LanternaScreen.*",
+    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard

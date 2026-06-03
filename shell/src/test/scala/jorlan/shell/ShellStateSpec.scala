@@ -11,7 +11,9 @@
 package jorlan.shell
 
 import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.shell.client.SubscriptionClient
 import zio.*
+import zio.stream.ZStream
 import zio.test.*
 import zio.test.Assertion.*
 
@@ -67,6 +69,36 @@ object ShellStateSpec extends ZIOSpecDefault {
           result <- state.getLiveSession
         } yield assertTrue(result.isEmpty)
       }.provide(ShellState.live),
-    )
+    ) +
+      suite("LiveSession.start")(
+        test("LiveSession.start registers session in ShellState") {
+          for {
+            ls    <- LiveSession.start(sessionId)
+            state <- ZIO.service[ShellState]
+            found <- state.getLiveSession
+            _     <- ls.subscriptionFiber.interrupt
+          } yield assertTrue(found.map(_.sessionId).contains(sessionId))
+        }.provide(
+          ShellState.live ++
+            ZLayer.succeed(new SubscriptionClient {
+              override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.empty
+            }),
+        ),
+        test("LiveSession.start exposes a token queue") {
+          for {
+            ls <- LiveSession.start(sessionId)
+            _  <- ls.tokenQueue.offer(Right(None))
+            v  <- ls.tokenQueue.take
+            _  <- ls.subscriptionFiber.interrupt
+          } yield assertTrue(v == Right(None))
+        }.provide(
+          ShellState.live ++
+            ZLayer.succeed(new SubscriptionClient {
+              override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.empty
+            }),
+        ),
+      )
 
 }

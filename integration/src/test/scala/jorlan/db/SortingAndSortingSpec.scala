@@ -778,7 +778,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         userRepo <- ZIO.service[UserZIORepository]
         memRepo  <- ZIO.service[MemoryZIORepository]
         user     <- userRepo.upsert(User(UserId.empty, "PaginateUser", None, T0, T0))
-        _        <- ZIO.foreach(1 to 4)(i =>
+        _        <- ZIO.foreachDiscard(1 to 4)(i =>
           memRepo.upsert(
             MemoryRecord(
               MemoryRecordId.empty,
@@ -843,6 +843,90 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         fetched <- memRepo.getById(expired.id)
       } yield assertTrue(count >= 1L, fetched.isEmpty)
     },
+    test("delete removes a record and getById returns None") {
+      for {
+        userRepo <- ZIO.service[UserZIORepository]
+        memRepo  <- ZIO.service[MemoryZIORepository]
+        user     <- userRepo.upsert(User(UserId.empty, "MemDeleteUser", None, T0, T0))
+        stored   <- memRepo.upsert(
+          MemoryRecord(
+            MemoryRecordId.empty,
+            MemoryScope.User,
+            Some(user.id),
+            None,
+            None,
+            "del.key",
+            Json.Str("v"),
+            None,
+            T0,
+            T0,
+          ),
+        )
+        count   <- memRepo.delete(stored.id)
+        fetched <- memRepo.getById(stored.id)
+      } yield assertTrue(count == 1L, fetched.isEmpty)
+    },
+    test("textSearch filters records by content and recordKey across full result set") {
+      for {
+        userRepo <- ZIO.service[UserZIORepository]
+        memRepo  <- ZIO.service[MemoryZIORepository]
+        user     <- userRepo.upsert(User(UserId.empty, "MemTextSearchUser", None, T0, T0))
+        _        <- memRepo.upsert(
+          MemoryRecord(
+            MemoryRecordId.empty,
+            MemoryScope.User,
+            Some(user.id),
+            None,
+            None,
+            "scala.pref",
+            Json.Str("prefers Scala"),
+            None,
+            T0,
+            T0,
+          ),
+        )
+        _ <- memRepo.upsert(
+          MemoryRecord(
+            MemoryRecordId.empty,
+            MemoryScope.User,
+            Some(user.id),
+            None,
+            None,
+            "java.pref",
+            Json.Str("uses Java"),
+            None,
+            T0,
+            T0,
+          ),
+        )
+        results <- memRepo.search(
+          MemorySearch(scope = MemoryScope.User, userId = Some(user.id), textSearch = Some("Scala")),
+        )
+      } yield assertTrue(results.length == 1, results.head.recordKey == "scala.pref")
+    },
+    test("updateScope changes scope field in DB") {
+      for {
+        userRepo <- ZIO.service[UserZIORepository]
+        memRepo  <- ZIO.service[MemoryZIORepository]
+        user     <- userRepo.upsert(User(UserId.empty, "MemUpdateScopeUser", None, T0, T0))
+        stored   <- memRepo.upsert(
+          MemoryRecord(
+            MemoryRecordId.empty,
+            MemoryScope.User,
+            Some(user.id),
+            None,
+            None,
+            "scope.test2",
+            Json.Str("v"),
+            None,
+            T0,
+            T0,
+          ),
+        )
+        count   <- memRepo.updateScope(stored.id, MemoryScope.Shared)
+        fetched <- memRepo.getById(stored.id)
+      } yield assertTrue(count == 1L, fetched.exists(_.scope == MemoryScope.Shared))
+    },
   )
 
   // ─── EventLog ─────────────────────────────────────────────────────────────────
@@ -869,7 +953,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
     test("search with pagination") {
       for {
         repo <- ZIO.service[EventLogZIORepository]
-        _    <- ZIO.foreach(1 to 5)(i =>
+        _    <- ZIO.foreachDiscard(1 to 5)(i =>
           repo.append(testEvent(EventType.MemoryWritten, occurredAt = T0.plusSeconds(i.toLong))),
         )
         page0 <- repo.search(EventLogFilter(eventType = Some(EventType.MemoryWritten), page = 0, pageSize = 3))

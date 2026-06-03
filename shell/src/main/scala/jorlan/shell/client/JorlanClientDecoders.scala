@@ -71,6 +71,10 @@ object JorlanClientDecoders {
   implicit val workspaceIdEncoder: ArgEncoder[WorkspaceId] = (id: WorkspaceId) => ArgEncoder.long.encode(id.value)
   implicit val modelIdEncoder:     ArgEncoder[ModelId] = (id: ModelId) => ArgEncoder.string.encode(id.value)
 
+  implicit val memoryRecordIdDecoder: ScalarDecoder[MemoryRecordId] = longDecoder(MemoryRecordId(_), "MemoryRecordId")
+  implicit val memoryRecordIdEncoder: ArgEncoder[MemoryRecordId] = (id: MemoryRecordId) =>
+    ArgEncoder.long.encode(id.value)
+
   implicit val capabilityNameDecoder: ScalarDecoder[CapabilityName] = {
     case __StringValue(v) => Right(CapabilityName(v))
     case other            => Left(DecodingError(s"Expected string for CapabilityName, got: $other"))

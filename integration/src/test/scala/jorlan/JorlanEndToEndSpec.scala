@@ -81,6 +81,12 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       SessionHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
+      MemoryClassifierImpl.live,
+      MemoryAccessPolicyImpl.live,
+      CheckpointSummarizerImpl.live,
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+      MemorySkill.live,
       AgentRunnerImpl.live,
     )
 
@@ -170,6 +176,46 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
           permsResult.errors.isEmpty,
           permsResult.data.toString.contains("shell"),
           permsResult.data.toString.contains("exec"),
+        )
+      },
+      test("storeMemory → listMemory → forgetMemory round-trip with real DB") {
+        for {
+          interp      <- ZIO.service[Interp]
+          storeResult <- interp.execute(
+            """mutation { storeMemory(key: "e2e.memory", text: "E2E memory value", scope: "User") { id scope recordKey } }""",
+          )
+          listResult <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+          id = {
+            import scala.language.unsafeNulls
+            val pat = """"id":([0-9]+)""".r
+            pat.findFirstMatchIn(storeResult.data.toString).map(_.group(1).toLong).getOrElse(0L)
+          }
+          forgetResult <- interp.execute(s"""mutation { forgetMemory(value: $id) }""")
+          afterList    <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+        } yield assertTrue(
+          storeResult.errors.isEmpty,
+          listResult.data.toString.contains("e2e.memory"),
+          forgetResult.data.toString.contains("true"),
+          !afterList.data.toString.contains("e2e.memory"),
+        )
+      },
+      test("markMemoryShared makes record visible under Shared scope") {
+        for {
+          interp      <- ZIO.service[Interp]
+          storeResult <- interp.execute(
+            """mutation { storeMemory(key: "e2e.share", text: "shared value", scope: "User") { id } }""",
+          )
+          id = {
+            import scala.language.unsafeNulls
+            val pat = """"id":([0-9]+)""".r
+            pat.findFirstMatchIn(storeResult.data.toString).map(_.group(1).toLong).getOrElse(0L)
+          }
+          shareResult <- interp.execute(s"""mutation { markMemoryShared(value: $id) { id scope } }""")
+          sharedList  <- interp.execute("""{ listMemory(scope: "Shared") { id scope recordKey } }""")
+        } yield assertTrue(
+          storeResult.errors.isEmpty,
+          shareResult.data.toString.contains("Shared"),
+          sharedList.data.toString.contains("e2e.share"),
         )
       },
     ).provideLayerShared(fullLayer) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)

@@ -11,6 +11,8 @@
 package jorlan
 
 import jorlan.domain.*
+import jorlan.service.{CorrelationId, EventLogFilter, EventLogOrder}
+import zio.*
 import zio.json.*
 import zio.test.*
 
@@ -21,7 +23,7 @@ object DomainSpec extends ZIOSpecDefault {
 
   private val T0: Instant = Instant.parse("2026-01-15T12:00:00Z")
 
-  override def spec: Spec[TestEnvironment, Any] =
+  override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("Domain")(
       idsSuite,
       channelTypeSuite,
@@ -29,6 +31,9 @@ object DomainSpec extends ZIOSpecDefault {
       connectionIdSuite,
       enumCodecSuite,
       orchestratorCodecSuite,
+      personalitySuite,
+      eventLogFilterSuite,
+      correlationIdSuite,
     )
 
   private val idsSuite = suite("Opaque ID types")(
@@ -180,6 +185,119 @@ object DomainSpec extends ZIOSpecDefault {
 
   private def enumRoundtrip[A: {JsonEncoder, JsonDecoder}](values: Seq[A]): Boolean =
     values.forall(v => v.toJson.fromJson[A].contains(v))
+
+  private val personalitySuite = suite("Personality")(
+    test("Formality JSON decoder is case-insensitive") {
+      val results = List("casual", "PROFESSIONAL", "academic", "Technical").map { s =>
+        zio.json.ast.Json.Str(s).as[Formality]
+      }
+      assertTrue(results.forall(_.isRight))
+    },
+    test("Formality decoder rejects unknown value") {
+      val result = zio.json.ast.Json.Str("hipster").as[Formality]
+      assertTrue(result.isLeft)
+    },
+    test("Personality.default has name Jorlan and Professional formality") {
+      val p = Personality.default
+      assertTrue(p.name == "Jorlan", p.formality == Formality.Professional)
+    },
+    test("buildSystemPrompt Casual contains 'casual'") {
+      val p = Personality.default.copy(formality = Formality.Casual)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.toLowerCase.contains("casual"))
+    },
+    test("buildSystemPrompt Professional contains 'professional'") {
+      val p = Personality.default.copy(formality = Formality.Professional)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.toLowerCase.contains("professional"))
+    },
+    test("buildSystemPrompt Academic contains 'academic'") {
+      val p = Personality.default.copy(formality = Formality.Academic)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.toLowerCase.contains("academic"))
+    },
+    test("buildSystemPrompt Technical contains 'technical'") {
+      val p = Personality.default.copy(formality = Formality.Technical)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.toLowerCase.contains("technical"))
+    },
+    test("buildSystemPrompt with non-English language includes language instruction") {
+      val p = Personality.default.copy(languages = List("en", "es"))
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.contains("es"))
+    },
+    test("buildSystemPrompt with English-only language omits language instruction") {
+      val p = Personality.default.copy(languages = List("en"))
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(!prompt.contains("following languages"))
+    },
+    test("buildSystemPrompt with expertise includes expertise instruction") {
+      val p = Personality.default.copy(expertise = List("Scala", "ZIO"))
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.contains("Scala") && prompt.contains("ZIO"))
+    },
+    test("buildSystemPrompt with empty expertise omits expertise instruction") {
+      val p = Personality.default.copy(expertise = Nil)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(!prompt.contains("deep expertise"))
+    },
+    test("Personality JSON roundtrip") {
+      val p = Personality.default
+      assertTrue(p.toJson.fromJson[Personality].contains(p))
+    },
+  )
+
+  private val eventLogFilterSuite = suite("EventLogFilter")(
+    test("validatePageSize accepts valid sizes") {
+      val f1 = EventLogFilter(pageSize = 1)
+      val f2 = EventLogFilter(pageSize = 100)
+      val f3 = EventLogFilter(pageSize = EventLogFilter.MaxLimit)
+      assertTrue(
+        EventLogFilter.validatePageSize(f1).isRight,
+        EventLogFilter.validatePageSize(f2).isRight,
+        EventLogFilter.validatePageSize(f3).isRight,
+      )
+    },
+    test("validatePageSize rejects zero or negative pageSize") {
+      val f0 = EventLogFilter(pageSize = 0)
+      val fNeg = EventLogFilter(pageSize = -1)
+      assertTrue(
+        EventLogFilter.validatePageSize(f0).isLeft,
+        EventLogFilter.validatePageSize(fNeg).isLeft,
+      )
+    },
+    test("validatePageSize rejects pageSize exceeding MaxLimit") {
+      val fOver = EventLogFilter(pageSize = EventLogFilter.MaxLimit + 1)
+      assertTrue(EventLogFilter.validatePageSize(fOver).isLeft)
+    },
+    test("EventLogFilter default values are valid") {
+      assertTrue(EventLogFilter.validatePageSize(EventLogFilter()).isRight)
+    },
+  )
+
+  private val correlationIdSuite = suite("CorrelationId")(
+    test("withNew annotates the ZIO log with a correlationId") {
+      for {
+        id <- CorrelationId.withNew(CorrelationId.get)
+      } yield assertTrue(id.isDefined)
+    },
+    test("withId propagates the given id") {
+      for {
+        id <- CorrelationId.withId("req-123")(CorrelationId.get)
+      } yield assertTrue(id.contains("req-123"))
+    },
+    test("get returns None when no correlationId is set") {
+      for {
+        id <- CorrelationId.get
+      } yield assertTrue(id.isEmpty)
+    },
+    test("withNew ids are distinct across two calls") {
+      for {
+        id1 <- CorrelationId.withNew(CorrelationId.get)
+        id2 <- CorrelationId.withNew(CorrelationId.get)
+      } yield assertTrue(id1 != id2)
+    },
+  )
 
   private val orchestratorCodecSuite = suite("OrchestratorIdentity")(
     test("codec roundtrip with no public key") {

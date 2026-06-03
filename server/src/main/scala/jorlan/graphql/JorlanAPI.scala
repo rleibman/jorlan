@@ -18,6 +18,7 @@ import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.{
   EventLogZIORepository,
+  MemoryZIORepository,
   PermissionZIORepository,
   ServerSettingsRepository,
   UserZIORepository,
@@ -79,7 +80,7 @@ object JorlanAPI {
 
   type JorlanApiEnv =
     UserZIORepository & PermissionZIORepository & EventLogZIORepository & ServerSettingsRepository &
-      CapabilityEvaluator & AgentSessionManager & AgentRunner
+      CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService & MemorySkill
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -93,6 +94,13 @@ object JorlanAPI {
   private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
   private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
   private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
+  private given ArgBuilder[MemoryScope] =
+    ArgBuilder.string.flatMap { s =>
+      scala.util
+        .Try(MemoryScope.valueOf(s)).toEither.left
+        .map(e => CalibanError.ExecutionError(s"Invalid MemoryScope '$s': ${e.getMessage}"))
+    }
+  private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -163,6 +171,19 @@ object JorlanAPI {
     content:   String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `listMemory` — filters memory records by scope and optional text search. */
+  case class ListMemoryInput(
+    scope:      MemoryScope = MemoryScope.User,
+    textSearch: Option[String] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `storeMemory` — explicitly stores a fact into long-term memory. */
+  case class StoreMemoryInput(
+    key:   String,
+    text:  String,
+    scope: MemoryScope = MemoryScope.User,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
@@ -174,6 +195,8 @@ object JorlanAPI {
     listSessions: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[AgentSession]],
     /** Returns the current server personality. Requires `admin.personality.read` capability. */
     serverPersonality: ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
+    /** Returns memory records visible to the authenticated user. Requires `memory.read` capability. */
+    listMemory: ListMemoryInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[MemoryRecord]],
   )
 
   case class Mutations(
@@ -187,6 +210,10 @@ object JorlanAPI {
     createSession:     CreateSessionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, AgentSession],
     submitMessage:     SubmitMessageInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     updatePersonality: Personality => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
+    storeMemory:       StoreMemoryInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, MemoryRecord],
+    forgetMemory:      MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    markMemoryShared:  MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, MemoryRecord],
+    markMemoryPrivate: MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, MemoryRecord],
   )
 
   case class Subscriptions(
@@ -249,6 +276,11 @@ object JorlanAPI {
   private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
   private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
   private given Schema[Any, Personality] = Schema.gen[Any, Personality]
+  private given Schema[Any, MemoryScope] =
+    Schema.scalarSchema("MemoryScope", None, None, None, s => Value.StringValue(s.toString))
+  private given Schema[Any, MemoryRecordId] =
+    Schema.scalarSchema("MemoryRecordId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, MemoryRecord] = Schema.gen[Any, MemoryRecord]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -268,6 +300,12 @@ object JorlanAPI {
         case EvaluationResult.DefaultDeny  => ZIO.fail(JorlanError(s"Access denied: no permission for '$cap'"))
         case _                             => ZIO.unit
       }
+
+  private def resolveAgentId(actorId: UserId): ZIO[AgentSessionManager, Nothing, AgentId] =
+    ZIO
+      .serviceWithZIO[AgentSessionManager](_.listSessions(actorId, 0, 1))
+      .map(_.headOption.map(_.agentId).getOrElse(AgentId.empty))
+      .orElseSucceed(AgentId.empty)
 
   private def logEvent(
     eventType: EventType,
@@ -342,6 +380,15 @@ object JorlanAPI {
             _       <- requireCapability("admin.personality.read", actorId)
             p       <- ServerSettingsRepository.getPersonality
           } yield p,
+          listMemory = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.read", actorId)
+              agentId <- resolveAgentId(actorId)
+              records <- ZIO.serviceWithZIO[MemoryService](
+                _.query(input.scope, actorId, agentId, input.textSearch),
+              )
+            } yield records,
         ),
         Mutations(
           createUser = input =>
@@ -435,6 +482,41 @@ object JorlanAPI {
               _       <- requireCapability("admin.personality.update", actorId)
               _       <- ServerSettingsRepository.setPersonality(input)
             } yield input,
+          storeMemory = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.write", actorId)
+              agentId <- resolveAgentId(actorId)
+              record  <- ZIO.serviceWithZIO[MemorySkill](
+                _.remember(input.key, input.text, input.scope, actorId, agentId),
+              )
+              now <- Clock.instant
+              _   <- logEvent(EventType.MemoryWritten, Some(actorId), None, now)
+            } yield record,
+          forgetMemory = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.write", actorId)
+              deleted <- ZIO.serviceWithZIO[MemoryService](_.forget(id, actorId))
+              now     <- Clock.instant
+              _       <- ZIO.when(deleted)(logEvent(EventType.MemoryDeleted, Some(actorId), None, now))
+            } yield deleted,
+          markMemoryShared = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.write", actorId)
+              record  <- ZIO.serviceWithZIO[MemoryService](_.markShared(id, actorId))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.MemoryRescoped, Some(actorId), None, now)
+            } yield record,
+          markMemoryPrivate = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.write", actorId)
+              record  <- ZIO.serviceWithZIO[MemoryService](_.markPrivate(id, actorId))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.MemoryRescoped, Some(actorId), None, now)
+            } yield record,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

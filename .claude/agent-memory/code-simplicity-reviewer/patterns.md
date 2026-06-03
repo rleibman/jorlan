@@ -111,6 +111,22 @@ type: project
 - Inline helper `enumDecoder[E <: reflect.Enum](valueOf: String => E)` could unify all 12 enum decoders
 - `QuillRepositories.live` ZLayer fan-out could use `ZLayer.succeedEnvironment(ZEnvironment(...))` to avoid 9 separate `ZLayer.succeed` concatenations
 
+## Phase 9 Memory System Observations (2026-06-03)
+- `markShared` and `markPrivate` in `MemoryServiceImpl` share an identical 5-step pattern: `getById → mapError → fromOption/orElseFail → Clock.instant → upsert(copy(scope=...))`. Extract a private `rescope(id, newScope)` helper.
+- `MemoryServiceImpl.checkpoint` uses `case false => ZIO.unit; case true => ...` where `ZIO.when(condition)(effect)` would be cleaner.
+- `OllamaModelGateway.streamedResponse` defines three nearly-identical `logStarted`/`logCompleted`/`logFailed` EventLog builders inline; the EventLog construction is 12-line verbatim across all three. The pattern of `Clock.instant.flatMap { now => eventLogRepo.append(EventLog(id=empty, ..., sessionId=Some(sessionId), occurredAt=now)).ignore }` repeats. A private `logModelEvent(sessionId, eventType)` helper would unify them.
+- `AgentRunnerImpl` constructs two verbatim `EventLog` blocks (lines 64-76, 105-118) within the same method that differ only in `eventType` (UserMessageReceived vs AgentResponseCompleted). A `logSessionEvent(eventType)` helper would eliminate the duplication.
+- `MemoryServiceSpec` declares `private val layers = directLayers` on line 47 but `directLayers` is defined *after* it on line 61. The `layers` val is unused — `directLayers` is used directly in the `.provide()` calls. Dead val.
+- `MemoryServiceSpec`: two `.provide(...)` blocks (line 157 and 171) each rebuild the full layer stack inline. The second block duplicates 4 of the 5 layer lines from `directLayers`. Extract the common 4-line sub-stack to a shared `val`.
+- `QuillMemoryRepository.search` applies `textSearch` as a post-SQL in-memory filter (line 592-596) after fetching up to `pageSize` rows from the DB. Text search is not pushed to SQL (no `LIKE` or `MATCH`). This means the returned page may have fewer than `pageSize` results even when more matches exist — a silent correctness issue. Should either push `textSearch` to SQL or document this limitation.
+- `CheckpointSummarizerImpl.summarize` uses `if/else` at the top level and then again inside `.flatMap`. The early-exit `if (messages.isEmpty) ZIO.succeed(Nil)` and the inner `if (summary.isBlank) ZIO.succeed(Nil)` are fine, but they create a 4-level nesting. A for-comprehension with `.filterOrElse` or `ZIO.unless` guards would flatten one level.
+- `AgentRunnerImpl.live` uses `ZLayer.fromZIO(for { s1 <- ZIO.service[T1]; ...; refs <- Ref.make(...) } yield new ...)` — the correct pattern when `Ref.make` must run at startup. No simplification possible here; the pattern is correct.
+- `MemoryClassifierImpl.classify` unwraps as `UIO` but the entire body is pure. `ZIO.succeed { ... match ... }` (a single `succeed` wrapping the pure if/else) would be marginally simpler, but current form is readable.
+- `JorlanAPI` memory mutations `forgetMemory`, `markMemoryShared`, `markMemoryPrivate` all have the pattern: `actorId <- actorIdFromSession; _ <- requireCapability("memory.write", actorId); _ <- ZIO.serviceWithZIO[MemoryService](_.xxx(id))`. The `forgetMemory` returns `Boolean` (always `true`) rather than `Unit`; `Unit` or a `Long` (rows deleted) would be more honest.
+- `agentId = agentSessions.headOption.map(_.agentId).getOrElse(AgentId.empty)` appears **twice** in `JorlanAPI` at lines 377 and 480 (in `listMemory` and `storeMemory`). Extract to a private helper `resolveAgentId(sessions)` or consolidate into a single method.
+- `CommandHandler.listMemory` and `searchMemory` have near-identical `foldZIO` bodies; they differ only in the error message string and the "no results" message. The formatting of a record (`[id] (scope) key: value`) is duplicated between lines 268 and 279.
+- `ShellCommand.parse` uses a `return` statement on line 52 (`return Message(line)`) — non-idiomatic. Previously flagged in Phase 7 review. Still present.
+
 ## Phase 8.5 Manual Testing Branch Observations (2026-06-02)
 - `logErrors` / `logRequests` wrappers in JorlanAPI: inline `new OverallWrapper[Any]` bodies are verbose; Caliban supports `wrapper` via `OverallWrapper.apply` or the `wrap` DSL. Both wrappers currently use nearly identical boilerplate.
 - `AgentRunnerImpl.processMessage` uses nested `Ref.make.flatMap { … Ref.make.flatMap { … } }` — extracting both Refs before the for-comp is cleaner.

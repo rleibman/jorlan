@@ -32,6 +32,14 @@ object GraphQLApiSpec extends ZIOSpecDefault {
         ZIO.succeed(EvaluationResult.ResourcePermissionAllows)
     })
 
+  private val memoryLayer =
+    MemoryClassifierImpl.live >+>
+      MemoryAccessPolicyImpl.live >+>
+      CheckpointSummarizerImpl.live >+>
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd) >+>
+      MemoryServiceImpl.live >+>
+      MemorySkill.live
+
   private val appLayer =
     JorlanContainer.repositoryLayer >+>
       stubCapabilityEvaluator >+>
@@ -39,6 +47,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       SessionHub.live >+>
       FakeModelGateway.layer(List("test")) >+>
       AgentSessionManagerImpl.live >+>
+      memoryLayer >+>
       AgentRunnerImpl.live
 
   private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[
