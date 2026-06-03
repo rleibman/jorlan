@@ -630,7 +630,18 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
     id:    MemoryRecordId,
     scope: MemoryScope,
   ): RepositoryTask[Long] =
-    exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id)).update(_.scope -> lift(scope))))
+    Clock.instant.flatMap { now =>
+      exec(
+        qc.ctx.run(
+          qMemoryRecords
+            .filter(_.id == lift(id))
+            .update(
+              _.scope -> lift(scope),
+              _.updatedAt -> lift(now),
+            ),
+        ),
+      )
+    }
 
   override def delete(id: MemoryRecordId): RepositoryTask[Long] =
     exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id)).delete))
