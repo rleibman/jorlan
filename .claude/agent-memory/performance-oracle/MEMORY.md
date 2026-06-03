@@ -3,3 +3,4 @@
 - [Shell Module Performance Findings](shell_perf.md) — Phase 7 findings: HTTP backend def vs val, per-frame re-expansion, scroll reset, Ref batching
 - [Phase 8 Agent Session Runtime Performance Findings](phase8_perf.md) — OllamaModelGateway leak, non-atomic Ref get+update, forkDaemon error swallowing, SubscriptionClient backend churn
 - [Phase 8.5 Manual Testing Performance Findings](phase85_perf.md) — SessionHub sequential publish, appendToLastMessage O(n) init, token Vector accumulation, ConversationLogger MDC alloc, logRequests query body
+- [Phase 9 Memory System Performance Findings](phase9_perf.md) — in-process textSearch filter, checkpoint N+1 upserts, buildMemoryContext repeated session query, loadPersonality uncached, runCollect on LLM stream

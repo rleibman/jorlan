@@ -391,6 +391,126 @@ object InMemoryRepositories {
 
   }
 
+  // ─── Conversation ─────────────────────────────────────────────────────────────
+
+  class InMemoryConversationRepo(
+    convIdGen: Ref[Long],
+    convStore: Ref[Map[Long, Conversation]],
+    msgIdGen:  Ref[Long],
+    msgStore:  Ref[Map[Long, Message]],
+  ) extends ConversationZIORepository {
+
+    override def getById(id: ConversationId): RepositoryTask[Option[Conversation]] =
+      convStore.get.map(_.get(id.value))
+
+    override def search(s: ConversationSearch): RepositoryTask[List[Conversation]] =
+      convStore.get.map(_.values.toList.filter(_.sessionId == s.sessionId))
+
+    override def create(conversation: Conversation): RepositoryTask[Conversation] =
+      for {
+        id <- convIdGen.updateAndGet(_ + 1)
+        saved = conversation.copy(id = ConversationId(id))
+        _ <- convStore.update(_.updated(id, saved))
+      } yield saved
+
+    override def searchMessages(s: MessageSearch): RepositoryTask[List[Message]] =
+      msgStore.get.map(
+        _.values.toList
+          .filter(_.conversationId == s.conversationId)
+          .sortBy(_.createdAt),
+      )
+
+    override def addMessage(message: Message): RepositoryTask[Message] =
+      for {
+        id <- msgIdGen.updateAndGet(_ + 1)
+        saved = message.copy(id = MessageId(id))
+        _ <- msgStore.update(_.updated(id, saved))
+      } yield saved
+
+  }
+
+  object InMemoryConversationRepo {
+
+    def make: UIO[InMemoryConversationRepo] =
+      for {
+        convIdGen <- Ref.make(0L)
+        convStore <- Ref.make(Map.empty[Long, Conversation])
+        msgIdGen  <- Ref.make(0L)
+        msgStore  <- Ref.make(Map.empty[Long, Message])
+      } yield new InMemoryConversationRepo(convIdGen, convStore, msgIdGen, msgStore)
+
+    val layer: ULayer[ConversationZIORepository] = ZLayer(make.map(r => r: ConversationZIORepository))
+
+  }
+
+  // ─── Memory ───────────────────────────────────────────────────────────────────
+
+  class InMemoryMemoryRepo(
+    idGen: Ref[Long],
+    store: Ref[Map[Long, MemoryRecord]],
+  ) extends MemoryZIORepository {
+
+    override def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]] =
+      store.get.map(_.get(id.value))
+
+    override def search(s: MemorySearch): RepositoryTask[List[MemoryRecord]] =
+      store.get.map { m =>
+        val filtered = m.values.toList
+          .filter(_.scope == s.scope)
+          .filter(r => s.userId.forall(uid => r.userId.contains(uid)))
+          .filter(r => s.workspaceId.forall(wid => r.workspaceId.contains(wid)))
+          .filter(r => s.agentId.forall(aid => r.agentId.contains(aid)))
+          .filter(r => s.key.forall(_ == r.recordKey))
+        s.textSearch.fold(filtered) { text =>
+          val lower = text.toLowerCase
+          filtered.filter(r => r.value.toString.toLowerCase.contains(lower) || r.recordKey.toLowerCase.contains(lower))
+        }
+      }
+
+    override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
+      for {
+        id <- if (record.id == MemoryRecordId.empty) idGen.updateAndGet(_ + 1) else ZIO.succeed(record.id.value)
+        saved = record.copy(id = MemoryRecordId(id))
+        _ <- store.update(_.updated(id, saved))
+      } yield saved
+
+    override def updateScope(
+      id:    MemoryRecordId,
+      scope: MemoryScope,
+    ): RepositoryTask[Long] =
+      store.modify { m =>
+        m.get(id.value) match {
+          case None    => (0L, m)
+          case Some(r) => (1L, m.updated(id.value, r.copy(scope = scope)))
+        }
+      }
+
+    override def delete(id: MemoryRecordId): RepositoryTask[Long] =
+      store.modify { m =>
+        if (m.contains(id.value)) (1L, m.removed(id.value)) else (0L, m)
+      }
+
+    override def purgeExpired: RepositoryTask[Long] =
+      Clock.instant.flatMap { now =>
+        store.modify { m =>
+          val expired = m.filter { case (_, r) => r.ttl.exists(_.isBefore(now)) }
+          (expired.size.toLong, m -- expired.keys)
+        }
+      }
+
+  }
+
+  object InMemoryMemoryRepo {
+
+    def make: UIO[InMemoryMemoryRepo] =
+      (Ref.make(0L) <*> Ref.make(Map.empty[Long, MemoryRecord])).map { case (idGen, store) =>
+        new InMemoryMemoryRepo(idGen, store)
+      }
+
+    val layer: ULayer[MemoryZIORepository] = ZLayer(make.map(r => r: MemoryZIORepository))
+
+  }
+
   // ─── ServerSettings ────────────────────────────────────────────────────────────
 
   class InMemoryServerSettingsRepo(store: Ref[Map[String, Json]]) extends ServerSettingsRepository {

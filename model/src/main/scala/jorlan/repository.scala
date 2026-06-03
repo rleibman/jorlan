@@ -101,12 +101,30 @@ case class ConnectorSearch(
 ) extends Search[ConnectorOrder]
 
 enum MemoryOrder { case Id, RecordKey, CreatedAt, UpdatedAt }
+
+/** Search criteria for [[MemoryRepository]].
+  *
+  * @param scope
+  *   required — only records with this [[MemoryScope]] are returned
+  * @param userId
+  *   if `Some`, only records whose `userId` matches are returned (omit for `Shared`/`Workspace` scopes)
+  * @param workspaceId
+  *   optional workspace filter; only relevant for `Workspace`-scoped records
+  * @param agentId
+  *   optional agent filter applied at the DB level; access policy enforces `Private` scope independently
+  * @param key
+  *   optional exact match on `recordKey`
+  * @param textSearch
+  *   optional text filter applied in-memory after the DB fetch — pagination counts may be approximate when this is set,
+  *   because the filter runs after SQL LIMIT/OFFSET
+  */
 case class MemorySearch(
   scope:       MemoryScope,
   userId:      Option[UserId] = None,
   workspaceId: Option[WorkspaceId] = None,
   agentId:     Option[AgentId] = None,
   key:         Option[String] = None,
+  textSearch:  Option[String] = None,
   page:        Int = 0,
   pageSize:    Int = 20,
   sorts:       Option[Sort[MemoryOrder]] = None,
@@ -256,8 +274,12 @@ trait MemoryRepository[F[_]] {
   def getById(id:    MemoryRecordId): F[Option[MemoryRecord]]
   def search(s:      MemorySearch):   F[List[MemoryRecord]]
   def upsert(record: MemoryRecord):   F[MemoryRecord]
-  def delete(id:     MemoryRecordId): F[Long]
-  def purgeExpired:                   F[Long]
+  def updateScope(
+    id:    MemoryRecordId,
+    scope: MemoryScope,
+  ):                              F[Long]
+  def delete(id: MemoryRecordId): F[Long]
+  def purgeExpired:               F[Long]
 
 }
 

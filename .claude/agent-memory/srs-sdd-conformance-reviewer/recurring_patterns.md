@@ -5,6 +5,20 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of Phase 9 review (2026-06-03)
+
+### Checkpoint pipeline wired but not called
+`AgentRunnerImpl` injects `MemoryService` and all checkpoint components are registered in `EnvironmentBuilder`, but `processMessage` never calls `memoryService.checkpoint(...)`. The entire summarize → classify → store pipeline is dead at runtime. Pattern: when a design doc specifies a multi-step pipeline wired into an existing method (processMessage), verify the call site explicitly, not just the layer wiring.
+
+### FULLTEXT index created but query path does not use it
+V019 adds `FULLTEXT INDEX` on `memoryRecord.value`. `QuillMemoryRepository.search` applies `textSearch` as an in-process Scala `String.contains` after fetching all rows, bypassing the index. Pattern: when a migration adds a specialized index (FULLTEXT, spatial), verify the query layer uses it via the appropriate SQL syntax (MATCH...AGAINST), not in-process filtering.
+
+### Access control gap in destructive mutations
+`forgetMemory`, `markMemoryShared`, and `markMemoryPrivate` check the capability grant (`memory.write`) but do not verify the record's `userId == requestingUserId`. Any user with the capability can modify any other user's records. Pattern: capability checks answer "can this user perform this operation class?" but ownership checks answer "can this user act on this specific resource?" — both are required for the deny-by-default model.
+
+### Context injection queries a single scope with no relevance text
+`buildMemoryContext` calls `query(MemoryScope.User, ...)` with `text = None`, missing both `Shared`/`Workspace` scopes and text-based relevance filtering. Design doc step 2 specifies querying with `lastUserMessage` as the relevance hint. Pattern: verify that context-injection queries pass all parameters described in the design, not just a subset.
+
 ## Patterns observed as of Phase 8.5 review (2026-06-02)
 
 ### Dead constructor dependencies

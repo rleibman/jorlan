@@ -22,7 +22,7 @@ import jorlan.db.repository.{
 }
 import jorlan.domain.*
 import jorlan.service.*
-import jorlan.testing.InMemoryRepositories
+import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.test.*
 
@@ -60,9 +60,27 @@ object JorlanAPISpec extends ZIOSpecDefault {
   private type FullEnv = JorlanAPI.JorlanApiEnv & JorlanSession &
     GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
+  private def realMemoryServiceLayer: ULayer[MemoryService] = {
+    val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
+    val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
+    val summarizer = ZLayer.succeed(
+      new CheckpointSummarizer {
+        override def summarize(
+          messages: List[Message],
+          userId:   UserId,
+          agentId:  AgentId,
+        ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
+      }: CheckpointSummarizer,
+    )
+    val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
+    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
+    (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
+  }
+
   private def makeAppLayer(
-    capEval: ULayer[CapabilityEvaluator] = allowAll,
-    session: ULayer[JorlanSession] = serverSessionLayer,
+    capEval:     ULayer[CapabilityEvaluator] = allowAll,
+    session:     ULayer[JorlanSession] = serverSessionLayer,
+    memSvcLayer: ULayer[MemoryService] = NoOpMemoryService.layer,
   ): ULayer[FullEnv] = {
     val userRepoLayer: ULayer[UserZIORepository] = InMemoryRepositories.InMemoryUserRepo.layer
     val permRepoLayer: ULayer[PermissionZIORepository] = InMemoryRepositories.InMemoryPermissionRepo.layer
@@ -89,10 +107,14 @@ object JorlanAPISpec extends ZIOSpecDefault {
     val fakeGateway = FakeModelGateway.layer(List("ok"))
     val sessionMgrLayer: ULayer[AgentSessionManager] =
       (agentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogRepo) >>> AgentSessionManagerImpl.live
+    val convRepoLayer = InMemoryRepositories.InMemoryConversationRepo.layer
     val runnerLayer: ULayer[AgentRunner] =
-      (fakeGateway ++ hubLayer ++ eventLogRepo ++ settingsRepo) >>> AgentRunnerImpl.live
-    val svcLayer: ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
-      userRepoLayer ++ permRepoLayer ++ eventLogRepo ++ settingsRepo ++ capEval ++ session ++ sessionMgrLayer ++ runnerLayer
+      (fakeGateway ++ hubLayer ++ eventLogRepo ++ settingsRepo ++ convRepoLayer ++ agentRepoLayer ++ memSvcLayer) >>>
+        AgentRunnerImpl.live
+    val memSkillLayer: ULayer[MemorySkill] = memSvcLayer >>> MemorySkill.live
+    val svcLayer:      ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
+      userRepoLayer ++ permRepoLayer ++ eventLogRepo ++ settingsRepo ++ capEval ++ session ++ sessionMgrLayer ++
+        runnerLayer ++ memSvcLayer ++ memSkillLayer
     val interpLayer
       : ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
@@ -123,6 +145,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       agentSessionSuite,
       subscriptionSuite,
       personalitySuite,
+      memorySuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -445,6 +468,116 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute(updatePersonalityMutation)
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+  )
+
+  // ─── Memory queries and mutations ─────────────────────────────────────────────
+
+  private val memorySuite = suite("Memory")(
+    test("listMemory query returns empty list when no records stored") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)),
+    test("listMemory query fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listMemory(scope: "User") { id } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer, memSvcLayer = realMemoryServiceLayer)),
+    test("storeMemory mutation stores a record and is retrievable") {
+      for {
+        interp      <- ZIO.service[Interp]
+        storeResult <- interp.execute(
+          """mutation { storeMemory(key: "test.key", text: "hello world", scope: "User") { id scope recordKey } }""",
+        )
+        listResult <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+      } yield assertTrue(
+        storeResult.errors.isEmpty,
+        storeResult.data.toString.contains("test.key"),
+        listResult.errors.isEmpty,
+        listResult.data.toString.contains("test.key"),
+      )
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)) @@ TestAspect.sequential,
+    test("storeMemory mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { storeMemory(key: "k", text: "v", scope: "User") { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer, memSvcLayer = realMemoryServiceLayer)),
+    test("forgetMemory mutation returns true after storeMemory") {
+      for {
+        interp      <- ZIO.service[Interp]
+        storeResult <- interp.execute(
+          """mutation { storeMemory(key: "forget.me", text: "temporary", scope: "User") { id } }""",
+        )
+        id = extractLong(storeResult.data.toString, "id")
+        forgetResult <- interp.execute(s"""mutation { forgetMemory(value: $id) }""")
+      } yield assertTrue(
+        storeResult.errors.isEmpty,
+        forgetResult.errors.isEmpty,
+      )
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)) @@ TestAspect.sequential,
+    test("markMemoryShared mutation changes scope to Shared") {
+      for {
+        interp      <- ZIO.service[Interp]
+        storeResult <- interp.execute(
+          """mutation { storeMemory(key: "share.key", text: "shared fact", scope: "User") { id } }""",
+        )
+        id = extractLong(storeResult.data.toString, "id")
+        shareResult <- interp.execute(s"""mutation { markMemoryShared(value: $id) { id scope } }""")
+      } yield assertTrue(
+        storeResult.errors.isEmpty,
+        shareResult.errors.isEmpty,
+        shareResult.data.toString.contains("Shared"),
+      )
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)) @@ TestAspect.sequential,
+    test("markMemoryPrivate mutation changes scope to Private") {
+      for {
+        interp      <- ZIO.service[Interp]
+        storeResult <- interp.execute(
+          """mutation { storeMemory(key: "priv.key", text: "private fact", scope: "User") { id } }""",
+        )
+        id = extractLong(storeResult.data.toString, "id")
+        privResult <- interp.execute(s"""mutation { markMemoryPrivate(value: $id) { id scope } }""")
+      } yield assertTrue(
+        storeResult.errors.isEmpty,
+        privResult.errors.isEmpty,
+        privResult.data.toString.contains("Private"),
+      )
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)) @@ TestAspect.sequential,
+    test("forgetMemory returns false when record does not exist") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(s"""mutation { forgetMemory(value: 999999) }""")
+      } yield assertTrue(result.errors.isEmpty && result.data.toString.contains("false"))
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)),
+    test("listMemory query fails when memory.read capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listMemory(scope: "User") { id } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll, memSvcLayer = realMemoryServiceLayer)),
+    test("storeMemory mutation fails when memory.write capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { storeMemory(key: "k", text: "v", scope: "User") { id } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll, memSvcLayer = realMemoryServiceLayer)),
+    test("forgetMemory mutation fails when memory.write capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { forgetMemory(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll, memSvcLayer = realMemoryServiceLayer)),
+    test("listMemory with invalid scope returns execution error") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listMemory(scope: "INVALID_SCOPE") { id } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)),
   )
 
 }

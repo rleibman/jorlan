@@ -92,6 +92,39 @@ object ShellCommandSpec extends ZIOSpecDefault {
       test("whitespace-only becomes Message(\"   \")") {
         assertTrue(ShellCommand.parse("   ") == ShellCommand.Message("   "))
       },
+      test("/new with model argument") {
+        assertTrue(ShellCommand.parse("/new llama3") == ShellCommand.NewSession(Some("llama3")))
+      },
+      test("/capabilities") {
+        assertTrue(ShellCommand.parse("/capabilities") == ShellCommand.Capabilities)
+      },
+      test("/memory list without scope") {
+        assertTrue(ShellCommand.parse("/memory list") == ShellCommand.MemoryList(None))
+      },
+      test("/memory list with scope") {
+        assertTrue(ShellCommand.parse("/memory list User") == ShellCommand.MemoryList(Some("User")))
+      },
+      test("/memory search with text") {
+        assertTrue(ShellCommand.parse("/memory search my password") == ShellCommand.MemorySearch("my password"))
+      },
+      test("/memory search without text becomes Unknown") {
+        assertTrue(ShellCommand.parse("/memory search") == ShellCommand.Unknown("/memory"))
+      },
+      test("/memory forget with valid id") {
+        assertTrue(ShellCommand.parse("/memory forget 42") == ShellCommand.MemoryForget(42L))
+      },
+      test("/memory forget with non-numeric id becomes Unknown") {
+        assertTrue(ShellCommand.parse("/memory forget abc") == ShellCommand.Unknown("/memory"))
+      },
+      test("/memory remember with key and text") {
+        assertTrue(
+          ShellCommand.parse("/memory remember user.lang I prefer Scala") == ShellCommand
+            .MemoryRemember("user.lang", "I prefer Scala"),
+        )
+      },
+      test("/memory remember without text becomes Unknown") {
+        assertTrue(ShellCommand.parse("/memory remember key") == ShellCommand.Unknown("/memory"))
+      },
     )
 
 }

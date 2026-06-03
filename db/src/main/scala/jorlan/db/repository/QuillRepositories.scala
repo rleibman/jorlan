@@ -578,7 +578,9 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
         .filter(r => lift(s.agentId).forall(aid => r.agentId.contains(aid)))
         .filter(r => lift(s.key).forall(k => r.recordKey == k)),
     )
-    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+    // When textSearch is active skip the SQL LIMIT so the in-memory filter sees all matching rows.
+    // TODO: replace with a FULLTEXT MATCH ... AGAINST SQL predicate (requires Quill infix support).
+    val limited = if (s.textSearch.isEmpty) quote(base.drop(lift(offset)).take(lift(ps))) else base
     val sorted: Quoted[Query[MemoryRecord]] = s.sorts match {
       case Some(Sort(MemoryOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
       case Some(Sort(MemoryOrder.RecordKey, OrderDirection.Asc))  => quote(limited.sortBy(_.recordKey)(Ord.asc))
@@ -589,7 +591,12 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
       case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.updatedAt)(Ord.desc))
       case _                                                      => quote(limited.sortBy(_.id)(Ord.asc))
     }
-    exec(qc.ctx.run(sorted))
+    exec(qc.ctx.run(sorted)).map { records =>
+      s.textSearch.fold(records) { text =>
+        val lower = text.toLowerCase
+        records.filter(r => r.value.toString.toLowerCase.contains(lower) || r.recordKey.toLowerCase.contains(lower))
+      }
+    }
   }
 
   override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
@@ -606,6 +613,10 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
               (
                 t,
                 e,
+              ) => t.scope -> e.scope,
+              (
+                t,
+                e,
               ) => t.ttl -> e.ttl,
               (
                 t,
@@ -615,6 +626,12 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
             .returningGenerated(_.id),
         ).map(id => record.copy(id = id)),
     )
+
+  override def updateScope(
+    id:    MemoryRecordId,
+    scope: MemoryScope,
+  ): RepositoryTask[Long] =
+    exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id)).update(_.scope -> lift(scope))))
 
   override def delete(id: MemoryRecordId): RepositoryTask[Long] =
     exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id)).delete))

@@ -316,6 +316,41 @@ object JorlanClient {
 
   }
 
+  type MemoryRecord
+  object MemoryRecord {
+
+    final case class MemoryRecordView(
+      id:        jorlan.domain.MemoryRecordId,
+      scope:     String,
+      recordKey: String,
+      value:     String,
+      createdAt: java.time.Instant,
+      updatedAt: java.time.Instant,
+    )
+
+    type ViewSelection = SelectionBuilder[MemoryRecord, MemoryRecordView]
+
+    def view: ViewSelection =
+      (id ~ scope ~ recordKey ~ value ~ createdAt ~ updatedAt).map {
+        case (id, scope, recordKey, value, createdAt, updatedAt) =>
+          MemoryRecordView(id, scope, recordKey, value, createdAt, updatedAt)
+      }
+
+    def id: SelectionBuilder[MemoryRecord, jorlan.domain.MemoryRecordId] =
+      _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+    def scope: SelectionBuilder[MemoryRecord, String] =
+      _root_.caliban.client.SelectionBuilder.Field("scope", Scalar())
+    def recordKey: SelectionBuilder[MemoryRecord, String] =
+      _root_.caliban.client.SelectionBuilder.Field("recordKey", Scalar())
+    def value: SelectionBuilder[MemoryRecord, String] =
+      _root_.caliban.client.SelectionBuilder.Field("value", Scalar())
+    def createdAt: SelectionBuilder[MemoryRecord, java.time.Instant] =
+      _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
+    def updatedAt: SelectionBuilder[MemoryRecord, java.time.Instant] =
+      _root_.caliban.client.SelectionBuilder.Field("updatedAt", Scalar())
+
+  }
+
   type Queries = _root_.caliban.client.Operations.RootQuery
   object Queries {
 
@@ -400,6 +435,20 @@ object JorlanClient {
     def serverPersonality[A](innerSelection: SelectionBuilder[Personality, A])
       : SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder.Field("serverPersonality", OptionOf(Obj(innerSelection)))
+
+    def listMemory[A](
+      scope:      scala.Option[String] = None,
+      textSearch: scala.Option[String] = None,
+    )(
+      innerSelection: SelectionBuilder[MemoryRecord, A],
+    )(implicit
+      encoder0: ArgEncoder[scala.Option[String]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "listMemory",
+        OptionOf(ListOf(Obj(innerSelection))),
+        arguments = List(Argument("scope", scope, "MemoryScope"), Argument("textSearch", textSearch, "String")),
+      )
 
   }
 
@@ -531,6 +580,59 @@ object JorlanClient {
         OptionOf(Scalar()),
         arguments = List(Argument("sessionId", sessionId, "AgentSessionId!"), Argument("content", content, "String!")),
       )
+    def storeMemory[A](
+      key:   String,
+      text:  String,
+      scope: scala.Option[String] = None,
+    )(
+      innerSelection: SelectionBuilder[MemoryRecord, A],
+    )(implicit
+      encoder0: ArgEncoder[String],
+      encoder1: ArgEncoder[scala.Option[String]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "storeMemory",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(
+          Argument("key", key, "String!"),
+          Argument("text", text, "String!"),
+          Argument("scope", scope, "MemoryScope"),
+        ),
+      )
+
+    def forgetMemory(
+      value:             jorlan.domain.MemoryRecordId,
+    )(implicit encoder0: ArgEncoder[jorlan.domain.MemoryRecordId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field("forgetMemory", OptionOf(Scalar()), arguments = List(Argument("value", value, "MemoryRecordId!")))
+
+    def markMemoryShared[A](
+      value: jorlan.domain.MemoryRecordId,
+    )(
+      innerSelection:    SelectionBuilder[MemoryRecord, A],
+    )(implicit encoder0: ArgEncoder[jorlan.domain.MemoryRecordId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field(
+          "markMemoryShared",
+          OptionOf(Obj(innerSelection)),
+          arguments = List(Argument("value", value, "MemoryRecordId!")),
+        )
+
+    def markMemoryPrivate[A](
+      value: jorlan.domain.MemoryRecordId,
+    )(
+      innerSelection:    SelectionBuilder[MemoryRecord, A],
+    )(implicit encoder0: ArgEncoder[jorlan.domain.MemoryRecordId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field(
+          "markMemoryPrivate",
+          OptionOf(Obj(innerSelection)),
+          arguments = List(Argument("value", value, "MemoryRecordId!")),
+        )
+
     def updatePersonality[A](
       name:      String,
       formality: Formality,

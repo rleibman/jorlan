@@ -438,6 +438,436 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           _ <- fiber.interrupt
         } yield assertTrue(errText.contains("Submit failed"))
       },
+      // ─── Personality command tests ───────────────────────────────────────────
+      test("/personality shows personality when GQL succeeds") {
+        import jorlan.graphql.client.JorlanClient
+        val pView = JorlanClient.Personality.PersonalityView(
+          name = "Jorlan",
+          formality = "Professional",
+          languages = List("en"),
+          expertise = Nil,
+          prompt = "Be helpful.",
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.Personality, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(pView)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Jorlan") && text.contains("Professional"))
+      },
+      test("/personality shows error when GQL fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.Personality, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("server unavailable") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Could not fetch personality"))
+      },
+      test("/personality shows error when server returns None") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.Personality, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(None) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("no personality"))
+      },
+      test("/personality set with unknown field shows error") {
+        for {
+          (fs, _) <- runCmd(ShellCommand.PersonalitySet("badfield", "value"))
+          msgs    <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Unknown personality field"))
+      },
+      test("/personality set valid field succeeds and shows updated personality") {
+        import jorlan.graphql.client.JorlanClient
+        val pView = JorlanClient.Personality.PersonalityView(
+          name = "Jorlan",
+          formality = "Casual",
+          languages = List("en"),
+          expertise = Nil,
+          prompt = "Be concise.",
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.PersonalitySet("formality", "Casual"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(pView)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Casual"))
+      },
+      test("/personality set shows error when fetch fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.PersonalitySet("name", "NewBot"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("network error") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Could not fetch current personality"))
+      },
+      // ─── Memory command tests ────────────────────────────────────────────────
+      test("/memory list shows records when GQL returns records") {
+        import jorlan.graphql.client.JorlanClient
+        import jorlan.domain.{MemoryRecordId, MemoryScope}
+        import zio.json.ast.Json
+        import java.time.Instant
+        val record = JorlanClient.MemoryRecord.MemoryRecordView(
+          id = MemoryRecordId(1L),
+          scope = "User",
+          recordKey = "user.lang",
+          value = "Scala",
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryList(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(List(record))) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("user.lang"))
+      },
+      test("/memory list shows 'No memory records' when empty") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryList(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(List.empty)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No memory records"))
+      },
+      test("/memory list shows error when GQL fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryList(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("timeout") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Could not list memory"))
+      },
+      test("/memory search returns matching records") {
+        import jorlan.graphql.client.JorlanClient
+        import jorlan.domain.MemoryRecordId
+        import java.time.Instant
+        val record = JorlanClient.MemoryRecord.MemoryRecordView(
+          id = MemoryRecordId(2L),
+          scope = "User",
+          recordKey = "user.pref",
+          value = "prefers Scala",
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemorySearch("Scala"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(List(record))) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("user.pref"))
+      },
+      test("/memory search returns 'no records' message when empty") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemorySearch("xyz"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(List.empty)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("xyz"))
+      },
+      test("/memory forget shows success message") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(true)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("42"))
+      },
+      test("/memory forget shows error when GQL fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryForget(1L), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("not found") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Forget failed"))
+      },
+      test("/memory remember shows stored record") {
+        import jorlan.graphql.client.JorlanClient
+        import jorlan.domain.MemoryRecordId
+        import java.time.Instant
+        val record = JorlanClient.MemoryRecord.MemoryRecordView(
+          id = MemoryRecordId(3L),
+          scope = "User",
+          recordKey = "pref.lang",
+          value = "Scala",
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryRemember("pref.lang", "Scala"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(record)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("pref.lang"))
+      },
+      test("/memory remember shows 'Memory stored' when server returns None") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryRemember("k", "v"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(None) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Memory stored"))
+      },
+      test("/memory remember shows error when GQL fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryRemember("k", "v"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("store error") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Remember failed"))
+      },
+      test("/memory search shows error when GQL fails") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemorySearch("term"), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunFailing("timeout") ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("Memory search failed"))
+      },
+      test("/memory list with explicit scope passes scope to GQL") {
+        import jorlan.graphql.client.JorlanClient
+        import jorlan.domain.MemoryRecordId
+        import java.time.Instant
+        val record = JorlanClient.MemoryRecord.MemoryRecordView(
+          id = MemoryRecordId(9L),
+          scope = "User",
+          recordKey = "scoped.key",
+          value = "filtered",
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryList(Some("User")), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(List(record))) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("scoped.key"))
+      },
+      test("/memory forget success message contains the word 'deleted'") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(Some(true)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("42") && text.contains("deleted"))
+      },
+      test("/commands output includes memory commands") {
+        for {
+          (fs, _) <- runCmd(ShellCommand.Commands)
+          msgs    <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("/memory list") && text.contains("/memory remember"))
+      },
+      test("/capabilities emits System message listing capabilities") {
+        for {
+          (fs, _) <- runCmd(ShellCommand.Capabilities)
+          msgs    <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("memory.read") && text.contains("agent.message"))
+      },
+      test("/new with Right(None) shows 'Server returned no session' error") {
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.NewSession(None), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(None) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.Error)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("no session"))
+      },
+      test("/model with active session shows session id") {
+        val sid = AgentSessionId(77L)
+        for {
+          fs         <- FakeScreen.make
+          exit       <- Promise.make[Nothing, Unit]
+          tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1)
+          fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
+          state      <- ShellState.make
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- CommandHandler
+            .handle(ShellCommand.ModelInfo, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQL() ++
+                defaultCfg ++
+                ZLayer.succeed[ShellState](state) ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+          _ <- fiber.interrupt
+        } yield assertTrue(text.contains("77"))
+      },
     )
 
 }

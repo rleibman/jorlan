@@ -76,7 +76,8 @@ object LiveSession {
             .ensuring(ZIO.logInfo(s"[Shell] subscription stream ended for session=${sessionId.value}"))
             .foreach { chunk =>
               val offerChunk =
-                if (chunk.content.nonEmpty || chunk.isError || !chunk.finished) tokenQueue.offer(Right(Some(chunk))).unit
+                if (chunk.content.nonEmpty || chunk.isError || !chunk.finished)
+                  tokenQueue.offer(Right(Some(chunk))).unit
                 else ZIO.unit
               offerChunk *> ZIO.when(chunk.finished)(tokenQueue.offer(Right(None)).unit)
             }

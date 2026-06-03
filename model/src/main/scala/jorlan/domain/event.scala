@@ -39,7 +39,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case UserConnected, UserDisconnected
 
   // ─── Memory ──────────────────────────────────────────────────────────────────
-  case MemoryWritten, MemoryExpired
+  case MemoryWritten, MemoryDeleted, MemoryRescoped, MemoryCheckpointed, MemoryExpired
 
   // ─── RBAC and capabilities ───────────────────────────────────────────────────
   case RoleAssigned, RoleRevoked

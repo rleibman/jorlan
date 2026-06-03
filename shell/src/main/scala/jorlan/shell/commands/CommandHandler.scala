@@ -11,7 +11,7 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.ModelId
+import jorlan.domain.{MemoryRecordId, ModelId}
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.{LiveSession, ShellConfig, ShellState}
 import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
@@ -32,19 +32,26 @@ object CommandHandler {
     exit: Promise[Nothing, Unit],
   ): ZIO[Env, Nothing, Unit] = {
     cmd match {
-      case ShellCommand.Message(text)            => handleMessage(text)
-      case ShellCommand.Help                     => showHelp
-      case ShellCommand.Commands                 => showCommands
-      case ShellCommand.Status                   => showStatus
-      case ShellCommand.About                    => showAbout
-      case ShellCommand.WhoAmI                   => showWhoAmI
-      case ShellCommand.Quit                     => exit.succeed(()).unit
-      case ShellCommand.NewSession(m)            => handleNewSession(m)
-      case ShellCommand.ModelInfo                => showModelInfo
-      case ShellCommand.ListModels               => listModels
-      case ShellCommand.Trace(level)             => setTrace(level)
-      case ShellCommand.Personality              => showPersonality
-      case ShellCommand.PersonalitySet(field, v) => setPersonalityField(field, v)
+      case ShellCommand.Message(text)                       => handleMessage(text)
+      case ShellCommand.Help                                => showHelp
+      case ShellCommand.Commands                            => showCommands
+      case ShellCommand.Status                              => showStatus
+      case ShellCommand.About                               => showAbout
+      case ShellCommand.WhoAmI                              => showWhoAmI
+      case ShellCommand.Quit                                => exit.succeed(()).unit
+      case ShellCommand.NewSession(m)                       => handleNewSession(m)
+      case ShellCommand.ModelInfo                           => showModelInfo
+      case ShellCommand.ListModels                          => listModels
+      case ShellCommand.Trace(level)                        => setTrace(level)
+      case ShellCommand.Personality                         => showPersonality
+      case ShellCommand.PersonalitySet(field, v)            => setPersonalityField(field, v)
+      case ShellCommand.MemoryList(scope)                   => listMemory(scope)
+      case ShellCommand.MemorySearch(text)                  => searchMemory(text)
+      case ShellCommand.MemoryForget(id)                    => forgetMemory(id)
+      case ShellCommand.MemoryShare(id)                     => shareMemory(id)
+      case ShellCommand.MemoryPrivatize(id)                 => privatizeMemory(id)
+      case ShellCommand.MemoryRemember(key, text, scopeOpt) => rememberMemory(key, text, scopeOpt)
+      case ShellCommand.Capabilities                        => showCapabilities
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -114,6 +121,11 @@ object CommandHandler {
       "/personality set <field> <value>     Update a personality field (admin only)",
       "  fields: name | formality | prompt | languages | expertise",
       "  formality values: Casual | Professional | Academic | Technical",
+      "/memory list [scope]                 List memory records (scope: User|Shared|Workspace|Private)",
+      "/memory search <text>                Search memory records by text",
+      "/memory forget <id>                  Delete a memory record by id",
+      "/memory remember <key> <text>        Store a new memory record",
+      "/capabilities                        List your current capability grants",
       "/trace [level]      Set log level: none | error | warning | info | debug",
       "/quit /exit         Exit the shell",
     )
@@ -248,6 +260,77 @@ object CommandHandler {
     "info"    -> Level.INFO,
     "debug"   -> Level.DEBUG,
   )
+
+  private def listMemory(scope: Option[String]): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listMemory(scope, None)(JorlanClient.MemoryRecord.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
+        case Some(records)    =>
+          val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
+      },
+    )
+
+  private def searchMemory(text: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listMemory(None, Some(text))(JorlanClient.MemoryRecord.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Memory search failed: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, s"No memory records matching '$text'."))
+        case Some(records)    =>
+          val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Matching records:\n$lines"))
+      },
+    )
+
+  private def forgetMemory(id: Long): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.forgetMemory(MemoryRecordId(id)))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Forget failed: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Memory record $id deleted.")),
+    )
+
+  private def rememberMemory(
+    key:   String,
+    text:  String,
+    scope: Option[String] = None,
+  ): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.storeMemory(key, text, scope)(JorlanClient.MemoryRecord.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Remember failed: $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.System, "Memory stored."))
+        case Some(r) => screen(_.addMessage(MessageKind.System, s"Stored [${r.id.value}] ${r.recordKey}: ${r.value}"))
+      },
+    )
+
+  private def shareMemory(id: Long): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.markMemoryShared(MemoryRecordId(id))(JorlanClient.MemoryRecord.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Share failed: $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record $id not found."))
+        case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Shared."))
+      },
+    )
+
+  private def privatizeMemory(id: Long): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.markMemoryPrivate(MemoryRecordId(id))(JorlanClient.MemoryRecord.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Privatize failed: $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record $id not found."))
+        case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Private."))
+      },
+    )
+
+  private val showCapabilities: ZIO[Env, Nothing, Unit] =
+    screen(
+      _.addMessage(
+        MessageKind.System,
+        "Capabilities (this session):\n" +
+          "  memory.read    — list and search memory\n" +
+          "  memory.write   — store, forget, mark memory\n" +
+          "  agent.message  — submit messages to agent\n" +
+          "  (Use /whoami to see your user identity)",
+      ),
+    )
 
   private def setTrace(level: String): ZIO[Env, Nothing, Unit] =
     traceLevels.get(level.toLowerCase) match {

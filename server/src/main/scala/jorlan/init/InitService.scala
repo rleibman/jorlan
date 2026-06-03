@@ -161,9 +161,9 @@ class InitServiceImpl(
   ): IO[JorlanError, Unit] =
     for {
       alreadyDone <- isInitialized
-      _           <- ZIO.when(alreadyDone)(ZIO.fail(JorlanError("Server is already initialized"))).unit
+      _           <- ZIO.when(alreadyDone)(ZIO.fail(JorlanError("Server is already initialized")))
       tokenOk     <- tokenStore.verify(token)
-      _           <- ZIO.unless(tokenOk)(ZIO.fail(JorlanError("Invalid setup token"))).unit
+      _           <- ZIO.unless(tokenOk)(ZIO.fail(JorlanError("Invalid setup token")))
       _           <- validateInputs(serverName, adminEmail, adminPassword)
       now         <- Clock.instant
       createdUser <- userRepo.upsert(User(UserId.empty, adminName, Some(adminEmail), now, now))
@@ -199,6 +199,8 @@ class InitServiceImpl(
     CapabilityName("role.revoke"),
     CapabilityName("permission.grant"),
     CapabilityName("permission.revoke"),
+    CapabilityName("memory.read"),
+    CapabilityName("memory.write"),
   )
 
   private def seedAdminGrants(

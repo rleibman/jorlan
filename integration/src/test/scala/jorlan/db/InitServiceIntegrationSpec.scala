@@ -51,7 +51,7 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
         for {
           settings    <- ZIO.service[ServerSettingsRepository]
           initialized <- settings.get("initialized")
-        } yield assertTrue(initialized == Some(Json.Bool(false)))
+        } yield assertTrue(initialized.contains(Json.Bool(false)))
       },
       test("2. complete with valid token sets initialized = true and persists serverName") {
         for {

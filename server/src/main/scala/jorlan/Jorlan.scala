@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
 type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
   OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
   SessionHub & ModelGateway & ServerSettingsRepository & UserZIORepository & PermissionZIORepository &
-  EventLogZIORepository
+  EventLogZIORepository & MemoryService & MemorySkill
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -72,6 +72,7 @@ object Jorlan extends ZIOApp {
         }
     }
 
+  // $COVERAGE-OFF$ Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
     for {
       config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
@@ -110,5 +111,6 @@ object Jorlan extends ZIOApp {
           } yield ()
         }
     } yield ()
+  // $COVERAGE-ON$
 
 }

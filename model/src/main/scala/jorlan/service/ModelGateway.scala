@@ -76,6 +76,17 @@ trait ModelGateway {
   /** Returns metadata for all models the gateway can currently route to. */
   def availableModels: UIO[List[ModelInfo]]
 
+  /** Pre-populate the in-memory chat history for `sessionId` from persisted [[jorlan.domain.Message]] records.
+    *
+    * Called by [[AgentRunner]] on the first message of a resumed session so the model sees prior conversation context.
+    * A no-op if the session already has an in-memory entry (avoids double-seeding on concurrent requests).
+    */
+  def seedHistory(
+    sessionId:    AgentSessionId,
+    messages:     List[jorlan.domain.Message],
+    systemPrompt: String = "",
+  ): UIO[Unit]
+
   /** Release all in-process resources (chat memory, connection pools) held for `sessionId`.
     *
     * Must be called on session termination to prevent unbounded growth of the per-session map.
