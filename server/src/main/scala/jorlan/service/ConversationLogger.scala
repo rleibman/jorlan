@@ -42,8 +42,7 @@ object ConversationLogger {
       zio.logging.loggerName("jorlan.conversation")
   }
 
-  /** Logs a completed agent response. When `isError = true` the entry is emitted at ERROR level, routing it to
-    * error-specific appenders in addition to the session conversation log.
+  /** Logs a completed agent response. When `isError = true` the entry is emitted at ERROR level.
     */
   def logAgentResponse(
     sessionId: AgentSessionId,
