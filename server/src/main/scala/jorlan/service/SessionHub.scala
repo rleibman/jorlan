@@ -21,10 +21,9 @@ private case class SubscriberEntry(
 
 /** Maintains per-connection [[Queue]]s of [[ResponseChunk]] tokens, keyed by [[AgentSessionId]].
   *
-  * Each subscriber gets its own independent `Queue.bounded(1024)` queue. Tokens published while the consumer is 1024
-  * items behind are dropped via `offer`'s back-pressure — the producer does not block, and the oldest tokens in the
-  * queue are NOT dropped (unlike `Queue.sliding`). This bound exists to cap per-subscriber heap usage; in practice the
-  * shell consumer drains much faster than LLM token rates.
+  * Each subscriber gets its own independent `Queue.bounded(1024)` queue. When full, `offer` back-pressures the
+  * publisher until the subscriber catches up (it does not drop items like `Queue.sliding`). This bound exists to cap
+  * per-subscriber heap usage; in practice the shell consumer drains much faster than LLM token rates.
   *
   * Because callers subscribe before submitting the message mutation, no tokens are lost due to subscription timing.
   * Tokens published before the queue is registered are the only ones that can be missed — callers must ensure
