@@ -115,7 +115,7 @@ object FirstRunWizard {
   }
 
   private def isLocalhost(serverUrl: ServerUrl): Boolean =
-    scala.util.Try(new java.net.URI(serverUrl.value).getHost).toOption.exists { h =>
+    scala.util.Try(java.net.URI(serverUrl.value).getHost).toOption.exists { h =>
       h == "localhost" || h == "127.0.0.1" || h == "::1"
     }
 
