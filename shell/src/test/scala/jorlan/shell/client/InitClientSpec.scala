@@ -11,6 +11,7 @@
 package jorlan.shell.client
 
 import jorlan.init.ServerStatus
+import jorlan.shell.ServerUrl
 import sttp.client4.httpclient.zio.HttpClientZioBackend
 import sttp.client4.testing.ResponseStub
 import sttp.model.StatusCode
@@ -26,7 +27,7 @@ import scala.language.unsafeNulls
   */
 object InitClientSpec extends ZIOSpecDefault {
 
-  private val serverUrl = "http://test-host:8080"
+  private val serverUrl = ServerUrl("http://test-host:8080")
 
   private def makeClient = HttpClientZioBackend.stub
 

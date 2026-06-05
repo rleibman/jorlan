@@ -52,7 +52,7 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
       val tempSessionId = AgentSessionId(-1L)
       modelGateway
         .streamedResponse(tempSessionId, transcript, systemPrompt)
-        .runFold(new StringBuilder)(
+        .runFold(StringBuilder())(
           (
             sb,
             chunk,
@@ -94,6 +94,6 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
 object CheckpointSummarizerImpl {
 
   val live: URLayer[ModelGateway, CheckpointSummarizer] =
-    ZLayer.fromFunction(new CheckpointSummarizerImpl(_))
+    ZLayer.fromFunction(CheckpointSummarizerImpl(_))
 
 }

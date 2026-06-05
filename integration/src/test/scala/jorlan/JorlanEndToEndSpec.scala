@@ -88,6 +88,8 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       MemoryServiceImpl.live,
       MemorySkill.live,
       AgentRunnerImpl.live,
+      JobManagerImpl.live,
+      TriggerEngine.live,
     )
 
   private val interpLayer: ZLayer[
@@ -99,8 +101,11 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
 
   private val fullLayer: TaskLayer[
     JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
-  ] =
-    envLayer >+> ZLayer.succeed(JorlanSession.serverSession) >+> interpLayer
+  ] = ZLayer.make[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+    envLayer,
+    ZLayer.succeed(JorlanSession.serverSession),
+    interpLayer,
+  )
 
   private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 

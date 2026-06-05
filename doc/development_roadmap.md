@@ -531,14 +531,61 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 
 **Goal:** Agents can create and manage scheduled tasks that survive server restarts.
 
-- [ ] `JobManager` ZIO service: `createJob`, `listJobs`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`
-- [ ] `TriggerEngine`: time-based and cron-like triggers initially (use ZIO `Schedule` internals where applicable)
-- [ ] DB-backed job locking/leasing (`SchedulerRepository.claimJob` / `releaseJob`) to prevent duplicate runs
-- [ ] `RetryEngine`: configurable retry count + backoff policy per job
-- [ ] Missed-run handling: configurable policy per trigger (`skip`, `run_once`, `run_all_missed`)
-- [ ] `SchedulerSkill` (Tier 0): exposes all `JobManager` operations to agents
-- [ ] Wire: scheduled job fires → `AgentSessionManager` creates new session → `Orchestrator` runs job payload
-- [ ] Tests: scheduler recovery after simulated restart (Testcontainers MariaDB), retry/backoff correctness
+See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
+
+### Pre-work (Tech Debt)
+
+- [x] `LangChainConfig` kept as-is — `ai` module stays provider-agnostic (no dmscreen fields to remove)
+- [x] Roadmap text fix done (this item)
+- [x] P9-051: `/capabilities` shell command — added `listCapabilities` GQL query, wired shell command
+
+### Domain Extensions
+
+- [x] `MissedRunPolicy` enum: `Skip | RunOnce | RunAllMissed`
+- [x] `RetryBackoffPolicy` enum: `Fixed | Exponential`
+- [x] `JobStatus.Paused` added (new variant)
+- [x] `SchedulerJob` extended: `userId`, `maxRetries`, `retryCount`, `backoffSeconds`, `backoffPolicy`, `missedRunPolicy`, `leasedAt`, `leasedBy`
+- [x] V021 migration: new columns on `schedulerJob`, FK to `user`, lease index
+
+### Repository Extensions
+
+- [x] `SchedulerRepository.listJobs(agentId: Option[AgentId])`
+- [x] `SchedulerRepository.claimJob` — optimistic UPDATE with lease check (prevents duplicate runs)
+- [x] `SchedulerRepository.releaseJob` — set final status, `resultJson`, `finishedAt`, clear lease
+- [x] `SchedulerRepository.expireLeases` — reset stale leases to `Pending`
+- [x] `PermissionRepository.listPendingApprovals(userId)` — for shell `/approvals list`
+
+### Services
+
+- [x] `JobManager` ZIO service: `createJob`, `addTrigger`, `listJobs`, `getJob`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`
+- [x] `TriggerEngine` daemon fiber: polls pending jobs, claims + executes, handles missed-run policies; uses `cron4s-core` for cron expression parsing and ISO 8601 duration for interval triggers
+- [x] `RetryEngine` (integrated into `TriggerEngine`): fixed + exponential backoff, `maxRetries` cap
+- [x] Wire: job fires → `AgentSessionManager.createSession(job.userId)` → `AgentRunner.processMessage` → collect result → `releaseJob`
+- [x] EventType additions: `SchedulerJobQueued`, `SchedulerJobStarted`, `SchedulerJobCompleted`, `SchedulerJobFailed`, `SchedulerJobCancelled`
+- [x] `TriggerEngine` started as daemon fiber in `Jorlan.run`
+
+### GraphQL & Shell Surface
+
+- [x] Queries: `jobs(agentId)`, `job(id)`, `triggers(jobId)`, `listApprovals`
+- [x] Mutations: `createJob`, `addTrigger`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`, `deleteJob` — all gated on `scheduler.manage` capability
+- [x] `decideApproval(id, decision)` mutation for approval lifecycle
+- [x] `terminateSession(id)` mutation
+- [x] `listCapabilities` query (P9-051 fix)
+- [x] Shell `/agents list` and `/agents stop <id>` commands
+- [x] Shell `/approvals list`, `/approvals approve <id>`, `/approvals deny <id>` commands
+- [x] Shell `/capabilities` command now calls live `listCapabilities` GQL query
+
+### `SchedulerSkill` (Tier 0 — logic only)
+
+- [x] `SchedulerSkill` implements `scheduler.create_job`, `scheduler.list_jobs`, `scheduler.pause_job`, `scheduler.resume_job`, `scheduler.cancel_job`, `scheduler.trigger_now`
+- [x] Registry wiring deferred to Phase 12 (same pattern as `MemorySkill`)
+
+### Tests
+
+- [x] Integration tests for `claimJob`/`releaseJob` in `SchedulerRepositorySpec` (2 new tests)
+- [x] Unit tests: `JobManagerSpec` (9 tests), `TriggerEngineSpec` (6 tests, tick + retry + backoff + stale lease), `SchedulerSkillSpec` (6 tests); 685 total tests passing
+- [x] Shell tests for `/agents list|stop` and `/approvals list|approve|deny` in `CommandHandlerSpec` (8 new tests)
+- [ ] Integration tests: `SchedulerRecoverySpec` (job survives simulated restart), `RetrySpec` (fail N then succeed) — deferred (complex Testcontainers lifecycle tests)
 
 ---
 
@@ -554,6 +601,7 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 - [ ] Outbound delivery for `NotificationRouter`
 - [ ] Channel-specific config: bot token, allowed chat IDs, allowed users
 - [ ] Integration tests using a mock Telegram API (no live bot token required for CI)
+- [ ] The system can interact with messages in telegram groups and channels.
 
 ---
 

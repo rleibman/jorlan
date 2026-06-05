@@ -57,11 +57,11 @@ enablePlugins(
   com.github.sbt.git.GitVersioning,
 )
 
-val betterFilesVersion = "3.9.2"
 val calibanClientVersion = "3.1.2"
-val calibanVersion = "3.1.1"
+val calibanVersion = "3.1.2"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
+val cron4sVersion = "0.8.2"
 val dispatchHttpVersion = "2.0.0"
 val flywayVersion = "12.7.0"
 val izumiReflectVersion = "3.0.9"
@@ -94,7 +94,6 @@ val zioNioVersion = "2.0.2"
 val zioPreludeVersion = "1.0.0-RC47"
 val zioProcessVersion = "0.8.0"
 val zioVersion = "2.1.26"
-val zxingVersion = "3.5.4"
 
 lazy val commonSettings = Seq(
   organization     := "net.leibman",
@@ -255,6 +254,7 @@ lazy val server = project
       "com.softwaremill.sttp.client4" %% "core"                  % sttpClient4Version withSources (),
       "com.softwaremill.sttp.client4" %% "zio"                   % sttpClient4Version withSources (),
       "com.softwaremill.sttp.client4" %% "zio-json"              % sttpClient4Version withSources (),
+      "com.github.alonsodomin.cron4s" %% "cron4s-core"           % cron4sVersion withSources (),
       // Other random utilities
       "com.github.daddykotex" %% "courier" % courierVersion withSources (),
       // Testing

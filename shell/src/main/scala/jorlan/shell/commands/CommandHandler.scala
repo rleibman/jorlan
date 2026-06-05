@@ -11,7 +11,7 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.{MemoryRecordId, ModelId}
+import jorlan.domain.{AgentSessionId, ApprovalRequestId, MemoryRecordId, ModelId}
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.{LiveSession, ShellConfig, ShellState}
 import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
@@ -52,6 +52,11 @@ object CommandHandler {
       case ShellCommand.MemoryPrivatize(id)                 => privatizeMemory(id)
       case ShellCommand.MemoryRemember(key, text, scopeOpt) => rememberMemory(key, text, scopeOpt)
       case ShellCommand.Capabilities                        => showCapabilities
+      case ShellCommand.AgentsList                          => listAgents
+      case ShellCommand.AgentsStop(id)                      => stopAgent(id)
+      case ShellCommand.ApprovalsList                       => listApprovals
+      case ShellCommand.ApprovalsApprove(id)                => decideApproval(id, approved = true)
+      case ShellCommand.ApprovalsDeny(id)                   => decideApproval(id, approved = false)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -126,6 +131,11 @@ object CommandHandler {
       "/memory forget <id>                  Delete a memory record by id",
       "/memory remember <key> <text>        Store a new memory record",
       "/capabilities                        List your current capability grants",
+      "/agents list                         List active agent sessions",
+      "/agents stop <id>                    Terminate an agent session",
+      "/approvals list                      List pending approval requests",
+      "/approvals approve <id>              Approve a pending request",
+      "/approvals deny <id>                 Deny a pending request",
       "/trace [level]      Set log level: none | error | warning | info | debug",
       "/quit /exit         Exit the shell",
     )
@@ -283,10 +293,10 @@ object CommandHandler {
       },
     )
 
-  private def forgetMemory(id: Long): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.forgetMemory(MemoryRecordId(id)))).foldZIO(
+  private def forgetMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.forgetMemory(id))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Forget failed: $err")),
-      _ => screen(_.addMessage(MessageKind.System, s"Memory record $id deleted.")),
+      _ => screen(_.addMessage(MessageKind.System, s"Memory record ${id.value} deleted.")),
     )
 
   private def rememberMemory(
@@ -302,34 +312,83 @@ object CommandHandler {
       },
     )
 
-  private def shareMemory(id: Long): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.markMemoryShared(MemoryRecordId(id))(JorlanClient.MemoryRecord.view))).foldZIO(
+  private def shareMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.markMemoryShared(id)(JorlanClient.MemoryRecord.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Share failed: $err")),
       {
-        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record $id not found."))
+        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found."))
         case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Shared."))
       },
     )
 
-  private def privatizeMemory(id: Long): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.markMemoryPrivate(MemoryRecordId(id))(JorlanClient.MemoryRecord.view))).foldZIO(
+  private def privatizeMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.markMemoryPrivate(id)(JorlanClient.MemoryRecord.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Privatize failed: $err")),
       {
-        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record $id not found."))
+        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found."))
         case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Private."))
       },
     )
 
   private val showCapabilities: ZIO[Env, Nothing, Unit] =
-    screen(
-      _.addMessage(
-        MessageKind.System,
-        "Capabilities (this session):\n" +
-          "  memory.read    — list and search memory\n" +
-          "  memory.write   — store, forget, mark memory\n" +
-          "  agent.message  — submit messages to agent\n" +
-          "  (Use /whoami to see your user identity)",
-      ),
+    gql(_.run(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not load capabilities: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No capability grants found."))
+        case Some(grants)     =>
+          val lines = grants
+            .map { g =>
+              val expiry = g.expiresAt.map(e => s" (expires: $e)").getOrElse("")
+              s"  ${g.capability.value}  [${g.approvalMode}]$expiry"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Your capability grants:\n$lines"))
+      },
+    )
+
+  private val listAgents: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list sessions: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No active sessions."))
+        case Some(sessions)   =>
+          val lines = sessions
+            .map { s =>
+              s"  [${s.id.value}] status=${s.status}  model=${s.modelId.map(_.value).getOrElse("default")}"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Agent sessions:\n$lines"))
+      },
+    )
+
+  private def stopAgent(id: AgentSessionId): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.terminateSession(id))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Stop failed: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Session ${id.value} terminated.")),
+    )
+
+  private val listApprovals: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list approvals: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No pending approval requests."))
+        case Some(requests)   =>
+          val lines = requests
+            .map { r =>
+              s"  [${r.id.value}] ${r.capability.value}  risk=${r.riskClass}  status=${r.status}"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Pending approvals:\n$lines"))
+      },
+    )
+
+  private def decideApproval(
+    id:       ApprovalRequestId,
+    approved: Boolean,
+  ): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.decideApproval(id, approved))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Decision failed: $err")),
+      _ =>
+        screen(
+          _.addMessage(MessageKind.System, s"Approval request ${id.value} ${if (approved) "approved" else "denied"}."),
+        ),
     )
 
   private def setTrace(level: String): ZIO[Env, Nothing, Unit] =

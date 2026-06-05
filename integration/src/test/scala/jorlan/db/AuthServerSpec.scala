@@ -34,7 +34,7 @@ object AuthServerSpec extends ZIOSpecDefault {
         for {
           repo       <- ZIO.service[UserZIORepository]
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "AuthLogin", Some("auth-login@test.com"), T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "AuthLogin", "auth-login@test.com", T0, T0))
           _          <- repo.changePassword(user.id, "secure-pass")
           result     <- authServer.login("auth-login@test.com", "secure-pass", None)
         } yield assertTrue(
@@ -46,7 +46,7 @@ object AuthServerSpec extends ZIOSpecDefault {
         for {
           repo       <- ZIO.service[UserZIORepository]
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "AuthWrong", Some("auth-wrong@test.com"), T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "AuthWrong", "auth-wrong@test.com", T0, T0))
           _          <- repo.changePassword(user.id, "real-pass")
           result     <- authServer.login("auth-wrong@test.com", "wrong-pass", None)
         } yield assertTrue(result.isEmpty)
@@ -55,7 +55,7 @@ object AuthServerSpec extends ZIOSpecDefault {
         for {
           repo       <- ZIO.service[UserZIORepository]
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "EmailLookup", Some("email-lookup@test.com"), T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "EmailLookup", "email-lookup@test.com", T0, T0))
           found      <- authServer.userByEmail("email-lookup@test.com")
           miss       <- authServer.userByEmail("nobody-here@test.com")
         } yield assertTrue(
@@ -68,7 +68,7 @@ object AuthServerSpec extends ZIOSpecDefault {
         for {
           repo       <- ZIO.service[UserZIORepository]
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "PkLookup", None, T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "PkLookup", "", T0, T0))
           found      <- authServer.userByPK(user.id)
           miss       <- authServer.userByPK(UserId(Long.MaxValue))
         } yield assertTrue(
@@ -103,7 +103,7 @@ object AuthServerSpec extends ZIOSpecDefault {
         for {
           repo       <- ZIO.service[UserZIORepository]
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "LinkOAuth", Some("link-oauth@test.com"), T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "LinkOAuth", "link-oauth@test.com", T0, T0))
           linked     <- authServer.linkOAuthToUser(user, "github", "gh-user-42", Json.Obj())
           identities <- repo.getChannelIdentities(linked.id)
         } yield assertTrue(

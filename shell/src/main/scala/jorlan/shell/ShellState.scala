@@ -52,7 +52,7 @@ class ShellState private (liveSessionRef: Ref[Option[LiveSession]]) {
 
 object ShellState {
 
-  val make: UIO[ShellState] = Ref.make(Option.empty[LiveSession]).map(new ShellState(_))
+  val make: UIO[ShellState] = Ref.make(Option.empty[LiveSession]).map(ShellState(_))
 
   val live: ULayer[ShellState] = ZLayer.fromZIO(make)
 

@@ -49,7 +49,7 @@ object LangChainServiceBuilder {
           .builder()
           .id("12345")
           .maxMessages(1000)
-          .chatMemoryStore(new InMemoryChatMemoryStore())
+          .chatMemoryStore(InMemoryChatMemoryStore())
           .build(),
       ),
     )

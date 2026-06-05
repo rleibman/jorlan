@@ -16,30 +16,31 @@ import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
 
-object MemorySkillSpec extends ZIOSpecDefault {
+object MemorySkillSpec extends ZIOSpec[MemorySkill] {
 
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
 
-  private val layers: ULayer[MemorySkill] = {
-    val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-    val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-    val summarizer = ZLayer.succeed(
-      new CheckpointSummarizer {
-        override def summarize(
-          messages: List[Message],
-          userId:   UserId,
-          agentId:  AgentId,
-        ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-      }: CheckpointSummarizer,
+  override val bootstrap: ULayer[MemorySkill] =
+    ZLayer.make[MemorySkill](
+      InMemoryRepositories.InMemoryMemoryRepo.layer,
+      ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+      ZLayer.succeed(
+        new CheckpointSummarizer {
+          override def summarize(
+            messages: List[Message],
+            userId:   UserId,
+            agentId:  AgentId,
+          ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
+        }: CheckpointSummarizer,
+      ),
+      ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+      MemorySkill.live,
     )
-    val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-    val svcLayer = (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-    svcLayer >>> MemorySkill.live
-  }
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[MemorySkill & TestEnvironment & Scope, Any] =
     suite("MemorySkill")(
       test("remember stores and is retrievable via search") {
         for {
@@ -85,6 +86,6 @@ object MemorySkillSpec extends ZIOSpecDefault {
           results <- skill.search("nonexistent_xyz_string", MemoryScope.User, userId, agentId)
         } yield assertTrue(results.isEmpty)
       },
-    ).provide(layers)
+    )
 
 }

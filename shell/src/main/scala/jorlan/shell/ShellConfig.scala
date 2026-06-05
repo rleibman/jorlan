@@ -30,7 +30,11 @@ case class ShellConfig(
   serverUrl: String = "http://localhost:8080",
   email:     Option[String] = None,
   password:  Option[String] = None,
-) derives JsonEncoder
+) derives JsonEncoder {
+
+  def typedServerUrl: ServerUrl = ServerUrl(serverUrl)
+
+}
 
 object ShellConfig {
 
@@ -58,19 +62,19 @@ object ShellConfig {
       cfg <- TypesafeConfigProvider
         .fromTypesafeConfig(typesafeConfig)
         .load(descriptor)
-        .mapError(e => new RuntimeException(e.getMessage))
+        .mapError(e => RuntimeException(e.getMessage))
     } yield cfg
   }
 
   private def envConfigPath: Option[File] =
-    Option(java.lang.System.getenv("JORLAN_SHELL_CONFIG")).map(new File(_))
+    Option(java.lang.System.getenv("JORLAN_SHELL_CONFIG")).map(File(_))
 
   private def argConfigPath(args: List[String]): Option[File] =
-    args.sliding(2).collectFirst { case List("--config", path) => new File(path) }
+    args.sliding(2).collectFirst { case List("--config", path) => File(path) }
 
   private def defaultConfigPath: File = {
     val homeDir = java.lang.System.getProperty("user.home", "")
-    new File(s"$homeDir/.jorlan/jorlan-shell.json")
+    File(s"$homeDir/.jorlan/jorlan-shell.json")
   }
 
   /** Determine the file to read config from, given a set of CLI args.
@@ -80,7 +84,7 @@ object ShellConfig {
   private[shell] def findReadFile(args: List[String]): UIO[Option[File]] =
     ZIO.succeed {
       val homeDir = java.lang.System.getProperty("user.home", "")
-      val legacyFile = new File(s"$homeDir/.jorlan/jorlan.json")
+      val legacyFile = File(s"$homeDir/.jorlan/jorlan.json")
       envConfigPath
         .filter(_.exists())
         .orElse(argConfigPath(args).filter(_.exists()))

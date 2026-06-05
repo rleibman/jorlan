@@ -5,6 +5,17 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of Phase 10 review (2026-06-04)
+
+### Missed-run policy enum defined but logic never consulted
+Phase 10 defined `MissedRunPolicy` (Skip/RunOnce/RunAllMissed) as a domain type and stored it on `SchedulerJob`, but `TriggerEngine.tick` never reads it — all pending jobs are dispatched regardless. Pattern: when a design doc specifies conditional execution logic keyed on an enum value (especially for edge-case policies like missed-run, retry, or backoff), verify there is actual branching code in the engine that reads and acts on the enum, not just a field that is stored.
+
+### Startup recomputation step missing from engine start method
+TriggerEngine.start is a simple `logInfo *> tick.repeat(...)`. The mini-design specified a startup pass to recompute next scheduledAt for all recurring triggers before the first tick. Pattern: when a design doc calls out "on startup" behavior separately from the poll loop, check for distinct startup logic in the start/init method, not just in the tick body.
+
+### ZLayer exists but engine instantiated with `new` in Jorlan.run
+TriggerEngine.live is defined but Jorlan.run uses `new TriggerEngine(...)` directly, bypassing the layer and duplicating the construction in two code paths. Pattern: when a companion object provides a ZLayer, verify it is actually used in EnvironmentBuilder or the startup flow — a layer that exists but is unused offers no compile-time wiring safety.
+
 ## Patterns observed as of Phase 9 review (2026-06-03)
 
 ### Checkpoint pipeline wired but not called

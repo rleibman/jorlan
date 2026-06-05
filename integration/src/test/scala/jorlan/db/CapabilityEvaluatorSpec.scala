@@ -21,7 +21,10 @@ import zio.test.*
 object CapabilityEvaluatorSpec extends ZIOSpecDefault {
 
   private val appLayer =
-    JorlanContainer.repositoryLayer >+> CapabilityEvaluatorImpl.live
+    ZLayer.make[CapabilityEvaluator & PermissionZIORepository & UserZIORepository](
+      JorlanContainer.repositoryLayer,
+      CapabilityEvaluatorImpl.live,
+    )
 
   private def capReq(
     userId: UserId,
@@ -41,7 +44,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
         for {
           userRepo  <- ZIO.service[UserZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser1", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser1", "", T0, T0))
           result    <- evaluator.evaluate(capReq(user.id, "shell.execute"))
         } yield assertTrue(result == EvaluationResult.DefaultDeny)
       },
@@ -50,7 +53,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser2", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser2", "", T0, T0))
           _         <- permRepo.upsertPermission(
             Permission(PermissionId.empty, None, Some(user.id), "shell", "execute", None),
           )
@@ -62,7 +65,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser3", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser3", "", T0, T0))
           role      <- permRepo.upsertRole(Role(RoleId.empty, "shell-operator", None))
           _         <- permRepo.assignRole(user.id, role.id)
           _         <- permRepo.upsertPermission(
@@ -76,7 +79,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser4", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser4", "", T0, T0))
           _         <- permRepo.upsertPermission(
             Permission(PermissionId.empty, None, Some(user.id), "shell", "execute", None),
           )
@@ -101,7 +104,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser5", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser5", "", T0, T0))
           grant     <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -126,7 +129,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser6", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser6", "", T0, T0))
           _         <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -161,7 +164,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           userRepo  <- ZIO.service[UserZIORepository]
           permRepo  <- ZIO.service[PermissionZIORepository]
           evaluator <- ZIO.service[CapabilityEvaluator]
-          user      <- userRepo.upsert(User(UserId.empty, "CEUser7", None, T0, T0))
+          user      <- userRepo.upsert(User(UserId.empty, "CEUser7", "", T0, T0))
           // shell.sudo.execute → resource="shell", action="sudo.execute"
           _ <- permRepo.upsertPermission(
             Permission(PermissionId.empty, None, Some(user.id), "shell", "sudo.execute", None),

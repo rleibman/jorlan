@@ -136,6 +136,6 @@ private class ApprovalServiceImpl(
 object ApprovalServiceImpl {
 
   val live: URLayer[CapabilityEvaluator & PermissionZIORepository & EventLogZIORepository, ApprovalService] =
-    ZLayer.fromFunction(new ApprovalServiceImpl(_, _, _))
+    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _))
 
 }

@@ -351,6 +351,44 @@ object JorlanClient {
 
   }
 
+  type CapabilityGrant
+  object CapabilityGrant {
+
+    final case class CapabilityGrantView(
+      id:           jorlan.domain.CapabilityGrantId,
+      capability:   jorlan.domain.CapabilityName,
+      scopeJson:    scala.Option[String],
+      granteeId:    jorlan.domain.UserId,
+      approvalMode: String, // String or Enum?
+      expiresAt:    scala.Option[java.time.Instant],
+      createdAt:    java.time.Instant,
+    )
+
+    type ViewSelection = SelectionBuilder[CapabilityGrant, CapabilityGrantView]
+
+    def view: ViewSelection =
+      (id ~ capability ~ scopeJson ~ granteeId ~ approvalMode ~ expiresAt ~ createdAt).map {
+        case (id, capability, scopeJson, granteeId, approvalMode, expiresAt, createdAt) =>
+          CapabilityGrantView(id, capability, scopeJson, granteeId, approvalMode, expiresAt, createdAt)
+      }
+
+    def id: SelectionBuilder[CapabilityGrant, jorlan.domain.CapabilityGrantId] =
+      _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+    def capability: SelectionBuilder[CapabilityGrant, jorlan.domain.CapabilityName] =
+      _root_.caliban.client.SelectionBuilder.Field("capability", Scalar())
+    def scopeJson: SelectionBuilder[CapabilityGrant, scala.Option[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("scopeJson", OptionOf(Scalar()))
+    def granteeId: SelectionBuilder[CapabilityGrant, jorlan.domain.UserId] =
+      _root_.caliban.client.SelectionBuilder.Field("granteeId", Scalar())
+    def approvalMode: SelectionBuilder[CapabilityGrant, String] =
+      _root_.caliban.client.SelectionBuilder.Field("approvalMode", Scalar())
+    def expiresAt: SelectionBuilder[CapabilityGrant, scala.Option[java.time.Instant]] =
+      _root_.caliban.client.SelectionBuilder.Field("expiresAt", OptionOf(Scalar()))
+    def createdAt: SelectionBuilder[CapabilityGrant, java.time.Instant] =
+      _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
+
+  }
+
   type Queries = _root_.caliban.client.Operations.RootQuery
   object Queries {
 
@@ -449,6 +487,16 @@ object JorlanClient {
         OptionOf(ListOf(Obj(innerSelection))),
         arguments = List(Argument("scope", scope, "MemoryScope"), Argument("textSearch", textSearch, "String")),
       )
+
+    def listCapabilities[A](
+      innerSelection: SelectionBuilder[CapabilityGrant, A],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field("listCapabilities", OptionOf(ListOf(Obj(innerSelection))))
+
+    def listApprovals[A](
+      innerSelection: SelectionBuilder[ApprovalRequest, A],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field("listApprovals", OptionOf(ListOf(Obj(innerSelection))))
 
   }
 
@@ -655,6 +703,35 @@ object JorlanClient {
           Argument("expertise", expertise, "[String!]!"),
           Argument("prompt", prompt, "String!"),
         ),
+      )
+
+    def decideApproval(
+      requestId: jorlan.domain.ApprovalRequestId,
+      approved:  Boolean,
+      note:      scala.Option[String] = None,
+    )(implicit
+      encoder0: ArgEncoder[jorlan.domain.ApprovalRequestId],
+      encoder1: ArgEncoder[Boolean],
+      encoder2: ArgEncoder[scala.Option[String]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "decideApproval",
+        OptionOf(Scalar()),
+        arguments = List(
+          Argument("requestId", requestId, "ApprovalRequestId!"),
+          Argument("approved", approved, "Boolean!"),
+          Argument("note", note, "String"),
+        ),
+      )
+
+    def terminateSession(
+      value:             jorlan.domain.AgentSessionId,
+    )(implicit encoder0: ArgEncoder[jorlan.domain.AgentSessionId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "terminateSession",
+        OptionOf(Scalar()),
+        arguments = List(Argument("value", value, "AgentSessionId!")),
       )
 
   }

@@ -61,7 +61,7 @@ object Codecs {
       val cleaned = pem.replaceAll("-----[^-]+-----", "").replaceAll("\\s+", "")
       try {
         val bytes = Base64.getDecoder.decode(cleaned.nn)
-        val spec = new X509EncodedKeySpec(bytes)
+        val spec = X509EncodedKeySpec(bytes)
         List("RSA", "EC", "Ed25519").iterator
           .flatMap { alg =>
             try Some(KeyFactory.getInstance(alg).generatePublic(spec))

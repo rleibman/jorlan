@@ -81,6 +81,6 @@ class MemorySkill(memoryService: MemoryService) {
 object MemorySkill {
 
   val live: URLayer[MemoryService, MemorySkill] =
-    ZLayer.fromFunction(new MemorySkill(_))
+    ZLayer.fromFunction(MemorySkill(_))
 
 }

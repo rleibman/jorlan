@@ -72,6 +72,6 @@ private class CapabilityEvaluatorImpl(repo: PermissionZIORepository) extends Cap
 object CapabilityEvaluatorImpl {
 
   val live: URLayer[PermissionZIORepository, CapabilityEvaluator] =
-    ZLayer.fromFunction((repo: PermissionZIORepository) => new CapabilityEvaluatorImpl(repo))
+    ZLayer.fromFunction((repo: PermissionZIORepository) => CapabilityEvaluatorImpl(repo))
 
 }

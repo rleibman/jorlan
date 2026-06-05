@@ -7,12 +7,38 @@ permissions, durable scheduling, and full observability. See `doc/` for full spe
 
 ## Key Docs
 
+### Core Specs
+
 - `doc/ExecutiveSummary.md` — Goals and philosophy
 - `doc/SoftwareRequirementsSpecification.md` — Full requirements
 - `doc/SoftwareDesignDocument.md` — Architecture and implementation guidance
 - `doc/orchestrator_integration_addendum.md` — GraphQL orchestrator API design
-- `doc/00_system_overview.md` through `doc/13_artifacts_and_effects.md` — Subsystem diagrams
-- `doc/development_roadmap.md` — Development roadmap and milestones, typically contains the checked tasks that should be done for each phase
+- `doc/development_roadmap.md` — Canonical roadmap; checkbox items track per-phase completion
+
+### System Diagrams
+
+- `doc/system-diagrams/00_system_overview.md` through `doc/system-diagrams/13_artifacts_and_effects.md` — Subsystem
+  diagrams per domain area
+
+### Phase Mini-Designs
+
+Created before a phase begins to capture detailed design decisions:
+
+- `doc/mini-designs/phase9-memory-system.md`
+- `doc/mini-designs/phase10-durable-scheduler.md`
+- `doc/mini-designs/session-connection-redesign.md`
+- `doc/mini-designs/testing_ai_on_ci.md`
+
+### Phase Reviews
+
+Multi-agent tech-debt reports, written after implementation using `doc/phase_review_template.md`:
+
+- `doc/phase-review/phase0_1_2_review.md` through `doc/phase-review/phase10-review.md`
+
+### Other
+
+- `doc/phase_review_template.md` — Template all phase reviews must follow
+- `doc/manual-testing-guide.md` — Manual QA checklist
 
 ## Technology
 
@@ -36,10 +62,9 @@ permissions, durable scheduling, and full observability. See `doc/` for full spe
 
 ## SBT Usage
 
-- Always use `--error` option: `sbt --error compile`
-- Any time you're going to compile two modules or more, please use `sbt --error compile test:compile`
-- Use `sbt test` to run all tests 
-  
+- Always use `--error` option: `sbtn --error compile`
+- Any time you're going to compile two modules or more, please use `sbtn --error compile test:compile`
+- Use `sbtn test` to run all tests
 
 ## Scala Style
 
@@ -73,10 +98,33 @@ permissions, durable scheduling, and full observability. See `doc/` for full spe
 4. Exact MariaDB vector schema and embedding model strategy
 5. How to promote agent-authored skills after repeated successful use
 
+## Phase Execution Strategy
+
+Each phase follows this sequence, commanded and supervised manually by the user:
+
+0. **Save & reset** — Save memory, clear context
+1. **Branch** — `git checkout -b phaseN/feature-name`
+2. **Plan** — Update `doc/development_roadmap.md` with checkbox items for the phase; create a
+   `doc/mini-designs/phaseN-*.md` if the design is non-trivial
+3. **Implement** — Execute the phase, checking off items in `doc/development_roadmap.md` as each
+   is completed
+4. **Save & reset** — Save memory, clear context
+5. **Fan out agents** — Launch all review agents in parallel (check counts first — at last count
+   8 in `~/.claude/agents/` and 1 in `.claude/agents/`; always verify before running). After all
+   agents complete, launch the `report-coordinator` agent to write
+   `doc/phase-review/phaseN-review.md` following `doc/phase_review_template.md`
+6. **Fix review items** — Work through the review document top-down, checking off each item
+   `[x]` as it is resolved
+7. **Manual visual review** — User reviews code directly
+8. **Manual testing** — User runs the app and tests the golden path and edge cases
+9. **Copilot PR review** — GitHub Copilot does a final pass on the PR for any remaining gaps
+10. **PR approved and merged**
+
 ## Other important notes
 
-- When I tell you to fan out subagents, run all of them, start by figuring out which ones need to be run (At last count
-  there were 8 in the global directory and one in this project, but always check first), and then run them all. Do not
-  assume that any of them are already running, even if you just ran them a moment ago. Always check first.
-- After you run your agents, the reporting agent should place it's report in a doc/xxx-review.md file, where xxx is
-  typically the Phase of the project we're at. The document should follow the guidelines of the phase_review_template.md 
+- When I tell you to fan out subagents, run all of them. Start by checking which agents exist
+  (both `~/.claude/agents/` and `.claude/agents/`), do not assume any are already running.
+- After agents complete, the `report-coordinator` agent writes the report to
+  `doc/phase-review/phaseN-review.md` following `doc/phase_review_template.md`.
+- Whenever you're working on a list of items from a document (e.g. the roadmap or a phase review) you must always check
+  off the items as you go, otherwise it's really hard to figure out where you were if something goes wrong

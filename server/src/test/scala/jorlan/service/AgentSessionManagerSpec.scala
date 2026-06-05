@@ -42,12 +42,14 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
       } yield repo: AgentZIORepository
     }
 
-  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogZIORepository] = {
-    val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val hubLayer = SessionHub.live
-    val fakeGateway = FakeModelGateway.layer(Nil)
-    (seededAgentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogRepo) >>> AgentSessionManagerImpl.live ++ hubLayer ++ eventLogRepo
-  }
+  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogZIORepository] =
+    ZLayer.make[AgentSessionManager & SessionHub & EventLogZIORepository](
+      seededAgentRepoLayer,
+      SessionHub.live,
+      FakeModelGateway.layer(Nil),
+      InMemoryRepositories.InMemoryEventLogRepo.layer,
+      AgentSessionManagerImpl.live,
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("AgentSessionManager")(

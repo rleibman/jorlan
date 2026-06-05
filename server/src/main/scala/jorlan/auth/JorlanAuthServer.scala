@@ -77,7 +77,7 @@ object JorlanAuthServer {
                   User(
                     id = UserId.empty,
                     displayName = oauthInfo.name,
-                    email = Some(oauthInfo.email),
+                    email = oauthInfo.email,
                     createdAt = now,
                     updatedAt = now,
                     active = oauthInfo.emailVerified,

@@ -99,7 +99,7 @@ object JorlanScreen {
     ZIO
       .acquireRelease(
         ZIO.attempt {
-          val screen = new TerminalScreen(new DefaultTerminalFactory().createTerminal())
+          val screen = TerminalScreen(DefaultTerminalFactory().createTerminal())
           screen.startScreen()
           screen
         },
@@ -127,7 +127,7 @@ object JorlanScreen {
           inputBuf   <- Ref.make("")
           inputQueue <- Queue.bounded[String](256)
           running    <- Ref.make(true)
-        } yield new LanternaScreen(screen, state, inputBuf, inputQueue, running)
+        } yield LanternaScreen(screen, state, inputBuf, inputQueue, running)
       }
   }
 

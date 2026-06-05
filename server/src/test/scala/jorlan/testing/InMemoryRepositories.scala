@@ -53,9 +53,9 @@ object InMemoryRepositories {
 
     override def getChannelIdentities(userId: UserId):       RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(Nil)
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
-      ZIO.die(new RuntimeException("not implemented"))
+      ZIO.die(RuntimeException("not implemented"))
     override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
-      ZIO.die(new RuntimeException("not implemented"))
+      ZIO.die(RuntimeException("not implemented"))
     override def login(
       email:    String,
       password: String,
@@ -77,7 +77,7 @@ object InMemoryRepositories {
 
     def make: UIO[InMemoryUserRepo] =
       (Ref.make(0L) <*> Ref.make(Map.empty[Long, User])).map { case (idGen, store) =>
-        new InMemoryUserRepo(idGen, store)
+        InMemoryUserRepo(idGen, store)
       }
 
     val layer: ULayer[UserZIORepository] = ZLayer(make.map(r => r: UserZIORepository))
@@ -215,6 +215,9 @@ object InMemoryRepositories {
     override def getExpiredApprovalRequests: RepositoryTask[List[ApprovalRequest]] =
       approvals.get.map(_.values.toList.filter(_.status == ApprovalStatus.Expired))
 
+    override def listPendingApprovals(userId: UserId): RepositoryTask[List[ApprovalRequest]] =
+      approvals.get.map(_.values.toList.filter(r => r.requestorUserId == userId && r.status == ApprovalStatus.Pending))
+
     override def findApprovedRequest(
       capability: CapabilityName,
       userId:     UserId,
@@ -271,7 +274,7 @@ object InMemoryRepositories {
         grants        <- Ref.make(Map.empty[Long, CapabilityGrant])
         approvalIdGen <- Ref.make(0L)
         approvals     <- Ref.make(Map.empty[Long, ApprovalRequest])
-      } yield new InMemoryPermissionRepo(
+      } yield InMemoryPermissionRepo(
         roleIdGen,
         roles,
         userRoles,
@@ -326,7 +329,7 @@ object InMemoryRepositories {
 
     def make: UIO[InMemoryEventLogRepo] =
       (Ref.make(0L) <*> Ref.make(List.empty[EventLog[Json]])).map { case (idGen, store) =>
-        new InMemoryEventLogRepo(idGen, store)
+        InMemoryEventLogRepo(idGen, store)
       }
 
     val layer: ULayer[EventLogZIORepository] = ZLayer(make.map(r => r: EventLogZIORepository))
@@ -385,7 +388,7 @@ object InMemoryRepositories {
         agentStore   <- Ref.make(Map.empty[Long, Agent])
         sessionIdGen <- Ref.make(0L)
         sessionStore <- Ref.make(Map.empty[Long, AgentSession])
-      } yield new InMemoryAgentRepo(agentIdGen, agentStore, sessionIdGen, sessionStore)
+      } yield InMemoryAgentRepo(agentIdGen, agentStore, sessionIdGen, sessionStore)
 
     val layer: ULayer[AgentZIORepository] = ZLayer(make.map(r => r: AgentZIORepository))
 
@@ -437,7 +440,7 @@ object InMemoryRepositories {
         convStore <- Ref.make(Map.empty[Long, Conversation])
         msgIdGen  <- Ref.make(0L)
         msgStore  <- Ref.make(Map.empty[Long, Message])
-      } yield new InMemoryConversationRepo(convIdGen, convStore, msgIdGen, msgStore)
+      } yield InMemoryConversationRepo(convIdGen, convStore, msgIdGen, msgStore)
 
     val layer: ULayer[ConversationZIORepository] = ZLayer(make.map(r => r: ConversationZIORepository))
 
@@ -504,7 +507,7 @@ object InMemoryRepositories {
 
     def make: UIO[InMemoryMemoryRepo] =
       (Ref.make(0L) <*> Ref.make(Map.empty[Long, MemoryRecord])).map { case (idGen, store) =>
-        new InMemoryMemoryRepo(idGen, store)
+        InMemoryMemoryRepo(idGen, store)
       }
 
     val layer: ULayer[MemoryZIORepository] = ZLayer(make.map(r => r: MemoryZIORepository))
@@ -527,10 +530,168 @@ object InMemoryRepositories {
   object InMemoryServerSettingsRepo {
 
     def make: UIO[InMemoryServerSettingsRepo] =
-      Ref.make(Map.empty[String, Json]).map(new InMemoryServerSettingsRepo(_))
+      Ref.make(Map.empty[String, Json]).map(InMemoryServerSettingsRepo(_))
 
     val layer: ULayer[ServerSettingsRepository] =
       ZLayer(make.map(r => r: ServerSettingsRepository))
+
+  }
+
+  // ─── Scheduler (no-op stub for unit tests) ────────────────────────────────────
+
+  class NoOpSchedulerRepo extends SchedulerZIORepository {
+
+    override def getJob(id:             SchedulerJobId):     RepositoryTask[Option[SchedulerJob]] = ZIO.succeed(None)
+    override def listJobs(agentId:      Option[AgentId]):    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
+    override def getPendingJobs:                             RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
+    override def upsertJob(job:         SchedulerJob):       RepositoryTask[SchedulerJob] = ZIO.succeed(job)
+    override def deleteJob(id:          SchedulerJobId):     RepositoryTask[Long] = ZIO.succeed(0L)
+    override def searchTriggers(s:      TriggerSearch):      RepositoryTask[List[SchedulerTrigger]] = ZIO.succeed(Nil)
+    override def upsertTrigger(trigger: SchedulerTrigger):   RepositoryTask[SchedulerTrigger] = ZIO.succeed(trigger)
+    override def deleteTrigger(id:      SchedulerTriggerId): RepositoryTask[Long] = ZIO.succeed(0L)
+    override def claimJob(
+      id:              SchedulerJobId,
+      workerId:        String,
+      now:             Instant,
+      leaseTtlSeconds: Int,
+    ): RepositoryTask[Boolean] =
+      ZIO.succeed(false)
+    override def releaseJob(
+      id:         SchedulerJobId,
+      status:     JobStatus,
+      resultJson: Option[String],
+      finishedAt: Instant,
+    ): RepositoryTask[Unit] =
+      ZIO.unit
+    override def expireLeases(olderThan: Instant): RepositoryTask[Long] = ZIO.succeed(0L)
+
+  }
+
+  object NoOpSchedulerRepo {
+
+    val layer: ULayer[SchedulerZIORepository] = ZLayer.succeed(NoOpSchedulerRepo(): SchedulerZIORepository)
+
+  }
+
+  // ─── Scheduler (stateful in-memory, for JobManager and TriggerEngine tests) ──
+
+  class InMemorySchedulerRepo(
+    jobIdGen:  Ref[Long],
+    jobs:      Ref[Map[SchedulerJobId, SchedulerJob]],
+    trigIdGen: Ref[Long],
+    triggers:  Ref[Map[SchedulerTriggerId, SchedulerTrigger]],
+  ) extends SchedulerZIORepository {
+
+    override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
+      jobs.get.map(_.get(id))
+
+    override def listJobs(agentId: Option[AgentId]): RepositoryTask[List[SchedulerJob]] =
+      jobs.get.map { m =>
+        val all = m.values.toList
+        agentId.fold(all)(aid => all.filter(_.agentId == aid))
+      }
+
+    override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =
+      for {
+        now <- Clock.instant
+        m   <- jobs.get
+      } yield m.values.toList.filter(j =>
+        j.status == JobStatus.Pending && !j.scheduledAt.isAfter(now) && j.leasedAt.isEmpty,
+      )
+
+    override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] =
+      if (job.id.value == 0L) {
+        jobIdGen.updateAndGet(_ + 1).flatMap { id =>
+          val saved = job.copy(id = SchedulerJobId(id))
+          jobs.update(_.updated(saved.id, saved)).as(saved)
+        }
+      } else {
+        jobs.update(_.updated(job.id, job)).as(job)
+      }
+
+    override def deleteJob(id: SchedulerJobId): RepositoryTask[Long] =
+      jobs.modify(m => if (m.contains(id)) (1L, m - id) else (0L, m))
+
+    override def searchTriggers(s: TriggerSearch): RepositoryTask[List[SchedulerTrigger]] =
+      triggers.get.map(_.values.toList.filter(_.jobId == s.jobId))
+
+    override def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger] =
+      if (trigger.id.value == 0L) {
+        trigIdGen.updateAndGet(_ + 1).flatMap { id =>
+          val saved = trigger.copy(id = SchedulerTriggerId(id))
+          triggers.update(_.updated(saved.id, saved)).as(saved)
+        }
+      } else {
+        triggers.update(_.updated(trigger.id, trigger)).as(trigger)
+      }
+
+    override def deleteTrigger(id: SchedulerTriggerId): RepositoryTask[Long] =
+      triggers.modify(m => if (m.contains(id)) (1L, m - id) else (0L, m))
+
+    override def claimJob(
+      id:              SchedulerJobId,
+      workerId:        String,
+      now:             Instant,
+      leaseTtlSeconds: Int,
+    ): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id) match {
+          case Some(j)
+              if j.status == JobStatus.Pending &&
+                j.leasedAt.forall(la => la.isBefore(now.minusSeconds(leaseTtlSeconds.toLong))) =>
+            val claimed = j.copy(status = JobStatus.Running, leasedAt = Some(now), leasedBy = Some(workerId))
+            (true, m.updated(id, claimed))
+          case _ => (false, m)
+        }
+      }
+
+    override def releaseJob(
+      id:         SchedulerJobId,
+      status:     JobStatus,
+      resultJson: Option[String],
+      finishedAt: Instant,
+    ): RepositoryTask[Unit] =
+      jobs.update(m =>
+        m.get(id).fold(m) { j =>
+          m.updated(
+            id,
+            j.copy(
+              status = status,
+              resultJson = resultJson,
+              finishedAt = Some(finishedAt),
+              leasedAt = None,
+              leasedBy = None,
+            ),
+          )
+        },
+      )
+
+    override def expireLeases(olderThan: Instant): RepositoryTask[Long] =
+      jobs.modify { m =>
+        val stale = m.values.filter(j => j.status == JobStatus.Running && j.leasedAt.exists(_.isBefore(olderThan)))
+        val reset = stale.foldLeft(m) {
+          (
+            acc,
+            j,
+          ) =>
+            acc.updated(j.id, j.copy(status = JobStatus.Pending, leasedAt = None, leasedBy = None))
+        }
+        (stale.size.toLong, reset)
+      }
+
+  }
+
+  object InMemorySchedulerRepo {
+
+    def make: UIO[InMemorySchedulerRepo] =
+      for {
+        jobIdGen  <- Ref.make(0L)
+        jobs      <- Ref.make(Map.empty[SchedulerJobId, SchedulerJob])
+        trigIdGen <- Ref.make(0L)
+        triggers  <- Ref.make(Map.empty[SchedulerTriggerId, SchedulerTrigger])
+      } yield InMemorySchedulerRepo(jobIdGen, jobs, trigIdGen, triggers)
+
+    val layer: ULayer[SchedulerZIORepository] = ZLayer(make.map(r => r: SchedulerZIORepository))
 
   }
 

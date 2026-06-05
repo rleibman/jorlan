@@ -74,7 +74,7 @@ object JorlanShell extends ZIOApp {
       writePath <- ShellConfig.resolveWritePath(args.toList)
       activeCfg <-
         if (firstRun) {
-          FirstRunWizard.run(effectiveCfg.serverUrl, writePath)
+          FirstRunWizard.run(effectiveCfg.typedServerUrl, writePath)
         } else {
           ZIO.succeed(effectiveCfg)
         }
@@ -84,14 +84,14 @@ object JorlanShell extends ZIOApp {
 
       (email, password) <- resolveCredentials(activeCfg, screen)
 
-      loginResult <- connectWithRetry(email, password, activeCfg.serverUrl)
+      loginResult <- connectWithRetry(email, password, activeCfg.typedServerUrl)
 
-      _ <- initialisePostLogin(loginResult, activeCfg.serverUrl)
+      _ <- initialisePostLogin(loginResult, activeCfg.typedServerUrl)
       _ <- loadOrCreateSession(screen)
 
       exitPromise    <- Promise.make[Nothing, Unit]
       loopFiber      <- processLoop(screen, exitPromise).fork
-      heartbeatFiber <- connectionHeartbeat(email, password, activeCfg.serverUrl).fork
+      heartbeatFiber <- connectionHeartbeat(email, password, activeCfg.typedServerUrl).fork
 
       _ <- exitPromise.await
 
@@ -136,7 +136,7 @@ object JorlanShell extends ZIOApp {
     */
   private def initialisePostLogin(
     loginResult: LoginResult,
-    serverUrl:   String,
+    serverUrl:   ServerUrl,
   ): ZIO[JorlanScreen & InitClient, Throwable, Unit] = {
     for {
       screen    <- ZIO.service[JorlanScreen]
@@ -151,10 +151,12 @@ object JorlanShell extends ZIOApp {
               status.buildTime,
             ),
           )
-          .mapError(msg => VersionIncompatibleError(s"Version incompatibility with server at $serverUrl — $msg"))
+          .mapError(msg =>
+            VersionIncompatibleError(s"Version incompatibility with server at ${serverUrl.value} — $msg"),
+          )
       }
-      serverName = statusOpt.map(_.serverName).getOrElse(serverUrl)
-      _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [$serverUrl]")
+      serverName = statusOpt.map(_.serverName).getOrElse(serverUrl.value)
+      _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [${serverUrl.value}]")
       _ <- screen.setModeStatus(
         s" [connected: $serverName]  [user: ${loginResult.displayName}]  [no session]",
       )
@@ -298,7 +300,7 @@ object JorlanShell extends ZIOApp {
   private def connectWithRetry(
     email:     String,
     password:  String,
-    serverUrl: String,
+    serverUrl: ServerUrl,
   ): ZIO[AuthClient & JorlanScreen, Throwable, LoginResult] = {
 
     // Exponential backoff starting at 0.5s, doubling each attempt, capped at 60s.
@@ -314,19 +316,19 @@ object JorlanShell extends ZIOApp {
           )
       }
 
-    ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [connecting to $serverUrl…]  [no session]")) *>
+    ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [connecting to ${serverUrl.value}…]  [no session]")) *>
       AuthClient
         .login(email, password)
         .tapError(err => ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.Error, s"Connection failed: $err")))
         // Stop retrying on 4xx — wrong credentials won't succeed on the next attempt.
         .retry(backoff.whileInput(!isClientError(_)))
-        .mapError(new RuntimeException(_))
+        .mapError(RuntimeException(_))
   }
 
   private def connectionHeartbeat(
     email:     String,
     password:  String,
-    serverUrl: String,
+    serverUrl: ServerUrl,
   ): ZIO[AuthClient & JorlanScreen, Nothing, Unit] = {
     val check = AuthClient.whoAmI
       .foldZIO(
@@ -336,9 +338,11 @@ object JorlanShell extends ZIOApp {
             // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
             // heartbeat fiber; the main shell process continues until the user quits.
             connectWithRetry(email, password, serverUrl).orDie.flatMap { r =>
-              ZIO.serviceWithZIO[JorlanScreen](_.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [$serverUrl]")) *>
+              ZIO.serviceWithZIO[JorlanScreen](
+                _.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]"),
+              ) *>
                 ZIO.serviceWithZIO[JorlanScreen](
-                  _.setModeStatus(s" [connected: $serverUrl]  [user: ${r.displayName}]  [no session]"),
+                  _.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]"),
                 ) *>
                 ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}."))
             },
@@ -366,7 +370,7 @@ object JorlanShell extends ZIOApp {
         screen.setInputPrompt(label) *>
           screen.readLine.flatMap { line =>
             ShellCommand.parse(line) match {
-              case ShellCommand.Quit => ZIO.fail(new RuntimeException("Cancelled"))
+              case ShellCommand.Quit => ZIO.fail(RuntimeException("Cancelled"))
               case _                 => ZIO.succeed(line)
             }
           }

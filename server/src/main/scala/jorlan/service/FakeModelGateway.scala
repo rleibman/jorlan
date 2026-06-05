@@ -63,11 +63,11 @@ object FakeModelGateway {
     chunks:     List[String],
     chunkDelay: Option[Duration] = None,
   ): ULayer[ModelGateway] =
-    ZLayer.succeed(new FakeModelGateway(chunks, chunkDelay))
+    ZLayer.succeed(FakeModelGateway(chunks, chunkDelay))
 
   /** Factory for a failing model gateway (for testing error paths). */
   def failingLayer(error: ModelError): ULayer[ModelGateway] =
-    ZLayer.succeed(new FailingFakeModelGateway(error))
+    ZLayer.succeed(FailingFakeModelGateway(error))
 
   /** Creates a gateway that records every system prompt passed to [[streamedResponse]] into a [[Ref]]. Useful for
     * asserting that memory context or personality is injected correctly.
@@ -76,7 +76,7 @@ object FakeModelGateway {
     chunks:          List[String],
     capturedPrompts: Ref[List[String]],
   ): ULayer[ModelGateway] =
-    ZLayer.succeed(new CapturingFakeModelGateway(chunks, capturedPrompts))
+    ZLayer.succeed(CapturingFakeModelGateway(chunks, capturedPrompts))
 
 }
 

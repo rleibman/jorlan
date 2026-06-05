@@ -56,14 +56,15 @@ object MemoryServiceSpec extends ZIOSpecDefault {
 
   }
 
-  private val directLayers: ULayer[MemoryService] = {
-    val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-    val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-    val summarizer = ZLayer.succeed(new NoOpCheckpointSummarizer(): CheckpointSummarizer)
-    val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-    (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-  }
+  private val directLayers: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.InMemoryMemoryRepo.layer,
+      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
+      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
+      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("MemoryService")(
@@ -219,21 +220,27 @@ object MemoryServiceSpec extends ZIOSpecDefault {
             _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
             result <- svc.query(MemoryScope.Private, userId, agentId)
           } yield assertTrue(result.exists(_.recordKey == "episodic.checkpoint"))
-        }.provide {
-          val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-          val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-          val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-          val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-          val summarizer = FakeModelGateway.layer(List("- my password is hunter2\n")) >>> CheckpointSummarizerImpl.live
-          (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-        },
-      ).provide {
-        val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-        val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-        val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-        val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-        val summarizer = FakeModelGateway.layer(List("- User prefers Scala\n")) >>> CheckpointSummarizerImpl.live
-        (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-      }
+        }.provide(
+          ZLayer.make[MemoryService](
+            InMemoryRepositories.InMemoryMemoryRepo.layer,
+            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+            FakeModelGateway.layer(List("- my password is hunter2\n")),
+            CheckpointSummarizerImpl.live,
+            MemoryServiceImpl.live,
+          ),
+        ),
+      ).provide(
+        ZLayer.make[MemoryService](
+          InMemoryRepositories.InMemoryMemoryRepo.layer,
+          ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+          ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+          ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+          FakeModelGateway.layer(List("- User prefers Scala\n")),
+          CheckpointSummarizerImpl.live,
+          MemoryServiceImpl.live,
+        ),
+      )
 
 }

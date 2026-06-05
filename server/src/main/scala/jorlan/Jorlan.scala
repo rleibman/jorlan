@@ -16,6 +16,7 @@ import jorlan.db.FlywayMigration
 import jorlan.db.repository.{
   EventLogZIORepository,
   PermissionZIORepository,
+  SchedulerZIORepository,
   ServerSettingsRepository,
   UserZIORepository,
 }
@@ -33,7 +34,7 @@ import java.util.concurrent.TimeUnit
 type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
   OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
   SessionHub & ModelGateway & ServerSettingsRepository & UserZIORepository & PermissionZIORepository &
-  EventLogZIORepository & MemoryService & MemorySkill
+  SchedulerZIORepository & EventLogZIORepository & MemoryService & MemorySkill & JobManager & TriggerEngine
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -87,11 +88,12 @@ object Jorlan extends ZIOApp {
         case _                               => false
       }
       tokenStore <- InitTokenStore.make(initialized)
-      initService = new InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo, permRepo)
+      initService = InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo, permRepo)
       _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       _ <-
         if (initialized) {
           for {
+            _      <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
             routes <- buildRoutes(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()
@@ -106,6 +108,7 @@ object Jorlan extends ZIOApp {
             _      <- initDone.await
             _      <- serverFiber.interrupt
             _      <- ZIO.logInfo("Server initialized — switching to full application routes")
+            _      <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
             routes <- buildRoutes(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()

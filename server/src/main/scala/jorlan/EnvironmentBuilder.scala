@@ -92,6 +92,9 @@ object EnvironmentBuilder {
         MemoryServiceImpl.live,
         MemorySkill.live,
         AgentRunnerImpl.live,
+        JobManagerImpl.live,
+        TriggerEngine.live,
+        // TODO Phase 12: wire SchedulerSkill.live once SkillRegistry is available
       ).orDie
 
 }

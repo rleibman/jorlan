@@ -42,6 +42,6 @@ object MemoryClassifierImpl {
   /** Keywords that indicate intent to share broadly → classified as `Shared`. */
   val sharedKeywords: Set[String] = Set("everyone", "team", "share with all", "public", "shared", "for the team")
 
-  val live: ULayer[MemoryClassifier] = ZLayer.succeed(new MemoryClassifierImpl())
+  val live: ULayer[MemoryClassifier] = ZLayer.succeed(MemoryClassifierImpl())
 
 }

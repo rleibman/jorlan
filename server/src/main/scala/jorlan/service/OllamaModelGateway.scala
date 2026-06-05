@@ -66,7 +66,7 @@ private class OllamaModelGateway(
           .builder()
           .id(sessionId.value.toString)
           .maxMessages(config.maxMessages)
-          .chatMemoryStore(new InMemoryChatMemoryStore())
+          .chatMemoryStore(InMemoryChatMemoryStore())
           .build(),
       )
       val builder = dev.langchain4j.service.AiServices
@@ -166,7 +166,7 @@ private class OllamaModelGateway(
       else
         ZIO
           .attempt {
-            val store = new InMemoryChatMemoryStore()
+            val store = InMemoryChatMemoryStore()
             val memory = MessageWindowChatMemory
               .builder()
               .id(sessionId.value.toString)
@@ -220,7 +220,7 @@ object OllamaModelGateway {
           )
         }.orDie
         sessions <- Ref.make(Map.empty[AgentSessionId, SessionEntry])
-      } yield new OllamaModelGateway(config, model, sessions, eventLogRepo),
+      } yield OllamaModelGateway(config, model, sessions, eventLogRepo),
     )
 
 }

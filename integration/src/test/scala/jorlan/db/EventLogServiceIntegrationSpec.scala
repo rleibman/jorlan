@@ -60,7 +60,7 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[jorlan.db.repository.UserZIORepository]
           repo     <- ZIO.service[EventLogZIORepository]
-          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", None, T0, T0))
+          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", "", T0, T0))
           _        <- repo.append(testEvent(EventType.AgentStarted, actorId = Some(user.id)))
           found    <- repo.search(EventLogFilter(eventType = Some(EventType.AgentStarted)))
         } yield assertTrue(found.exists(_.actorId.contains(user.id)))

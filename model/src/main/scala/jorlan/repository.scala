@@ -15,6 +15,8 @@ import jorlan.service.EventLogFilter
 import zio.json.JsonEncoder
 import zio.json.ast.Json
 
+import java.time.Instant
+
 // ─── Search infrastructure ────────────────────────────────────────────────────
 
 enum OrderDirection {
@@ -306,12 +308,37 @@ trait EventLogRepository[F[_]] {
 trait SchedulerRepository[F[_]] {
 
   def getJob(id:             SchedulerJobId):     F[Option[SchedulerJob]]
+  def listJobs(agentId:      Option[AgentId]):    F[List[SchedulerJob]]
   def getPendingJobs:                             F[List[SchedulerJob]]
   def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
   def deleteJob(id:          SchedulerJobId):     F[Long]
   def searchTriggers(s:      TriggerSearch):      F[List[SchedulerTrigger]]
   def upsertTrigger(trigger: SchedulerTrigger):   F[SchedulerTrigger]
   def deleteTrigger(id:      SchedulerTriggerId): F[Long]
+
+  /** Atomically claim a job for execution. Returns `true` if the claim succeeded (only one worker wins the race). Uses
+    * a single UPDATE with a WHERE clause that checks the job is still `Pending` and unclaimed.
+    *
+    * @param leaseTtlSeconds
+    *   Stale leases older than this will also be overwritten.
+    */
+  def claimJob(
+    id:              SchedulerJobId,
+    workerId:        String,
+    now:             Instant,
+    leaseTtlSeconds: Int,
+  ): F[Boolean]
+
+  /** Release a completed or failed job: sets final `status`, `resultJson`, `finishedAt`, and clears the lease. */
+  def releaseJob(
+    id:         SchedulerJobId,
+    status:     JobStatus,
+    resultJson: Option[String],
+    finishedAt: Instant,
+  ): F[Unit]
+
+  /** Reset stale leases (where `leasedAt < olderThan`) back to `Pending` so another worker can pick them up. */
+  def expireLeases(olderThan: Instant): F[Long]
 
 }
 
@@ -357,6 +384,7 @@ trait PermissionRepository[F[_]] {
   def expireAllStaleApprovalRequests():                    F[Long]
   def recordApprovalDecision(decision: ApprovalDecision):  F[ApprovalDecision]
   def getApprovalRequest(id:           ApprovalRequestId): F[Option[ApprovalRequest]]
+  def listPendingApprovals(userId:     UserId):            F[List[ApprovalRequest]]
   def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
 
   /** All [[CapabilityGrant]] rows for a user + capability that are relevant to the evaluator: `Denied` grants are

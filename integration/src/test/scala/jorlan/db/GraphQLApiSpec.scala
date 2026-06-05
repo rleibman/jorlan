@@ -32,23 +32,35 @@ object GraphQLApiSpec extends ZIOSpecDefault {
         ZIO.succeed(EvaluationResult.ResourcePermissionAllows)
     })
 
-  private val memoryLayer =
-    MemoryClassifierImpl.live >+>
-      MemoryAccessPolicyImpl.live >+>
-      CheckpointSummarizerImpl.live >+>
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd) >+>
-      MemoryServiceImpl.live >+>
-      MemorySkill.live
+  private val stubApprovalService: ULayer[ApprovalService] = ZLayer.succeed(
+    new ApprovalService {
+      override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
+        ZIO.succeed(AuthorizationResult.Allowed)
+      override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
+        ZIO.succeed(decision)
+      override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+    }: ApprovalService,
+  )
 
-  private val appLayer =
-    JorlanContainer.repositoryLayer >+>
-      stubCapabilityEvaluator >+>
-      ZLayer.succeed(JorlanSession.serverSession) >+>
-      SessionHub.live >+>
-      FakeModelGateway.layer(List("test")) >+>
-      AgentSessionManagerImpl.live >+>
-      memoryLayer >+>
-      AgentRunnerImpl.live
+  private val appLayer = ZLayer.make[
+    JorlanAPI.JorlanApiEnv & JorlanSession,
+  ](
+    JorlanContainer.repositoryLayer,
+    stubCapabilityEvaluator,
+    stubApprovalService,
+    ZLayer.succeed(JorlanSession.serverSession),
+    SessionHub.live,
+    FakeModelGateway.layer(List("test")),
+    AgentSessionManagerImpl.live,
+    MemoryClassifierImpl.live,
+    MemoryAccessPolicyImpl.live,
+    CheckpointSummarizerImpl.live,
+    ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+    MemoryServiceImpl.live,
+    MemorySkill.live,
+    AgentRunnerImpl.live,
+    JobManagerImpl.live,
+  )
 
   private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[
     JorlanAPI.JorlanApiEnv & JorlanSession,
@@ -254,7 +266,13 @@ object GraphQLApiSpec extends ZIOSpecDefault {
           !permsResult.data.toString.contains("memory"),
         )
       },
-    ).provideLayerShared(appLayer >+> interpreterLayer) @@ TestAspect.sequential
+    ).provideLayerShared(
+      ZLayer
+        .make[JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+          appLayer,
+          interpreterLayer,
+        ),
+    ) @@ TestAspect.sequential
 
   private def extractLongField(
     data:      String,
@@ -265,7 +283,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
     pattern
       .findFirstMatchIn(data)
       .map(_.group(1).toLong)
-      .getOrElse(throw new AssertionError(s"Field '$fieldName' not found in: $data"))
+      .getOrElse(throw AssertionError(s"Field '$fieldName' not found in: $data"))
   }
 
 }

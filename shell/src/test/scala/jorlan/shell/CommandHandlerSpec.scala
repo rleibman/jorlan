@@ -10,7 +10,19 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentId, AgentSessionId, ResponseChunk, SessionStatus, UserId}
+import jorlan.domain.{
+  AgentId,
+  AgentSessionId,
+  ApprovalRequestId,
+  ApprovalStatus,
+  CapabilityGrantId,
+  CapabilityName,
+  MemoryRecordId,
+  ResponseChunk,
+  RiskClass,
+  SessionStatus,
+  UserId,
+}
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
@@ -661,7 +673,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunReturning(Some(true)) ++
@@ -678,7 +690,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(1L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunFailing("not found") ++
@@ -802,7 +814,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunReturning(Some(true)) ++
@@ -821,10 +833,43 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("/memory list") && text.contains("/memory remember"))
       },
-      test("/capabilities emits System message listing capabilities") {
+      test("/capabilities emits System message with grants from server") {
+        import jorlan.graphql.client.JorlanClient.CapabilityGrant.CapabilityGrantView
+        val grantViews = Some(
+          List(
+            CapabilityGrantView(
+              CapabilityGrantId(1L),
+              CapabilityName("memory.read"),
+              None,
+              UserId(1L),
+              "Persistent",
+              None,
+              java.time.Instant.EPOCH,
+            ),
+            CapabilityGrantView(
+              CapabilityGrantId(2L),
+              CapabilityName("agent.message"),
+              None,
+              UserId(1L),
+              "Persistent",
+              None,
+              java.time.Instant.EPOCH,
+            ),
+          ),
+        )
         for {
-          (fs, _) <- runCmd(ShellCommand.Capabilities)
-          msgs    <- fs.messagesOfKind(MessageKind.System)
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.Capabilities, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(grantViews) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("memory.read") && text.contains("agent.message"))
       },
@@ -844,6 +889,164 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("no session"))
+      },
+      test("/agents list shows sessions from server") {
+        import jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView
+        import jorlan.domain.WorkspaceId
+        val sessions = Some(
+          List(
+            AgentSessionView(
+              AgentSessionId(10L),
+              AgentId(1L),
+              UserId(1L),
+              None,
+              SessionStatus.Active,
+              None,
+              java.time.Instant.EPOCH,
+              java.time.Instant.EPOCH,
+            ),
+          ),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(sessions) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("10"))
+      },
+      test("/agents list shows 'No active sessions' when empty") {
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView]] = Some(Nil)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(empty) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No active sessions"))
+      },
+      test("/agents stop shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsStop(AgentSessionId(10L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("10"))
+      },
+      test("/approvals list shows approval requests") {
+        import jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView
+        import jorlan.domain.{ApprovalRequestId, ApprovalStatus, RiskClass}
+        val approvals = Some(
+          List(
+            ApprovalRequestView(
+              ApprovalRequestId(5L),
+              CapabilityName("shell.execute"),
+              None,
+              None,
+              UserId(1L),
+              None,
+              RiskClass.ExternalEffect,
+              ApprovalStatus.Pending,
+              java.time.Instant.EPOCH,
+              None,
+            ),
+          ),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(approvals) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("shell.execute"), text.contains("5"))
+      },
+      test("/approvals list shows 'No pending' when empty") {
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView]] = Some(Nil)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(empty) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No pending"))
+      },
+      test("/approvals approve shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsApprove(ApprovalRequestId(5L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("approved"), text.contains("5"))
+      },
+      test("/approvals deny shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsDeny(ApprovalRequestId(5L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("denied"), text.contains("5"))
       },
       test("/model with active session shows session id") {
         val sid = AgentSessionId(77L)

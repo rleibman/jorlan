@@ -496,16 +496,16 @@ future specs.
 
 **Phase 8.5 scope completion:**
 
-| Deliverable                                            | Status                                                        |
-|--------------------------------------------------------|---------------------------------------------------------------|
-| Session connection redesign (one WS per session)       | ✅                                                             |
-| `ConversationLogger` rewritten with `ZIO.log`          | ✅ Rewritten (fiber-safe, no MDC, no blocking I/O)            |
-| `VersionCheck` client/server compatibility gate        | ✅                                                             |
-| Shell TUI improvements (command handling, status bar)  | ✅                                                             |
-| Manual testing infrastructure (`manual-testing-guide`) | ✅                                                             |
-| Dead `SessionHub` dependency removal                   | ✅ Removed from `AgentSessionManagerImpl`                     |
-| `ConversationLoggerSpec` (new test file)               | ✅ Created with 7 tests using `ZTestLogger`                   |
-| `CommandHandlerSpec` active-session coverage           | ✅ 3 new tests; misleading `/new` test fixed                  |
+| Deliverable                                            | Status                                                         |
+|--------------------------------------------------------|----------------------------------------------------------------|
+| Session connection redesign (one WS per session)       | ✅                                                              |
+| `ConversationLogger` rewritten with `ZIO.log`          | ✅ Rewritten (fiber-safe, no MDC, no blocking I/O)              |
+| `VersionCheck` client/server compatibility gate        | ✅                                                              |
+| Shell TUI improvements (command handling, status bar)  | ✅                                                              |
+| Manual testing infrastructure (`manual-testing-guide`) | ✅                                                              |
+| Dead `SessionHub` dependency removal                   | ✅ Removed from `AgentSessionManagerImpl`                       |
+| `ConversationLoggerSpec` (new test file)               | ✅ Created with 7 tests using `ZTestLogger`                     |
+| `CommandHandlerSpec` active-session coverage           | ✅ 3 new tests; misleading `/new` test fixed                    |
 | All 40 review items addressed                          | ✅ 37 fixed; 3 suggestions deferred (P85-020, P85-030, P85-035) |
 
 ---
@@ -568,21 +568,24 @@ builder approach means schema mismatches are caught at compile time rather than 
 - [x] P85-016: Misleading `/new` test replaced with explicit error-path and success-path tests
 - [x] P85-017: `InitRoutesSpec` — localhost bypass and `initDone` Promise tests added
 - [x] P85-018: `SessionHub` class-level ScalaDoc rewritten to describe bounded queue and actual contract
-- [x] P85-019: `session-connection-redesign.md` — status updated, `subscribe` return type corrected, broken table row fixed
+- [x] P85-019: `session-connection-redesign.md` — status updated, `subscribe` return type corrected, broken table row
+  fixed
 
 ---
 
 ## Manual Test Plan
 
-The comprehensive manual test plan (smoke tests, version check, session lifecycle, reconnect, error display, and cross-cutting checks) has been merged into [`doc/manual-testing-guide.md`](../manual-testing-guide.md), which is the canonical location for all manual testing scenarios.
+The comprehensive manual test plan (smoke tests, version check, session lifecycle, reconnect, error display, and
+cross-cutting checks) has been merged into [`doc/manual-testing-guide.md`](../manual-testing-guide.md), which is the
+canonical location for all manual testing scenarios.
 
 The guide was updated as part of this review to add:
+
 - **Section B3** — Version check scenarios (C1–C8)
 - **Section C** — Connection heartbeat & reconnect (K1–K6)
 - **Section D** — Subscription fiber lifecycle (L1–L6)
 - **Section E** — Error display and message kinds
 - **Section F** — Cross-cutting verification checklist
-
 
 ---
 

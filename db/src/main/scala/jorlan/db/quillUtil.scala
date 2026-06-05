@@ -33,7 +33,7 @@ import scala.language.unsafeNulls
   */
 def makeDataSource(config: DatabaseConfig): HikariDataSource = {
   val c = config.dataSource
-  val hc = new HikariConfig()
+  val hc = HikariConfig()
   hc.setDriverClassName(c.driver)
   hc.setJdbcUrl(c.url)
   hc.setUsername(c.user)
@@ -44,7 +44,7 @@ def makeDataSource(config: DatabaseConfig): HikariDataSource = {
   hc.setIdleTimeout(c.idleTimeoutMillis)
   hc.setKeepaliveTime(c.keepaliveTimeMillis)
   hc.setAutoCommit(true)
-  new HikariDataSource(hc)
+  HikariDataSource(hc)
 }
 
 /** Constructs a [[HikariDataSource]] as a scoped resource — the pool is closed when the scope is released. */
@@ -135,7 +135,7 @@ given MappedEncoding[Json, String] = MappedEncoding(_.toJson)
 given MappedEncoding[String, Json] =
   MappedEncoding(s =>
     // Quill interop: throw is required — see note above.
-    s.fromJson[Json].fold(error => throw new RuntimeException(s"Invalid JSON value: $error"), identity),
+    s.fromJson[Json].fold(error => throw RuntimeException(s"Invalid JSON value: $error"), identity),
   )
 
 given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
@@ -143,7 +143,7 @@ given MappedEncoding[String, Vector[Float]] =
   MappedEncoding(s =>
     // Quill interop: throw is required — see note above.
     s.fromJson[Vector[Float]].fold(
-        error => throw new RuntimeException(s"Invalid Vector[Float] JSON value: $error"),
+        error => throw RuntimeException(s"Invalid Vector[Float] JSON value: $error"),
         identity,
       ),
   )
@@ -154,7 +154,7 @@ given MappedEncoding[String, URI] = MappedEncoding(s => URI.create(s))
 given MappedEncoding[SemVer, String] = MappedEncoding(_.render)
 given MappedEncoding[String, SemVer] =
   // Quill interop: throw is required — see note above.
-  MappedEncoding(s => SemVer.parse(s).fold(e => throw new RuntimeException(ParseError.render(e)), identity))
+  MappedEncoding(s => SemVer.parse(s).fold(e => throw RuntimeException(ParseError.render(e)), identity))
 
 given MappedEncoding[MediaType, String] = MappedEncoding(_.fullType)
 given MappedEncoding[String, MediaType] =
@@ -163,7 +163,7 @@ given MappedEncoding[String, MediaType] =
     MediaType
       .forContentType(s)
       .orElse(MediaType.parseCustomMediaType(s))
-      .getOrElse(throw new RuntimeException(s"Unrecognised MediaType: $s"))
+      .getOrElse(throw RuntimeException(s"Unrecognised MediaType: $s"))
   }
 
 given MappedEncoding[PublicKey, String] =
@@ -176,14 +176,14 @@ given MappedEncoding[String, PublicKey] =
   MappedEncoding { pem =>
     val cleaned = pem.replaceAll("-----[^-]+-----", "").replaceAll("\\s+", "")
     val bytes = Base64.getDecoder.decode(cleaned.nn)
-    val spec = new X509EncodedKeySpec(bytes)
+    val spec = X509EncodedKeySpec(bytes)
     List("RSA", "EC", "Ed25519").iterator
       .flatMap { alg =>
         try Some(KeyFactory.getInstance(alg).generatePublic(spec))
         catch { case _: Exception => None }
       }
       .nextOption()
-      .getOrElse(throw new RuntimeException("Could not parse public key: unknown algorithm"))
+      .getOrElse(throw RuntimeException("Could not parse public key: unknown algorithm"))
   }
 
 /** Quill `MappedEncoding`s for the 12 domain enums stored as `VARCHAR` in MariaDB. Encoding uses `toString` (stored
@@ -209,6 +209,10 @@ given MappedEncoding[String, JobStatus] = MappedEncoding(JobStatus.valueOf)
 given MappedEncoding[JobStatus, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, TriggerType] = MappedEncoding(TriggerType.valueOf)
 given MappedEncoding[TriggerType, String] = MappedEncoding(_.toString)
+given MappedEncoding[String, RetryBackoffPolicy] = MappedEncoding(RetryBackoffPolicy.valueOf)
+given MappedEncoding[RetryBackoffPolicy, String] = MappedEncoding(_.toString)
+given MappedEncoding[String, MissedRunPolicy] = MappedEncoding(MissedRunPolicy.valueOf)
+given MappedEncoding[MissedRunPolicy, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, ApprovalMode] = MappedEncoding(ApprovalMode.valueOf)
 given MappedEncoding[ApprovalMode, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, ApprovalStatus] = MappedEncoding(ApprovalStatus.valueOf)
@@ -216,6 +220,6 @@ given MappedEncoding[ApprovalStatus, String] = MappedEncoding(_.toString)
 given MappedEncoding[Int, RiskClass] =
   MappedEncoding(level =>
     // Quill interop: throw is required — see note above.
-    RiskClass.fromLevel(level).getOrElse(throw new IllegalArgumentException(s"Unknown RiskClass level: $level")),
+    RiskClass.fromLevel(level).getOrElse(throw IllegalArgumentException(s"Unknown RiskClass level: $level")),
   )
 given MappedEncoding[RiskClass, Int] = MappedEncoding(_.level)

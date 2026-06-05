@@ -56,6 +56,14 @@ type: project
 - `loadOrCreateSession` in JorlanShell establishes the long-lived WS subscription fiber at login time; `handleNewSession` in CommandHandler re-establishes it for `/new` — logic is duplicated (known issue flagged)
 - `SetupModeApp.make` now accepts `initDone: Option[Promise[Nothing, Unit]]` and `tokenStore: InitTokenStore`; Promise is used to signal Jorlan.run to switch from setup mode to full routes without a restart
 
+## Phase 10 Conventions Added (2026-06-04)
+- `TriggerEngine` is a plain class (not ZIO service pattern) with `val start: UIO[Unit]` and `private[service] val tick: UIO[Unit]`; started via `forkDaemon` in `Jorlan.run`
+- `JobManager` trait placed correctly in `model/service/` with companion `ZIO.serviceWithZIO` accessors; `JobManagerImpl` in `server/service/` follows established pattern
+- `SchedulerSkill` class in `server/service/` wraps `JobManager` with `val live: URLayer[JobManager, SchedulerSkill]`; not yet wired into application environment (deferred to Phase 12)
+- `TriggerEngine.live` provides `URLayer[SchedulerZIORepository & EventLogZIORepository & AgentSessionManager & AgentRunner & SessionHub, TriggerEngine]` but is NOT used — `Jorlan.run` constructs `new TriggerEngine(...)` directly from ZIO.service calls
+- Scheduler queries (`job`, `triggers`) in `JorlanAPI` call `SchedulerZIORepository` directly, not through `JobManager` — inconsistent with other scheduler mutations which go through `JobManager`
+- `ServerUrl` opaque type added to `shell/` module; correct placement, follows opaque type pattern
+
 ## Known Technical Debt (updated 2026-05-29)
 - `model` module has `quill-jdbc-zio`, `zio-http` as compile deps — domain layer should not know about DB or HTTP
 - `model/configuration.scala` holds `FlywayConfig`, `DataSourceConfig`, `DatabaseConfig` — infra config in domain module

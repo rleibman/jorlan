@@ -15,7 +15,7 @@ import zio.test.*
 
 object MemoryClassifierSpec extends ZIOSpecDefault {
 
-  private val classifier = new MemoryClassifierImpl()
+  private val classifier = MemoryClassifierImpl()
 
   override def spec: Spec[Any, Nothing] =
     suite("MemoryClassifier")(

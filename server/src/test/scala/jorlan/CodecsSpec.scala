@@ -40,8 +40,8 @@ object CodecsSpec extends ZIOSpecDefault {
     },
     test("decodes common versions") {
       for {
-        v100 <- ZIO.fromEither(SemVer.parse("1.0.0").left.map(e => new Exception(e.toString)))
-        v200 <- ZIO.fromEither(SemVer.parse("2.0.0-alpha.1").left.map(e => new Exception(e.toString)))
+        v100 <- ZIO.fromEither(SemVer.parse("1.0.0").left.map(e => Exception(e.toString)))
+        v200 <- ZIO.fromEither(SemVer.parse("2.0.0-alpha.1").left.map(e => Exception(e.toString)))
         json100 = v100.toJson
         json200 = v200.toJson
       } yield assertTrue(

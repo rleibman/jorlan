@@ -43,6 +43,6 @@ class HumanApprovalNotifierImpl(eventLogRepo: EventLogZIORepository) extends Hum
 object HumanApprovalNotifierImpl {
 
   val live: URLayer[EventLogZIORepository, HumanApprovalNotifier] =
-    ZLayer.fromFunction(new HumanApprovalNotifierImpl(_))
+    ZLayer.fromFunction(HumanApprovalNotifierImpl(_))
 
 }

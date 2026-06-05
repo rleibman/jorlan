@@ -17,6 +17,7 @@ import jorlan.db.repository.{
   AgentZIORepository,
   EventLogZIORepository,
   PermissionZIORepository,
+  SchedulerZIORepository,
   ServerSettingsRepository,
   UserZIORepository,
 }
@@ -62,7 +63,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
 
   private def realMemoryServiceLayer: ULayer[MemoryService] = {
     val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-    val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
+    val policy = ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy)
     val summarizer = ZLayer.succeed(
       new CheckpointSummarizer {
         override def summarize(
@@ -72,15 +73,16 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
       }: CheckpointSummarizer,
     )
-    val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
+    val classifier = ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier)
     val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
     (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
   }
 
   private def makeAppLayer(
-    capEval:     ULayer[CapabilityEvaluator] = allowAll,
-    session:     ULayer[JorlanSession] = serverSessionLayer,
-    memSvcLayer: ULayer[MemoryService] = NoOpMemoryService.layer,
+    capEval:        ULayer[CapabilityEvaluator] = allowAll,
+    session:        ULayer[JorlanSession] = serverSessionLayer,
+    memSvcLayer:    ULayer[MemoryService] = NoOpMemoryService.layer,
+    schedRepoLayer: ULayer[SchedulerZIORepository] = InMemoryRepositories.NoOpSchedulerRepo.layer,
   ): ULayer[FullEnv] = {
     val userRepoLayer: ULayer[UserZIORepository] = InMemoryRepositories.InMemoryUserRepo.layer
     val permRepoLayer: ULayer[PermissionZIORepository] = InMemoryRepositories.InMemoryPermissionRepo.layer
@@ -104,21 +106,35 @@ object JorlanAPISpec extends ZIOSpecDefault {
           .orDie
       } yield repo: AgentZIORepository
     }
-    val fakeGateway = FakeModelGateway.layer(List("ok"))
-    val sessionMgrLayer: ULayer[AgentSessionManager] =
-      (agentRepoLayer ++ hubLayer ++ fakeGateway ++ eventLogRepo) >>> AgentSessionManagerImpl.live
-    val convRepoLayer = InMemoryRepositories.InMemoryConversationRepo.layer
-    val runnerLayer: ULayer[AgentRunner] =
-      (fakeGateway ++ hubLayer ++ eventLogRepo ++ settingsRepo ++ convRepoLayer ++ agentRepoLayer ++ memSvcLayer) >>>
-        AgentRunnerImpl.live
-    val memSkillLayer: ULayer[MemorySkill] = memSvcLayer >>> MemorySkill.live
-    val svcLayer:      ULayer[JorlanAPI.JorlanApiEnv & JorlanSession] =
-      userRepoLayer ++ permRepoLayer ++ eventLogRepo ++ settingsRepo ++ capEval ++ session ++ sessionMgrLayer ++
-        runnerLayer ++ memSvcLayer ++ memSkillLayer
-    val interpLayer
-      : ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
-      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
-    svcLayer >+> interpLayer
+    val approvalSvcLayer: ULayer[ApprovalService] = ZLayer.succeed(
+      new ApprovalService {
+        override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
+          ZIO.succeed(AuthorizationResult.Allowed)
+        override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
+          ZIO.succeed(decision)
+        override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+      }: ApprovalService,
+    )
+    ZLayer.make[FullEnv](
+      userRepoLayer,
+      permRepoLayer,
+      eventLogRepo,
+      settingsRepo,
+      hubLayer,
+      capEval,
+      session,
+      agentRepoLayer,
+      FakeModelGateway.layer(List("ok")),
+      InMemoryRepositories.InMemoryConversationRepo.layer,
+      AgentSessionManagerImpl.live,
+      memSvcLayer,
+      AgentRunnerImpl.live,
+      memSvcLayer >>> MemorySkill.live,
+      schedRepoLayer,
+      JobManagerImpl.live,
+      approvalSvcLayer,
+      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
+    )
   }
 
   // ─── Helper to extract a Long field from GraphQL response text ────────────────
@@ -146,6 +162,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       subscriptionSuite,
       personalitySuite,
       memorySuite,
+      schedulerSuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -183,8 +200,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
     },
     test("users includes user after createUser mutation") {
       for {
-        interp      <- ZIO.service[Interp]
-        _           <- interp.execute("""mutation { createUser(displayName: "Alice") { id } }""")
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute("""mutation { createUser(displayName: "Alice", email: "alice@test.com") { id } }""")
         queryResult <- interp.execute("""{ users { id displayName } }""")
       } yield assertTrue(
         queryResult.errors.isEmpty,
@@ -211,10 +228,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("updateUser updates displayName") {
       for {
         interp       <- ZIO.service[Interp]
-        createResult <- interp.execute("""mutation { createUser(displayName: "Old") { id } }""")
+        createResult <- interp.execute("""mutation { createUser(displayName: "Old", email: "old@test.com") { id } }""")
         id = extractLong(createResult.data.toString, "id")
         updateResult <- interp.execute(
-          s"""mutation { updateUser(id: $id, displayName: "New", active: true) { id displayName } }""",
+          s"""mutation { updateUser(id: $id, displayName: "New", email: "new@test.com", active: true) { id displayName } }""",
         )
       } yield assertTrue(
         createResult.errors.isEmpty,
@@ -237,7 +254,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("assignRole and revokeRole round-trip") {
       for {
         interp     <- ZIO.service[Interp]
-        userResult <- interp.execute("""mutation { createUser(displayName: "RoleUser") { id } }""")
+        userResult <- interp.execute(
+          """mutation { createUser(displayName: "RoleUser", email: "role@test.com") { id } }""",
+        )
         userId = extractLong(userResult.data.toString, "id")
         roleResult <- interp.execute("""mutation { createRole(name: "testrole") { id } }""")
         roleId = extractLong(roleResult.data.toString, "id")
@@ -255,7 +274,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("grantPermission with userId succeeds and is searchable") {
       for {
         interp     <- ZIO.service[Interp]
-        userResult <- interp.execute("""mutation { createUser(displayName: "PermUser") { id } }""")
+        userResult <- interp.execute(
+          """mutation { createUser(displayName: "PermUser", email: "perm@test.com") { id } }""",
+        )
         userId = extractLong(userResult.data.toString, "id")
         grantResult <- interp.execute(
           s"""mutation { grantPermission(resource: "fs", action: "read", userId: $userId) { id resource action } }""",
@@ -295,7 +316,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("revokePermission returns count 1 after granting") {
       for {
         interp     <- ZIO.service[Interp]
-        userResult <- interp.execute("""mutation { createUser(displayName: "RevUser") { id } }""")
+        userResult <- interp.execute(
+          """mutation { createUser(displayName: "RevUser", email: "rev@test.com") { id } }""",
+        )
         userId = extractLong(userResult.data.toString, "id")
         grantResult <- interp.execute(
           s"""mutation { grantPermission(resource: "net", action: "fetch", userId: $userId) { id } }""",
@@ -578,6 +601,88 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""{ listMemory(scope: "INVALID_SCOPE") { id } }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)),
+  )
+
+  // ─── Scheduler tests ─────────────────────────────────────────────────────────
+
+  private val schedulerSuite = suite("Scheduler")(
+    test("jobs query returns empty list") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ jobs(value: null) { id name status } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
+    }.provideLayer(makeAppLayer()),
+    test("job query returns null for unknown id") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ job(value: 99999) { id name } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("null"))
+    }.provideLayer(makeAppLayer()),
+    test("triggers query returns empty list for unknown jobId") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ triggers(value: 99999) { id expression } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
+    }.provideLayer(makeAppLayer()),
+    test("jobs query fails when scheduler.manage capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ jobs { id } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("createJob fails when scheduler.manage capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { createJob(name: "test", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("createJob with real scheduler repo creates job in Pending state") {
+      for {
+        interp <- ZIO.service[Interp]
+        // Create a session so resolveAgentIdStrict finds one
+        sessionResult <- interp.execute("""mutation { createSession { id } }""")
+        result        <- interp.execute(
+          """mutation { createJob(name: "my-job", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id name status } }""",
+        )
+      } yield assertTrue(
+        sessionResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("my-job"),
+        result.data.toString.contains("Pending"),
+      )
+    }.provideLayer(makeAppLayer(schedRepoLayer = InMemoryRepositories.InMemorySchedulerRepo.layer)),
+    test("pauseJob fails when scheduler.manage capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { pauseJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("cancelJob fails when scheduler.manage capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { cancelJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("deleteJob fails when scheduler.manage capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { deleteJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("decideApproval fails when approval.decide capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { decideApproval(requestId: 1, approved: true) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("terminateSession fails when agent.session.terminate capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { terminateSession(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
   )
 
 }

@@ -145,7 +145,7 @@ private class SubscriptionClientImpl(
                                ZIO
                                  .fromEither(fullText.fromJson[WsMsg])
                                  .mapError(e =>
-                                   new RuntimeException(
+                                   RuntimeException(
                                      s"JSON parse failed (len=${fullText.length}): $e — text=${fullText.take(200)}",
                                    ),
                                  )
@@ -159,7 +159,7 @@ private class SubscriptionClientImpl(
                                      ZIO
                                        .fromEither(p.toJson.fromJson[DataPayload])
                                        .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
-                                       .mapError(new RuntimeException(_))
+                                       .mapError(RuntimeException(_))
                                        .flatMap { dp =>
                                          val cd = dp.data.agentResponseStream
                                          ZIO.logDebug(

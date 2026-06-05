@@ -124,7 +124,7 @@ object ConfigurationServiceImpl {
         ZIO
           .attempt {
             Option(System.getProperty("application.conf"))
-              .map(path => ConfigFactory.parseFile(new File(path)).withFallback(ConfigFactory.load()).resolve())
+              .map(path => ConfigFactory.parseFile(File(path)).withFallback(ConfigFactory.load()).resolve())
               .getOrElse(ConfigFactory.load().resolve())
           }
           .mapError(e => ConfigLoadError(e.getMessage.nn, Some(e)))

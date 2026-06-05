@@ -45,7 +45,7 @@ private object AgentRunnerState {
       seeded         <- Ref.make(Set.empty[AgentSessionId])
       activeConvs    <- Ref.make(Map.empty[AgentSessionId, ConversationId])
       cachedAgentIds <- Ref.make(Map.empty[AgentSessionId, AgentId])
-    } yield new AgentRunnerState(seeded, activeConvs, cachedAgentIds)
+    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds)
 
 }
 
@@ -351,7 +351,7 @@ object AgentRunnerImpl {
         agentRepo     <- ZIO.service[AgentZIORepository]
         memoryService <- ZIO.service[MemoryService]
         runnerState   <- AgentRunnerState.make
-      } yield new AgentRunnerImpl(
+      } yield AgentRunnerImpl(
         modelGateway,
         sessionHub,
         eventLogRepo,

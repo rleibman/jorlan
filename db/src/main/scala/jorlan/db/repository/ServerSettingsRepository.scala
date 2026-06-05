@@ -71,7 +71,7 @@ object ServerSettingsRepository {
   /** Encodes and persists the given personality. Never fails (encoding errors die). */
   def setPersonality(p: Personality): URIO[ServerSettingsRepository, Unit] =
     ZIO
-      .fromEither(p.toJsonAST.left.map(msg => new RuntimeException(msg)))
+      .fromEither(p.toJsonAST.left.map(RuntimeException(_)))
       .orDie
       .flatMap(json => ZIO.serviceWithZIO[ServerSettingsRepository](_.set(PersonalityKey, json)))
 
