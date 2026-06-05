@@ -23,17 +23,32 @@ object AgentRunnerSpec extends ZIOSpecDefault {
   private val sessionId = AgentSessionId(42L)
   private val userId = UserId(1L)
 
-  private def layers(chunks: List[String]): ULayer[AgentRunner & SessionHub & EventLogZIORepository] = {
-    val fakeGateway = FakeModelGateway.layer(chunks)
-    val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
-    val convRepo = InMemoryRepositories.InMemoryConversationRepo.layer
-    val agentRepo = InMemoryRepositories.InMemoryAgentRepo.layer
-    val memService = NoOpMemoryService.layer
-    val hub = SessionHub.live
-    (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo ++ convRepo ++ agentRepo ++ memService) >>>
-      AgentRunnerImpl.live ++ hub ++ eventLogRepo
-  }
+  private def layers(
+    chunks: List[String],
+    delay:  Option[Duration] = None,
+  ): ULayer[AgentRunner & SessionHub & EventLogZIORepository] =
+    ZLayer.make[AgentRunner & SessionHub & EventLogZIORepository](
+      FakeModelGateway.layer(chunks, delay),
+      SessionHub.live,
+      InMemoryRepositories.InMemoryEventLogRepo.layer,
+      InMemoryRepositories.InMemoryServerSettingsRepo.layer,
+      InMemoryRepositories.InMemoryConversationRepo.layer,
+      InMemoryRepositories.InMemoryAgentRepo.layer,
+      NoOpMemoryService.layer,
+      AgentRunnerImpl.live,
+    )
+
+  private val failingLayers: ULayer[AgentRunner & SessionHub & EventLogZIORepository] =
+    ZLayer.make[AgentRunner & SessionHub & EventLogZIORepository](
+      FakeModelGateway.failingLayer(ModelUnavailable("offline")),
+      SessionHub.live,
+      InMemoryRepositories.InMemoryEventLogRepo.layer,
+      InMemoryRepositories.InMemoryServerSettingsRepo.layer,
+      InMemoryRepositories.InMemoryConversationRepo.layer,
+      InMemoryRepositories.InMemoryAgentRepo.layer,
+      NoOpMemoryService.layer,
+      AgentRunnerImpl.live,
+    )
 
   /** Subscribe to the session (eagerly registering the queue), then fork the stream drain, then run processMessage.
     *
@@ -96,33 +111,13 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           _        <- ZIO.serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hi", Some(userId))).ignore
           received <- fiber.join
         } yield assertTrue(received.nonEmpty, received.last.finished, received.last.isError)
-      }.provide {
-        val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
-        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
-        val convRepo = InMemoryRepositories.InMemoryConversationRepo.layer
-        val agentRepo = InMemoryRepositories.InMemoryAgentRepo.layer
-        val memService = NoOpMemoryService.layer
-        val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo ++ convRepo ++ agentRepo ++ memService) >>>
-          AgentRunnerImpl.live ++ hub ++ eventLogRepo
-      },
+      }.provide(failingLayers),
       test("processMessage writes AgentResponseCompleted even on model failure") {
         for {
           _      <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
           events <- ZIO.serviceWithZIO[EventLogZIORepository](_.search(EventLogFilter()))
         } yield assertTrue(events.exists(_.eventType == EventType.AgentResponseCompleted))
-      }.provide {
-        val fakeGateway = FakeModelGateway.failingLayer(ModelUnavailable("offline"))
-        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
-        val convRepo = InMemoryRepositories.InMemoryConversationRepo.layer
-        val agentRepo = InMemoryRepositories.InMemoryAgentRepo.layer
-        val memService = NoOpMemoryService.layer
-        val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo ++ convRepo ++ agentRepo ++ memService) >>>
-          AgentRunnerImpl.live ++ hub ++ eventLogRepo
-      },
+      }.provide(failingLayers),
       test("FakeModelGateway.availableModels returns fake model list") {
         for {
           gw     <- ZIO.service[ModelGateway]
@@ -143,18 +138,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           val contents = received.toList.filterNot(_.finished).map(_.content)
           assertTrue(contents == tokens)
         }
-      }.provide {
-        val tokens = List("a", "b", "c")
-        val fakeGateway = FakeModelGateway.layer(tokens, Some(5.millis))
-        val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-        val settingsRepo = InMemoryRepositories.InMemoryServerSettingsRepo.layer
-        val convRepo = InMemoryRepositories.InMemoryConversationRepo.layer
-        val agentRepo = InMemoryRepositories.InMemoryAgentRepo.layer
-        val memService = NoOpMemoryService.layer
-        val hub = SessionHub.live
-        (fakeGateway ++ hub ++ eventLogRepo ++ settingsRepo ++ convRepo ++ agentRepo ++ memService) >>>
-          AgentRunnerImpl.live ++ hub ++ eventLogRepo
-      } @@ TestAspect.withLiveClock,
+      }.provide(layers(List("a", "b", "c"), Some(5.millis))) @@ TestAspect.withLiveClock,
       suite("service methods")(
         test("processMessage delegates to implementation") {
           for {
@@ -254,7 +238,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
           memRepo         <- InMemoryRepositories.InMemoryMemoryRepo.make
           _               <- memRepo.upsert(memRecord)
           memSvc = {
-            val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
+            val policy = ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy)
             val summarizer = ZLayer.succeed(new CheckpointSummarizer {
               override def summarize(
                 msgs: List[Message],
@@ -262,7 +246,7 @@ object AgentRunnerSpec extends ZIOSpecDefault {
                 aid:  AgentId,
               ) = ZIO.succeed(Nil)
             }: CheckpointSummarizer)
-            val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
+            val classifier = ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier)
             val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
             val repo = ZLayer.succeed(memRepo: MemoryZIORepository)
             (repo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live

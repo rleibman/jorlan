@@ -50,8 +50,10 @@ object CheckpointSummarizerSpec extends ZIOSpecDefault {
           assertTrue(records.nonEmpty, records.forall(_.recordKey == "episodic.checkpoint"))
       },
     ).provide(
-      FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")) >>>
+      ZLayer.make[CheckpointSummarizer](
+        FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")),
         CheckpointSummarizerImpl.live,
+      ),
     ) +
       suite("degenerate LLM responses")(
         test("blank LLM response produces empty record list") {
@@ -67,8 +69,10 @@ object CheckpointSummarizerSpec extends ZIOSpecDefault {
           } yield assertTrue(records.isEmpty)
         },
       ).provide(
-        FakeModelGateway.layer(List("Here is a summary without any bullets.")) >>>
+        ZLayer.make[CheckpointSummarizer](
+          FakeModelGateway.layer(List("Here is a summary without any bullets.")),
           CheckpointSummarizerImpl.live,
+        ),
       ) +
       suite("LLM stream failure")(
         test("LLM failure is propagated as JorlanError") {
@@ -78,7 +82,10 @@ object CheckpointSummarizerSpec extends ZIOSpecDefault {
           } yield assertTrue(result.isFailure)
         },
       ).provide(
-        FakeModelGateway.failingLayer(ModelUnavailable("simulated failure")) >>> CheckpointSummarizerImpl.live,
+        ZLayer.make[CheckpointSummarizer](
+          FakeModelGateway.failingLayer(ModelUnavailable("simulated failure")),
+          CheckpointSummarizerImpl.live,
+        ),
       )
 
 }

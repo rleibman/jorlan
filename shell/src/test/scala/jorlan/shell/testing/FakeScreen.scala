@@ -74,7 +74,7 @@ object FakeScreen {
       prompt   <- Ref.make("❯ ")
       queue    <- Queue.unbounded[String]
       running  <- Ref.make(true)
-    } yield new FakeScreen(messages, status, mode, prompt, queue, running)
+    } yield FakeScreen(messages, status, mode, prompt, queue, running)
 
   val layer: ULayer[JorlanScreen] = ZLayer.fromZIO(make)
 

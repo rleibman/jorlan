@@ -28,10 +28,13 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
   /** Build a fresh set of layers for each test. All service layers share the same in-memory repositories so that
     * objects created via PermissionZIORepository are visible to CapabilityEvaluator and vice-versa.
     */
-  private def freshLayers: ULayer[ApprovalService & PermissionZIORepository & EventLogZIORepository] = {
-    val base = InMemoryRepositories.InMemoryPermissionRepo.layer ++ InMemoryRepositories.InMemoryEventLogRepo.layer
-    base >+> CapabilityEvaluatorImpl.live >+> ApprovalServiceImpl.live
-  }
+  private def freshLayers: ULayer[ApprovalService & PermissionZIORepository & EventLogZIORepository] =
+    ZLayer.make[ApprovalService & PermissionZIORepository & EventLogZIORepository](
+      InMemoryRepositories.InMemoryPermissionRepo.layer,
+      InMemoryRepositories.InMemoryEventLogRepo.layer,
+      CapabilityEvaluatorImpl.live,
+      ApprovalServiceImpl.live,
+    )
 
   // ─── Fixtures ─────────────────────────────────────────────────────────────────
 

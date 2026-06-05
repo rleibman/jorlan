@@ -43,15 +43,15 @@ object ChannelType {
   * begins.
   *
   * @param email
-  *   Login email address. `None` for users that only authenticate via OAuth and have not set a password.
+  *   Login email address. Required as of V022 — every persisted user has a non-empty email.
   */
 case class User(
   id:          UserId,
   displayName: String,
-  email: Option[String] = None, // TODO I know, big change, but make email required if we can get the email from oauth providers.
-  createdAt: Instant,
-  updatedAt: Instant,
-  active:    Boolean = true,
+  email:       String,
+  createdAt:   Instant,
+  updatedAt:   Instant,
+  active:      Boolean = true,
 ) derives JsonEncoder, JsonDecoder
 
 /** Links a [[User]] to their identity on a specific external channel (e.g. a Telegram chat ID or Slack member ID). One

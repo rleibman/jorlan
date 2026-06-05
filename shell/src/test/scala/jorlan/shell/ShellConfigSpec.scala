@@ -188,7 +188,7 @@ object ShellConfigSpec extends ZIOSpecDefault {
         test("write creates parent directories if absent") {
           for {
             base <- ZIO.succeed(Files.createTempDirectory("jorlan-test-").toFile)
-            deep = new File(base, "nested/deep/config.json")
+            deep = File(base, "nested/deep/config.json")
             cfg = ShellConfig("http://localhost:8080")
             _ <- ShellConfig.write(deep, cfg)
           } yield assertTrue(deep.exists())

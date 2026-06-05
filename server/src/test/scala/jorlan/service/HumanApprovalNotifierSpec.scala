@@ -19,10 +19,11 @@ import zio.test.*
 
 object HumanApprovalNotifierSpec extends ZIOSpecDefault {
 
-  private val freshLayers: ULayer[HumanApprovalNotifier & EventLogZIORepository] = {
-    val eventLogRepo = InMemoryRepositories.InMemoryEventLogRepo.layer
-    eventLogRepo >+> HumanApprovalNotifierImpl.live
-  }
+  private val freshLayers: ULayer[HumanApprovalNotifier & EventLogZIORepository] =
+    ZLayer.make[HumanApprovalNotifier & EventLogZIORepository](
+      InMemoryRepositories.InMemoryEventLogRepo.layer,
+      HumanApprovalNotifierImpl.live,
+    )
 
   private def makeRequest(id: Long): ApprovalRequest =
     ApprovalRequest(

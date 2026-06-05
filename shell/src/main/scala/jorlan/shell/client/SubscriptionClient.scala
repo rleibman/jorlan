@@ -145,7 +145,7 @@ private class SubscriptionClientImpl(
                                ZIO
                                  .fromEither(fullText.fromJson[WsMsg])
                                  .mapError(e =>
-                                   new RuntimeException(
+                                   RuntimeException(
                                      s"JSON parse failed (len=${fullText.length}): $e — text=${fullText.take(200)}",
                                    ),
                                  )
@@ -159,7 +159,7 @@ private class SubscriptionClientImpl(
                                      ZIO
                                        .fromEither(p.toJson.fromJson[DataPayload])
                                        .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
-                                       .mapError(new RuntimeException(_))
+                                       .mapError(RuntimeException(_))
                                        .flatMap { dp =>
                                          val cd = dp.data.agentResponseStream
                                          ZIO.logDebug(
@@ -194,7 +194,12 @@ private class SubscriptionClientImpl(
                       ZIO.logInfo(s"[WS] unexpected non-text frame: $other")
                   }
                   .runDrain
-                _ <- sendInit *> frameLoop.race(pingLoop)
+                _ <- (sendInit *> frameLoop.race(pingLoop))
+                  // Explicitly close the WebSocket when this handler is interrupted so that
+                  // the pending ws.receive() unblocks and the fiber can exit cleanly.
+                  // Without this, subscriptionFiber.interrupt() in shutdownCleanly hangs
+                  // forever because Java's HttpClient does not propagate ZIO interruption.
+                  .ensuring(ws.close().ignore)
               } yield ()
             },
           )

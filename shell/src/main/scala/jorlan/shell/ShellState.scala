@@ -34,7 +34,10 @@ case class LiveSession(
 /** Holds ephemeral shell session state. Tracks which agent session is active and owns the long-lived WebSocket
   * subscription fiber that streams tokens back from the server.
   */
-class ShellState private (liveSessionRef: Ref[Option[LiveSession]]) {
+class ShellState private (
+  liveSessionRef:   Ref[Option[LiveSession]],
+  drainingFiberRef: Ref[Option[Fiber[Nothing, Unit]]],
+) {
 
   /** Returns the currently active [[LiveSession]], or `None` if no session has been started. */
   def getLiveSession: UIO[Option[LiveSession]] = liveSessionRef.get
@@ -48,11 +51,23 @@ class ShellState private (liveSessionRef: Ref[Option[LiveSession]]) {
   /** Convenience accessor for the active session ID, used by display commands such as `/model`. */
   def getSessionId: UIO[Option[AgentSessionId]] = liveSessionRef.get.map(_.map(_.sessionId))
 
+  /** Returns any currently-running token-drain fiber (LLM response in progress). */
+  def getDrainingFiber: UIO[Option[Fiber[Nothing, Unit]]] = drainingFiberRef.get
+
+  /** Registers the active drain fiber. Pass `None` when the drain completes. */
+  def setDrainingFiber(f: Option[Fiber[Nothing, Unit]]): UIO[Unit] = drainingFiberRef.set(f)
+
+  /** Interrupt any in-progress drain fiber and clear it. */
+  def interruptDrain: UIO[Unit] =
+    drainingFiberRef.getAndSet(None).flatMap(f => ZIO.foreachDiscard(f)(_.interrupt).unit)
+
 }
 
 object ShellState {
 
-  val make: UIO[ShellState] = Ref.make(Option.empty[LiveSession]).map(new ShellState(_))
+  val make: UIO[ShellState] =
+    (Ref.make(Option.empty[LiveSession]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]))
+      .map { case (lr, df) => ShellState(lr, df) }
 
   val live: ULayer[ShellState] = ZLayer.fromZIO(make)
 

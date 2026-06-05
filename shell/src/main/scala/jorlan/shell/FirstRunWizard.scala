@@ -25,7 +25,7 @@ import scala.language.unsafeNulls
 object FirstRunWizard {
 
   def run(
-    defaultServerUrl: String,
+    defaultServerUrl: ServerUrl,
     writePath:        File,
   ): ZIO[JorlanScreen & InitClient, Throwable, ShellConfig] =
     for {
@@ -49,38 +49,37 @@ object FirstRunWizard {
   private def promptNonEmpty(
     screen: JorlanScreen,
     label:  String,
-  ): ZIO[Any, Nothing, String] = {
-    def loop: UIO[String] =
-      prompt(screen, label).flatMap { v =>
-        if (v.trim.isEmpty) {
-          screen.addMessage(MessageKind.Error, "Value must not be empty.") *> loop
-        } else ZIO.succeed(v.trim)
-      }
+  ): UIO[String] = {
+    lazy val loop: UIO[String] = prompt(screen, label).flatMap { v =>
+      if (v.trim.isEmpty) {
+        screen.addMessage(MessageKind.Error, "Value must not be empty.") *> loop
+      } else ZIO.succeed(v.trim)
+    }
     loop
   }
 
   private def setupLoop(
-    defaultServerUrl: String,
+    defaultServerUrl: ServerUrl,
     writePath:        File,
     screen:           JorlanScreen,
   ): ZIO[InitClient, Throwable, ShellConfig] = {
     for {
-      _      <- screen.setInputPrompt(s"Server URL [$defaultServerUrl]: ")
+      _      <- screen.setInputPrompt(s"Server URL [${defaultServerUrl.value}]: ")
       urlRaw <- screen.readLine
-      serverUrl = if (urlRaw.trim.isEmpty) defaultServerUrl else urlRaw.trim
+      serverUrl = if (urlRaw.trim.isEmpty) defaultServerUrl else ServerUrl(urlRaw.trim)
       cfg <- statusLoop(serverUrl, writePath, screen)
     } yield cfg
   }
 
   private def statusLoop(
-    serverUrl: String,
+    serverUrl: ServerUrl,
     writePath: File,
     screen:    JorlanScreen,
   ): ZIO[InitClient, Throwable, ShellConfig] = {
     InitClient
       .checkStatus(serverUrl).foldZIO(
         err => {
-          screen.addMessage(MessageKind.Error, s"Cannot reach $serverUrl: $err") *>
+          screen.addMessage(MessageKind.Error, s"Cannot reach ${serverUrl.value}: $err") *>
             screen.addMessage(MessageKind.System, "Check the server URL and try again. Press Enter to retry.") *>
             screen.readLine *>
             setupLoop(serverUrl, writePath, screen)
@@ -102,25 +101,26 @@ object FirstRunWizard {
   }
 
   private def loginPrompt(
-    serverUrl: String,
+    serverUrl: ServerUrl,
     writePath: File,
     screen:    JorlanScreen,
   ): ZIO[Any, Throwable, ShellConfig] = {
     for {
       email    <- promptNonEmpty(screen, "Email: ")
       password <- promptNonEmpty(screen, "Password: ")
-      cfg = ShellConfig(serverUrl, Some(email), Some(password))
+      cfg = ShellConfig(serverUrl.value, Some(email), Some(password))
       _ <- ShellConfig.write(writePath, cfg)
       _ <- screen.addMessage(MessageKind.System, s"Config saved to ${writePath.getPath}")
     } yield cfg
   }
 
-  private def isLocalhost(serverUrl: String): Boolean =
-    scala.util.Try(new java.net.URI(serverUrl).getHost).toOption.exists { h =>
+  private def isLocalhost(serverUrl: ServerUrl): Boolean =
+    scala.util.Try(serverUrl.toUri.getHost).toOption.exists { h =>
       h == "localhost" || h == "127.0.0.1" || h == "::1"
     }
+
   private def initLoop(
-    serverUrl:         String,
+    serverUrl:         ServerUrl,
     defaultServerName: String,
     writePath:         File,
     screen:            JorlanScreen,
@@ -155,7 +155,7 @@ object FirstRunWizard {
                 screen.addMessage(MessageKind.Error, s"Setup failed: $err. Try entering the token again.") *>
                   initLoop(serverUrl, defaultServerName, writePath, screen),
               _ => {
-                val cfg = ShellConfig(serverUrl, Some(adminEmail), Some(password))
+                val cfg = ShellConfig(serverUrl.value, Some(adminEmail), Some(password))
                 (ShellConfig.write(writePath, cfg) *>
                   screen.addMessage(MessageKind.System, s"Server initialized. Config saved to ${writePath.getPath}.") *>
                   screen.addMessage(MessageKind.System, "Waiting for server to switch to full mode…") *>

@@ -1,0 +1,201 @@
+/*
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ *
+ * This source code is protected under international copyright law.  All rights
+ * reserved and protected by the copyright holders.
+ * This file is confidential and only available to authorized individuals with the
+ * permission of the copyright holders.  If you encounter this file and do not have
+ * permission, please contact the copyright holders and delete this file.
+ */
+
+package jorlan
+
+import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import _root_.auth.{AuthConfig, AuthServer, SecretKey}
+import caliban.GraphQLInterpreter
+import jorlan.db.JorlanContainer
+import jorlan.db.repository.QuillRepositories
+import jorlan.domain.*
+import jorlan.graphql.{JorlanAPI, JorlanRoutes}
+import jorlan.service.*
+import jorlan.shell.ShellConfig
+import jorlan.shell.client.{AuthClient, SubscriptionClient}
+import zio.*
+import zio.http.*
+import zio.test.*
+
+import scala.language.unsafeNulls
+
+/** Integration test that starts a real zio-http server (backed by Testcontainers MariaDB) and exercises
+  * [[SubscriptionClient]] end-to-end over WebSocket using the `subscriptions-transport-ws` protocol.
+  */
+object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
+
+  // ─── Copy JorlanEndToEndSpec's proven environment setup ─────────────────────
+
+  private val configLayer = JorlanContainer.configLayer
+
+  private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
+    ZLayer.fromZIO(
+      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
+        val a = cfg.jorlan.auth
+        AuthConfig(
+          secretKey = SecretKey(a.secretKey),
+          accessTTL = a.accessTtlMinutes.minutes,
+          refreshTTL = a.refreshTtlDays.days,
+        )
+      },
+    )
+
+  private val oauthLayer: ZLayer[ConfigurationService, Nothing, OAuthService] =
+    ZLayer
+      .fromZIO(
+        ZIO
+          .serviceWithZIO[ConfigurationService](_.appConfig).orDie.as(
+            OAuthService.live(googleConfig = None, githubConfig = None, discordConfig = None),
+          ),
+      ).flatten
+
+  private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
+    ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
+
+  private val databaseConfigLayer: TaskLayer[DatabaseConfig] =
+    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
+
+  private val flywayConfigLayer: TaskLayer[FlywayConfig] =
+    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.flyway))
+
+  private val envLayer: TaskLayer[JorlanEnvironment] =
+    ZLayer.make[JorlanEnvironment](
+      configLayer,
+      databaseConfigLayer,
+      flywayConfigLayer,
+      jorlan.db.FlywayMigration.live,
+      QuillRepositories.live,
+      stubCapabilityEvaluator,
+      ApprovalServiceImpl.live,
+      jorlan.auth.JorlanAuthServer.live,
+      authConfigLayer,
+      oauthLayer,
+      OAuthStateStore.live(),
+      SessionHub.live,
+      FakeModelGateway.layer(List("hello ", "world")),
+      AgentSessionManagerImpl.live,
+      MemoryClassifierImpl.live,
+      MemoryAccessPolicyImpl.live,
+      CheckpointSummarizerImpl.live,
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+      MemorySkill.live,
+      AgentRunnerImpl.live,
+      JobManagerImpl.live,
+      TriggerEngine.live,
+    )
+
+  private val interpLayer: ZLayer[
+    JorlanAPI.JorlanApiEnv & JorlanSession,
+    Nothing,
+    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+  ] =
+    ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
+
+  private val fullLayer
+    : TaskLayer[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
+    ZLayer.make[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+      envLayer,
+      ZLayer.succeed(JorlanSession.serverSession),
+      interpLayer,
+    )
+
+  // ─── Stub AuthClient: no JWT token needed for the test server ────────────────
+
+  private val stubAuthClient: ULayer[AuthClient] = ZLayer.succeed(new AuthClient {
+    override def login(
+      email:    String,
+      password: String,
+    ): IO[String, jorlan.shell.client.LoginResult] =
+      ZIO.fail("not implemented in stub")
+    override def whoAmI:       IO[String, String] = ZIO.fail("not implemented in stub")
+    override def currentToken: UIO[Option[String]] = ZIO.none
+  })
+
+  override def spec: Spec[TestEnvironment & Scope, Any] =
+    suite("SubscriptionClient WebSocket integration")(
+      test("server starts and health check succeeds") {
+        for {
+          port <- ZIO.attempt {
+            val s = new java.net.ServerSocket(0); val p = s.getLocalPort; s.close(); p
+          }.orDie
+          serverFiber <- Server
+            .serve(Routes(Method.GET / "health" -> Handler.ok))
+            .provideSomeLayer(Server.defaultWithPort(port))
+            .forkDaemon
+          _      <- ZIO.sleep(300.millis)
+          result <- ZIO.scoped {
+            zio.http.Client
+              .batched(Request.get(URL.decode(s"http://localhost:$port/health").toOption.get))
+              .provideSomeLayer(zio.http.Client.default)
+              .orDie
+          }
+          _ <- serverFiber.interrupt
+        } yield assertTrue(result.status == Status.Ok)
+      },
+      test("agentResponseStream delivers response chunks over a live WebSocket connection") {
+        for {
+          env <- ZIO.environment[
+            JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+          ]
+          interp = env.get[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          // Create an agent session via the GraphQL interpreter
+          createResult <- interp.execute("""mutation { createSession { id } }""")
+          sessionId = {
+            val pat = """"id":([0-9]+)""".r
+            pat
+              .findFirstMatchIn(createResult.data.toString)
+              .map(m => AgentSessionId(m.group(1).toLong))
+              .getOrElse(AgentSessionId(1L))
+          }
+          // Build the routes and start a real server on a random port
+          routes <- JorlanRoutes.routes.orDie.provideEnvironment(env)
+          port   <- ZIO.attempt {
+            val s = new java.net.ServerSocket(0)
+            val p = s.getLocalPort
+            s.close()
+            p
+          }.orDie
+          serverFiber <- Server
+            .serve(routes.provideEnvironment(env))
+            .provideSomeLayer(Server.defaultWithPort(port))
+            .forkDaemon
+          _ <- ZIO.sleep(400.millis)
+          // Subscribe to the session using the real SubscriptionClient
+          cfg = ShellConfig(serverUrl = s"http://localhost:$port")
+          // Collect subscription chunks with an explicit deadline
+          subscriptionEffect = ZIO.scoped {
+            SubscriptionClient
+              .agentResponseStream(sessionId)
+              .takeWhile(!_.finished)
+              .runCollect
+              .mapError(e => new RuntimeException(s"WebSocket error: $e"))
+              .provideSomeLayer(ZLayer.succeed(cfg) ++ stubAuthClient >>> SubscriptionClient.live)
+          }
+          // Fork subscription, wait for WS to establish, submit message, then race collection vs timeout
+          subscriptionFiber <- subscriptionEffect.forkDaemon
+          _                 <- ZIO.sleep(800.millis)
+          _                 <- interp
+            .execute(s"""mutation { submitMessage(sessionId: ${sessionId.value}, content: "hello") }""")
+          // Race: either the subscription completes or we time out after 20s
+          chunks <- subscriptionFiber.join
+            .race(ZIO.sleep(20.seconds).as(Chunk.empty[ResponseChunk]))
+            .map(Some(_))
+          _ <- subscriptionFiber.interruptFork
+          _ <- serverFiber.interrupt
+        } yield assertTrue(
+          createResult.errors.isEmpty,
+          sessionId.value > 0L,
+          chunks.isDefined,
+        )
+      },
+    ).provideLayerShared(fullLayer) @@ TestAspect.withLiveClock @@ TestAspect.sequential
+
+}

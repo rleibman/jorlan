@@ -11,6 +11,7 @@
 package jorlan.shell
 
 import jorlan.init.ServerStatus
+import jorlan.shell.ServerUrl
 import jorlan.shell.client.InitClient
 import jorlan.shell.testing.FakeScreen
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -32,9 +33,9 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
     completeResult: IO[String, Unit],
   ) extends InitClient {
 
-    override def checkStatus(serverUrl: String): IO[String, ServerStatus] = statusResult
+    override def checkStatus(serverUrl: ServerUrl): IO[String, ServerStatus] = statusResult
     override def complete(
-      serverUrl:     String,
+      serverUrl:     ServerUrl,
       token:         String,
       serverName:    String,
       adminEmail:    String,
@@ -47,7 +48,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
   private def stubClient(
     status:   IO[String, ServerStatus] = ZIO.fail("not connected"),
     complete: IO[String, Unit] = ZIO.unit,
-  ): ULayer[InitClient] = ZLayer.succeed(new FakeInitClient(status, complete))
+  ): ULayer[InitClient] = ZLayer.succeed(FakeInitClient(status, complete))
 
   private val initializedStatus =
     ServerStatus(initialized = true, version = "1.0", buildTime = 0L, serverName = "Jorlan", uptimeMs = 100)
@@ -71,7 +72,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
           _ <- screen.sendLine("secret12345!")
           client = stubClient(status = ZIO.succeed(initializedStatus))
           cfg <- FirstRunWizard
-            .run("http://localhost:8080", path)
+            .run(ServerUrl("http://localhost:8080"), path)
             .provide(ZLayer.succeed(screen: JorlanScreen), client)
         } yield {
           assertTrue(
@@ -113,7 +114,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
           _   <- screen.sendLine("password123!")
           _   <- screen.sendLine("password123!")
           cfg <- FirstRunWizard
-            .run("http://localhost:8080", path)
+            .run(ServerUrl("http://localhost:8080"), path)
             .provide(ZLayer.succeed(screen: JorlanScreen), client)
         } yield {
           assertTrue(
@@ -144,7 +145,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
           _   <- screen.sendLine("hunter2!!!!!")
           _   <- screen.sendLine("hunter2!!!!!") // match
           cfg <- FirstRunWizard
-            .run("http://localhost:8080", path)
+            .run(ServerUrl("http://localhost:8080"), path)
             .provide(ZLayer.succeed(screen: JorlanScreen), client)
           msgs <- screen.messagesOfKind(MessageKind.Error)
         } yield {
@@ -172,7 +173,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
           _   <- screen.sendLine("carol@example.com")
           _   <- screen.sendLine("password123!")
           cfg <- FirstRunWizard
-            .run("http://localhost:8080", path)
+            .run(ServerUrl("http://localhost:8080"), path)
             .provide(ZLayer.succeed(screen: JorlanScreen), client)
           msgs <- screen.messagesOfKind(MessageKind.Error)
         } yield {
@@ -192,7 +193,7 @@ object FirstRunWizardSpec extends ZIOSpecDefault {
           _   <- screen.sendLine("dave@example.com")
           _   <- screen.sendLine("password123!")
           cfg <- FirstRunWizard
-            .run("http://localhost:8080", path)
+            .run(ServerUrl("http://localhost:8080"), path)
             .provide(ZLayer.succeed(screen: JorlanScreen), client)
         } yield assertTrue(
           cfg.serverUrl == "http://myserver:9090",

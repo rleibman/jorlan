@@ -24,11 +24,15 @@ metadata:
 | `hasRolePermission` | `idx_perm_role_resource_action` — OK |
 | `findApprovedRequest` | `idx_ar_user_cap_status` (missing sessionId post-filter) |
 
-## Scheduler Hot Path (periodic)
+## Scheduler Hot Path (periodic, Phase 10)
 
 | Query | Index |
 |---|---|
-| `getPendingJobs` | `idx_sj_status_scheduled` — OK but unbounded result set |
+| `getPendingJobs` | `idx_sj_status_scheduled (status, scheduledAt)` — OK |
+| `expireLeases` | `idx_scheduler_lease (status, leasedAt)` — OK (V021) |
+| `searchTriggers(jobId)` | NO INDEX on schedulerTrigger(jobId) — full scan |
+| `listJobs(Some(agentId))` | NO INDEX on schedulerJob(agentId) — FK only |
+| `listJobs(None)` | Full table scan, no LIMIT — grows unbounded |
 
 ## Event Log
 

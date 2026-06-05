@@ -11,15 +11,8 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.{
-  EventLogZIORepository,
-  PermissionZIORepository,
-  RepositoryError,
-  RepositoryTask,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
-import jorlan.domain.{ChannelIdentity, ChannelIdentityId, ChannelType, User, UserId}
+import jorlan.db.repository.*
+import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -48,7 +41,7 @@ object InitServiceSpec extends ZIOSpecDefault {
     ZLayer.fromZIO(
       Ref
         .make(initial)
-        .map(r => new InMemorySettingsRepo(r): ServerSettingsRepository),
+        .map(r => InMemorySettingsRepo(r): ServerSettingsRepository),
     )
 
   private val uninitializedSettings: ULayer[ServerSettingsRepository] =
@@ -60,29 +53,29 @@ object InitServiceSpec extends ZIOSpecDefault {
   // ─── Helper: build an InitService with a given token and settings ───────────
 
   private val failingUserRepo: ULayer[UserZIORepository] = ZLayer.succeed(new UserZIORepository {
-    override def getById(id: UserId):            RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
-    override def search(s:   jorlan.UserSearch): RepositoryTask[List[User]] = ZIO.die(new RuntimeException("stub"))
+    override def getById(id: UserId):            RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    override def search(s:   jorlan.UserSearch): RepositoryTask[List[User]] = ZIO.die(RuntimeException("stub"))
     override def upsert(user:   User):   RepositoryTask[User] = ZIO.fail(RepositoryError("simulated DB failure"))
-    override def deactivate(id: UserId): RepositoryTask[Long] = ZIO.die(new RuntimeException("stub"))
+    override def deactivate(id: UserId): RepositoryTask[Long] = ZIO.die(RuntimeException("stub"))
     override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
-      ZIO.die(new RuntimeException("stub"))
+      ZIO.die(RuntimeException("stub"))
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
-      ZIO.die(new RuntimeException("stub"))
+      ZIO.die(RuntimeException("stub"))
     override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
-      ZIO.die(new RuntimeException("stub"))
+      ZIO.die(RuntimeException("stub"))
     override def login(
       email:    String,
       password: String,
-    ):                                       RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
-    override def userByEmail(email: String): RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+    ):                                       RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    override def userByEmail(email: String): RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
     override def changePassword(
       id:          UserId,
       newPassword: String,
-    ): RepositoryTask[Unit] = ZIO.die(new RuntimeException("stub"))
+    ): RepositoryTask[Unit] = ZIO.die(RuntimeException("stub"))
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.die(new RuntimeException("stub"))
+    ): RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
   })
 
   private type TestEnv =
@@ -107,7 +100,7 @@ object InitServiceSpec extends ZIOSpecDefault {
     settingsLayer ++ userRepoLayer ++ makeTokenStore(initialized) ++ eventLogLayer ++ permRepoLayer
 
   private val initServiceLayer: URLayer[TestEnv, InitService] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _, _))
+    ZLayer.fromFunction(InitServiceImpl(_, _, _, _, _))
 
   // ─── Tests ─────────────────────────────────────────────────────────────────
 
@@ -275,6 +268,16 @@ object InitServiceSpec extends ZIOSpecDefault {
         )
       }.provide(makeTokenStore(false)),
       // ─── InitTokenStoreImpl.isValid when no token (initialized = true) ───────
+      test("InitTokenStore.make(false) generates a 32-char hex token") {
+        for {
+          store <- InitTokenStore.make(false)
+          tok   <- store.token
+        } yield assertTrue(
+          tok.isDefined,
+          tok.exists(_.length == 32),
+          tok.exists(_.forall(c => "0123456789abcdef".contains(c))),
+        )
+      },
       test("InitTokenStore.isValid returns false when initialized=true") {
         for {
           valid <- InitTokenStore.isValid

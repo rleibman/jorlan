@@ -52,7 +52,7 @@ object InitTokenStore {
   def isValid:                  URIO[InitTokenStore, Boolean] = ZIO.serviceWithZIO[InitTokenStore](_.isValid)
   def verify(provided: String): URIO[InitTokenStore, Boolean] = ZIO.serviceWithZIO[InitTokenStore](_.verify(provided))
 
-  private val rng: SecureRandom = new SecureRandom()
+  private val rng: SecureRandom = SecureRandom()
 
   private def generateToken(): UIO[String] =
     ZIO.attempt {
@@ -66,7 +66,7 @@ object InitTokenStore {
     */
   def make(initialized: Boolean): UIO[InitTokenStore] =
     if (initialized) {
-      Ref.make(Option.empty[String]).map(new InitTokenStoreImpl(_))
+      Ref.make(Option.empty[String]).map(InitTokenStoreImpl(_))
     } else {
       generateToken().flatMap { tok =>
         ZIO.succeed {
@@ -75,7 +75,7 @@ object InitTokenStore {
           println(s"║  JORLAN SETUP TOKEN  (valid for this process only)       ║")
           println(s"║  $tok  ║")
           println(s"╚$border╝\n")
-        } *> Ref.make(Option(tok)).map(new InitTokenStoreImpl(_))
+        } *> Ref.make(Option(tok)).map(InitTokenStoreImpl(_))
       }
     }
 
@@ -138,6 +138,7 @@ object InitService {
 
 }
 
+@scala.annotation.nowarn("msg=IsUnionOf")
 class InitServiceImpl(
   settings:     ServerSettingsRepository,
   userRepo:     UserZIORepository,
@@ -166,7 +167,7 @@ class InitServiceImpl(
       _           <- ZIO.unless(tokenOk)(ZIO.fail(JorlanError("Invalid setup token")))
       _           <- validateInputs(serverName, adminEmail, adminPassword)
       now         <- Clock.instant
-      createdUser <- userRepo.upsert(User(UserId.empty, adminName, Some(adminEmail), now, now))
+      createdUser <- userRepo.upsert(User(UserId.empty, adminName, adminEmail, now, now))
       _           <- userRepo.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
       _           <- seedAdminGrants(createdUser.id, now)
       _           <- settings.set(ServerSettingsRepository.InitializedKey, Json.Bool(true))
@@ -250,6 +251,6 @@ object InitServiceImpl {
     ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository & PermissionZIORepository,
     InitService,
   ] =
-    ZLayer.fromFunction(new InitServiceImpl(_, _, _, _, _))
+    ZLayer.fromFunction(InitServiceImpl(_, _, _, _, _))
 
 }

@@ -122,19 +122,19 @@ object QuillRepositories {
         for {
           config <- ZIO.service[DatabaseConfig]
           hds    <- managedDataSource(config)
-        } yield new QuillCtx(hds)
+        } yield QuillCtx(hds)
       }.flatMap { env =>
         val qc = env.get
-        ZLayer.succeed(new QuillUserRepository(qc): UserZIORepository) ++
-          ZLayer.succeed(new QuillAgentRepository(qc): AgentZIORepository) ++
-          ZLayer.succeed(new QuillConversationRepository(qc): ConversationZIORepository) ++
-          ZLayer.succeed(new QuillSkillRepository(qc): SkillZIORepository) ++
-          ZLayer.succeed(new QuillMemoryRepository(qc): MemoryZIORepository) ++
-          ZLayer.succeed(new QuillEventLogRepository(qc): EventLogZIORepository) ++
-          ZLayer.succeed(new QuillSchedulerRepository(qc): SchedulerZIORepository) ++
-          ZLayer.succeed(new QuillArtifactRepository(qc): ArtifactZIORepository) ++
-          ZLayer.succeed(new QuillPermissionRepository(qc): PermissionZIORepository) ++
-          ZLayer.succeed(new QuillServerSettingsRepository(qc): ServerSettingsRepository)
+        ZLayer.succeed(QuillUserRepository(qc): UserZIORepository) ++
+          ZLayer.succeed(QuillAgentRepository(qc): AgentZIORepository) ++
+          ZLayer.succeed(QuillConversationRepository(qc): ConversationZIORepository) ++
+          ZLayer.succeed(QuillSkillRepository(qc): SkillZIORepository) ++
+          ZLayer.succeed(QuillMemoryRepository(qc): MemoryZIORepository) ++
+          ZLayer.succeed(QuillEventLogRepository(qc): EventLogZIORepository) ++
+          ZLayer.succeed(QuillSchedulerRepository(qc): SchedulerZIORepository) ++
+          ZLayer.succeed(QuillArtifactRepository(qc): ArtifactZIORepository) ++
+          ZLayer.succeed(QuillPermissionRepository(qc): PermissionZIORepository) ++
+          ZLayer.succeed(QuillServerSettingsRepository(qc): ServerSettingsRepository)
       }
 
 }
@@ -232,7 +232,7 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with U
   }
 
   override def userByEmail(email: String): RepositoryTask[Option[User]] =
-    exec(qc.ctx.run(qUsers.filter(_.email == lift(Some(email): Option[String])).take(1))).map(_.headOption)
+    exec(qc.ctx.run(qUsers.filter(_.email == lift(email)).take(1))).map(_.headOption)
 
   override def changePassword(
     id:          UserId,
@@ -636,7 +636,7 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
           qMemoryRecords
             .filter(_.id == lift(id))
             .update(
-              _.scope -> lift(scope),
+              _.scope     -> lift(scope),
               _.updatedAt -> lift(now),
             ),
         ),
@@ -740,18 +740,31 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
   override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id))).map(_.headOption))
 
+  override def listJobs(agentId: Option[AgentId]): RepositoryTask[List[SchedulerJob]] = {
+    val cap = 200 // TODO why this cap? if you need a cap at all make it configurable
+    agentId match {
+      case Some(aid) =>
+        exec(qc.ctx.run(qSchedulerJobs.filter(_.agentId == lift(aid)).sortBy(_.createdAt)(Ord.desc).take(lift(cap))))
+      case None =>
+        exec(qc.ctx.run(qSchedulerJobs.sortBy(_.createdAt)(Ord.desc).take(lift(cap))))
+    }
+  }
+
   override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =
     for {
       now    <- Clock.instant
       result <- exec(
         qc.ctx.run(
           qSchedulerJobs
-            .filter(j => j.status == lift(JobStatus.Pending) && j.scheduledAt <= lift(now))
+            .filter(j => j.status == lift(JobStatus.Pending) && j.scheduledAt <= lift(now) && j.leasedAt.isEmpty)
             .sortBy(_.scheduledAt),
         ),
       )
     } yield result
 
+  // Partial-update contract: UPDATE only touches runtime-state fields (status, timestamps, lease, result, retryCount,
+  // scheduledAt). Configuration fields (name, inputJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy,
+  // userId, agentId, skillId) are immutable after creation and are never overwritten by the UPDATE path.
   override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] =
     if (job.id.value == 0L) {
       exec(
@@ -764,10 +777,14 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
             qSchedulerJobs
               .filter(_.id == lift(job.id))
               .update(
-                _.status     -> lift(job.status),
-                _.startedAt  -> lift(job.startedAt),
-                _.finishedAt -> lift(job.finishedAt),
-                _.resultJson -> lift(job.resultJson),
+                _.status      -> lift(job.status),
+                _.startedAt   -> lift(job.startedAt),
+                _.finishedAt  -> lift(job.finishedAt),
+                _.resultJson  -> lift(job.resultJson),
+                _.retryCount  -> lift(job.retryCount),
+                _.scheduledAt -> lift(job.scheduledAt),
+                _.leasedAt    -> lift(job.leasedAt),
+                _.leasedBy    -> lift(job.leasedBy),
               ),
           ).as(job),
       )
@@ -775,6 +792,60 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
 
   override def deleteJob(id: SchedulerJobId): RepositoryTask[Long] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).delete))
+
+  override def claimJob(
+    id:              SchedulerJobId,
+    workerId:        String,
+    now:             Instant,
+    leaseTtlSeconds: Int,
+  ): RepositoryTask[Boolean] = {
+    val staleBefore = now.minusSeconds(leaseTtlSeconds.toLong)
+    exec(
+      qc.ctx
+        .run(
+          infix"""UPDATE schedulerJob
+               SET leasedAt = ${lift(now)}, leasedBy = ${lift(workerId)}, status = ${lift(JobStatus.Running.toString)}
+               WHERE id = ${lift(id.value)}
+                 AND status = 'Pending'
+                 AND (leasedAt IS NULL OR leasedAt < ${lift(staleBefore)})"""
+            .as[Action[Long]],
+        ).map(_ > 0L),
+    )
+  }
+
+  override def releaseJob(
+    id:         SchedulerJobId,
+    status:     JobStatus,
+    resultJson: Option[String],
+    finishedAt: Instant,
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qSchedulerJobs
+            .filter(_.id == lift(id))
+            .update(
+              _.status     -> lift(status),
+              _.resultJson -> lift(resultJson),
+              _.finishedAt -> lift(Some(finishedAt): Option[Instant]),
+              _.leasedAt   -> lift(Option.empty[Instant]),
+              _.leasedBy   -> lift(Option.empty[String]),
+            ),
+        ).unit,
+    )
+
+  override def expireLeases(olderThan: Instant): RepositoryTask[Long] =
+    exec(
+      qc.ctx.run(
+        qSchedulerJobs
+          .filter(j => j.leasedAt.exists(_ < lift(olderThan)) && j.status == lift(JobStatus.Running))
+          .update(
+            _.status   -> lift(JobStatus.Pending),
+            _.leasedAt -> lift(Option.empty[Instant]),
+            _.leasedBy -> lift(Option.empty[String]),
+          ),
+      ),
+    )
 
   override def searchTriggers(s: TriggerSearch): RepositoryTask[List[SchedulerTrigger]] = {
     val offset = s.page * s.pageSize
@@ -1176,6 +1247,15 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
 
   override def getApprovalRequest(id: ApprovalRequestId): RepositoryTask[Option[ApprovalRequest]] =
     exec(qc.ctx.run(qApprovalRequests.filter(_.id == lift(id))).map(_.headOption))
+
+  override def listPendingApprovals(userId: UserId): RepositoryTask[List[ApprovalRequest]] =
+    exec(
+      qc.ctx.run(
+        qApprovalRequests
+          .filter(r => r.requestorUserId == lift(userId) && r.status == lift(ApprovalStatus.Pending))
+          .sortBy(_.createdAt)(Ord.desc),
+      ),
+    )
 
   override def deleteRole(id: RoleId): RepositoryTask[Long] = exec(qc.ctx.run(qRoles.filter(_.id == lift(id)).delete))
 

@@ -28,7 +28,7 @@ object JorlanSession {
   val serverUser: User = User(
     id = UserId(1L),
     displayName = "server",
-    email = Some("server@jorlan.internal"),
+    email = "server@jorlan.internal",
     createdAt = Instant.EPOCH,
     updatedAt = Instant.EPOCH,
   )

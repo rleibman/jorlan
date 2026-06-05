@@ -115,6 +115,6 @@ object MemoryServiceImpl {
     MemoryZIORepository & MemoryAccessPolicy & CheckpointSummarizer & MemoryClassifier & CheckpointPolicy,
     MemoryService,
   ] =
-    ZLayer.fromFunction(new MemoryServiceImpl(_, _, _, _, _))
+    ZLayer.fromFunction(MemoryServiceImpl(_, _, _, _, _))
 
 }

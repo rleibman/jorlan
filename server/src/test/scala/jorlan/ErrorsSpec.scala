@@ -19,7 +19,7 @@ object ErrorsSpec extends ZIOSpecDefault {
   override def spec: Spec[TestEnvironment, Any] =
     suite("JorlanError and NotFoundError")(
       test("JorlanError.apply(Throwable) wraps a plain exception") {
-        val cause = new RuntimeException("boom")
+        val cause = RuntimeException("boom")
         val err = JorlanError(cause)
         assertTrue(err.msg == "boom", err.cause.contains(cause))
       },
@@ -33,7 +33,7 @@ object ErrorsSpec extends ZIOSpecDefault {
         assertTrue(err.msg == "simple message", err.cause.isEmpty, !err.isTransient)
       },
       test("JorlanError.apply(msg, cause, isTransient) with plain cause") {
-        val cause = new IllegalStateException("state")
+        val cause = IllegalStateException("state")
         val err = JorlanError("wrapped", Some(cause), isTransient = true)
         assertTrue(err.msg == "wrapped", err.cause.contains(cause), err.isTransient)
       },
@@ -53,7 +53,7 @@ object ErrorsSpec extends ZIOSpecDefault {
       },
       test("NotFoundError.apply with cause and isTransient") {
         val path = Paths.get("/var/data")
-        val cause = new RuntimeException("io error")
+        val cause = RuntimeException("io error")
         val err = NotFoundError(path, "data missing", Some(cause), isTransient = true)
         assertTrue(err.path == path, err.cause.contains(cause), err.isTransient)
       },

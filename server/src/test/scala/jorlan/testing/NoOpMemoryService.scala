@@ -18,7 +18,7 @@ import zio.*
 /** [[MemoryService]] that does nothing — for use in unit tests that do not exercise memory. */
 class NoOpMemoryService extends MemoryService {
 
-  private val idCounter = new java.util.concurrent.atomic.AtomicLong(1L)
+  private val idCounter = java.util.concurrent.atomic.AtomicLong(1L)
 
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
     ZIO.succeed(record.copy(id = MemoryRecordId(idCounter.getAndIncrement())))
@@ -59,6 +59,6 @@ class NoOpMemoryService extends MemoryService {
 
 object NoOpMemoryService {
 
-  val layer: ULayer[MemoryService] = ZLayer.succeed(new NoOpMemoryService())
+  val layer: ULayer[MemoryService] = ZLayer.succeed(NoOpMemoryService())
 
 }

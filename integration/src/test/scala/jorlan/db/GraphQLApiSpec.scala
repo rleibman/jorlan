@@ -32,23 +32,35 @@ object GraphQLApiSpec extends ZIOSpecDefault {
         ZIO.succeed(EvaluationResult.ResourcePermissionAllows)
     })
 
-  private val memoryLayer =
-    MemoryClassifierImpl.live >+>
-      MemoryAccessPolicyImpl.live >+>
-      CheckpointSummarizerImpl.live >+>
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd) >+>
-      MemoryServiceImpl.live >+>
-      MemorySkill.live
+  private val stubApprovalService: ULayer[ApprovalService] = ZLayer.succeed(
+    new ApprovalService {
+      override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
+        ZIO.succeed(AuthorizationResult.Allowed)
+      override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
+        ZIO.succeed(decision)
+      override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+    }: ApprovalService,
+  )
 
-  private val appLayer =
-    JorlanContainer.repositoryLayer >+>
-      stubCapabilityEvaluator >+>
-      ZLayer.succeed(JorlanSession.serverSession) >+>
-      SessionHub.live >+>
-      FakeModelGateway.layer(List("test")) >+>
-      AgentSessionManagerImpl.live >+>
-      memoryLayer >+>
-      AgentRunnerImpl.live
+  private val appLayer = ZLayer.make[
+    JorlanAPI.JorlanApiEnv & JorlanSession,
+  ](
+    JorlanContainer.repositoryLayer,
+    stubCapabilityEvaluator,
+    stubApprovalService,
+    ZLayer.succeed(JorlanSession.serverSession),
+    SessionHub.live,
+    FakeModelGateway.layer(List("test")),
+    AgentSessionManagerImpl.live,
+    MemoryClassifierImpl.live,
+    MemoryAccessPolicyImpl.live,
+    CheckpointSummarizerImpl.live,
+    ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+    MemoryServiceImpl.live,
+    MemorySkill.live,
+    AgentRunnerImpl.live,
+    JobManagerImpl.live,
+  )
 
   private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[
     JorlanAPI.JorlanApiEnv & JorlanSession,
@@ -95,7 +107,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
         for {
           interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute(
-            """mutation { createUser(displayName: "GraphQLUser2") { id displayName } }""",
+            """mutation { createUser(displayName: "GraphQLUser2", email: "gql2@test.com") { id displayName } }""",
           )
           id = extractLongField(createResult.data.toString, "id")
           queryResult <- interp.execute(s"""{ user(value: $id) { id displayName } }""")
@@ -157,7 +169,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("assignRole and roles(userId) round-trip") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser3") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser3", email: "gql3@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           roleResult <- interp.execute("""mutation { createRole(name: "gql-tester") { id } }""")
           roleId = extractLongField(roleResult.data.toString, "id")
@@ -173,7 +187,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("revokeRole removes a role from a user") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser6") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser6", email: "gql6@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           roleResult <- interp.execute("""mutation { createRole(name: "gql-revoke-test") { id } }""")
           roleId = extractLongField(roleResult.data.toString, "id")
@@ -205,7 +221,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("grantPermission with userId and permissions(userId) round-trip") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser4") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser4", email: "gql4@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           grantResult <- interp.execute(
             s"""mutation { grantPermission(resource: "shell", action: "execute", userId: $userId) { id resource action } }""",
@@ -237,7 +255,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("revokePermission removes a permission and returns count") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser5") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser5", email: "gql5@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           grantResult <- interp.execute(
             s"""mutation { grantPermission(resource: "memory", action: "read", userId: $userId) { id } }""",
@@ -254,7 +274,13 @@ object GraphQLApiSpec extends ZIOSpecDefault {
           !permsResult.data.toString.contains("memory"),
         )
       },
-    ).provideLayerShared(appLayer >+> interpreterLayer) @@ TestAspect.sequential
+    ).provideLayerShared(
+      ZLayer
+        .make[JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+          appLayer,
+          interpreterLayer,
+        ),
+    ) @@ TestAspect.sequential
 
   private def extractLongField(
     data:      String,
@@ -265,7 +291,7 @@ object GraphQLApiSpec extends ZIOSpecDefault {
     pattern
       .findFirstMatchIn(data)
       .map(_.group(1).toLong)
-      .getOrElse(throw new AssertionError(s"Field '$fieldName' not found in: $data"))
+      .getOrElse(throw AssertionError(s"Field '$fieldName' not found in: $data"))
   }
 
 }

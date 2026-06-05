@@ -10,6 +10,8 @@
 
 package jorlan.shell.commands
 
+import jorlan.domain.{AgentSessionId, ApprovalRequestId, MemoryRecordId}
+
 /** All recognised shell commands. Plain text (no leading `/`) is represented as [[Message]].
   *
   * P7-031: Converted from sealed trait hierarchy to Scala 3 enum, consistent with [[MessageKind]] in the same module.
@@ -35,15 +37,20 @@ enum ShellCommand {
   )
   case MemoryList(scope: Option[String])
   case MemorySearch(text: String)
-  case MemoryForget(id: Long)
-  case MemoryShare(id: Long)
-  case MemoryPrivatize(id: Long)
+  case MemoryForget(id: MemoryRecordId)
+  case MemoryShare(id: MemoryRecordId)
+  case MemoryPrivatize(id: MemoryRecordId)
   case MemoryRemember(
     key:   String,
     text:  String,
     scope: Option[String] = None,
   )
   case Capabilities
+  case AgentsList
+  case AgentsStop(sessionId: AgentSessionId)
+  case ApprovalsList
+  case ApprovalsApprove(id: ApprovalRequestId)
+  case ApprovalsDeny(id: ApprovalRequestId)
   case Unknown(raw: String)
 
 }
@@ -75,16 +82,29 @@ object ShellCommand {
         case "memory" :: "list" :: scope :: _                         => MemoryList(Some(scope))
         case "memory" :: "list" :: Nil                                => MemoryList(None)
         case "memory" :: "search" :: rest if rest.nonEmpty            => MemorySearch(rest.mkString(" "))
-        case "memory" :: "forget" :: idStr :: _ if idStr.toLongOption.isDefined    => MemoryForget(idStr.toLong)
-        case "memory" :: "share" :: idStr :: _ if idStr.toLongOption.isDefined     => MemoryShare(idStr.toLong)
-        case "memory" :: "privatize" :: idStr :: _ if idStr.toLongOption.isDefined => MemoryPrivatize(idStr.toLong)
+        case "memory" :: "forget" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          MemoryForget(MemoryRecordId(idStr.toLong))
+        case "memory" :: "share" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          MemoryShare(MemoryRecordId(idStr.toLong))
+        case "memory" :: "privatize" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          MemoryPrivatize(MemoryRecordId(idStr.toLong))
         case "memory" :: "remember" :: key :: "--scope" :: scope :: rest if rest.nonEmpty =>
           MemoryRemember(key, rest.mkString(" "), Some(scope))
-        case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil => Unknown(s"/memory remember")
-        case "memory" :: "remember" :: key :: rest if rest.nonEmpty     => MemoryRemember(key, rest.mkString(" "))
-        case "capabilities" :: _                                        => Capabilities
-        case other :: _                                                 => Unknown(s"/$other")
-        case Nil                                                        => Unknown("/")
+        case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil       => Unknown(s"/memory remember")
+        case "memory" :: "remember" :: key :: rest if rest.nonEmpty           => MemoryRemember(key, rest.mkString(" "))
+        case "capabilities" :: _                                              => Capabilities
+        case "agents" :: "list" :: _                                          => AgentsList
+        case "agents" :: "stop" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          AgentsStop(AgentSessionId(idStr.toLong))
+        case "agents" :: _                                                          => Unknown("/agents")
+        case "approvals" :: "list" :: _                                             => ApprovalsList
+        case "approvals" :: "approve" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          ApprovalsApprove(ApprovalRequestId(idStr.toLong))
+        case "approvals" :: "deny" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          ApprovalsDeny(ApprovalRequestId(idStr.toLong))
+        case "approvals" :: _ => Unknown("/approvals")
+        case other :: _       => Unknown(s"/$other")
+        case Nil              => Unknown("/")
       }
     }
   }

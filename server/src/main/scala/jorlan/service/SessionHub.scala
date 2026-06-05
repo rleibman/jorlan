@@ -87,9 +87,9 @@ class SessionHub private (subs: Ref[Map[AgentSessionId, List[SubscriberEntry]]])
 
 object SessionHub {
 
-  val live: ULayer[SessionHub] =
-    ZLayer.fromZIO(
-      Ref.make(Map.empty[AgentSessionId, List[SubscriberEntry]]).map(new SessionHub(_)),
-    )
+  val make: UIO[SessionHub] =
+    Ref.make(Map.empty[AgentSessionId, List[SubscriberEntry]]).map(SessionHub(_))
+
+  val live: ULayer[SessionHub] = ZLayer.fromZIO(make)
 
 }

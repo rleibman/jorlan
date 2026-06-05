@@ -97,7 +97,7 @@ trait StreamingChatLanguageModel {
     toolSpecifications: util.List[ToolSpecification],
     handler:            StreamingChatResponseHandler,
   ): Unit = {
-    throw new IllegalArgumentException("Tools are currently not supported by this model")
+    throw IllegalArgumentException("Tools are currently not supported by this model")
   }
 
   /** Generates a response from the model based on a list of messages and a tool specification.
@@ -114,7 +114,7 @@ trait StreamingChatLanguageModel {
     toolSpecification: ToolSpecification,
     handler:           StreamingChatResponseHandler,
   ): Unit = {
-    throw new IllegalArgumentException("Tools are currently not supported by this model")
+    throw IllegalArgumentException("Tools are currently not supported by this model")
   }
 
 }

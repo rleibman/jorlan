@@ -1,6 +1,6 @@
 # Jorlan — Secure Agent Runtime & Orchestration Platform
 
-> A production-grade runtime for AI agents: capability-based security, durable scheduling, full observability, and strongly typed interfaces.
+> A production-grade runtime for AI agents: capability-based security, durable scheduling, persistent memory, full observability, and strongly typed interfaces.
 
 ---
 
@@ -36,8 +36,8 @@ The result is a platform that supports both autonomous AI-driven execution and h
 - **HTTP**: zio-http
 - **Serialization**: zio-json
 - **LLM**: LangChain4j (Ollama streaming) via the `ai` module
+- **Scheduling**: cron4s for cron expression parsing
 - **Testing**: zio-test + Testcontainers (MariaDB)
-- **Shell execution**: zio-process
 - **Connection pool**: HikariCP
 
 ---
@@ -49,7 +49,7 @@ jorlan/
 ├── model/        Domain types, repository traits, error hierarchy, configuration models
 ├── db/           Quill repository implementations, Flyway migrations, DB configuration
 ├── ai/           LLM client integrations (LangChain4j + Ollama)
-├── server/       Caliban GraphQL API, HTTP server, agent runtime (AgentRunner, SessionHub, ModelGateway)
+├── server/       Caliban GraphQL API, HTTP server, agent runtime, scheduler, memory system
 ├── shell/        Interactive TUI shell — connects to the server over GraphQL + WebSocket
 ├── analytics/    Analytics subsystem (future)
 ├── integration/  Integration tests (Testcontainers)
@@ -69,7 +69,17 @@ The domain layer (`model`) has no dependency on DB or connector specifics. All p
 - MariaDB 10.6+ (or use the Testcontainers integration test setup)
 - [Ollama](https://ollama.com/) running locally (for live LLM streaming; optional — server starts without it)
 
-### Database setup
+### Database bootstrap
+
+Run the provided script once before first server start (requires temporary MySQL root credentials):
+
+```bash
+bash server/src/main/scripts/init-db.sh
+```
+
+This creates the `jorlan` database and application user. All schema migrations run automatically on server startup via Flyway.
+
+Alternatively, create the DB manually:
 
 ```sql
 CREATE DATABASE jorlan CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -77,34 +87,25 @@ CREATE USER 'jorlan'@'localhost' IDENTIFIED BY 'jorlan';
 GRANT ALL PRIVILEGES ON jorlan.* TO 'jorlan'@'localhost';
 ```
 
-Flyway migrations run automatically on server startup.
-
 ### Configuration
 
-Create `server/src/main/resources/application.conf` (or point to an external file via `-Dconfig.file`). Minimum required:
+Set required environment variables (see `.env.example` for the full list):
 
-```hocon
-jorlan {
-  db.dataSource {
-    driver   = "org.mariadb.jdbc.Driver"
-    url      = "jdbc:mariadb://localhost:3306/jorlan"
-    user     = "jorlan"
-    password = "jorlan"
-  }
-  auth.secretKey = "change-me-in-production"
-}
+```bash
+export JORLAN_AUTH_SECRET_KEY="$(openssl rand -hex 32)"
+export JORLAN_DB_URL="jdbc:mariadb://localhost:3306/jorlan"
+export JORLAN_DB_USER="jorlan"
+export JORLAN_DB_PASSWORD="jorlan"
 ```
 
-To enable Ollama (Phase 8):
+Optional — enable Ollama:
 
-```hocon
-jorlan.ai {
-  ollamaBaseUrl = "http://localhost:11434"
-  ollamaModel   = "llama3.2:3b"
-}
+```bash
+export JORLAN_AI_OLLAMA_BASE_URL="http://localhost:11434"
+export JORLAN_AI_OLLAMA_MODEL="llama3.2:3b"
 ```
 
-All environment variable overrides are documented in `application.conf`.
+All env vars are documented in `.env.example`. The server validates required vars on startup and exits with a human-readable error if any are missing.
 
 ---
 
@@ -114,19 +115,33 @@ All environment variable overrides are documented in `application.conf`.
 # Compile
 sbt --error server/compile
 
-# Start the server (connects to MariaDB, runs Flyway, starts HTTP on port 8080)
+# Start the server
 sbt "server/runMain jorlan.Jorlan"
-
-# Or build a deployable package
-sbt server/stage
-./server/target/universal/stage/bin/jorlan-server
 ```
 
-The server exposes:
-- `POST /api/jorlan` — GraphQL endpoint
-- `GET  /api/jorlan/ws` — GraphQL over WebSocket (subscriptions)
-- `GET  /api/jorlan/graphiql` — GraphiQL IDE (browser)
-- `GET  /health` — liveness probe
+### First-run initialization
+
+On first start the server enters **setup mode** and prints a one-time setup token to the console:
+
+```
+╔══════════════════════════════════════════════════╗
+║   JORLAN SETUP TOKEN: a3f8b2c1...               ║
+║   Use this token to complete server setup.       ║
+╚══════════════════════════════════════════════════╝
+```
+
+The server returns **503** for all non-status/init endpoints until setup completes. Use the shell wizard (below) or POST directly to `POST /api/init` with `{ token, serverName, adminEmail, adminName, adminPassword }`.
+
+### Server endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET  /api/status` | Server status — always available (unauthenticated) |
+| `POST /api/init` | First-run initialization (token-gated; 403 after first use) |
+| `POST /api/jorlan` | GraphQL endpoint |
+| `GET  /api/jorlan/ws` | GraphQL over WebSocket (subscriptions) |
+| `GET  /api/jorlan/graphiql` | GraphiQL IDE (browser) |
+| `GET  /health` | Liveness probe |
 
 ---
 
@@ -142,9 +157,19 @@ sbt "shell/runMain jorlan.shell.JorlanShell"
 sbt "shell/runMain jorlan.shell.JorlanShell --server-url http://localhost:8080 --email admin@example.com --password secret"
 ```
 
+### First-run wizard
+
+When no config file exists, the shell launches an interactive first-run wizard that:
+
+1. Prompts for the server URL (defaults to `http://localhost:8080`)
+2. Checks the server status
+3. If the server is uninitialized, prompts for the setup token and admin credentials, then completes initialization via `POST /api/init`
+4. If already initialized, prompts for login credentials
+5. Saves the config to `~/.jorlan/jorlan-shell.json`
+
 ### Shell configuration
 
-Credentials and server URL can be stored in `~/.jorlan/jorlan.json`:
+Config is stored in `~/.jorlan/jorlan-shell.json`:
 
 ```json
 {
@@ -153,6 +178,8 @@ Credentials and server URL can be stored in `~/.jorlan/jorlan.json`:
   "password": "your-password"
 }
 ```
+
+Config search order: `JORLAN_SHELL_CONFIG` env var → `--config` flag → `~/.jorlan/jorlan-shell.json` → `~/.jorlan/jorlan.json` (legacy, read-only) → `application.conf` defaults.
 
 ### Shell commands
 
@@ -163,7 +190,19 @@ Credentials and server URL can be stored in `~/.jorlan/jorlan.json`:
 | `/whoami` | Show the authenticated user |
 | `/model` | Show the active session and model |
 | `/trace [level]` | Set log level: `none \| error \| warning \| info \| debug` |
+| `/personality` | Show server personality; `/personality set <field> <value>` to update (admin) |
+| `/capabilities` | List your current capability grants (from server) |
+| `/memory list [scope]` | List memory records (`User \| Shared \| Workspace \| Private`) |
+| `/memory search <text>` | Search memory records by text |
+| `/memory remember <key> <text>` | Store a new memory record |
+| `/memory forget <id>` | Delete a memory record by id |
+| `/agents list` | List active agent sessions |
+| `/agents stop <id>` | Terminate an agent session |
+| `/approvals list` | List pending approval requests |
+| `/approvals approve <id>` | Approve a pending request |
+| `/approvals deny <id>` | Deny a pending request |
 | `/help` | Show help summary |
+| `/commands` | List all available commands |
 | `/quit` or `/exit` | Exit the shell |
 | _(plain text)_ | Send a message to the active agent session |
 
@@ -177,7 +216,7 @@ Key bindings: **Enter** submit · **Backspace** delete · **PgUp/PgDn** scroll �
 # Compile all modules
 sbt --error compile
 
-# Run unit tests
+# Run all tests (unit + server + shell)
 sbt --error test
 
 # Run integration tests (requires Docker for Testcontainers)
@@ -193,11 +232,13 @@ bash scripts/capture-schema.sh
 bash scripts/gen-client.sh
 ```
 
+Test counts (as of Phase 10): **685 tests** across `ai`, `server`, `shell`, and `integration` modules — all passing without a running server or Ollama.
+
 ---
 
 ## Architecture Highlights
 
-### Agent Session Runtime (Phase 8)
+### Agent Session Runtime
 
 The core streaming path:
 
@@ -216,17 +257,43 @@ Shell <text> → submitMessage mutation → AgentRunner.processMessage
 
 `FakeModelGateway` is used in all unit/integration tests — no Ollama required for CI.
 
+### Memory System (Phase 9)
+
+Three-layer memory architecture:
+
+1. **Conversation history** — `Message` rows per session, loaded into `MessageWindowChatMemory` before each model call
+2. **Episodic memory** — facts summarized at session end (via `CheckpointSummarizer`) and stored in `MemoryRecord` with scope-based access control (`User`, `Private`, `Shared`, `Workspace`)
+3. **Context injection** — relevant memory records retrieved and prepended to the system prompt before each model call
+
+Memory is classified by `MemoryClassifier` (PII → Private, share language → Shared, default → User) and governed by `MemoryAccessPolicy`.
+
+### Durable Scheduler (Phase 10)
+
+The `TriggerEngine` runs as a daemon fiber and drives scheduled jobs:
+
+- **Trigger types**: `Cron` (cron4s expressions), `Interval` (ISO 8601 duration), `OneShot`, `Event`
+- **Missed-run policies**: `Skip`, `RunOnce`, `RunAllMissed`
+- **Retry policies**: `Fixed` or `Exponential` backoff with configurable max retries
+- **Distributed safety**: DB-level optimistic locking via `claimJob` UPDATE with lease TTL (prevents duplicate execution)
+- **Execution**: claimed job → `AgentSessionManager.createSession` → `AgentRunner.processMessage` → result stored in `resultJson`
+
+Jobs are managed via GraphQL mutations (`createJob`, `addTrigger`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`) gated on the `scheduler.manage` capability.
+
 ### Capability-Based Security
 
-Permissions are scoped to specific resources, actions, and time windows. High-risk operations require explicit grants that are auditable, time-limited, and revocable.
+Permissions are scoped to specific resources, actions, and time windows. High-risk operations require explicit grants that are auditable, time-limited, and revocable. The evaluation chain:
+
+```
+ExplicitDeny → ResourcePermission → RolePermission → CapabilityGrant → ConnectorPolicy → SkillPolicy → DefaultDeny
+```
 
 ### Append-Only Event Log
 
-Every significant runtime action is recorded in a durable event log: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`, `AgentResponseCompleted`, etc.
+Every significant runtime action is recorded in a durable event log. Key event types include: `SessionCreated`, `UserMessageReceived`, `ModelCallStarted`, `ModelCallCompleted`, `AgentResponseCompleted`, `MemoryWritten`, `MemoryCheckpointed`, `SchedulerJobStarted`, `SchedulerJobCompleted`, `CapabilityAllowed`, `CapabilityDenied`.
 
 ### Repository Layer
 
-All persistence goes through typed repository traits in `model`. The `db` module provides Quill/MariaDB implementations bound to `RepositoryTask[A] = IO[RepositoryError, A]`.
+All persistence goes through typed repository traits in `model`. The `db` module provides Quill/MariaDB implementations bound to `RepositoryTask[A] = IO[RepositoryError, A]`. Flyway migrations (V001–V022) are run automatically on startup.
 
 ---
 
@@ -242,16 +309,23 @@ All persistence goes through typed repository traits in `model`. The `db` module
 | 5 | Capability / permission kernel, approval policy engine | ✅ Complete |
 | 6 | GraphQL API skeleton — queries, mutations, subscriptions, JWT auth | ✅ Complete |
 | 7 | Shell interface — Lanterna TUI, auth, command handling, REPL | ✅ Complete |
-| **8** | **Agent session runtime + Model Gateway — streaming LLM responses** | **✅ Complete** |
-| 9 | Memory system — checkpointing, summarization, access policy | Pending |
-| 10 | Durable scheduler — cron/interval triggers, job locking | Pending |
-| 11 | Telegram connector | Pending |
-| 12 | Built-in skills — workspace, shell, notification, identity | Pending |
-| 13 | Email and Calendar skills | Pending |
-| 14 | Orchestrator integration | Pending |
-| 15 | Web frontend | Pending |
+| 8 | Agent session runtime + Model Gateway — streaming LLM responses | ✅ Complete |
+| 8.1 | First-run initialization — server wizard, shell wizard, one-time token | ✅ Complete |
+| 8.2 | Database bootstrap script (`init-db.sh`) | ✅ Complete |
+| 8.3 | Server personality and system prompt injection | ✅ Complete |
+| 8.4 | AI module testing on CI with `FakeModelGateway` | ✅ Complete |
+| **9** | **Memory system — checkpointing, summarization, access policy, context injection** | **✅ Complete** |
+| **10** | **Durable scheduler — cron/interval triggers, DB locking, retry/backoff** | **✅ Complete** |
+| 11 | Telegram connector | Planned |
+| 12 | Built-in skills — workspace, shell, notification, identity | Planned |
+| 13 | Email and Calendar skills | Planned |
+| 14 | Orchestrator integration | Planned |
+| 15 | Web frontend (Scala.js) | Planned |
+| 16 | Additional features (shell autocomplete, etc.) | Planned |
+| 17 | Advanced features — declarative skills, MCP adapter, vector memory | Planned |
+| 18 | Installer and distribution (.deb, macOS tarball) | Planned |
 
-See `doc/development_roadmap.md` for the detailed task breakdown and open items per phase.
+See `doc/development_roadmap.md` for the detailed task breakdown per phase.
 
 ---
 
@@ -265,6 +339,8 @@ See `doc/development_roadmap.md` for the detailed task breakdown and open items 
 | `doc/orchestrator_integration_addendum.md` | GraphQL orchestrator API design |
 | `doc/00_system_overview.md` – `doc/13_artifacts_and_effects.md` | Subsystem diagrams |
 | `doc/development_roadmap.md` | Phase-by-phase task list with checkboxes |
+| `doc/mini-designs/` | Per-feature design documents (phase 9, 10, etc.) |
+| `.env.example` | All supported environment variables with descriptions |
 
 ---
 

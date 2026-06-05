@@ -24,7 +24,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       test("login returns user for correct credentials") {
         for {
           repo   <- ZIO.service[UserZIORepository]
-          user   <- repo.upsert(User(UserId.empty, "LoginUser", Some("login@test.com"), T0, T0))
+          user   <- repo.upsert(User(UserId.empty, "LoginUser", "login@test.com", T0, T0))
           _      <- repo.changePassword(user.id, "correct-password")
           result <- repo.login("login@test.com", "correct-password")
         } yield assertTrue(
@@ -36,7 +36,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       test("login returns None for wrong password") {
         for {
           repo   <- ZIO.service[UserZIORepository]
-          user   <- repo.upsert(User(UserId.empty, "WrongPassUser", Some("wrongpass@test.com"), T0, T0))
+          user   <- repo.upsert(User(UserId.empty, "WrongPassUser", "wrongpass@test.com", T0, T0))
           _      <- repo.changePassword(user.id, "real-password")
           result <- repo.login("wrongpass@test.com", "not-the-password")
         } yield assertTrue(result.isEmpty)
@@ -50,7 +50,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       test("changePassword allows login with new password and rejects old") {
         for {
           repo    <- ZIO.service[UserZIORepository]
-          user    <- repo.upsert(User(UserId.empty, "ChangePwUser", Some("changepw@test.com"), T0, T0))
+          user    <- repo.upsert(User(UserId.empty, "ChangePwUser", "changepw@test.com", T0, T0))
           _       <- repo.changePassword(user.id, "old-password")
           _       <- repo.changePassword(user.id, "new-password")
           withNew <- repo.login("changepw@test.com", "new-password")
@@ -63,7 +63,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       test("userByEmail finds user by exact email") {
         for {
           repo  <- ZIO.service[UserZIORepository]
-          user  <- repo.upsert(User(UserId.empty, "EmailUser", Some("exact@test.com"), T0, T0))
+          user  <- repo.upsert(User(UserId.empty, "EmailUser", "exact@test.com", T0, T0))
           found <- repo.userByEmail("exact@test.com")
           none  <- repo.userByEmail("exact")
         } yield assertTrue(

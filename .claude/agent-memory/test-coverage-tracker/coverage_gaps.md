@@ -263,6 +263,77 @@ See dedicated section below.
 - `isError` field added to `ChunkData` decoder — not unit-tested
 - No test for WS reconnection or authentication header injection
 
+## Phase 10 Durable Scheduler — Coverage Gaps (2026-06-04)
+
+### TriggerEngine — advanceTriggers NEVER TESTED
+- All 6 TriggerEngineSpec tests exercise the tick→claim→execute→succeed/fail path but NOT the advanceTriggers path
+- OneShot trigger → disabled after firing: NOT TESTED
+- Cron trigger → job rescheduled at next cron slot: NOT TESTED
+- Interval trigger → job rescheduled at now + duration: NOT TESTED
+- Event trigger → ZIO.unit (no-op): NOT TESTED
+- Invalid cron expression in advanceTriggers → IO.fail propagated (then .orDie): NOT TESTED
+- Invalid ISO duration in advanceTriggers → IO.fail propagated (then .orDie): NOT TESTED
+- Cron with no next occurrence (cronExpr.next returns None) → ZIO.unit: NOT TESTED
+- Disabled trigger (enabled = false) skipped in advanceTriggers: NOT TESTED
+
+### TriggerEngine — MissedRunPolicy NEVER TESTED (not even implemented)
+- MissedRunPolicy is stored on SchedulerJob but TriggerEngine.tick/getPendingJobs does NOT implement RunOnce/RunAllMissed logic
+- All three policies (Skip, RunOnce, RunAllMissed) are in the domain model but only Skip is effectively active
+- No test for RunOnce or RunAllMissed behavior
+
+### TriggerEngine — event log assertions missing
+- All TriggerEngineSpec tests wire InMemoryEventLogRepo but never assert on its contents
+- SchedulerJobStarted event written for each tick: NOT ASSERTED
+- SchedulerJobCompleted event written on success: NOT ASSERTED
+- SchedulerJobFailed event written on failure: NOT ASSERTED
+
+### JobManagerSpec — shared state contamination risk
+- ZIOSpec[JobManager] uses a shared bootstrap layer with InMemorySchedulerRepo
+- Tests run in parallel by default (no @@ sequential); listJobs >= 2 test is fragile since prior tests add jobs
+- cancelJob idempotency (cancel already-Cancelled job) NOT TESTED — the `unless(job.status == JobStatus.Cancelled)` guard is untested
+- listJobs(Some(agentId)) filter NOT TESTED — only listJobs(None) tested
+- pauseJob on Running job: NOT TESTED
+- resumeJob on Cancelled job: NOT TESTED (resumes to Pending which may be surprising)
+- triggerNow on Succeeded/Failed job: NOT TESTED
+- addTrigger with non-existent jobId: NOT TESTED (in-memory repo accepts it; real DB would FK-fail)
+
+### SchedulerRepositorySpec — expireLeases NOT integration-tested
+- expireLeases with stale running jobs → reset to Pending: NOT TESTED (only in-memory unit test via TriggerEngineSpec)
+- expireLeases with no stale jobs → returns 0: NOT TESTED
+- listJobs(Some(agentId)) filter at DB level: NOT TESTED
+- getPendingJobs with future scheduledAt → NOT returned: only past-scheduled jobs tested; future exclusion is confirmed but the non-returned case not explicitly asserted
+- deleteJob cascade behavior (triggers deleted?): NOT TESTED
+
+### GraphQL Scheduler API — ZERO unit or integration tests
+- `jobs` query: NOT TESTED in JorlanAPISpec or GraphQLApiSpec
+- `job` query: NOT TESTED
+- `triggers` query: NOT TESTED
+- `listApprovals` query: NOT TESTED
+- `listCapabilities` query: NOT TESTED (capability check is absent — no requireCapability on this query)
+- `createJob` mutation: NOT TESTED
+- `addTrigger` mutation: NOT TESTED
+- `pauseJob` mutation: NOT TESTED
+- `resumeJob` mutation: NOT TESTED
+- `cancelJob` mutation: NOT TESTED
+- `triggerNow` mutation: NOT TESTED
+- `deleteJob` mutation: NOT TESTED
+- `decideApproval` mutation: NOT TESTED
+- `terminateSession` mutation: NOT TESTED
+- `scheduler.manage` capability denial for all above: NOT TESTED
+- `createJob` logs SchedulerJobQueued event: NOT TESTED
+- `cancelJob` logs SchedulerJobCancelled event: NOT TESTED
+- `decideApproval` has NO requireCapability guard — any authenticated user can decide approvals: NOT TESTED as a security property
+
+### Shell Command error paths for Phase 10 commands — MISSING
+- /capabilities GQL failure path (Left): NOT TESTED (fakeGQL always fails in non-overriding tests, but explicit GQL error for /capabilities: NOT TESTED)
+- /agents list GQL failure path: NOT TESTED
+- /agents stop with false result (session not found): NOT TESTED
+- /agents stop GQL failure path: NOT TESTED
+- /approvals approve with false result: NOT TESTED
+- /approvals deny with false result: NOT TESTED
+- /approvals approve GQL failure path: NOT TESTED
+- /approvals deny GQL failure path: NOT TESTED
+
 ## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29) — partially superseded by Phase 8.5
 
 ### OllamaModelGateway

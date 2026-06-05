@@ -45,6 +45,20 @@ type: project
 - CI `sbt test` command missing `--error` flag (project CLAUDE.md mandates `--error` for all sbt invocations)
 - `OllamaModelGateway.availableModels` hardcodes `contextWindow = 4096` as a placeholder — magic number with a comment; acceptable short-term but flagged
 
+## Phase 10 Findings (2026-06-04)
+- `TriggerEngine` is not added to `JorlanEnvironment` type or `EnvironmentBuilder.live`; it is instantiated with `new` directly in `Jorlan.run`, bypassing the ZLayer graph and using db-layer types directly as constructor params
+- `TriggerEngine` constructor takes `SchedulerZIORepository` and `EventLogZIORepository` directly — `server/` service layer should depend on abstract `SchedulerRepository[RepositoryTask]` (or a service interface), not the db-layer ZIO aliases
+- `TriggerEngine` instantiated twice with identical code in the initialized vs. fresh-init branches of `Jorlan.run` (lines 100 and 119) — shotgun surgery risk
+- `MissedRunPolicy.RunOnce` and `RunAllMissed` are declared in the domain model but neither is consulted anywhere in `TriggerEngine` — the field stored in DB is silently ignored; jobs always behave as `Skip`
+- `upsertJob` UPDATE in `QuillSchedulerRepository` does NOT include `name`, `inputJson`, `userId`, `agentId`, `skillId`, `maxRetries`, `backoffSeconds`, `backoffPolicy`, `missedRunPolicy` — those fields cannot be changed after insert; if `pauseJob` or any mutation that calls `upsertJob` with an existing ID tries to change these it silently no-ops
+- `getPendingJobs` filters `leasedAt.isEmpty` — but after `expireLeases` resets stale `Running` rows back to `Pending`, their `leasedAt` may not be NULL (expireLeases only sets status/leasedAt). Cross-check: expireLeases DOES set leasedAt to NULL, so this is OK, but the filter still excludes `Running` jobs that were never properly expired first
+- `SchedulerSkill` is wired with `val live` but never added to `EnvironmentBuilder` or `JorlanEnvironment` — the layer exists but is dead code until Phase 12
+- `JorlanAPI` calls `SchedulerZIORepository.getJob` and `SchedulerZIORepository.searchTriggers` directly (bypassing `JobManager`) for the `job` and `triggers` queries — inconsistent: some scheduler paths go through the service, others hit the db layer directly
+- `ArgBuilder[TriggerType/RetryBackoffPolicy/MissedRunPolicy]` use bare `.valueOf` which throws `IllegalArgumentException` on unknown enum values — should use `.Try(valueOf)` like `MemoryScope` does
+- Missing event log writes: `pauseJob`, `resumeJob`, `triggerNow`, `deleteJob`, `addTrigger` mutations in JorlanAPI have no `logEvent` call; `SchedulerJobPaused`/`SchedulerJobResumed`/`SchedulerJobDeleted` event types don't even exist in `EventType`
+- `decideApproval` mutation has no `requireCapability` guard — any authenticated user can approve/reject any approval request
+- `resolveAgentId` silently falls back to `AgentId.empty` (0 sentinel) when no session exists; a job created with `AgentId.empty` stored in DB will fail the FK constraint on any schema that enforces `agentId` references
+
 ## Phase 8.1 Findings (2026-05-31)
 - `isInitialized` decoding pattern (settings.get("initialized").map { case Some(Json.Bool(v)) => ... }) duplicated across Jorlan.scala:78, InitServiceImpl:107, and StatusRoutes:52 — should be extracted to `ServerSettingsRepository` or a helper
 - `ServerStatus` and `InitRequest` case classes defined twice: once in `server/init/InitRoutes.scala` and again in `shell/client/InitClient.scala` — structural duplication; modules are independent, but the field names and JSON shape must stay in sync manually

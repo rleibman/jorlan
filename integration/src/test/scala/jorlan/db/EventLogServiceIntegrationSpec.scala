@@ -14,7 +14,8 @@ import jorlan.*
 import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.EventLogZIORepository
 import jorlan.domain.*
-import jorlan.service.{CorrelationId, EventLogFilter}
+import jorlan.service.{CorrelationId, EventLogFilter, EventLogOrder}
+import jorlan.{OrderDirection, Sort}
 import zio.*
 import zio.test.*
 
@@ -60,7 +61,7 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[jorlan.db.repository.UserZIORepository]
           repo     <- ZIO.service[EventLogZIORepository]
-          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", None, T0, T0))
+          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", "", T0, T0))
           _        <- repo.append(testEvent(EventType.AgentStarted, actorId = Some(user.id)))
           found    <- repo.search(EventLogFilter(eventType = Some(EventType.AgentStarted)))
         } yield assertTrue(found.exists(_.actorId.contains(user.id)))
@@ -78,6 +79,80 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
           replayed.map(_.id) == List(e1.id, e2.id, e3.id),
           replayed.map(_.occurredAt) == List(T0, T0.plusSeconds(1), T0.plusSeconds(2)),
         )
+      },
+      test("search with sessionId filter returns matching events") {
+        val sid = AgentSessionId(55555L)
+        for {
+          repo   <- ZIO.service[EventLogZIORepository]
+          saved  <- repo.append(testEvent(EventType.UserMessageReceived, sessionId = Some(sid)))
+          _      <- repo.append(testEvent(EventType.AgentStarted))
+          result <- repo.search(EventLogFilter(sessionId = Some(sid), pageSize = 100))
+        } yield assertTrue(result.exists(_.id == saved.id))
+      },
+      test("search with agentId filter returns matching events") {
+        import jorlan.db.repository.AgentZIORepository
+        for {
+          agentRepo <- ZIO.service[AgentZIORepository]
+          agent  <- agentRepo.upsert(jorlan.domain.Agent(jorlan.domain.AgentId.empty, "FilterAgent", None, None, 0, T0))
+          repo   <- ZIO.service[EventLogZIORepository]
+          saved  <- repo.append(testEvent(EventType.AgentStarted, agentId = Some(agent.id)))
+          _      <- repo.append(testEvent(EventType.AgentStarted))
+          result <- repo.search(EventLogFilter(agentId = Some(agent.id), pageSize = 100))
+        } yield assertTrue(result.exists(_.id == saved.id))
+      },
+      test("search sorted by OccurredAt ascending returns events in order") {
+        for {
+          repo   <- ZIO.service[EventLogZIORepository]
+          e1     <- repo.append(testEvent(EventType.ModelCallStarted, occurredAt = T0))
+          e2     <- repo.append(testEvent(EventType.ModelCallStarted, occurredAt = T0.plusSeconds(1)))
+          e3     <- repo.append(testEvent(EventType.ModelCallStarted, occurredAt = T0.plusSeconds(2)))
+          result <- repo.search(
+            EventLogFilter(
+              eventType = Some(EventType.ModelCallStarted),
+              sorts = Some(Sort(EventLogOrder.OccurredAt, OrderDirection.Asc)),
+              pageSize = 100,
+            ),
+          )
+          ids = result.map(_.id)
+        } yield assertTrue(ids.contains(e1.id), ids.contains(e2.id), ids.contains(e3.id))
+      },
+      test("search sorted by Id ascending") {
+        for {
+          repo   <- ZIO.service[EventLogZIORepository]
+          e1     <- repo.append(testEvent(EventType.ModelCallCompleted, occurredAt = T0))
+          e2     <- repo.append(testEvent(EventType.ModelCallCompleted, occurredAt = T0.plusSeconds(1)))
+          result <- repo.search(
+            EventLogFilter(
+              eventType = Some(EventType.ModelCallCompleted),
+              sorts = Some(Sort(EventLogOrder.Id, OrderDirection.Asc)),
+              pageSize = 100,
+            ),
+          )
+          ids = result.map(_.id)
+        } yield assertTrue(ids.indexOf(e1.id) < ids.indexOf(e2.id))
+      },
+      test("search sorted by Id descending") {
+        for {
+          repo   <- ZIO.service[EventLogZIORepository]
+          e1     <- repo.append(testEvent(EventType.ModelCallFailed, occurredAt = T0))
+          e2     <- repo.append(testEvent(EventType.ModelCallFailed, occurredAt = T0.plusSeconds(1)))
+          result <- repo.search(
+            EventLogFilter(
+              eventType = Some(EventType.ModelCallFailed),
+              sorts = Some(Sort(EventLogOrder.Id, OrderDirection.Desc)),
+              pageSize = 100,
+            ),
+          )
+          ids = result.map(_.id)
+        } yield assertTrue(ids.indexOf(e2.id) < ids.indexOf(e1.id))
+      },
+      test("search with pagination returns correct page") {
+        for {
+          repo  <- ZIO.service[EventLogZIORepository]
+          _     <- ZIO.foreachDiscard(1 to 5)(i => repo.append(testEvent(EventType.SkillInvoked)))
+          page0 <- repo.search(EventLogFilter(eventType = Some(EventType.SkillInvoked), page = 0, pageSize = 2))
+          page1 <- repo.search(EventLogFilter(eventType = Some(EventType.SkillInvoked), page = 1, pageSize = 2))
+        } yield assertTrue(page0.size == 2, page1.size == 2, page0.map(_.id) != page1.map(_.id))
       },
       test("correlation id is accessible within withId block around repository calls") {
         for {

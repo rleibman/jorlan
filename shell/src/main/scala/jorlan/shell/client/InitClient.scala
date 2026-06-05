@@ -11,6 +11,7 @@
 package jorlan.shell.client
 
 import jorlan.init.*
+import jorlan.shell.ServerUrl
 import sttp.client4.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend
 import zio.*
@@ -27,7 +28,7 @@ trait InitClient {
     *   the decoded [[ServerStatus]], or a human-readable error string (not a typed [[jorlan.JorlanError]]) on network
     *   failure, non-2xx response, or JSON decode failure.
     */
-  def checkStatus(serverUrl: String): IO[String, ServerStatus]
+  def checkStatus(serverUrl: ServerUrl): IO[String, ServerStatus]
 
   /** Posts `POST /api/init` with the given setup parameters.
     *
@@ -36,7 +37,7 @@ trait InitClient {
     *   strings rather than typed [[jorlan.JorlanError]]s because this client crosses the HTTP boundary.
     */
   def complete(
-    serverUrl:     String,
+    serverUrl:     ServerUrl,
     token:         String,
     serverName:    String,
     adminEmail:    String,
@@ -48,11 +49,11 @@ trait InitClient {
 
 object InitClient {
 
-  def checkStatus(serverUrl: String): ZIO[InitClient, String, ServerStatus] =
+  def checkStatus(serverUrl: ServerUrl): ZIO[InitClient, String, ServerStatus] =
     ZIO.serviceWithZIO[InitClient](_.checkStatus(serverUrl))
 
   def complete(
-    serverUrl:     String,
+    serverUrl:     ServerUrl,
     token:         String,
     serverName:    String,
     adminEmail:    String,
@@ -70,9 +71,9 @@ object InitClient {
 
 private class InitClientImpl(backend: Backend[Task]) extends InitClient {
 
-  override def checkStatus(serverUrl: String): IO[String, ServerStatus] =
+  override def checkStatus(serverUrl: ServerUrl): IO[String, ServerStatus] =
     basicRequest
-      .get(uri"$serverUrl/api/status")
+      .get(uri"${serverUrl.value}/api/status")
       .readTimeout(scala.concurrent.duration.FiniteDuration(5, java.util.concurrent.TimeUnit.SECONDS))
       .send(backend)
       .mapError(e => s"Connection error: ${e.getMessage}")
@@ -92,7 +93,7 @@ private class InitClientImpl(backend: Backend[Task]) extends InitClient {
       }
 
   override def complete(
-    serverUrl:     String,
+    serverUrl:     ServerUrl,
     token:         String,
     serverName:    String,
     adminEmail:    String,
@@ -101,7 +102,7 @@ private class InitClientImpl(backend: Backend[Task]) extends InitClient {
   ): IO[String, Unit] = {
     val body = InitRequest(token, serverName, adminEmail, adminName, adminPassword).toJson
     basicRequest
-      .post(uri"$serverUrl/api/init")
+      .post(uri"${serverUrl.value}/api/init")
       .body(body)
       .contentType("application/json")
       .send(backend)

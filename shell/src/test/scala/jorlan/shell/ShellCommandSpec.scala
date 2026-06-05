@@ -10,6 +10,7 @@
 
 package jorlan.shell
 
+import jorlan.domain.{AgentSessionId, ApprovalRequestId, MemoryRecordId}
 import jorlan.shell.commands.ShellCommand
 import zio.test.*
 
@@ -111,7 +112,7 @@ object ShellCommandSpec extends ZIOSpecDefault {
         assertTrue(ShellCommand.parse("/memory search") == ShellCommand.Unknown("/memory"))
       },
       test("/memory forget with valid id") {
-        assertTrue(ShellCommand.parse("/memory forget 42") == ShellCommand.MemoryForget(42L))
+        assertTrue(ShellCommand.parse("/memory forget 42") == ShellCommand.MemoryForget(MemoryRecordId(42L)))
       },
       test("/memory forget with non-numeric id becomes Unknown") {
         assertTrue(ShellCommand.parse("/memory forget abc") == ShellCommand.Unknown("/memory"))

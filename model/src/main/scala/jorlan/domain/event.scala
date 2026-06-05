@@ -47,6 +47,11 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case CapabilityGranted, CapabilityRevoked
   case PermissionGranted, PermissionRevoked
 
+  // ─── Scheduler ───────────────────────────────────────────────────────────────
+  case SchedulerJobQueued, SchedulerJobStarted, SchedulerJobCompleted, SchedulerJobFailed, SchedulerJobCancelled
+  case SchedulerJobPaused, SchedulerJobResumed, SchedulerJobTriggered, SchedulerJobDeleted
+  case SchedulerTriggerAdded
+
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
   case ServerInitialized

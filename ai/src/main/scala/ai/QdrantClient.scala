@@ -24,16 +24,13 @@ object QdrantClient {
     useTransportLayerSecurity: Boolean = false,
   ): Task[QdrantClient] = {
     ZIO.attempt(
-      new QdrantClient(JavaQdrantClient(QdrantGrpcClient.newBuilder(host, rpcPort, useTransportLayerSecurity).build())),
+      QdrantClient(JavaQdrantClient(QdrantGrpcClient.newBuilder(host, rpcPort, useTransportLayerSecurity).build())),
     )
   }
 
   def apply(
     grpc: QdrantGrpcClient,
-  ): QdrantClient =
-    new QdrantClient(
-      JavaQdrantClient(grpc),
-    )
+  ): QdrantClient = QdrantClient(JavaQdrantClient(grpc))
 
 }
 

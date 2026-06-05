@@ -142,7 +142,7 @@ object AgentSessionManagerImpl {
         modelGateway <- ZIO.service[ModelGateway]
         eventLogRepo <- ZIO.service[EventLogZIORepository]
         cached       <- Ref.make(Option.empty[AgentId])
-      } yield new AgentSessionManagerImpl(agentRepo, modelGateway, eventLogRepo, cached),
+      } yield AgentSessionManagerImpl(agentRepo, modelGateway, eventLogRepo, cached),
     )
 
 }

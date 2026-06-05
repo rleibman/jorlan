@@ -25,7 +25,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee1", None, T0, T0))
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee1", "", T0, T0))
           grant = CapabilityGrant(
             CapabilityGrantId.empty,
             CapabilityName("shell.execute"),
@@ -49,7 +49,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", None, T0, T0))
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", "", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -85,7 +85,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", None, T0, T0))
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", "", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -135,7 +135,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", None, T0, T0))
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", "", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -157,7 +157,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", None, T0, T0))
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", "", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -181,7 +181,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor1", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor1", "", T0, T0))
           req = ApprovalRequest(
             ApprovalRequestId.empty,
             CapabilityName("dangerous.op"),
@@ -207,7 +207,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor2", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor2", "", T0, T0))
           req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
@@ -233,8 +233,8 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor3", None, T0, T0))
-          approver <- userRepo.upsert(User(UserId.empty, "Approver1", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor3", "", T0, T0))
+          approver <- userRepo.upsert(User(UserId.empty, "Approver1", "", T0, T0))
           req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
@@ -268,7 +268,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "NoRoleUser", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "NoRoleUser", "", T0, T0))
           roles    <- repo.searchRoles(RoleSearch(userId = user.id, pageSize = 20))
         } yield assertTrue(roles.isEmpty)
       },
@@ -276,7 +276,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "NoPermUser", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "NoPermUser", "", T0, T0))
           perms    <- repo.searchPermissions(PermissionSearch(userId = Some(user.id), pageSize = 20))
         } yield assertTrue(perms.isEmpty)
       },
@@ -284,7 +284,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "SortPermUser", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "SortPermUser", "", T0, T0))
           byIdDesc <- repo.searchPermissions(
             PermissionSearch(
               userId = Some(user.id),
@@ -338,7 +338,7 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
         for {
           userRepo <- ZIO.service[UserZIORepository]
           repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", None, T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", "", T0, T0))
           byName   <- repo.searchRoles(
             RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Asc))),
           )

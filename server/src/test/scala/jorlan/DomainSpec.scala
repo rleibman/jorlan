@@ -34,6 +34,9 @@ object DomainSpec extends ZIOSpecDefault {
       personalitySuite,
       eventLogFilterSuite,
       correlationIdSuite,
+      schedulerJobSuite,
+      channelIdentitySuite,
+      connectorInstanceSuite,
     )
 
   private val idsSuite = suite("Opaque ID types")(
@@ -347,6 +350,196 @@ object DomainSpec extends ZIOSpecDefault {
     },
     test("TriggerType") {
       assertTrue(enumRoundtrip(TriggerType.values.toSeq))
+    },
+  )
+
+  private val channelIdentitySuite = suite("ChannelIdentity")(
+    test("JSON codec roundtrip") {
+      import zio.json.*
+      val now = T0
+      val ci = ChannelIdentity(
+        id = ChannelIdentityId(1L),
+        userId = UserId(2L),
+        channelType = ChannelType.Telegram,
+        channelUserId = "tg-12345",
+        verified = true,
+        providerData = None,
+        createdAt = now,
+      )
+      assertTrue(ci.toJson.fromJson[ChannelIdentity].contains(ci))
+    },
+    test("ChannelIdentity defaults verified=false") {
+      val ci = ChannelIdentity(
+        id = ChannelIdentityId.empty,
+        userId = UserId(1L),
+        channelType = ChannelType.Slack,
+        channelUserId = "U12345",
+        createdAt = T0,
+      )
+      assertTrue(!ci.verified, ci.providerData.isEmpty)
+    },
+    test("ChannelIdentity with OAuth providerData roundtrip") {
+      import zio.json.*
+      import zio.json.ast.Json
+      val ci = ChannelIdentity(
+        id = ChannelIdentityId(3L),
+        userId = UserId(1L),
+        channelType = ChannelType.Google,
+        channelUserId = "google-uid-abc",
+        verified = true,
+        providerData = Some(Json.Obj("sub" -> Json.Str("google-uid-abc"))),
+        createdAt = T0,
+      )
+      assertTrue(ci.toJson.fromJson[ChannelIdentity].contains(ci))
+    },
+    test("ChannelType.fromProvider returns None for unknown provider") {
+      assertTrue(ChannelType.fromProvider("unknown").isEmpty)
+    },
+  )
+
+  private val connectorInstanceSuite = suite("ConnectorInstance")(
+    test("JSON codec roundtrip") {
+      import zio.json.*
+      import zio.json.ast.Json
+      val ci = ConnectorInstance(
+        id = ConnectorInstanceId(1L),
+        connectorType = ConnectorType.Telegram,
+        name = "my-bot",
+        configJson = Json.Obj("token" -> Json.Str("secret")),
+        status = "connected",
+        createdAt = T0,
+      )
+      assertTrue(ci.toJson.fromJson[ConnectorInstance].contains(ci))
+    },
+    test("toString redacts configJson") {
+      import zio.json.ast.Json
+      val ci = ConnectorInstance(
+        id = ConnectorInstanceId(2L),
+        connectorType = ConnectorType.Slack,
+        name = "my-slack",
+        configJson = Json.Obj("apiKey" -> Json.Str("super-secret")),
+        status = "idle",
+        createdAt = T0,
+      )
+      val str = ci.toString
+      assertTrue(str.contains("ConnectorInstance"), str.contains("[redacted]"), !str.contains("super-secret"))
+    },
+    test("ConnectorType codec roundtrip") {
+      import zio.json.*
+      val values = ConnectorType.values.toSeq
+      assertTrue(values.forall(v => v.toJson.fromJson[ConnectorType].contains(v)))
+    },
+  )
+
+  private def baseJob: SchedulerJob =
+    SchedulerJob(
+      id = SchedulerJobId.empty,
+      agentId = AgentId(1L),
+      userId = UserId(1L),
+      skillId = None,
+      name = "test-job",
+      inputJson = None,
+      status = JobStatus.Pending,
+      scheduledAt = T0,
+      startedAt = None,
+      finishedAt = None,
+      resultJson = None,
+      maxRetries = 0,
+      retryCount = 0,
+      backoffSeconds = 60,
+      backoffPolicy = RetryBackoffPolicy.Fixed,
+      missedRunPolicy = MissedRunPolicy.Skip,
+      leasedAt = None,
+      leasedBy = None,
+      createdAt = T0,
+    )
+
+  private val schedulerJobSuite = suite("SchedulerJob")(
+    test("validate passes for a well-formed job with no retries") {
+      assertTrue(baseJob.validate.isRight)
+    },
+    test("validate passes for a job with retries and positive backoff") {
+      assertTrue(baseJob.copy(maxRetries = 3, backoffSeconds = 30).validate.isRight)
+    },
+    test("validate fails when maxRetries is negative") {
+      assertTrue(baseJob.copy(maxRetries = -1).validate.isLeft)
+    },
+    test("validate fails when maxRetries > 0 and backoffSeconds <= 0") {
+      assertTrue(baseJob.copy(maxRetries = 2, backoffSeconds = 0).validate.isLeft)
+    },
+    test("validate passes when maxRetries is 0 and backoffSeconds is 0") {
+      assertTrue(baseJob.copy(maxRetries = 0, backoffSeconds = 0).validate.isRight)
+    },
+    test("released clears leasedAt, leasedBy and sets new status and scheduledAt") {
+      val leased = baseJob.copy(status = JobStatus.Running, leasedAt = Some(T0), leasedBy = Some("worker-1"))
+      val released = leased.released(JobStatus.Pending, T0.plusSeconds(60))
+      assertTrue(
+        released.status == JobStatus.Pending,
+        released.scheduledAt == T0.plusSeconds(60),
+        released.leasedAt.isEmpty,
+        released.leasedBy.isEmpty,
+      )
+    },
+    test("MissedRunPolicy codec roundtrip") {
+      import zio.json.*
+      val values = MissedRunPolicy.values.toSeq
+      assertTrue(values.forall(v => v.toJson.fromJson[MissedRunPolicy].contains(v)))
+    },
+    test("RetryBackoffPolicy codec roundtrip") {
+      import zio.json.*
+      val values = RetryBackoffPolicy.values.toSeq
+      assertTrue(values.forall(v => v.toJson.fromJson[RetryBackoffPolicy].contains(v)))
+    },
+    test("SchedulerTrigger JSON roundtrip") {
+      import zio.json.*
+      val trigger = SchedulerTrigger(
+        id = SchedulerTriggerId(1L),
+        jobId = SchedulerJobId(2L),
+        triggerType = TriggerType.Cron,
+        expression = "0 0 * ? * 1",
+        enabled = true,
+        createdAt = T0,
+      )
+      val json = trigger.toJson
+      val decoded = json.fromJson[SchedulerTrigger]
+      assertTrue(decoded.contains(trigger))
+    },
+    test("SchedulerTrigger OneShot type encodes correctly") {
+      import zio.json.*
+      val trigger = SchedulerTrigger(
+        id = SchedulerTriggerId.empty,
+        jobId = SchedulerJobId.empty,
+        triggerType = TriggerType.OneShot,
+        expression = "2026-12-01T09:00:00Z",
+        enabled = false,
+        createdAt = T0,
+      )
+      assertTrue(trigger.toJson.contains("OneShot"), !trigger.enabled)
+    },
+    test("SchedulerTrigger Event type roundtrip") {
+      import zio.json.*
+      val trigger = SchedulerTrigger(
+        id = SchedulerTriggerId.empty,
+        jobId = SchedulerJobId.empty,
+        triggerType = TriggerType.Event,
+        expression = "agent.completed",
+        enabled = true,
+        createdAt = T0,
+      )
+      assertTrue(trigger.toJson.fromJson[SchedulerTrigger].contains(trigger))
+    },
+    test("SchedulerJob JSON roundtrip preserves all fields") {
+      import zio.json.*
+      val job = baseJob.copy(
+        id = SchedulerJobId(5L),
+        maxRetries = 3,
+        backoffSeconds = 30,
+        backoffPolicy = RetryBackoffPolicy.Exponential,
+        missedRunPolicy = MissedRunPolicy.RunOnce,
+        startedAt = Some(T0),
+        resultJson = Some("""{"ok":true}"""),
+      )
+      assertTrue(job.toJson.fromJson[SchedulerJob].contains(job))
     },
   )
 

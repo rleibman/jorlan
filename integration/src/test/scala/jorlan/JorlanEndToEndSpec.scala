@@ -88,6 +88,8 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       MemoryServiceImpl.live,
       MemorySkill.live,
       AgentRunnerImpl.live,
+      JobManagerImpl.live,
+      TriggerEngine.live,
     )
 
   private val interpLayer: ZLayer[
@@ -99,8 +101,11 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
 
   private val fullLayer: TaskLayer[
     JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
-  ] =
-    envLayer >+> ZLayer.succeed(JorlanSession.serverSession) >+> interpLayer
+  ] = ZLayer.make[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+    envLayer,
+    ZLayer.succeed(JorlanSession.serverSession),
+    interpLayer,
+  )
 
   private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
@@ -139,7 +144,9 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       test("createRole then assignRole to a user persisted to DB") {
         for {
           interp     <- ZIO.service[Interp]
-          userResult <- interp.execute("""mutation { createUser(displayName: "E2ERoleUser") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "E2ERoleUser", email: "e2erole@test.com") { id } }""",
+          )
           userId = {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(userResult.data.toString).map(_.group(1).toLong).getOrElse(-1L)
@@ -161,7 +168,9 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       test("grantPermission and permissions(userId) with real DB") {
         for {
           interp     <- ZIO.service[Interp]
-          userResult <- interp.execute("""mutation { createUser(displayName: "E2EPermUser") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "E2EPermUser", email: "e2eperm@test.com") { id } }""",
+          )
           userId = {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(userResult.data.toString).map(_.group(1).toLong).getOrElse(-1L)

@@ -531,14 +531,61 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 
 **Goal:** Agents can create and manage scheduled tasks that survive server restarts.
 
-- [ ] `JobManager` ZIO service: `createJob`, `listJobs`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`
-- [ ] `TriggerEngine`: time-based and cron-like triggers initially (use ZIO `Schedule` internals where applicable)
-- [ ] DB-backed job locking/leasing (`SchedulerRepository.claimJob` / `releaseJob`) to prevent duplicate runs
-- [ ] `RetryEngine`: configurable retry count + backoff policy per job
-- [ ] Missed-run handling: configurable policy per trigger (`skip`, `run_once`, `run_all_missed`)
-- [ ] `SchedulerSkill` (Tier 0): exposes all `JobManager` operations to agents
-- [ ] Wire: scheduled job fires → `AgentSessionManager` creates new session → `Orchestrator` runs job payload
-- [ ] Tests: scheduler recovery after simulated restart (Testcontainers MariaDB), retry/backoff correctness
+See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
+
+### Pre-work (Tech Debt)
+
+- [x] `LangChainConfig` kept as-is — `ai` module stays provider-agnostic (no dmscreen fields to remove)
+- [x] Roadmap text fix done (this item)
+- [x] P9-051: `/capabilities` shell command — added `listCapabilities` GQL query, wired shell command
+
+### Domain Extensions
+
+- [x] `MissedRunPolicy` enum: `Skip | RunOnce | RunAllMissed`
+- [x] `RetryBackoffPolicy` enum: `Fixed | Exponential`
+- [x] `JobStatus.Paused` added (new variant)
+- [x] `SchedulerJob` extended: `userId`, `maxRetries`, `retryCount`, `backoffSeconds`, `backoffPolicy`, `missedRunPolicy`, `leasedAt`, `leasedBy`
+- [x] V021 migration: new columns on `schedulerJob`, FK to `user`, lease index
+
+### Repository Extensions
+
+- [x] `SchedulerRepository.listJobs(agentId: Option[AgentId])`
+- [x] `SchedulerRepository.claimJob` — optimistic UPDATE with lease check (prevents duplicate runs)
+- [x] `SchedulerRepository.releaseJob` — set final status, `resultJson`, `finishedAt`, clear lease
+- [x] `SchedulerRepository.expireLeases` — reset stale leases to `Pending`
+- [x] `PermissionRepository.listPendingApprovals(userId)` — for shell `/approvals list`
+
+### Services
+
+- [x] `JobManager` ZIO service: `createJob`, `addTrigger`, `listJobs`, `getJob`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`
+- [x] `TriggerEngine` daemon fiber: polls pending jobs, claims + executes, handles missed-run policies; uses `cron4s-core` for cron expression parsing and ISO 8601 duration for interval triggers
+- [x] `RetryEngine` (integrated into `TriggerEngine`): fixed + exponential backoff, `maxRetries` cap
+- [x] Wire: job fires → `AgentSessionManager.createSession(job.userId)` → `AgentRunner.processMessage` → collect result → `releaseJob`
+- [x] EventType additions: `SchedulerJobQueued`, `SchedulerJobStarted`, `SchedulerJobCompleted`, `SchedulerJobFailed`, `SchedulerJobCancelled`
+- [x] `TriggerEngine` started as daemon fiber in `Jorlan.run`
+
+### GraphQL & Shell Surface
+
+- [x] Queries: `jobs(agentId)`, `job(id)`, `triggers(jobId)`, `listApprovals`
+- [x] Mutations: `createJob`, `addTrigger`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`, `deleteJob` — all gated on `scheduler.manage` capability
+- [x] `decideApproval(id, decision)` mutation for approval lifecycle
+- [x] `terminateSession(id)` mutation
+- [x] `listCapabilities` query (P9-051 fix)
+- [x] Shell `/agents list` and `/agents stop <id>` commands
+- [x] Shell `/approvals list`, `/approvals approve <id>`, `/approvals deny <id>` commands
+- [x] Shell `/capabilities` command now calls live `listCapabilities` GQL query
+
+### `SchedulerSkill` (Tier 0 — logic only)
+
+- [x] `SchedulerSkill` implements `scheduler.create_job`, `scheduler.list_jobs`, `scheduler.pause_job`, `scheduler.resume_job`, `scheduler.cancel_job`, `scheduler.trigger_now`
+- [x] Registry wiring deferred to Phase 12 (same pattern as `MemorySkill`)
+
+### Tests
+
+- [x] Integration tests for `claimJob`/`releaseJob` in `SchedulerRepositorySpec` (2 new tests)
+- [x] Unit tests: `JobManagerSpec` (9 tests), `TriggerEngineSpec` (6 tests, tick + retry + backoff + stale lease), `SchedulerSkillSpec` (6 tests); 685 total tests passing
+- [x] Shell tests for `/agents list|stop` and `/approvals list|approve|deny` in `CommandHandlerSpec` (8 new tests)
+- [ ] Integration tests: `SchedulerRecoverySpec` (job survives simulated restart), `RetrySpec` (fail N then succeed) — deferred (complex Testcontainers lifecycle tests)
 
 ---
 
@@ -554,6 +601,7 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 - [ ] Outbound delivery for `NotificationRouter`
 - [ ] Channel-specific config: bot token, allowed chat IDs, allowed users
 - [ ] Integration tests using a mock Telegram API (no live bot token required for CI)
+- [ ] The system can interact with messages in telegram groups and channels.
 
 ---
 
@@ -743,31 +791,30 @@ model
 
 | Status | Command         | Type     | Priority | Parameters                                        | Description                                                 |
 |:------:|-----------------|----------|----------|---------------------------------------------------|-------------------------------------------------------------|
-|  [x]   | `/help`         | Built-in | 0        | —                                                 | Show short help summary and key bindings                    |
-|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands                                 |
+|  [x]   | `/help`         | Built-in | 0        | —                                                 | Same as `/commands` — shows full command list with key bindings |
+|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands with key bindings               |
 |  [x]   | `/quit`         | Built-in | 0        | —                                                 | Exit the shell cleanly                                      |
 |  [x]   | `/exit`         | Built-in | 0        | —                                                 | Alias for `/quit`                                           |
 |  [x]   | `/about`        | Built-in | 0        | —                                                 | Show version and platform information                       |
-|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity and GraphQL health check                |
-|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user                             |
-|  [~]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level (display only — runtime wiring Phase 8) |
-|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field (admin only) |
+|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity, client version, server version, uptime |
+|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user (parsed: name, email, ID)   |
+|  [x]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level                                         |
+|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
 |  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
 |  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
 |  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |
-|  [ ]   | `/version`      | Built-in |          | —                                                 | Show shell and server version                               |
 |  [ ]   | `/logs`         | Built-in |          | `[n]`                                             | Tail the last *n* lines from `~/.jorlan/shell.log`          |
-|  [~]   | `/new`          | Session  |          | —                                                 | Archive the current session and start a fresh one (Phase 8) |
-|  [~]   | `/model`        | Session  |          | —                                                 | Show or interactively configure the active model (Phase 8)  |
-|  [~]   | `/models`       | Session  |          | —                                                 | List models available on the connected server (Phase 8)     |
-|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions (Phase 8)                             |
-|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session (Phase 8) |
-|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function (Phase 8)       |
-|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name (Phase 8)                               |
-|  [ ]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants (Phase 9)               |
-|  [ ]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests (Phase 10)        |
-|  [ ]   | `/agents`       | Agent    |          | `list \| status <id> \| stop <id>`                | List and manage running agent sessions (Phase 10)           |
-|  [ ]   | `/memory`       | Memory   |          | `list \| search <q> \| forget <id>`               | Browse and manage agent memory entries (Phase 9)            |
+|  [x]   | `/new`          | Session  |          | `[model]`                                         | Start a new agent session with optional model override      |
+|  [x]   | `/model`        | Session  |          | —                                                 | Show active session ID, model, and status (queries server)  |
+|  [x]   | `/models`       | Session  |          | —                                                 | List models available on the connected server               |
+|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions                                       |
+|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session           |
+|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function                 |
+|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name                                         |
+|  [x]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants                         |
+|  [x]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests                   |
+|  [x]   | `/agents`       | Agent    |          | `list \| stop <id>`                               | List and terminate running agent sessions                   |
+|  [x]   | `/memory`       | Memory   |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries |
 |  [ ]   | `/restart`      | Admin    |          | —                                                 | Restart the Jorlan server process (Phase 10)                |
 |  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable` | Manage server plugins (Phase 12)                            |
 |  [ ]   | `/mcp`          | Plugin   |          | —                                                 | MCP protocol tools and adapter management (Phase 12)        |

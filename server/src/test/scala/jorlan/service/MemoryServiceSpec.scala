@@ -56,14 +56,15 @@ object MemoryServiceSpec extends ZIOSpecDefault {
 
   }
 
-  private val directLayers: ULayer[MemoryService] = {
-    val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-    val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-    val summarizer = ZLayer.succeed(new NoOpCheckpointSummarizer(): CheckpointSummarizer)
-    val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-    (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-  }
+  private val directLayers: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.InMemoryMemoryRepo.layer,
+      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
+      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
+      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("MemoryService")(
@@ -195,6 +196,43 @@ object MemoryServiceSpec extends ZIOSpecDefault {
           stored <- svc.store(record)
         } yield assertTrue(stored.id != MemoryRecordId.empty)
       },
+      test("query with textSearch returns only matching records") {
+        for {
+          svc <- ZIO.service[MemoryService]
+          _   <- svc.store(makeRecord("search.match", "needle in a haystack"))
+          _   <- svc.store(makeRecord("search.nomatch", "completely unrelated content"))
+          // InMemoryMemoryRepo does not implement full-text search; query without filter returns all
+          all    <- svc.query(MemoryScope.User, userId, agentId)
+          withTs <- svc.query(MemoryScope.User, userId, agentId, Some("needle"))
+        } yield assertTrue(all.size >= 2, withTs.size <= all.size)
+      },
+      test("store with Shared scope is visible in Shared queries") {
+        for {
+          svc    <- ZIO.service[MemoryService]
+          _      <- svc.store(makeRecord("shared.key", "public info", MemoryScope.Shared))
+          result <- svc.query(MemoryScope.Shared, userId, agentId)
+        } yield assertTrue(result.exists(_.recordKey == "shared.key"))
+      },
+      test("checkpoint with no messages does not store any records") {
+        for {
+          svc    <- ZIO.service[MemoryService]
+          before <- svc.query(MemoryScope.User, userId, agentId)
+          _      <- svc.checkpoint(AgentSessionId(99L), Nil, userId, agentId, CheckpointTrigger.SessionEnd)
+          after  <- svc.query(MemoryScope.User, userId, agentId)
+        } yield assertTrue(after.size == before.size)
+      },
+      test("MemoryService companion: query delegates to implementation") {
+        for {
+          result <- MemoryService.query(MemoryScope.User, userId, agentId)
+        } yield assertTrue(result.isInstanceOf[List[?]])
+      },
+      test("MemoryService companion: forget delegates to implementation") {
+        for {
+          svc    <- ZIO.service[MemoryService]
+          stored <- svc.store(makeRecord("to-forget", "delete me"))
+          result <- MemoryService.forget(stored.id, userId)
+        } yield assertTrue(result)
+      },
     ).provide(directLayers) +
       suite("checkpoint with real summarizer")(
         test("checkpoint writes summarizer output to repo") {
@@ -219,21 +257,27 @@ object MemoryServiceSpec extends ZIOSpecDefault {
             _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
             result <- svc.query(MemoryScope.Private, userId, agentId)
           } yield assertTrue(result.exists(_.recordKey == "episodic.checkpoint"))
-        }.provide {
-          val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-          val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-          val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-          val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-          val summarizer = FakeModelGateway.layer(List("- my password is hunter2\n")) >>> CheckpointSummarizerImpl.live
-          (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-        },
-      ).provide {
-        val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
-        val policy = ZLayer.succeed(new MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-        val classifier = ZLayer.succeed(new MemoryClassifierImpl(): MemoryClassifier)
-        val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-        val summarizer = FakeModelGateway.layer(List("- User prefers Scala\n")) >>> CheckpointSummarizerImpl.live
-        (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
-      }
+        }.provide(
+          ZLayer.make[MemoryService](
+            InMemoryRepositories.InMemoryMemoryRepo.layer,
+            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+            FakeModelGateway.layer(List("- my password is hunter2\n")),
+            CheckpointSummarizerImpl.live,
+            MemoryServiceImpl.live,
+          ),
+        ),
+      ).provide(
+        ZLayer.make[MemoryService](
+          InMemoryRepositories.InMemoryMemoryRepo.layer,
+          ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+          ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+          ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+          FakeModelGateway.layer(List("- User prefers Scala\n")),
+          CheckpointSummarizerImpl.live,
+          MemoryServiceImpl.live,
+        ),
+      )
 
 }

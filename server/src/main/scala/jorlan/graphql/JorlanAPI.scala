@@ -16,13 +16,7 @@ import caliban.schema.Schema.auto.*
 import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
-import jorlan.db.repository.{
-  EventLogZIORepository,
-  MemoryZIORepository,
-  PermissionZIORepository,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
 import zio.*
@@ -33,6 +27,7 @@ import zio.stream.ZStream
 import java.time.Instant
 
 /** Caliban GraphQL schema for the Jorlan control-plane API. */
+@scala.annotation.nowarn("msg=IsUnionOf")
 object JorlanAPI {
 
   private val logErrors: OverallWrapper[Any] =
@@ -80,7 +75,8 @@ object JorlanAPI {
 
   type JorlanApiEnv =
     UserZIORepository & PermissionZIORepository & EventLogZIORepository & ServerSettingsRepository &
-      CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService & MemorySkill
+      CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService & MemorySkill & JobManager &
+      ApprovalService & ModelGateway
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -96,11 +92,30 @@ object JorlanAPI {
   private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
   private given ArgBuilder[MemoryScope] =
     ArgBuilder.string.flatMap { s =>
-      scala.util
-        .Try(MemoryScope.valueOf(s)).toEither.left
-        .map(e => CalibanError.ExecutionError(s"Invalid MemoryScope '$s': ${e.getMessage}"))
+      MemoryScope.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MemoryScope '$s'"))
     }
   private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
+  private given ArgBuilder[SchedulerJobId] = ArgBuilder.long.map(SchedulerJobId(_))
+  private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
+  private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
+  private given ArgBuilder[TriggerType] =
+    ArgBuilder.string.flatMap { s =>
+      TriggerType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
+    }
+  private given ArgBuilder[RetryBackoffPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      RetryBackoffPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
+          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
+        )
+    }
+  private given ArgBuilder[MissedRunPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      MissedRunPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
+    }
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -184,6 +199,30 @@ object JorlanAPI {
     scope: MemoryScope = MemoryScope.User,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `createJob` — creates a new scheduler job. */
+  case class CreateJobInput(
+    name:            String,
+    inputJson:       Option[String] = None,
+    maxRetries:      Int = 0,
+    backoffSeconds:  Int = 60,
+    backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
+    missedRunPolicy: MissedRunPolicy = MissedRunPolicy.Skip,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `addTrigger` — attaches a trigger to an existing job. */
+  case class AddTriggerInput(
+    jobId:       SchedulerJobId,
+    triggerType: TriggerType,
+    expression:  String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `decideApproval` — approve or reject a pending approval request. */
+  case class DecideApprovalInput(
+    requestId: ApprovalRequestId,
+    approved:  Boolean,
+    note:      Option[String] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
@@ -197,6 +236,18 @@ object JorlanAPI {
     serverPersonality: ZIO[JorlanApiEnv & JorlanSession, JorlanError, Personality],
     /** Returns memory records visible to the authenticated user. Requires `memory.read` capability. */
     listMemory: ListMemoryInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[MemoryRecord]],
+    /** Returns active capability grants for the authenticated user. */
+    listCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
+    /** Returns scheduler jobs, optionally filtered by agentId. */
+    jobs: Option[AgentId] => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerJob]],
+    /** Returns a single scheduler job by ID. */
+    job: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[SchedulerJob]],
+    /** Returns triggers for a given job. */
+    triggers: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerTrigger]],
+    /** Returns pending approval requests for the authenticated user. */
+    listApprovals: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ApprovalRequest]],
+    /** Returns the list of AI models available on this server. */
+    availableModels: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ModelInfo]],
   )
 
   case class Mutations(
@@ -214,6 +265,15 @@ object JorlanAPI {
     forgetMemory:      MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     markMemoryShared:  MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, MemoryRecord],
     markMemoryPrivate: MemoryRecordId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, MemoryRecord],
+    createJob:         CreateJobInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SchedulerJob],
+    addTrigger:        AddTriggerInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SchedulerTrigger],
+    pauseJob:          SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    resumeJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    cancelJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    triggerNow:        SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    deleteJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    decideApproval:    DecideApprovalInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    terminateSession:  AgentSessionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
   )
 
   case class Subscriptions(
@@ -259,6 +319,7 @@ object JorlanAPI {
     Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
   private given Schema[Any, Formality] =
     Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
 
   private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
   private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
@@ -281,6 +342,25 @@ object JorlanAPI {
   private given Schema[Any, MemoryRecordId] =
     Schema.scalarSchema("MemoryRecordId", None, None, None, id => Value.IntValue(id.value))
   private given Schema[Any, MemoryRecord] = Schema.gen[Any, MemoryRecord]
+  private given Schema[Any, CapabilityGrantId] =
+    Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, CapabilityGrant] = Schema.gen[Any, CapabilityGrant]
+  private given Schema[Any, SchedulerJobId] =
+    Schema.scalarSchema("SchedulerJobId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, SchedulerTriggerId] =
+    Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, JobStatus] =
+    Schema.scalarSchema("JobStatus", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, TriggerType] =
+    Schema.scalarSchema("TriggerType", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, MissedRunPolicy] =
+    Schema.scalarSchema("MissedRunPolicy", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, RetryBackoffPolicy] =
+    Schema.scalarSchema("RetryBackoffPolicy", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, SkillId] =
+    Schema.scalarSchema("SkillId", None, None, None, id => Value.IntValue(id.value))
+  private given Schema[Any, SchedulerJob] = Schema.gen[Any, SchedulerJob]
+  private given Schema[Any, SchedulerTrigger] = Schema.gen[Any, SchedulerTrigger]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -306,6 +386,27 @@ object JorlanAPI {
       .serviceWithZIO[AgentSessionManager](_.listSessions(actorId, 0, 1))
       .map(_.headOption.map(_.agentId).getOrElse(AgentId.empty))
       .orElseSucceed(AgentId.empty)
+
+  // Strict variant used for createJob: a job with no agent is a dangling reference.
+  private def resolveAgentIdStrict(actorId: UserId): ZIO[AgentSessionManager, JorlanError, AgentId] =
+    ZIO
+      .serviceWithZIO[AgentSessionManager](_.listSessions(actorId, 0, 1))
+      .mapError(e => JorlanError(e.toString))
+      .flatMap { sessions =>
+        sessions.headOption.map(_.agentId) match {
+          case Some(id) => ZIO.succeed(id)
+          case None     => ZIO.fail(JorlanError("No active agent session resolved for this user"))
+        }
+      }
+
+  private def assertJobOwnership(
+    id:      SchedulerJobId,
+    actorId: UserId,
+  ): ZIO[JobManager, JorlanError, SchedulerJob] =
+    ZIO.serviceWithZIO[JobManager](_.getJob(id)).flatMap { job =>
+      if (job.userId == actorId) ZIO.succeed(job)
+      else ZIO.fail(JorlanError(s"Access denied: job ${id.value} is not owned by the current user"))
+    }
 
   private def logEvent(
     eventType: EventType,
@@ -389,15 +490,46 @@ object JorlanAPI {
                 _.query(input.scope, actorId, agentId, input.textSearch),
               )
             } yield records,
+          listCapabilities = for {
+            actorId <- actorIdFromSession
+            grants  <- ZIO.serviceWithZIO[PermissionZIORepository](
+              _.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
+            )
+          } yield grants,
+          jobs = agentIdOpt =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              jobs    <- ZIO.serviceWithZIO[JobManager](_.listJobs(agentIdOpt))
+            } yield jobs,
+          job = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              result  <- ZIO.serviceWithZIO[JobManager](_.getJob(id).map(Some(_)).orElseSucceed(None))
+            } yield result,
+          triggers = jobId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              result  <- ZIO.serviceWithZIO[JobManager](_.listTriggers(jobId))
+            } yield result,
+          listApprovals = for {
+            actorId <- actorIdFromSession
+            result  <- ZIO
+              .serviceWithZIO[PermissionZIORepository](_.listPendingApprovals(actorId)).mapError(JorlanError(_))
+          } yield result,
+          availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
         ),
         Mutations(
           createUser = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("user.create", actorId)
+              email   <- ZIO.fromOption(input.email).orElseFail(JorlanError("email is required"))
               now     <- Clock.instant
               user    <- ZIO.serviceWithZIO[UserZIORepository](
-                _.upsert(User(UserId.empty, input.displayName, input.email, now, now)),
+                _.upsert(User(UserId.empty, input.displayName, email, now, now)),
               )
               _ <- logEvent(EventType.UserCreated, Some(actorId), None, now)
             } yield user,
@@ -405,12 +537,13 @@ object JorlanAPI {
             for {
               actorId  <- actorIdFromSession
               _        <- requireCapability("user.update", actorId)
+              email    <- ZIO.fromOption(input.email).orElseFail(JorlanError("email is required"))
               now      <- Clock.instant
               existing <- ZIO
                 .serviceWithZIO[UserZIORepository](_.getById(input.id))
                 .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"User ${input.id.value} not found")))
               user <- ZIO.serviceWithZIO[UserZIORepository](
-                _.upsert(User(input.id, input.displayName, input.email, existing.createdAt, now, input.active)),
+                _.upsert(User(input.id, input.displayName, email, existing.createdAt, now, input.active)),
               )
               _ <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
             } yield user,
@@ -517,6 +650,113 @@ object JorlanAPI {
               now     <- Clock.instant
               _       <- logEvent(EventType.MemoryRescoped, Some(actorId), None, now)
             } yield record,
+          createJob = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              agentId <- resolveAgentIdStrict(actorId)
+              now     <- Clock.instant
+              job     <- ZIO.serviceWithZIO[JobManager](
+                _.createJob(
+                  agentId,
+                  actorId,
+                  input.name,
+                  input.inputJson,
+                  input.maxRetries,
+                  input.backoffSeconds,
+                  input.backoffPolicy,
+                  input.missedRunPolicy,
+                ),
+              )
+              _ <- logEvent(EventType.SchedulerJobQueued, Some(actorId), None, now)
+            } yield job,
+          addTrigger = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(input.jobId, actorId)
+              now     <- Clock.instant
+              trigger <- ZIO.serviceWithZIO[JobManager](
+                _.addTrigger(
+                  input.jobId,
+                  SchedulerTrigger(
+                    id = SchedulerTriggerId.empty,
+                    jobId = input.jobId,
+                    triggerType = input.triggerType,
+                    expression = input.expression,
+                    enabled = true,
+                    createdAt = now,
+                  ),
+                ),
+              )
+              _ <- logEvent(EventType.SchedulerTriggerAdded, Some(actorId), None, now)
+            } yield trigger,
+          pauseJob = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(id, actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.pauseJob(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobPaused, Some(actorId), None, now)
+            } yield true,
+          resumeJob = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(id, actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.resumeJob(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobResumed, Some(actorId), None, now)
+            } yield true,
+          cancelJob = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(id, actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.cancelJob(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobCancelled, Some(actorId), None, now)
+            } yield true,
+          triggerNow = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(id, actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.triggerNow(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobTriggered, Some(actorId), None, now)
+            } yield true,
+          deleteJob = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(id, actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.deleteJob(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobDeleted, Some(actorId), None, now)
+            } yield true,
+          decideApproval = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("approval.decide", actorId)
+              now     <- Clock.instant
+              decision = ApprovalDecision(
+                id = ApprovalDecisionId.empty,
+                approvalRequestId = input.requestId,
+                decidedBy = actorId,
+                decision = if (input.approved) ApprovalStatus.Approved else ApprovalStatus.Rejected,
+                scopeOverride = input.note,
+                decidedAt = now,
+              )
+              _ <- ZIO.serviceWithZIO[ApprovalService](_.recordDecision(decision))
+            } yield true,
+          terminateSession = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.terminate", actorId)
+              _       <- ZIO.serviceWithZIO[AgentSessionManager](_.terminateSession(id))
+            } yield true,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

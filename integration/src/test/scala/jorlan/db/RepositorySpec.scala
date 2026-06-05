@@ -37,7 +37,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("upsert and retrieve a user") {
       for {
         repo <- ZIO.service[UserZIORepository]
-        user = User(UserId.empty, "Alice", None, T0, T0)
+        user = User(UserId.empty, "Alice", "", T0, T0)
         saved    <- repo.upsert(user)
         fetched  <- repo.getById(saved.id)
         allUsers <- repo.search(UserSearch())
@@ -53,7 +53,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("deactivate a user") {
       for {
         repo    <- ZIO.service[UserZIORepository]
-        user    <- repo.upsert(User(UserId.empty, "Bob", None, T0, T0))
+        user    <- repo.upsert(User(UserId.empty, "Bob", "", T0, T0))
         count   <- repo.deactivate(user.id)
         fetched <- repo.getById(user.id)
         all     <- repo.search(UserSearch(active = Some(true)))
@@ -66,7 +66,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("channel identities") {
       for {
         repo <- ZIO.service[UserZIORepository]
-        user <- repo.upsert(User(UserId.empty, "Carol", None, T0, T0))
+        user <- repo.upsert(User(UserId.empty, "Carol", "", T0, T0))
         ci = ChannelIdentity(
           ChannelIdentityId.empty,
           user.id,
@@ -112,7 +112,7 @@ object RepositorySpec extends ZIOSpecDefault {
       for {
         agentRepo <- ZIO.service[AgentZIORepository]
         userRepo  <- ZIO.service[UserZIORepository]
-        user      <- userRepo.upsert(User(UserId.empty, "SessionUser", None, T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "SessionUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, T0))
         session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0)
         saved    <- agentRepo.upsertSession(session)
@@ -136,7 +136,7 @@ object RepositorySpec extends ZIOSpecDefault {
         convRepo  <- ZIO.service[ConversationZIORepository]
         agentRepo <- ZIO.service[AgentZIORepository]
         userRepo  <- ZIO.service[UserZIORepository]
-        user      <- userRepo.upsert(User(UserId.empty, "ConvUser", None, T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "ConvUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
         session   <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
@@ -202,7 +202,7 @@ object RepositorySpec extends ZIOSpecDefault {
       for {
         memRepo  <- ZIO.service[MemoryZIORepository]
         userRepo <- ZIO.service[UserZIORepository]
-        user     <- userRepo.upsert(User(UserId.empty, "MemUser", None, T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemUser", "", T0, T0))
         record1  <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,

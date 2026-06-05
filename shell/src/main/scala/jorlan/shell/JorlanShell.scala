@@ -12,14 +12,7 @@ package jorlan.shell
 
 import jorlan.domain.{AgentSessionId, SessionStatus}
 import jorlan.graphql.client.JorlanClient
-import jorlan.shell.client.{
-  AuthClient,
-  GraphQLClient,
-  InitClient,
-  JorlanClientDecoders,
-  LoginResult,
-  SubscriptionClient,
-}
+import jorlan.shell.client.*
 import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -74,7 +67,7 @@ object JorlanShell extends ZIOApp {
       writePath <- ShellConfig.resolveWritePath(args.toList)
       activeCfg <-
         if (firstRun) {
-          FirstRunWizard.run(effectiveCfg.serverUrl, writePath)
+          FirstRunWizard.run(effectiveCfg.typedServerUrl, writePath)
         } else {
           ZIO.succeed(effectiveCfg)
         }
@@ -84,29 +77,26 @@ object JorlanShell extends ZIOApp {
 
       (email, password) <- resolveCredentials(activeCfg, screen)
 
-      loginResult <- connectWithRetry(email, password, activeCfg.serverUrl)
+      loginResult <- connectWithRetry(email, password, activeCfg.typedServerUrl)
 
-      _ <- initialisePostLogin(loginResult, activeCfg.serverUrl)
+      _ <- initialisePostLogin(loginResult, activeCfg.typedServerUrl)
       _ <- loadOrCreateSession(screen)
 
       exitPromise    <- Promise.make[Nothing, Unit]
       loopFiber      <- processLoop(screen, exitPromise).fork
-      heartbeatFiber <- connectionHeartbeat(email, password, activeCfg.serverUrl).fork
+      heartbeatFiber <- connectionHeartbeat(email, password, activeCfg.typedServerUrl).fork
 
       _ <- exitPromise.await
 
       _ <- shutdownCleanly(loopFiber, heartbeatFiber, screen)
       _ <- renderFiber.interrupt
-
-      // P7-020: After P7-001 the HTTP backends are closed by ZLayer.scoped before this
-      // point, so this only needs to kill ZIO's blocking thread pool.
-      _ <- ZIO.attempt(sys.exit(0)).orDie
+      // Return normally so ZIO closes the bootstrap scope (Lanterna, HTTP backends) before
+      // calling System.exit.  Calling sys.exit(0) here would bypass scope finalization and
+      // trigger ZIO's own shutdown hook while the main fiber is still running, creating a
+      // deadlock: System.exit waits for ZIO's hook, ZIO's hook waits for the main fiber.
     } yield ()
 
     // On any fatal error: display it for 3s then close cleanly.
-    // The .ensuring guarantees sys.exit(0) fires on success, failure, AND interruption
-    // (Ctrl-C sends SIGINT which ZIO converts to fiber interruption, bypassing catchAll).
-    // Without this, Lanterna and sttp threads are non-daemon and keep the JVM alive indefinitely.
     mainFlow
       .catchAll { err =>
         ZIO.serviceWithZIO[JorlanScreen](screen =>
@@ -118,10 +108,9 @@ object JorlanShell extends ZIOApp {
             screen.shutdown,
         )
       }
-      .ensuring(
-        ZIO.serviceWithZIO[JorlanScreen](_.shutdown) *>
-          ZIO.attempt(sys.exit(0)).orDie,
-      )
+      // On interruption (e.g. SIGINT / Ctrl-C) just shut down the screen; ZIO's own
+      // Platform.exit will call System.exit after the scope finalizers have run.
+      .ensuring(ZIO.serviceWithZIO[JorlanScreen](_.shutdown))
   }
 
   // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -136,7 +125,7 @@ object JorlanShell extends ZIOApp {
     */
   private def initialisePostLogin(
     loginResult: LoginResult,
-    serverUrl:   String,
+    serverUrl:   ServerUrl,
   ): ZIO[JorlanScreen & InitClient, Throwable, Unit] = {
     for {
       screen    <- ZIO.service[JorlanScreen]
@@ -151,10 +140,12 @@ object JorlanShell extends ZIOApp {
               status.buildTime,
             ),
           )
-          .mapError(msg => VersionIncompatibleError(s"Version incompatibility with server at $serverUrl — $msg"))
+          .mapError(msg =>
+            VersionIncompatibleError(s"Version incompatibility with server at ${serverUrl.value} — $msg"),
+          )
       }
-      serverName = statusOpt.map(_.serverName).getOrElse(serverUrl)
-      _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [$serverUrl]")
+      serverName = statusOpt.map(_.serverName).getOrElse(serverUrl.value)
+      _ <- screen.setStatus(s" ● $serverName  [${loginResult.displayName}]  [${serverUrl.value}]")
       _ <- screen.setModeStatus(
         s" [connected: $serverName]  [user: ${loginResult.displayName}]  [no session]",
       )
@@ -213,10 +204,13 @@ object JorlanShell extends ZIOApp {
     screen:         JorlanScreen,
   ): ZIO[ShellState, Nothing, Unit] = {
     for {
-      // Await the subscription fiber interrupt so the WS connection closes before the JVM exits.
+      _           <- ZIO.serviceWithZIO[ShellState](_.interruptDrain)
       liveSession <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
-      _           <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interrupt)
-      // Loop and heartbeat fibers are fire-and-forget; we don't need to wait.
+      // Use interruptFork (fire-and-forget) — the subscription fiber may be blocked on
+      // ws.receive() which doesn't respond to ZIO interruption synchronously.  The WS
+      // handler's .ensuring(ws.close()) will fire asynchronously; the SubscriptionClient
+      // backend scope finalizer closes any remaining connections when the app scope closes.
+      _ <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interruptFork)
       _ <- loopFiber.interrupt.fork
       _ <- heartbeatFiber.interrupt.fork
       _ <- screen.addMessage(MessageKind.Raw, "")
@@ -298,7 +292,7 @@ object JorlanShell extends ZIOApp {
   private def connectWithRetry(
     email:     String,
     password:  String,
-    serverUrl: String,
+    serverUrl: ServerUrl,
   ): ZIO[AuthClient & JorlanScreen, Throwable, LoginResult] = {
 
     // Exponential backoff starting at 0.5s, doubling each attempt, capped at 60s.
@@ -314,19 +308,19 @@ object JorlanShell extends ZIOApp {
           )
       }
 
-    ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [connecting to $serverUrl…]  [no session]")) *>
+    ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [connecting to ${serverUrl.value}…]  [no session]")) *>
       AuthClient
         .login(email, password)
         .tapError(err => ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.Error, s"Connection failed: $err")))
         // Stop retrying on 4xx — wrong credentials won't succeed on the next attempt.
         .retry(backoff.whileInput(!isClientError(_)))
-        .mapError(new RuntimeException(_))
+        .mapError(RuntimeException(_))
   }
 
   private def connectionHeartbeat(
     email:     String,
     password:  String,
-    serverUrl: String,
+    serverUrl: ServerUrl,
   ): ZIO[AuthClient & JorlanScreen, Nothing, Unit] = {
     val check = AuthClient.whoAmI
       .foldZIO(
@@ -336,9 +330,12 @@ object JorlanShell extends ZIOApp {
             // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
             // heartbeat fiber; the main shell process continues until the user quits.
             connectWithRetry(email, password, serverUrl).orDie.flatMap { r =>
-              ZIO.serviceWithZIO[JorlanScreen](_.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [$serverUrl]")) *>
+              // TODO: can this be replaced with a for comprehension?
+              ZIO.serviceWithZIO[JorlanScreen](
+                _.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]"),
+              ) *>
                 ZIO.serviceWithZIO[JorlanScreen](
-                  _.setModeStatus(s" [connected: $serverUrl]  [user: ${r.displayName}]  [no session]"),
+                  _.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]"),
                 ) *>
                 ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}."))
             },
@@ -366,7 +363,7 @@ object JorlanShell extends ZIOApp {
         screen.setInputPrompt(label) *>
           screen.readLine.flatMap { line =>
             ShellCommand.parse(line) match {
-              case ShellCommand.Quit => ZIO.fail(new RuntimeException("Cancelled"))
+              case ShellCommand.Quit => ZIO.fail(RuntimeException("Cancelled"))
               case _                 => ZIO.succeed(line)
             }
           }

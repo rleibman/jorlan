@@ -44,6 +44,6 @@ class MemoryAccessPolicyImpl extends MemoryAccessPolicy {
 
 object MemoryAccessPolicyImpl {
 
-  val live: ULayer[MemoryAccessPolicy] = ZLayer.succeed(new MemoryAccessPolicyImpl())
+  val live: ULayer[MemoryAccessPolicy] = ZLayer.succeed(MemoryAccessPolicyImpl())
 
 }

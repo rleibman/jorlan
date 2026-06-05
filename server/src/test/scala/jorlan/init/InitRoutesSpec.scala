@@ -40,7 +40,7 @@ object InitRoutesSpec extends ZIOSpecDefault {
   }
 
   private def settings(m: Map[String, Json]): UIO[ServerSettingsRepository] =
-    Ref.make(m).map(new InMemorySettings(_))
+    Ref.make(m).map(InMemorySettings(_))
 
   // ─── Stub InitService ───────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ object InitRoutesSpec extends ZIOSpecDefault {
   }
 
   private def stubService(result: IO[JorlanError, Unit] = ZIO.unit): InitService =
-    new StubInitService(result)
+    StubInitService(result)
 
   private val startTime = 0L
 
@@ -195,7 +195,7 @@ object InitRoutesSpec extends ZIOSpecDefault {
         test("RepositoryError returns 500") {
           for {
             repo <- settings(Map(ServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            svc = stubService(ZIO.fail(RepositoryError(new RuntimeException("DB failure"))))
+            svc = stubService(ZIO.fail(RepositoryError(RuntimeException("DB failure"))))
             routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
             resp <- postInit(routes, validInitBody)
           } yield assertTrue(resp.status == Status.InternalServerError)

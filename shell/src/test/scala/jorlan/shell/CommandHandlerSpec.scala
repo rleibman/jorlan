@@ -10,9 +10,10 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentId, AgentSessionId, ResponseChunk, SessionStatus, UserId}
+import jorlan.domain.*
 import jorlan.graphql.client.JorlanClient
-import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
+import jorlan.init.ServerStatus
+import jorlan.shell.client.{AuthClient, GraphQLClient, InitClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.testing.FakeScreen
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -79,6 +80,26 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       }
     }
 
+  /** Fake GQL that returns values from `responses` in order on each `run` call (unchecked cast). */
+  def fakeGQLRunSequence(responses: Any*): UIO[ULayer[GraphQLClient]] =
+    Ref.make(responses.toList).map { ref =>
+      ZLayer.succeed {
+        new GraphQLClient {
+          override def execute(
+            query:     String,
+            variables: Option[Json],
+          ): IO[String, Json] = ZIO.succeed(Json.Obj())
+          override def run[Origin: caliban.client.Operations.IsOperation, B](
+            selection: caliban.client.SelectionBuilder[Origin, B],
+          ): IO[String, B] =
+            ref.modify {
+              case h :: t => (h.asInstanceOf[B], t)
+              case Nil    => (null.asInstanceOf[B], Nil)
+            }
+        }
+      }
+    }
+
   /** Fake GQL where `run` always fails with the given error message. */
   def fakeGQLRunFailing(err: String): ULayer[GraphQLClient] =
     ZLayer.succeed {
@@ -125,9 +146,27 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       }
     }
 
+  val fakeInitClient: ULayer[InitClient] =
+    ZLayer.succeed {
+      new InitClient {
+        override def checkStatus(serverUrl: jorlan.shell.ServerUrl): IO[String, ServerStatus] =
+          ZIO.succeed(
+            ServerStatus(initialized = true, version = "test", buildTime = 0L, serverName = "Test", uptimeMs = 0L),
+          )
+        override def complete(
+          serverUrl:     jorlan.shell.ServerUrl,
+          token:         String,
+          serverName:    String,
+          adminEmail:    String,
+          adminName:     String,
+          adminPassword: String,
+        ): IO[String, Unit] = ZIO.unit
+      }
+    }
+
   val defaultCfg: ULayer[ShellConfig] = ZLayer.succeed(ShellConfig())
 
-  type TestEnv = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient
+  type TestEnv = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient & InitClient
 
   def testLayer(
     whoAmIResult: Either[String, String] = Right("alice@test.com"),
@@ -135,7 +174,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
   ): ULayer[TestEnv] =
     FakeScreen.layer ++ fakeAuth(whoAmIResult) ++ fakeGQL(
       gqlResult,
-    ) ++ defaultCfg ++ ShellState.live ++ fakeSubscriptionClient
+    ) ++ defaultCfg ++ ShellState.live ++ fakeSubscriptionClient ++ fakeInitClient
 
   def runCmd(cmd: ShellCommand): ZIO[Any, Nothing, (FakeScreen, Unit)] =
     for {
@@ -148,7 +187,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             fakeGQL() ++
             defaultCfg ++
             ShellState.live ++
-            fakeSubscriptionClient,
+            fakeSubscriptionClient ++
+            fakeInitClient,
         )
     } yield (fs, ())
 
@@ -185,7 +225,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       test("Message without active session prompts to start one") {
         for {
           (fs, _) <- runCmd(ShellCommand.Message("hello"))
-          msgs    <- fs.messagesOfKind(MessageKind.System)
+          msgs    <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("/new"))
       },
@@ -200,7 +240,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("connection refused") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -227,7 +268,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(sessionView)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -240,11 +282,23 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("No active session"))
       },
-      test("/models emits a System message") {
+      test("/models with empty list shows no-models message") {
         for {
-          (fs, _) <- runCmd(ShellCommand.ListModels)
-          msgs    <- fs.messagesOfKind(MessageKind.System)
-        } yield assertTrue(msgs.nonEmpty)
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ListModels, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfoGql.ModelInfoView]]](Some(Nil)) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No models"))
       },
       test("/unknown emits Error message containing command name") {
         for {
@@ -285,7 +339,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQL() ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           done   <- exit.isDone
           msgCnt <- fs.messages.map(_.size)
@@ -302,7 +357,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQL(Right(Json.Obj())) ++
                 ZLayer.succeed(ShellConfig(serverUrl = "http://test-server:9090")) ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -319,7 +375,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQL(Left("connection refused")) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -336,7 +393,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQL() ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -353,9 +411,10 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQL() ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
-          msgs <- fs.messagesOfKind(MessageKind.System)
+          msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("401"))
       },
@@ -384,7 +443,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           serverMsgs <- fs.messagesOfKind(MessageKind.Server)
           serverText = serverMsgs.map(_.content).mkString
@@ -408,7 +468,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           errMsgs <- fs.messagesOfKind(MessageKind.Error)
           errText = errMsgs.map(_.content).mkString
@@ -431,7 +492,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("server error") ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           errMsgs <- fs.messagesOfKind(MessageKind.Error)
           errText = errMsgs.map(_.content).mkString
@@ -458,7 +520,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(pView)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -475,7 +538,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("server unavailable") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -492,7 +556,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(None) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -524,7 +589,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(pView)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -541,7 +607,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("network error") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -571,7 +638,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(List(record))) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -588,7 +656,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(List.empty)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -605,7 +674,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("timeout") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -633,7 +703,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(List(record))) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -650,7 +721,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(List.empty)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -661,13 +733,14 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunReturning(Some(true)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -678,13 +751,14 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(1L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunFailing("not found") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -712,7 +786,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(record)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -729,7 +804,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(None) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -746,7 +822,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("store error") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -763,7 +840,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunFailing("timeout") ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
@@ -791,7 +869,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(Some(List(record))) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -802,13 +881,14 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryForget(42L), exit).provide(
+            .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunReturning(Some(true)) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
@@ -821,10 +901,44 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("/memory list") && text.contains("/memory remember"))
       },
-      test("/capabilities emits System message listing capabilities") {
+      test("/capabilities emits System message with grants from server") {
+        import jorlan.graphql.client.JorlanClient.CapabilityGrant.CapabilityGrantView
+        val grantViews = Some(
+          List(
+            CapabilityGrantView(
+              CapabilityGrantId(1L),
+              CapabilityName("memory.read"),
+              None,
+              UserId(1L),
+              "Persistent",
+              None,
+              java.time.Instant.EPOCH,
+            ),
+            CapabilityGrantView(
+              CapabilityGrantId(2L),
+              CapabilityName("agent.message"),
+              None,
+              UserId(1L),
+              "Persistent",
+              None,
+              java.time.Instant.EPOCH,
+            ),
+          ),
+        )
         for {
-          (fs, _) <- runCmd(ShellCommand.Capabilities)
-          msgs    <- fs.messagesOfKind(MessageKind.System)
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.Capabilities, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(grantViews) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("memory.read") && text.contains("agent.message"))
       },
@@ -839,14 +953,197 @@ object CommandHandlerSpec extends ZIOSpecDefault {
                 fakeGQLRunReturning(None) ++
                 defaultCfg ++
                 ShellState.live ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.Error)
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("no session"))
       },
-      test("/model with active session shows session id") {
+      test("/agents list shows sessions from server") {
+        import jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView
+        import jorlan.domain.WorkspaceId
+        val sessions = Some(
+          List(
+            AgentSessionView(
+              AgentSessionId(10L),
+              AgentId(1L),
+              UserId(1L),
+              None,
+              SessionStatus.Active,
+              None,
+              java.time.Instant.EPOCH,
+              java.time.Instant.EPOCH,
+            ),
+          ),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(sessions) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("10"))
+      },
+      test("/agents list shows 'No active sessions' when empty") {
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView]] = Some(Nil)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(empty) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No active sessions"))
+      },
+      test("/agents stop shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.AgentsStop(AgentSessionId(10L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("10"))
+      },
+      test("/approvals list shows approval requests") {
+        import jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView
+        import jorlan.domain.{ApprovalRequestId, ApprovalStatus, RiskClass}
+        val approvals = Some(
+          List(
+            ApprovalRequestView(
+              ApprovalRequestId(5L),
+              CapabilityName("shell.execute"),
+              None,
+              None,
+              UserId(1L),
+              None,
+              RiskClass.ExternalEffect,
+              ApprovalStatus.Pending,
+              java.time.Instant.EPOCH,
+              None,
+            ),
+          ),
+        )
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(approvals) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("shell.execute"), text.contains("5"))
+      },
+      test("/approvals list shows 'No pending' when empty") {
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView]] = Some(Nil)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsList, exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(empty) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("No pending"))
+      },
+      test("/approvals approve shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsApprove(ApprovalRequestId(5L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("approved"), text.contains("5"))
+      },
+      test("/approvals deny shows success message") {
+        val result: Option[Boolean] = Some(true)
+        for {
+          fs   <- FakeScreen.make
+          exit <- Promise.make[Nothing, Unit]
+          _    <- CommandHandler
+            .handle(ShellCommand.ApprovalsDeny(ApprovalRequestId(5L)), exit).provide(
+              ZLayer.succeed[JorlanScreen](fs) ++
+                fakeAuth() ++
+                fakeGQLRunReturning(result) ++
+                defaultCfg ++
+                ShellState.live ++
+                fakeSubscriptionClient ++
+                fakeInitClient,
+            )
+          msgs <- fs.messagesOfKind(MessageKind.System)
+          text = msgs.map(_.content).mkString
+        } yield assertTrue(text.contains("denied"), text.contains("5"))
+      },
+      test("/model with active session shows session id and model") {
         val sid = AgentSessionId(77L)
+        import java.time.Instant
+        val sessionView = JorlanClient.AgentSession.AgentSessionView(
+          id = sid,
+          agentId = AgentId(1L),
+          userId = UserId(1L),
+          workspaceId = None,
+          status = SessionStatus.Active,
+          modelId = Some(ModelId("test-model")),
+          createdAt = Instant.EPOCH,
+          updatedAt = Instant.EPOCH,
+        )
+        val modelView = JorlanClient.ModelInfoGql.ModelInfoView(
+          id = ModelId("test-model"),
+          provider = "test",
+          contextWindow = 4096,
+          supportsStreaming = true,
+        )
         for {
           fs         <- FakeScreen.make
           exit       <- Promise.make[Nothing, Unit]
@@ -854,19 +1151,24 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
           state      <- ShellState.make
           _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
-          _          <- CommandHandler
+          gqlLayer   <- fakeGQLRunSequence(
+            Some(List(sessionView)),
+            Some(List(modelView)),
+          )
+          _ <- CommandHandler
             .handle(ShellCommand.ModelInfo, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQL() ++
+                gqlLayer ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
-                fakeSubscriptionClient,
+                fakeSubscriptionClient ++
+                fakeInitClient,
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
           _ <- fiber.interrupt
-        } yield assertTrue(text.contains("77"))
+        } yield assertTrue(text.contains("77"), text.contains("test-model"))
       },
     )
 
