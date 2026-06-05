@@ -23,7 +23,22 @@ import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
 
+import zio.json.{JsonDecoder, jsonField}
 import scala.language.unsafeNulls
+
+private case class OllamaModelDetails(
+  parameter_size:     Option[String],
+  quantization_level: Option[String],
+) derives JsonDecoder
+
+private case class OllamaTagModel(
+  name:    String,
+  details: Option[OllamaModelDetails] = None,
+) derives JsonDecoder
+
+private case class OllamaTagsResponse(
+  models: List[OllamaTagModel],
+) derives JsonDecoder
 
 // Future: consider how much of this belongs in the ai module and how much of it should should be using it directly.
 
@@ -144,17 +159,41 @@ private class OllamaModelGateway(
     }
   }
 
-  override def availableModels: UIO[List[ModelInfo]] =
-    ZIO.succeed(
-      List(
-        ModelInfo(
-          id = ModelId(config.ollamaModel),
-          provider = "ollama",
-          contextWindow = 4096, // placeholder — actual context window depends on the loaded model
-          supportsStreaming = true,
-        ),
-      ),
-    )
+  override def availableModels: UIO[List[ModelInfo]] = {
+    // OllamaClient is package-private in LangChain4j, so we call Ollama's REST API directly.
+    // GET /api/tags returns all locally downloaded models (equivalent to `ollama list`).
+    ZIO
+      .attempt {
+        val http = java.net.http.HttpClient.newHttpClient()
+        val request = java.net.http.HttpRequest
+          .newBuilder(java.net.URI.create(s"${config.ollamaBaseUrl}/api/tags"))
+          .timeout(java.time.Duration.ofSeconds(10))
+          .GET()
+          .build()
+        val response = http.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+        response.body()
+      }
+      .flatMap { body =>
+        ZIO
+          .fromEither(
+            zio.json.JsonDecoder[OllamaTagsResponse].decodeJson(body),
+          ).mapError(new RuntimeException(_))
+      }
+      .map { resp =>
+        resp.models.map { m =>
+          val tag = List(m.details.flatMap(_.parameter_size), m.details.flatMap(_.quantization_level)).flatten
+            .filter(_.nonEmpty).mkString("/")
+          ModelInfo(
+            id = ModelId(m.name),
+            provider = if (tag.nonEmpty) s"ollama/$tag" else "ollama",
+            contextWindow = 0,
+            supportsStreaming = true,
+          )
+        }
+      }
+      .tapError(e => ZIO.logWarning(s"Could not list Ollama models: ${e.getMessage}"))
+      .orElseSucceed(List(ModelInfo(ModelId(config.ollamaModel), "ollama", 0, supportsStreaming = true)))
+  }
 
   override def seedHistory(
     sessionId:    AgentSessionId,

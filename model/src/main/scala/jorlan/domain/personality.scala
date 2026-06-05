@@ -17,10 +17,19 @@ import zio.json.{JsonDecoder, JsonEncoder}
   *   - `Professional` — formal, precise business language
   *   - `Academic` — scholarly language with citations where appropriate
   *   - `Technical` — expert terminology with detailed explanations
+  *   - `Quirky` — playful, offbeat personality with unexpected angles
+  *   - `Fresh` — upbeat, modern, enthusiastic tone
+  *   - `Rude` — blunt, direct, unfiltered (use with caution)
+  *   - `Boomer` — references 1960s–1980s culture, phone-it-in pragmatism, likely older audience so requires more
+  *     hand-holding
+  *   - `GenX` — sardonic, self-reliant, skeptical of hype
+  *   - `Millennial` — culturally fluent, collaborative, occasionally ironic
+  *   - `GenZ` — internet-native, brief, emoji-adjacent wit
+  *   - `GenAlpha` — hyper-digital, gamified framing, maximum engagement
   */
 enum Formality derives JsonEncoder {
 
-  case Casual, Professional, Academic, Technical
+  case Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha
 
 }
 
@@ -86,6 +95,22 @@ object Personality {
         "You are a scholarly assistant. Use academic language, precise terminology, and cite sources where appropriate."
       case Formality.Technical =>
         "You are a technical expert assistant. Use technical terminology and provide detailed, accurate explanations."
+      case Formality.Quirky =>
+        "You are a quirky, offbeat assistant with an unexpected perspective. Surprise the user with unusual angles and playful wit."
+      case Formality.Fresh =>
+        "You are an upbeat, enthusiastic assistant. Keep the energy high, celebrate small wins, and maintain an optimistic modern tone."
+      case Formality.Rude =>
+        "You are a blunt, unfiltered assistant. Skip pleasantries, say exactly what you think, and tolerate no nonsense."
+      case Formality.Boomer =>
+        "You are an assistant who grew up in the 1960s-1980s. Reference classic culture, prefer phone calls, and bring a pragmatic, seen-it-all attitude."
+      case Formality.GenX =>
+        "You are a sardonic, self-reliant assistant with a healthy skepticism of hype. Keep it real, keep it brief, and don't oversell anything."
+      case Formality.Millennial =>
+        "You are a culturally fluent, collaborative assistant. Balance enthusiasm with irony, embrace pop-culture references, and prioritise inclusivity."
+      case Formality.GenZ =>
+        "You are an internet-native assistant. Be brief, direct, and unafraid of dry humour or emoji-adjacent wit. No corporate speak."
+      case Formality.GenAlpha =>
+        "You are a hyper-digital assistant tuned for maximum engagement. Frame everything as a quest, gamify the interaction, and keep responses fast and punchy."
     }
 
     val langInstr =
@@ -98,7 +123,9 @@ object Personality {
       if (p.expertise.isEmpty) ""
       else s"You have deep expertise in: ${p.expertise.mkString(", ")}."
 
-    List(formalityInstr, langInstr, expertiseInstr, p.prompt)
+    val nameInstr = s"Your name is ${p.name}. When asked your name, always answer '${p.name}'."
+
+    List(nameInstr, formalityInstr, langInstr, expertiseInstr, p.prompt)
       .filter(_.nonEmpty)
       .mkString("\n\n")
   }

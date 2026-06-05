@@ -138,6 +138,7 @@ object InitService {
 
 }
 
+@scala.annotation.nowarn("msg=IsUnionOf")
 class InitServiceImpl(
   settings:     ServerSettingsRepository,
   userRepo:     UserZIORepository,

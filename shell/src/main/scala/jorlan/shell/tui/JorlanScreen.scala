@@ -10,11 +10,11 @@
 
 package jorlan.shell.tui
 
-import com.googlecode.lanterna.{TerminalSize, TextColor}
 import com.googlecode.lanterna.graphics.TextGraphics
 import com.googlecode.lanterna.input.{KeyStroke, KeyType}
 import com.googlecode.lanterna.screen.{Screen, TerminalScreen}
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory
+import com.googlecode.lanterna.{TerminalPosition, TerminalSize, TextColor}
 import zio.*
 
 import java.time.format.DateTimeFormatter
@@ -260,12 +260,15 @@ private class LanternaScreen(
         ZIO.unit // cursor is always end-of-line; no character to delete forward
       case KeyType.Enter =>
         inputBuf.getAndSet("").flatMap(line => inputQueue.offer(line.trim).unit)
-      case KeyType.PageUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
-      case KeyType.PageDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
-      case KeyType.Home     => state.update(_.copy(scrollOffset = Int.MaxValue))
-      case KeyType.End      => state.update(_.copy(scrollOffset = 0))
-      case KeyType.EOF      => inputQueue.offer("/quit").unit
-      case _                => ZIO.unit
+      // TODO Arrow up and down should be for going through the command history, not for scrolling, use the mouse fo that, or maybe a controlkey?
+      case KeyType.ArrowUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 1))
+      case KeyType.ArrowDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 1) max 0))
+      case KeyType.PageUp    => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
+      case KeyType.PageDown  => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
+      case KeyType.Home      => state.update(_.copy(scrollOffset = Int.MaxValue))
+      case KeyType.End       => state.update(_.copy(scrollOffset = 0))
+      case KeyType.EOF       => inputQueue.offer("/quit").unit
+      case _                 => ZIO.unit
     }
   }
 
@@ -327,6 +330,9 @@ private class LanternaScreen(
     // Input prompt (row height-3) — padded so shrinking input erases old chars
     tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT)
     tg.putString(0, height - 3, (s.inputPrompt + input).take(width).padTo(width, ' '))
+    // Position the real terminal cursor at the end of the typed input so it's visible.
+    val cursorCol = (s.inputPrompt.length + input.length) min (width - 1)
+    screen.setCursorPosition(new TerminalPosition(cursorCol, height - 3))
 
     drawSeparator(height - 2)
 

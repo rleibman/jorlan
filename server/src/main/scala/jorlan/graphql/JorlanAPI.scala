@@ -16,13 +16,7 @@ import caliban.schema.Schema.auto.*
 import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
-import jorlan.db.repository.{
-  EventLogZIORepository,
-  MemoryZIORepository,
-  PermissionZIORepository,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
 import zio.*
@@ -33,6 +27,7 @@ import zio.stream.ZStream
 import java.time.Instant
 
 /** Caliban GraphQL schema for the Jorlan control-plane API. */
+@scala.annotation.nowarn("msg=IsUnionOf")
 object JorlanAPI {
 
   private val logErrors: OverallWrapper[Any] =
@@ -81,7 +76,7 @@ object JorlanAPI {
   type JorlanApiEnv =
     UserZIORepository & PermissionZIORepository & EventLogZIORepository & ServerSettingsRepository &
       CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService & MemorySkill & JobManager &
-      ApprovalService
+      ApprovalService & ModelGateway
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -97,17 +92,30 @@ object JorlanAPI {
   private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
   private given ArgBuilder[MemoryScope] =
     ArgBuilder.string.flatMap { s =>
-      scala.util
-        .Try(MemoryScope.valueOf(s)).toEither.left
-        .map(e => CalibanError.ExecutionError(s"Invalid MemoryScope '$s': ${e.getMessage}"))
+      MemoryScope.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MemoryScope '$s'"))
     }
   private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
   private given ArgBuilder[SchedulerJobId] = ArgBuilder.long.map(SchedulerJobId(_))
   private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
   private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
-  private given ArgBuilder[TriggerType] = ArgBuilder.string.map(TriggerType.valueOf)
-  private given ArgBuilder[RetryBackoffPolicy] = ArgBuilder.string.map(RetryBackoffPolicy.valueOf)
-  private given ArgBuilder[MissedRunPolicy] = ArgBuilder.string.map(MissedRunPolicy.valueOf)
+  private given ArgBuilder[TriggerType] =
+    ArgBuilder.string.flatMap { s =>
+      TriggerType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
+    }
+  private given ArgBuilder[RetryBackoffPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      RetryBackoffPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
+          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
+        )
+    }
+  private given ArgBuilder[MissedRunPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      MissedRunPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
+    }
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -238,6 +246,8 @@ object JorlanAPI {
     triggers: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerTrigger]],
     /** Returns pending approval requests for the authenticated user. */
     listApprovals: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ApprovalRequest]],
+    /** Returns the list of AI models available on this server. */
+    availableModels: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ModelInfo]],
   )
 
   case class Mutations(
@@ -309,6 +319,7 @@ object JorlanAPI {
     Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
   private given Schema[Any, Formality] =
     Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
+  private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
 
   private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
   private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
@@ -508,6 +519,7 @@ object JorlanAPI {
             result  <- ZIO
               .serviceWithZIO[PermissionZIORepository](_.listPendingApprovals(actorId)).mapError(JorlanError(_))
           } yield result,
+          availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
         ),
         Mutations(
           createUser = input =>

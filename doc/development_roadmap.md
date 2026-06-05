@@ -791,31 +791,30 @@ model
 
 | Status | Command         | Type     | Priority | Parameters                                        | Description                                                 |
 |:------:|-----------------|----------|----------|---------------------------------------------------|-------------------------------------------------------------|
-|  [x]   | `/help`         | Built-in | 0        | —                                                 | Show short help summary and key bindings                    |
-|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands                                 |
+|  [x]   | `/help`         | Built-in | 0        | —                                                 | Same as `/commands` — shows full command list with key bindings |
+|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands with key bindings               |
 |  [x]   | `/quit`         | Built-in | 0        | —                                                 | Exit the shell cleanly                                      |
 |  [x]   | `/exit`         | Built-in | 0        | —                                                 | Alias for `/quit`                                           |
 |  [x]   | `/about`        | Built-in | 0        | —                                                 | Show version and platform information                       |
-|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity and GraphQL health check                |
-|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user                             |
-|  [~]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level (display only — runtime wiring Phase 8) |
-|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field (admin only) |
+|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity, client version, server version, uptime |
+|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user (parsed: name, email, ID)   |
+|  [x]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level                                         |
+|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
 |  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
 |  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
 |  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |
-|  [ ]   | `/version`      | Built-in |          | —                                                 | Show shell and server version                               |
 |  [ ]   | `/logs`         | Built-in |          | `[n]`                                             | Tail the last *n* lines from `~/.jorlan/shell.log`          |
-|  [~]   | `/new`          | Session  |          | —                                                 | Archive the current session and start a fresh one (Phase 8) |
-|  [~]   | `/model`        | Session  |          | —                                                 | Show or interactively configure the active model (Phase 8)  |
-|  [~]   | `/models`       | Session  |          | —                                                 | List models available on the connected server (Phase 8)     |
-|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions (Phase 8)                             |
-|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session (Phase 8) |
-|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function (Phase 8)       |
-|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name (Phase 8)                               |
-|  [ ]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants (Phase 9)               |
-|  [ ]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests (Phase 10)        |
-|  [ ]   | `/agents`       | Agent    |          | `list \| status <id> \| stop <id>`                | List and manage running agent sessions (Phase 10)           |
-|  [ ]   | `/memory`       | Memory   |          | `list \| search <q> \| forget <id>`               | Browse and manage agent memory entries (Phase 9)            |
+|  [x]   | `/new`          | Session  |          | `[model]`                                         | Start a new agent session with optional model override      |
+|  [x]   | `/model`        | Session  |          | —                                                 | Show active session ID, model, and status (queries server)  |
+|  [x]   | `/models`       | Session  |          | —                                                 | List models available on the connected server               |
+|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions                                       |
+|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session           |
+|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function                 |
+|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name                                         |
+|  [x]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants                         |
+|  [x]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests                   |
+|  [x]   | `/agents`       | Agent    |          | `list \| stop <id>`                               | List and terminate running agent sessions                   |
+|  [x]   | `/memory`       | Memory   |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries |
 |  [ ]   | `/restart`      | Admin    |          | —                                                 | Restart the Jorlan server process (Phase 10)                |
 |  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable` | Manage server plugins (Phase 12)                            |
 |  [ ]   | `/mcp`          | Plugin   |          | —                                                 | MCP protocol tools and adapter management (Phase 12)        |

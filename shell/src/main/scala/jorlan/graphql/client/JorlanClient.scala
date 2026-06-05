@@ -498,6 +498,39 @@ object JorlanClient {
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
       _root_.caliban.client.SelectionBuilder.Field("listApprovals", OptionOf(ListOf(Obj(innerSelection))))
 
+    def availableModels[A](
+      innerSelection: SelectionBuilder[ModelInfoGql, A],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field("availableModels", OptionOf(ListOf(Obj(innerSelection))))
+
+  }
+
+  type ModelInfoGql
+  object ModelInfoGql {
+
+    final case class ModelInfoView(
+      id:                jorlan.domain.ModelId,
+      provider:          String,
+      contextWindow:     Int,
+      supportsStreaming: Boolean,
+    )
+
+    type ViewSelection = SelectionBuilder[ModelInfoGql, ModelInfoView]
+
+    val view: ViewSelection =
+      (id ~ provider ~ contextWindow ~ supportsStreaming).map { case (id, provider, ctx, streaming) =>
+        ModelInfoView(id, provider, ctx, streaming)
+      }
+
+    def id: SelectionBuilder[ModelInfoGql, jorlan.domain.ModelId] =
+      _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+    def provider: SelectionBuilder[ModelInfoGql, String] =
+      _root_.caliban.client.SelectionBuilder.Field("provider", Scalar())
+    def contextWindow: SelectionBuilder[ModelInfoGql, Int] =
+      _root_.caliban.client.SelectionBuilder.Field("contextWindow", Scalar())
+    def supportsStreaming: SelectionBuilder[ModelInfoGql, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("supportsStreaming", Scalar())
+
   }
 
   type Mutations = _root_.caliban.client.Operations.RootMutation

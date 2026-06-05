@@ -194,7 +194,12 @@ private class SubscriptionClientImpl(
                       ZIO.logInfo(s"[WS] unexpected non-text frame: $other")
                   }
                   .runDrain
-                _ <- sendInit *> frameLoop.race(pingLoop)
+                _ <- (sendInit *> frameLoop.race(pingLoop))
+                  // Explicitly close the WebSocket when this handler is interrupted so that
+                  // the pending ws.receive() unblocks and the fiber can exit cleanly.
+                  // Without this, subscriptionFiber.interrupt() in shutdownCleanly hangs
+                  // forever because Java's HttpClient does not propagate ZIO interruption.
+                  .ensuring(ws.close().ignore)
               } yield ()
             },
           )

@@ -90,16 +90,13 @@ object JorlanShell extends ZIOApp {
 
       _ <- shutdownCleanly(loopFiber, heartbeatFiber, screen)
       _ <- renderFiber.interrupt
-
-      // P7-020: After P7-001 the HTTP backends are closed by ZLayer.scoped before this
-      // point, so this only needs to kill ZIO's blocking thread pool.
-      _ <- ZIO.attempt(sys.exit(0)).orDie
+      // Return normally so ZIO closes the bootstrap scope (Lanterna, HTTP backends) before
+      // calling System.exit.  Calling sys.exit(0) here would bypass scope finalization and
+      // trigger ZIO's own shutdown hook while the main fiber is still running, creating a
+      // deadlock: System.exit waits for ZIO's hook, ZIO's hook waits for the main fiber.
     } yield ()
 
     // On any fatal error: display it for 3s then close cleanly.
-    // The .ensuring guarantees sys.exit(0) fires on success, failure, AND interruption
-    // (Ctrl-C sends SIGINT which ZIO converts to fiber interruption, bypassing catchAll).
-    // Without this, Lanterna and sttp threads are non-daemon and keep the JVM alive indefinitely.
     mainFlow
       .catchAll { err =>
         ZIO.serviceWithZIO[JorlanScreen](screen =>
@@ -111,10 +108,9 @@ object JorlanShell extends ZIOApp {
             screen.shutdown,
         )
       }
-      .ensuring(
-        ZIO.serviceWithZIO[JorlanScreen](_.shutdown) *>
-          ZIO.attempt(sys.exit(0)).orDie,
-      )
+      // On interruption (e.g. SIGINT / Ctrl-C) just shut down the screen; ZIO's own
+      // Platform.exit will call System.exit after the scope finalizers have run.
+      .ensuring(ZIO.serviceWithZIO[JorlanScreen](_.shutdown))
   }
 
   // ─── Phase helpers ────────────────────────────────────────────────────────────
@@ -208,10 +204,13 @@ object JorlanShell extends ZIOApp {
     screen:         JorlanScreen,
   ): ZIO[ShellState, Nothing, Unit] = {
     for {
-      // Await the subscription fiber interrupt so the WS connection closes before the JVM exits.
+      _           <- ZIO.serviceWithZIO[ShellState](_.interruptDrain)
       liveSession <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
-      _           <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interrupt)
-      // Loop and heartbeat fibers are fire-and-forget; we don't need to wait.
+      // Use interruptFork (fire-and-forget) — the subscription fiber may be blocked on
+      // ws.receive() which doesn't respond to ZIO interruption synchronously.  The WS
+      // handler's .ensuring(ws.close()) will fire asynchronously; the SubscriptionClient
+      // backend scope finalizer closes any remaining connections when the app scope closes.
+      _ <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interruptFork)
       _ <- loopFiber.interrupt.fork
       _ <- heartbeatFiber.interrupt.fork
       _ <- screen.addMessage(MessageKind.Raw, "")

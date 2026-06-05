@@ -25,7 +25,8 @@ import scala.language.unsafeNulls
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
 object CommandHandler {
 
-  private type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient
+  private type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient &
+    InitClient
 
   def handle(
     cmd:  ShellCommand,
@@ -33,7 +34,7 @@ object CommandHandler {
   ): ZIO[Env, Nothing, Unit] = {
     cmd match {
       case ShellCommand.Message(text)                       => handleMessage(text)
-      case ShellCommand.Help                                => showHelp
+      case ShellCommand.Help                                => showCommands
       case ShellCommand.Commands                            => showCommands
       case ShellCommand.Status                              => showStatus
       case ShellCommand.About                               => showAbout
@@ -74,21 +75,23 @@ object CommandHandler {
       case None =>
         screen(
           _.addMessage(
-            MessageKind.System,
-            "No active session — type /new to start one.",
+            MessageKind.Error,
+            "No active session — use /new to start one.",
           ),
         )
       case Some(liveSession) =>
-        // Drain any stale tokens/sentinels left from a previous response before submitting.
-        // Without this a stale Right(None) sentinel would cause the new response to be invisible.
-        val drainStale: ZIO[Any, Nothing, Unit] =
-          liveSession.tokenQueue.takeAll.unit
-        // Submit the message; tokens are already streaming via the session's long-lived WS subscription.
-        // ZIO evaluates the drain recursive function tail-recursively via trampolining — no stack risk at LLM token rates.
-        drainStale *>
-          gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either.flatMap {
+        for {
+          // Interrupt any in-progress drain from a previous message so stale tokens are discarded.
+          _ <- ZIO.serviceWithZIO[ShellState](_.interruptDrain)
+          // Clear any remaining tokens buffered since the interrupt.
+          _      <- liveSession.tokenQueue.takeAll.unit
+          result <- gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either
+          _      <- result match {
             case Left(err) => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
             case Right(_)  =>
+              // Fork the drain so the processLoop can accept new input (commands or messages)
+              // while the LLM response is still streaming. The drain fiber is tracked in ShellState
+              // so it can be interrupted by a subsequent message, /new, or /quit.
               def drain: ZIO[JorlanScreen, Nothing, Unit] =
                 liveSession.tokenQueue.take.flatMap {
                   case Left(err)          => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
@@ -100,32 +103,30 @@ object CommandHandler {
                     display *> drain
                 }
               drain
+                .ensuring(ZIO.serviceWithZIO[ShellState](_.setDrainingFiber(None)))
+                .fork
+                .flatMap(f => ZIO.serviceWithZIO[ShellState](_.setDrainingFiber(Some(f))))
           }
+        } yield ()
     }
-
-  private val showHelp: ZIO[Env, Nothing, Unit] =
-    screen(
-      _.addMessage(
-        MessageKind.System,
-        "Jorlan Shell — type a message to talk to the agent, or use a /command.\n" +
-          "Key bindings: Enter submit · Backspace delete · PgUp/PgDn scroll · Ctrl-C quit",
-      ),
-    )
 
   private val showCommands: ZIO[Env, Nothing, Unit] = {
     val lines = List(
-      "/help               Show help summary",
-      "/commands           List all commands",
-      "/status             Server connectivity and version",
+      "Jorlan Shell — type a message to talk to the agent, or use a /command.",
+      "Key bindings: Enter submit · Backspace delete · ↑↓/PgUp/PgDn scroll · Ctrl-C quit",
+      "",
+      "/help /commands     Show this command list",
+      "/status             Server connectivity and versions",
       "/about              About Jorlan Shell",
       "/whoami             Show current authenticated user",
       "/new [model]        Start a new agent session",
-      "/model              Show the active model",
+      "/model              Show the active session model",
       "/models             List available models",
       "/personality                         Show server personality",
       "/personality set <field> <value>     Update a personality field (admin only)",
       "  fields: name | formality | prompt | languages | expertise",
-      "  formality values: Casual | Professional | Academic | Technical",
+      "  formality values: Casual | Professional | Academic | Technical |",
+      "                    Quirky | Fresh | Rude | Boomer | GenX | Millennial | GenZ | GenAlpha",
       "/memory list [scope]                 List memory records (scope: User|Shared|Workspace|Private)",
       "/memory search <text>                Search memory records by text",
       "/memory forget <id>                  Delete a memory record by id",
@@ -145,32 +146,56 @@ object CommandHandler {
   private val showStatus: ZIO[Env, Nothing, Unit] =
     for {
       serverUrl <- cfg(_.serverUrl)
-      // Use a raw introspection query for the connectivity check — no domain SelectionBuilder exists for __typename.
-      gqlResult <- gql(_.execute("{ __typename }"))
+      typedUrl  <- cfg(_.typedServerUrl)
+      clientVersion = jorlan.BuildInfo.version
+      serverStatus <- ZIO.serviceWithZIO[InitClient](_.checkStatus(typedUrl)).either
+      gqlResult    <- gql(_.execute("{ __typename }"))
         .fold(
           err => s"✗ GraphQL unreachable: $err",
           _ => "✔ GraphQL API reachable",
         )
-      _ <- screen(_.addMessage(MessageKind.System, s"Server:  $serverUrl\n$gqlResult"))
+      serverVersionLine = serverStatus match {
+        case Right(s) => s"Server version: ${s.version}  uptime: ${s.uptimeMs / 1000}s  name: ${s.serverName}"
+        case Left(e)  => s"Server version: (unavailable — $e)"
+      }
+      _ <- screen(
+        _.addMessage(
+          MessageKind.System,
+          s"Server:  $serverUrl\nClient version: $clientVersion\n$serverVersionLine\n$gqlResult",
+        ),
+      )
     } yield ()
 
   private val showAbout: ZIO[Env, Nothing, Unit] =
     screen(
       _.addMessage(
         MessageKind.System,
-        "Jorlan Shell — Secure Agent Runtime & Orchestration Platform\n" +
-          "Phase 8: Agent Session Runtime  |  github.com/rleibman/jorlan",
+        s"Jorlan Shell — Secure Agent Runtime & Orchestration Platform\n" +
+          s"Version: ${jorlan.BuildInfo.version}\n" +
+          "Copyright © 2026 Roberto Leibman — All Rights Reserved\n" +
+          "This software is proprietary and confidential. Unauthorised use, reproduction,\n" +
+          "or distribution is strictly prohibited.",
       ),
     )
 
   private val showWhoAmI: ZIO[Env, Nothing, Unit] =
     for {
-      result <- authCli(_.whoAmI).fold(
-        err => s"✗ Could not fetch identity: $err",
-        body => body,
+      result <- authCli(_.whoAmI).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not fetch identity: $err")),
+        body =>
+          zio.json.JsonDecoder[jorlan.domain.User].decodeJson(body) match {
+            case Left(_) =>
+              screen(_.addMessage(MessageKind.System, body))
+            case Right(u) =>
+              screen(
+                _.addMessage(
+                  MessageKind.System,
+                  s"Display name: ${u.displayName}\nEmail:        ${u.email}\nUser ID:      ${u.id.value}\nActive:       ${u.active}",
+                ),
+              )
+          },
       )
-      _ <- screen(_.addMessage(MessageKind.System, result))
-    } yield ()
+    } yield result
 
   private def handleNewSession(modelId: Option[String]): ZIO[Env, Nothing, Unit] = {
     for {
@@ -198,12 +223,45 @@ object CommandHandler {
 
   private val showModelInfo: ZIO[Env, Nothing, Unit] =
     ZIO.serviceWithZIO[ShellState](_.getSessionId).flatMap {
-      case None    => screen(_.addMessage(MessageKind.System, "No active session. Use /new to start one."))
-      case Some(s) => screen(_.addMessage(MessageKind.System, s"Active session: ${s.value}"))
+      case None      => screen(_.addMessage(MessageKind.System, "No active session. Use /new to start one."))
+      case Some(sid) =>
+        for {
+          sessionsResult <- gql(_.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))).either
+          modelsResult   <- gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).either
+          _              <- (sessionsResult, modelsResult) match {
+            case (Left(err), _) => screen(_.addMessage(MessageKind.Error, s"Failed to fetch session info: $err"))
+            case (Right(None | Some(Nil)), _) =>
+              screen(_.addMessage(MessageKind.System, "No sessions found on server."))
+            case (Right(Some(sessions)), modelsEither) =>
+              sessions.find(_.id == sid) match {
+                case None => screen(_.addMessage(MessageKind.System, s"Session ${sid.value} not found on server."))
+                case Some(session) =>
+                  val defaultModel =
+                    modelsEither.toOption.flatten.flatMap(_.headOption).map(_.id.value).getOrElse("unknown")
+                  val model = session.modelId.map(_.value).getOrElse(defaultModel)
+                  screen(
+                    _.addMessage(MessageKind.System, s"Session: ${sid.value}  Model: $model  Status: ${session.status}"),
+                  )
+              }
+          }
+        } yield ()
     }
 
   private val listModels: ZIO[Env, Nothing, Unit] =
-    screen(_.addMessage(MessageKind.System, "Model listing requires a running Phase 8 server."))
+    gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list models: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No models available."))
+        case Some(models)     =>
+          val lines = models
+            .map { m =>
+              val stream = if (m.supportsStreaming) "streaming" else "no-streaming"
+              val ctx = if (m.contextWindow > 0) s", ctx=${m.contextWindow}" else ""
+              s"  ${m.id.value}  (${m.provider}$ctx, $stream)"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Available models:\n$lines"))
+      },
+    )
 
   private val showPersonality: ZIO[Env, Nothing, Unit] =
     gql(_.run(JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view))).foldZIO(
@@ -271,16 +329,25 @@ object CommandHandler {
     "debug"   -> Level.DEBUG,
   )
 
+  private val validMemoryScopes: Set[String] = Set("User", "Shared", "Workspace", "Private")
+
   private def listMemory(scope: Option[String]): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listMemory(scope, None)(JorlanClient.MemoryRecord.view))).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
-      {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
-        case Some(records)    =>
-          val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
-          screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
-      },
-    )
+    scope match {
+      case Some(s) if !validMemoryScopes.exists(_.equalsIgnoreCase(s)) =>
+        screen(
+          _.addMessage(MessageKind.Error, s"Invalid scope '$s'. Valid: ${validMemoryScopes.mkString(", ")}"),
+        )
+      case _ =>
+        gql(_.run(JorlanClient.Queries.listMemory(scope, None)(JorlanClient.MemoryRecord.view))).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
+          {
+            case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
+            case Some(records)    =>
+              val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
+              screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
+          },
+        )
+    }
 
   private def searchMemory(text: String): ZIO[Env, Nothing, Unit] =
     gql(_.run(JorlanClient.Queries.listMemory(None, Some(text))(JorlanClient.MemoryRecord.view))).foldZIO(
@@ -360,9 +427,20 @@ object CommandHandler {
     )
 
   private def stopAgent(id: AgentSessionId): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.terminateSession(id))).foldZIO(
+    // Use raw execute so GraphQL errors (e.g. permission denied) are surfaced even when
+    // Caliban would silently decode a null result as None.
+    gql(_.execute(s"mutation { terminateSession(value: ${id.value}) }")).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Stop failed: $err")),
-      _ => screen(_.addMessage(MessageKind.System, s"Session ${id.value} terminated.")),
+      _ =>
+        for {
+          existing <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
+          _        <- ZIO.foreachDiscard(existing.filter(_.sessionId == id)) { ls =>
+            ls.subscriptionFiber.interrupt *>
+              ZIO.serviceWithZIO[ShellState](_.clearLiveSession) *>
+              ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(" [no session]  [disconnected]"))
+          }
+          _ <- screen(_.addMessage(MessageKind.System, s"Session ${id.value} terminated."))
+        } yield (),
     )
 
   private val listApprovals: ZIO[Env, Nothing, Unit] =

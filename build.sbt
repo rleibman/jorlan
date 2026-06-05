@@ -14,7 +14,7 @@ ThisBuild / credentials += Credentials(
   sys.env.getOrElse("GITHUB_TOKEN", ""),
 )
 
-lazy val SCALA = "3.8.3"
+lazy val SCALA = "3.8.4"
 Global / onChangedBuildSource := ReloadOnSourceChanges
 scalaVersion                  := SCALA
 Global / scalaVersion         := SCALA
