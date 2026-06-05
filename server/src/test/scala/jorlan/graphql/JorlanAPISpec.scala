@@ -605,6 +605,37 @@ object JorlanAPISpec extends ZIOSpecDefault {
 
   // ─── Scheduler tests ─────────────────────────────────────────────────────────
 
+  // Repo pre-seeded with a job owned by UserId(2) — distinct from serverSession's UserId(1).
+  private val foreignJobRepoLayer: ULayer[SchedulerZIORepository] = ZLayer.fromZIO {
+    import InMemoryRepositories.InMemorySchedulerRepo
+    import jorlan.domain.*
+    import java.time.Instant
+    InMemorySchedulerRepo.make.flatMap { repo =>
+      val foreignJob = SchedulerJob(
+        id = SchedulerJobId.empty,
+        agentId = AgentId(1L),
+        userId = UserId(2L),
+        skillId = None,
+        name = "foreign-job",
+        inputJson = None,
+        status = JobStatus.Pending,
+        scheduledAt = Instant.now(),
+        startedAt = None,
+        finishedAt = None,
+        resultJson = None,
+        maxRetries = 0,
+        retryCount = 0,
+        backoffSeconds = 60,
+        backoffPolicy = RetryBackoffPolicy.Fixed,
+        missedRunPolicy = MissedRunPolicy.Skip,
+        leasedAt = None,
+        leasedBy = None,
+        createdAt = Instant.now(),
+      )
+      repo.upsertJob(foreignJob).orDie.as(repo: SchedulerZIORepository)
+    }
+  }
+
   private val schedulerSuite = suite("Scheduler")(
     test("jobs query returns empty list") {
       for {
@@ -630,6 +661,40 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""{ jobs { id } }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("pauseJob fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { pauseJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    test("cancelJob fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { cancelJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    test("deleteJob fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { deleteJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    test("addTrigger fails when caller does not own the target job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { addTrigger(jobId: 1, triggerType: "Interval", expression: "PT1H") { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    test("createJob fails when no active agent session (resolveAgentIdStrict)") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { createJob(name: "x", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(schedRepoLayer = InMemoryRepositories.InMemorySchedulerRepo.layer)),
     test("createJob fails when scheduler.manage capability is denied") {
       for {
         interp <- ZIO.service[Interp]
@@ -683,6 +748,30 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""mutation { terminateSession(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("decideApproval succeeds with approval.decide capability granted") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { decideApproval(requestId: 1, approved: true) }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("decideApproval rejected input also succeeds (approved=false)") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { decideApproval(requestId: 1, approved: false, note: "rejected") }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("resumeJob fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { resumeJob(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    test("triggerNow fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { triggerNow(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
+    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
   )
 
 }

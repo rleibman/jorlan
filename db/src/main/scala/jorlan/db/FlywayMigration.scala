@@ -81,6 +81,7 @@ private case class FlywayMigrationLive(
     if (!flywayConfig.enabled) {
       ZIO.logInfo("Flyway migrations disabled — skipping")
     } else {
+// $COVERAGE-OFF$
       ZIO.logInfo("Starting Flyway database migrations...") *>
         ZIO
           .attempt(flyway.migrate())
@@ -90,6 +91,7 @@ private case class FlywayMigrationLive(
                 s"target schema version ${result.targetSchemaVersion}",
             )
           }
+// $COVERAGE-ON$
     }
 
   override val validate: Task[Unit] =

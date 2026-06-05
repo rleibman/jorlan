@@ -741,7 +741,7 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id))).map(_.headOption))
 
   override def listJobs(agentId: Option[AgentId]): RepositoryTask[List[SchedulerJob]] = {
-    val cap = 200
+    val cap = 200 // TODO why this cap? if you need a cap at all make it configurable
     agentId match {
       case Some(aid) =>
         exec(qc.ctx.run(qSchedulerJobs.filter(_.agentId == lift(aid)).sortBy(_.createdAt)(Ord.desc).take(lift(cap))))

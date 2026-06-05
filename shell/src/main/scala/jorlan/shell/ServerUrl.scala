@@ -25,6 +25,7 @@ object ServerUrl {
   extension (url: ServerUrl) {
 
     def value: String = url
+    def toUri: java.net.URI = java.net.URI(url)
 
   }
 

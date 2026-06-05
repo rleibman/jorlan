@@ -268,6 +268,16 @@ object InitServiceSpec extends ZIOSpecDefault {
         )
       }.provide(makeTokenStore(false)),
       // ─── InitTokenStoreImpl.isValid when no token (initialized = true) ───────
+      test("InitTokenStore.make(false) generates a 32-char hex token") {
+        for {
+          store <- InitTokenStore.make(false)
+          tok   <- store.token
+        } yield assertTrue(
+          tok.isDefined,
+          tok.exists(_.length == 32),
+          tok.exists(_.forall(c => "0123456789abcdef".contains(c))),
+        )
+      },
       test("InitTokenStore.isValid returns false when initialized=true") {
         for {
           valid <- InitTokenStore.isValid

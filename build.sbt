@@ -274,7 +274,7 @@ lazy val integration = project
     com.github.sbt.git.GitVersioning,
   )
   .settings(commonSettings)
-  .dependsOn(model, db, server)
+  .dependsOn(model, db, server, shell)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-integration",

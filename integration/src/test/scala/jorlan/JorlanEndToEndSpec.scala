@@ -144,7 +144,9 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       test("createRole then assignRole to a user persisted to DB") {
         for {
           interp     <- ZIO.service[Interp]
-          userResult <- interp.execute("""mutation { createUser(displayName: "E2ERoleUser", email: "e2erole@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "E2ERoleUser", email: "e2erole@test.com") { id } }""",
+          )
           userId = {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(userResult.data.toString).map(_.group(1).toLong).getOrElse(-1L)
@@ -166,7 +168,9 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       test("grantPermission and permissions(userId) with real DB") {
         for {
           interp     <- ZIO.service[Interp]
-          userResult <- interp.execute("""mutation { createUser(displayName: "E2EPermUser", email: "e2eperm@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "E2EPermUser", email: "e2eperm@test.com") { id } }""",
+          )
           userId = {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(userResult.data.toString).map(_.group(1).toLong).getOrElse(-1L)

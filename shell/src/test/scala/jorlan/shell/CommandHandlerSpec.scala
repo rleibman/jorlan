@@ -10,19 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.domain.{
-  AgentId,
-  AgentSessionId,
-  ApprovalRequestId,
-  ApprovalStatus,
-  CapabilityGrantId,
-  CapabilityName,
-  MemoryRecordId,
-  ResponseChunk,
-  RiskClass,
-  SessionStatus,
-  UserId,
-}
+import jorlan.domain.*
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.client.{AuthClient, GraphQLClient, LoginResult, SubscriptionClient}
 import jorlan.shell.commands.{CommandHandler, ShellCommand}

@@ -169,7 +169,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("assignRole and roles(userId) round-trip") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser3", email: "gql3@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser3", email: "gql3@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           roleResult <- interp.execute("""mutation { createRole(name: "gql-tester") { id } }""")
           roleId = extractLongField(roleResult.data.toString, "id")
@@ -185,7 +187,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("revokeRole removes a role from a user") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser6", email: "gql6@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser6", email: "gql6@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           roleResult <- interp.execute("""mutation { createRole(name: "gql-revoke-test") { id } }""")
           roleId = extractLongField(roleResult.data.toString, "id")
@@ -217,7 +221,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("grantPermission with userId and permissions(userId) round-trip") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser4", email: "gql4@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser4", email: "gql4@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           grantResult <- interp.execute(
             s"""mutation { grantPermission(resource: "shell", action: "execute", userId: $userId) { id resource action } }""",
@@ -249,7 +255,9 @@ object GraphQLApiSpec extends ZIOSpecDefault {
       test("revokePermission removes a permission and returns count") {
         for {
           interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
-          userResult <- interp.execute("""mutation { createUser(displayName: "GraphQLUser5", email: "gql5@test.com") { id } }""")
+          userResult <- interp.execute(
+            """mutation { createUser(displayName: "GraphQLUser5", email: "gql5@test.com") { id } }""",
+          )
           userId = extractLongField(userResult.data.toString, "id")
           grantResult <- interp.execute(
             s"""mutation { grantPermission(resource: "memory", action: "read", userId: $userId) { id } }""",

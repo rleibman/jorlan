@@ -11,10 +11,10 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.{AgentSessionId, ApprovalRequestId, MemoryRecordId, ModelId}
+import jorlan.domain.*
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.{LiveSession, ShellConfig, ShellState}
-import jorlan.shell.client.{AuthClient, GraphQLClient, JorlanClientDecoders, SubscriptionClient}
+import jorlan.shell.client.*
 import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}

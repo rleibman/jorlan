@@ -162,37 +162,35 @@ private class OllamaModelGateway(
     systemPrompt: String,
   ): UIO[Unit] =
     sessions.get.flatMap { map =>
-      if (map.contains(sessionId) || messages.isEmpty) ZIO.unit
-      else
-        ZIO
-          .attempt {
-            val store = InMemoryChatMemoryStore()
-            val memory = MessageWindowChatMemory
-              .builder()
-              .id(sessionId.value.toString)
-              .maxMessages(config.maxMessages)
-              .chatMemoryStore(store)
-              .build()
-            messages.foreach { msg =>
-              val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
-                case MessageRole.Assistant => AiMessage.from(msg.content)
-                case MessageRole.System    => SystemMessage.from(msg.content)
-                case _                     => UserMessage.from(msg.content)
-              }
-              memory.add(lc4j)
+      ZIO
+        .attempt {
+          val store = InMemoryChatMemoryStore()
+          val memory = MessageWindowChatMemory
+            .builder()
+            .id(sessionId.value.toString)
+            .maxMessages(config.maxMessages)
+            .chatMemoryStore(store)
+            .build()
+          messages.foreach { msg =>
+            val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
+              case MessageRole.Assistant => AiMessage.from(msg.content)
+              case MessageRole.System    => SystemMessage.from(msg.content)
+              case _                     => UserMessage.from(msg.content)
             }
-            val scalaMem = ChatMemory.fromJava(memory)
-            val builder = dev.langchain4j.service.AiServices
-              .builder(classOf[StreamAssistant])
-              .streamingChatModel(sharedModel.toJava)
-              .chatMemory(scalaMem)
-            val withPrompt =
-              if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
-              else builder
-            SessionEntry(withPrompt.build(): StreamAssistant, systemPrompt)
-          }.orDie.flatMap { entry =>
-            sessions.update(m => if (m.contains(sessionId)) m else m + (sessionId -> entry))
+            memory.add(lc4j)
           }
+          val scalaMem = ChatMemory.fromJava(memory)
+          val builder = dev.langchain4j.service.AiServices
+            .builder(classOf[StreamAssistant])
+            .streamingChatModel(sharedModel.toJava)
+            .chatMemory(scalaMem)
+          val withPrompt =
+            if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
+            else builder
+          SessionEntry(withPrompt.build(): StreamAssistant, systemPrompt)
+        }.orDie.flatMap { entry =>
+          sessions.update(m => if (m.contains(sessionId)) m else m + (sessionId -> entry))
+        }.unless(map.contains(sessionId) || messages.isEmpty).unit
     }
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] =

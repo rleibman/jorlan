@@ -181,7 +181,7 @@ case class SchedulerTrigger(
   id:          SchedulerTriggerId,
   jobId:       SchedulerJobId,
   triggerType: TriggerType,
-  expression:  String,
+  expression:  String, // Should this be some sort of CronExpression or something less Stringy?
   enabled:     Boolean = true,
   createdAt:   Instant,
 ) derives JsonEncoder, JsonDecoder

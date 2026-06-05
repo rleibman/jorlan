@@ -12,14 +12,7 @@ package jorlan.shell
 
 import jorlan.domain.{AgentSessionId, SessionStatus}
 import jorlan.graphql.client.JorlanClient
-import jorlan.shell.client.{
-  AuthClient,
-  GraphQLClient,
-  InitClient,
-  JorlanClientDecoders,
-  LoginResult,
-  SubscriptionClient,
-}
+import jorlan.shell.client.*
 import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -338,6 +331,7 @@ object JorlanShell extends ZIOApp {
             // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
             // heartbeat fiber; the main shell process continues until the user quits.
             connectWithRetry(email, password, serverUrl).orDie.flatMap { r =>
+              // TODO: can this be replaced with a for comprehension?
               ZIO.serviceWithZIO[JorlanScreen](
                 _.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]"),
               ) *>

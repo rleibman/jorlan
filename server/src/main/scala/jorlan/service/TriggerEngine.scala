@@ -301,8 +301,7 @@ class TriggerEngine(
           .claimJob(job.id, workerId, now, leaseTtl)
           .orDie
           .flatMap { claimed =>
-            if (claimed) executeJob(job, cronCache, workerId).forkDaemon.unit
-            else ZIO.unit
+            executeJob(job, cronCache, workerId).forkDaemon.unit.when(claimed)
           }
       }
     } yield ()

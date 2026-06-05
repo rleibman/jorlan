@@ -56,7 +56,7 @@ object InitTokenStore {
 
   private def generateToken(): UIO[String] =
     ZIO.attempt {
-      val bytes = Array[Byte](16)
+      val bytes = new Array[Byte](16)
       rng.nextBytes(bytes)
       bytes.map(b => f"${b & 0xff}%02x").mkString
     }.orDie
