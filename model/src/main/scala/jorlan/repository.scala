@@ -57,11 +57,13 @@ case class AgentSearch(
 
 enum AgentSessionOrder { case Id, CreatedAt }
 case class AgentSessionSearch(
-  agentId:  Option[AgentId] = None,
-  userId:   Option[UserId] = None,
-  page:     Int = 0,
-  pageSize: Int = 20,
-  sorts:    Option[Sort[AgentSessionOrder]] = None,
+  agentId:     Option[AgentId] = None,
+  userId:      Option[UserId] = None,
+  chatRef:     Option[String] = None,
+  channelType: Option[ChannelType] = None,
+  page:        Int = 0,
+  pageSize:    Int = 20,
+  sorts:       Option[Sort[AgentSessionOrder]] = None,
 ) extends Search[AgentSessionOrder]
 
 enum ConversationOrder { case Id, StartedAt }
@@ -249,14 +251,14 @@ trait ConversationRepository[F[_]] {
 
 }
 
-/** Repository for [[jorlan.domain.Skill]] entries, [[jorlan.domain.SkillVersion]] snapshots, and
+/** Repository for [[jorlan.domain.SkillRecord]] entries, [[jorlan.domain.SkillVersion]] snapshots, and
   * [[jorlan.domain.ConnectorInstance]] configurations.
   */
 trait SkillRepository[F[_]] {
 
-  def getById(id:         SkillId):             F[Option[Skill]]
-  def search(s:           SkillSearch):         F[List[Skill]]
-  def upsert(skill:       Skill):               F[Skill]
+  def getById(id:         SkillId):             F[Option[SkillRecord]]
+  def search(s:           SkillSearch):         F[List[SkillRecord]]
+  def upsert(skill:       SkillRecord):         F[SkillRecord]
   def getVersion(id:      SkillVersionId):      F[Option[SkillVersion]]
   def searchVersions(s:   SkillVersionSearch):  F[List[SkillVersion]]
   def upsertVersion(v:    SkillVersion):        F[SkillVersion]

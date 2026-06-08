@@ -88,6 +88,19 @@ object RepositorySpec extends ZIOSpecDefault {
         )
       }
     },
+    test("userByChannelIdentity resolves a known Telegram user") {
+      for {
+        repo <- ZIO.service[UserZIORepository]
+        user <- repo.upsert(User(UserId.empty, "Diana", "diana@example.com", T0, T0))
+        ci = ChannelIdentity(ChannelIdentityId.empty, user.id, ChannelType.Telegram, "777", verified = true, None, T0)
+        _     <- repo.upsertChannelIdentity(ci)
+        found <- repo.userByChannelIdentity(ChannelType.Telegram, "777")
+        miss  <- repo.userByChannelIdentity(ChannelType.Telegram, "999")
+      } yield assertTrue(
+        found.exists(_.id == user.id),
+        miss.isEmpty,
+      )
+    },
   )
 
   // ─── Agent ───────────────────────────────────────────────────────────────
@@ -114,7 +127,7 @@ object RepositorySpec extends ZIOSpecDefault {
         userRepo  <- ZIO.service[UserZIORepository]
         user      <- userRepo.upsert(User(UserId.empty, "SessionUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, T0))
-        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0)
+        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0)
         saved    <- agentRepo.upsertSession(session)
         fetched  <- agentRepo.getSession(saved.id)
         sessions <- agentRepo.searchSessions(AgentSessionSearch(agentId = Some(agent.id)))
@@ -125,6 +138,35 @@ object RepositorySpec extends ZIOSpecDefault {
           sessions.exists(_.id == saved.id),
         )
       }
+    },
+    test("session chatRef persists and is searchable") {
+      for {
+        agentRepo <- ZIO.service[AgentZIORepository]
+        userRepo  <- ZIO.service[UserZIORepository]
+        user      <- userRepo.upsert(User(UserId.empty, "ChatRefUser", "", T0, T0))
+        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ChatRefAgent", None, None, 0, T0))
+        session = AgentSession(
+          AgentSessionId.empty,
+          agent.id,
+          user.id,
+          None,
+          SessionStatus.Active,
+          None,
+          Some("telegram-chat-42"),
+          T0,
+          T0,
+        )
+        saved   <- agentRepo.upsertSession(session)
+        fetched <- agentRepo.getSession(saved.id)
+        byRef   <- agentRepo.searchSessions(
+          AgentSessionSearch(userId = Some(user.id), chatRef = Some("telegram-chat-42")),
+        )
+        noMatch <- agentRepo.searchSessions(AgentSessionSearch(userId = Some(user.id), chatRef = Some("other-ref")))
+      } yield assertTrue(
+        fetched.exists(_.chatRef.contains("telegram-chat-42")),
+        byRef.exists(_.id == saved.id),
+        noMatch.isEmpty,
+      )
     },
   )
 
@@ -139,7 +181,7 @@ object RepositorySpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
         session   <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         conv     <- convRepo.create(Conversation(ConversationId.empty, session.id, T0))
         _        <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "Hello!", None, T0))
@@ -162,7 +204,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("upsert skill and versions") {
       for {
         repo <- ZIO.service[SkillZIORepository]
-        skill = Skill(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, T0)
+        skill = SkillRecord(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, T0)
         saved <- repo.upsert(skill)
         sv    <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", Json.Obj(), SkillStatus.Active, T0),

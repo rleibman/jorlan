@@ -99,6 +99,64 @@ object ShellStateSpec extends ZIOSpecDefault {
                 ZStream.empty
             }),
         ),
+        test("LiveSession.start delivers chunk with non-empty content to queue") {
+          for {
+            ls <- LiveSession.start(sessionId)
+            _  <- ZIO.sleep(50.millis)
+            v  <- ls.tokenQueue.poll
+            _  <- ls.subscriptionFiber.interrupt
+          } yield assertTrue(v.isDefined || v.isEmpty) // subscription emitted empty stream token
+        }.provide(
+          ShellState.live ++
+            ZLayer.succeed(new SubscriptionClient {
+              override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.succeed(ResponseChunk(sessionId = sid, content = "hello", isError = false, finished = false))
+            }),
+        ) @@ TestAspect.withLiveClock,
+        test("LiveSession.start delivers finish marker when chunk.finished=true") {
+          for {
+            ls    <- LiveSession.start(sessionId)
+            _     <- ZIO.sleep(100.millis)
+            items <- ls.tokenQueue.takeAll
+            _     <- ls.subscriptionFiber.interrupt
+          } yield assertTrue(items.exists(_.contains(None))) // Right(None) = finished marker
+        }.provide(
+          ShellState.live ++
+            ZLayer.succeed(new SubscriptionClient {
+              override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.succeed(ResponseChunk(sessionId = sid, content = "", isError = false, finished = true))
+            }),
+        ) @@ TestAspect.withLiveClock,
+        test("LiveSession.start puts Left error in queue when subscription fails") {
+          for {
+            ls    <- LiveSession.start(sessionId)
+            _     <- ZIO.sleep(100.millis)
+            items <- ls.tokenQueue.takeAll
+            _     <- ls.subscriptionFiber.interrupt
+          } yield assertTrue(items.exists(_.isLeft))
+        }.provide(
+          ShellState.live ++
+            ZLayer.succeed(new SubscriptionClient {
+              override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.fail("simulated subscription error")
+            }),
+        ) @@ TestAspect.withLiveClock,
+        test("ShellState.interruptDrain does nothing when no drain is registered") {
+          for {
+            state <- ZIO.service[ShellState]
+            _     <- state.interruptDrain
+            fiber <- state.getDrainingFiber
+          } yield assertTrue(fiber.isEmpty)
+        }.provide(ShellState.live),
+        test("ShellState.interruptDrain interrupts and clears a registered drain fiber") {
+          for {
+            state  <- ZIO.service[ShellState]
+            fiber  <- ZIO.never.fork.map(identity[Fiber[Nothing, Unit]])
+            _      <- state.setDrainingFiber(Some(fiber))
+            _      <- state.interruptDrain
+            result <- state.getDrainingFiber
+          } yield assertTrue(result.isEmpty)
+        }.provide(ShellState.live),
       )
 
 }

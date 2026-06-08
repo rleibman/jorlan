@@ -19,6 +19,7 @@ import jorlan.domain.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import zio.*
+import zio.http.Client
 import zio.test.*
 
 import scala.language.unsafeNulls
@@ -90,6 +91,8 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       TriggerEngine.live,
+      ZLayer.succeed(ConnectorManager.empty),
+      Client.default,
     )
 
   private val interpLayer: ZLayer[

@@ -34,7 +34,8 @@ import java.util.concurrent.TimeUnit
 type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
   OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
   SessionHub & ModelGateway & ServerSettingsRepository & UserZIORepository & PermissionZIORepository &
-  SchedulerZIORepository & EventLogZIORepository & MemoryService & MemorySkill & JobManager & TriggerEngine
+  SchedulerZIORepository & EventLogZIORepository & MemoryService & MemorySkill & JobManager & TriggerEngine &
+  ConnectorManager & Client
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -73,6 +74,13 @@ object Jorlan extends ZIOApp {
         }
     }
 
+  private def startServices: ZIO[TriggerEngine & ConnectorManager & Scope, Throwable, Unit] =
+    for {
+      _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      connectorManager <- ZIO.service[ConnectorManager]
+      _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
+    } yield ()
+
   // $COVERAGE-OFF$ Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
   override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
     for {
@@ -93,7 +101,7 @@ object Jorlan extends ZIOApp {
       _ <-
         if (initialized) {
           for {
-            _      <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+            _      <- startServices
             routes <- buildRoutes(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()
@@ -108,7 +116,7 @@ object Jorlan extends ZIOApp {
             _      <- initDone.await
             _      <- serverFiber.interrupt
             _      <- ZIO.logInfo("Server initialized — switching to full application routes")
-            _      <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+            _      <- startServices
             routes <- buildRoutes(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()

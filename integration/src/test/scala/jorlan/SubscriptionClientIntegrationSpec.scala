@@ -90,6 +90,8 @@ object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       TriggerEngine.live,
+      ZLayer.succeed(ConnectorManager.empty),
+      Client.default,
     )
 
   private val interpLayer: ZLayer[

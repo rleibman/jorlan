@@ -367,7 +367,12 @@ object InMemoryRepositories {
       sessionStore.get.map(_.get(id.value))
 
     override def searchSessions(s: AgentSessionSearch): RepositoryTask[List[AgentSession]] =
-      sessionStore.get.map(_.values.toList)
+      sessionStore.get.map {
+        _.values.toList
+          .filter(sess => s.agentId.forall(_ == sess.agentId))
+          .filter(sess => s.userId.forall(_ == sess.userId))
+          .filter(sess => s.chatRef.forall(cr => sess.chatRef.contains(cr)))
+      }
 
     override def upsertSession(session: AgentSession): RepositoryTask[AgentSession] =
       for {

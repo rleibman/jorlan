@@ -6,4 +6,5 @@
 - [Phase 8.5 Findings](phase85_findings.md) — Session redesign, ConversationLogger, VersionCheck conformance review (2026-06-02)
 - [Phase 9 Findings](phase9_findings.md) — Memory system (Layer 1-3, checkpoint pipeline, MemorySkill, GraphQL) conformance review (2026-06-03)
 - [Phase 10 Findings](phase10_findings.md) — Durable Scheduler conformance review (2026-06-04)
+- [Phase 11 Findings](phase11_findings.md) — Telegram Connector conformance review (2026-06-07)
 - [Recurring Patterns](recurring_patterns.md) — Architectural violations and patterns seen across reviews

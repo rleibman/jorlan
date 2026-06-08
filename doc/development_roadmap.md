@@ -592,16 +592,77 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 ## Phase 11: Telegram Connector
 
 **Goal:** Users can interact with Jorlan via Telegram; messages are resolved to canonical users and processed by agents.
+The phase also lays the foundational plugin seam (`Skill` / `ConnectorSkill` traits + reusable ingress pipeline) every
+future connector will reuse.
 
-- [ ] Telegram Bot API integration (start with long-polling; webhook switchable via config)
-- [ ] `TelegramConnector` ZIO service: start polling, stop, send message, send photo/file
-- [ ] `MessageNormalizer`: Telegram message → internal `InboundMessage`
-- [ ] Identity resolution for Telegram users (Telegram user ID → `ChannelIdentity` → `User`)
-- [ ] Unrecognized Telegram identity policy: configurable — reject or quarantine
-- [ ] Outbound delivery for `NotificationRouter`
-- [ ] Channel-specific config: bot token, allowed chat IDs, allowed users
-- [ ] Integration tests using a mock Telegram API (no live bot token required for CI)
-- [ ] The system can interact with messages in telegram groups and channels.
+See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugin-architecture.md` for full design.
+
+### Pre-work: Rename `Skill` record → `SkillRecord`
+
+- [x] `model/src/main/scala/jorlan/domain/skill.scala` — rename `case class Skill` → `SkillRecord`
+- [x] `model/src/main/scala/jorlan/repository.scala` — update `SkillRepository` return types and `SkillSearch` sort enum references
+- [x] `db/src/main/scala/jorlan/db/repository/QuillRepositories.scala` — update Quill query mappings
+- [x] Grep `\bSkill\b` and fix any GraphQL / test references (leave `SkillVersion`, `SkillId`, `SkillTier`, `SkillStatus` unchanged)
+
+### Runtime Trait Seam (model)
+
+- [x] New file `model/src/main/scala/jorlan/service/Skill.scala`: define `Skill` trait (`descriptor`, `invoke`)
+- [x] `ConnectorSkill extends Skill` trait: add `connectorType`, `instanceId`, `start`, `stop`
+- [x] Supporting types in same file: `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`
+
+### Reusable Ingress Pipeline
+
+- [x] New file `model/src/main/scala/jorlan/domain/ingress.scala`: `InboundMessage`, `ChatKind` enum, `UnrecognizedIdentityPolicy` enum
+- [x] New file `model/src/main/scala/jorlan/service/MessageIngress.scala`: `MessageIngress` trait (`receive(msg): IO[JorlanError, Unit]`)
+- [x] `MessageIngressImpl` in `server/.../service/`: identity resolution → unrecognized policy → capability gate (`agent.message`) → resolve-or-create `AgentSession` for `(user, chatRef)` → dispatch to `AgentRunner.processMessage` → write inbound receipt event
+- [ ] Reply path: deferred to Phase 12 `NotificationRouter` — `agentRunner` parameter removed from `TelegramConnectorSkill`; see P11-001 in phase review
+
+### Telegram Bot API Client
+
+- [x] `TelegramApiClient` trait: `getUpdates(offset, timeoutSeconds)`, `sendMessage(chatId, text)`, `sendPhoto(chatId, photo, caption?)`, `sendDocument(chatId, file, filename)`
+- [x] `TelegramApiClientImpl` over `zio-http`
+- [x] `TelegramConfig` case class: `botToken`, `allowedChatIds`, `allowedUserIds`, `unrecognizedPolicy`, `useWebhook` — parsed from `ConnectorInstance.configJson`
+- [x] `FakeTelegramApiClient` for tests (returns canned `getUpdates` responses; no live token in CI)
+
+### `TelegramConnectorSkill extends ConnectorSkill`
+
+- [x] `TelegramMessageNormalizer`: `TelegramUpdate` → `InboundMessage` (maps `chat.type` → `ChatKind`, `from.id` → `channelUserId`, `chat.id` → `chatRef`)
+- [x] `TelegramConnectorSkill`: `connectorType = Telegram`, bound to `ConnectorInstance`
+- [x] `start`: fork long-poll loop (`getUpdates(offset, 30)` → normalizer → `MessageIngress.receive`, advance offset); handle private/group/channel/supergroup; gate groups on `allowedChatIds`
+- [x] `stop`: interrupt polling fiber
+- [x] `invoke` egress tools (each gated by capability `telegram.send`, `RiskClass ExternalEffect`):
+    - `telegram.send_message { chatId, text }`
+    - `telegram.send_photo { chatId, photo, caption? }`
+    - `telegram.send_file { chatId, file, filename }`
+- [x] `descriptor` listing all three `ToolDescriptor`s with JSON schemas and required capabilities
+
+### Minimal `ConnectorManager` + Boot Wiring
+
+- [x] `ConnectorManager` trait: `startAll`, `stopAll`
+- [x] `ConnectorManagerImpl`: collect `ConnectorSkill`s from registered set, start/stop ingress
+- [x] Wire `TelegramConnectorSkill.live` + `MessageIngressImpl.live` + `TelegramApiClient.live` in `EnvironmentBuilder`
+- [x] Fork `ConnectorManager.startAll` as daemon in `Jorlan.run` (mirror `TriggerEngine` startup pattern)
+
+### Migration V023 (Quarantine persistence)
+
+- [x] Decision: quarantine is log-only for Phase 11 (no DB table). V023 was already used for scheduler index fixes; V024 adds `chat_ref` column to `agentSession` for durable connector-bound sessions.
+
+### Tests
+
+- [x] `TelegramMessageNormalizerSpec`: `TelegramUpdate` → `InboundMessage` for private / group / channel / supergroup
+- [x] `MessageIngressSpec`: identity hit; `Reject` miss; capability gate deny; resolve-or-create session; dispatch — uses `InMemoryRepositories` + fake `AgentRunner`
+- [x] `TelegramConnectorSkillSpec`: `start`/`stop` lifecycle; each egress `invoke` tool via `FakeTelegramApiClient`; long-poll loop end-to-end with mock client
+- [x] `sbt scalafmtAll` clean before merge
+- [x] Update `development_roadmap.md` checkboxes as items complete
+
+### Module restructuring (added per Phase 11 review)
+
+- [x] `connector-api` SBT module — `Skill`, `ConnectorSkill`, `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`, `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy` — package `jorlan.connector`
+- [x] `telegram` SBT module — `TelegramConnectorSkill`, `TelegramApiClient`, `TelegramMessageNormalizer`, `FakeTelegramApiClient` — package `jorlan.connector.telegram`
+
+### Appendix updates
+
+- [x] Mark `Telegram` connector `[x]` in the Connectors appendix table
 
 ---
 
@@ -843,7 +904,7 @@ model
 
 | Status | Skill              | Priority | Type     | Description |
 |:------:|--------------------|----------|----------|-------------|
-|  [ ]   | Telegram           | 1        | Built-in |             |
+  |  [x]   | Telegram           | 1        | Built-in |             |
 |  [ ]   | Slack              |          | Built-in |             |
 |  [ ]   | Whatsapp           |          | Built-in |             |
 |  [ ]   | Discord            | 2        | Built-in |             |

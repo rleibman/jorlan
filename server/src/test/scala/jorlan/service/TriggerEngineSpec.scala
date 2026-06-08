@@ -87,7 +87,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       modelId: Option[ModelId],
     ): IO[JorlanError, AgentSession] =
       Clock.instant.map { now =>
-        AgentSession(sessionId, AgentId(1L), userId, None, SessionStatus.Active, None, now, now)
+        AgentSession(sessionId, AgentId(1L), userId, None, SessionStatus.Active, None, None, now, now)
       }
 
     override def getSession(id:       AgentSessionId): IO[JorlanError, Option[AgentSession]] = ZIO.succeed(None)
@@ -420,6 +420,67 @@ object TriggerEngineSpec extends ZIOSpecDefault {
           calls.isEmpty,
           result.exists(_.status == JobStatus.Pending),
         )
+      } @@ TestAspect.withLiveClock,
+      test("recomputeStaleTriggers with RunOnce policy on Interval trigger leaves job stale (no-op branch)") {
+        for {
+          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
+          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          sid = AgentSessionId(56L)
+          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.upsertJob(
+            makeJob("run-once-interval", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.RunOnce),
+          )
+          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
+          fiber  <- engine.start.forkDaemon
+          _      <- ZIO.sleep(300.millis)
+          _      <- fiber.interrupt
+          result <- repo.getJob(job.id).orDie
+        } yield assertTrue(result.isDefined)
+      } @@ TestAspect.withLiveClock,
+      test("recomputeStaleTriggers with RunOnce policy on Cron trigger takes no-op branch") {
+        for {
+          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
+          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          sid = AgentSessionId(57L)
+          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.upsertJob(
+            makeJob("run-once-cron", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.RunOnce),
+          )
+          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
+          fiber  <- engine.start.forkDaemon
+          _      <- ZIO.sleep(300.millis)
+          _      <- fiber.interrupt
+          result <- repo.getJob(job.id).orDie
+        } yield assertTrue(result.isDefined)
+      } @@ TestAspect.withLiveClock,
+      test("recomputeStaleTriggers ignores Event-type triggers (no-op branch)") {
+        for {
+          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
+          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          sid = AgentSessionId(58L)
+          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.upsertJob(
+            makeJob("event-trigger-job", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.Skip),
+          )
+          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "some.event"))
+          fiber  <- engine.start.forkDaemon
+          _      <- ZIO.sleep(300.millis)
+          _      <- fiber.interrupt
+          result <- repo.getJob(job.id).orDie
+        } yield assertTrue(result.isDefined)
+      } @@ TestAspect.withLiveClock,
+      test("advanceTriggers ignores Event-type trigger after job succeeds") {
+        for {
+          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
+          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          sid = AgentSessionId(59L)
+          (engine, _) <- makeEngine(repo, eventLog, sid)
+          job         <- repo.upsertJob(makeJob("event-advance"))
+          _           <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "my.event"))
+          _           <- TestClock.setTime(T0)
+          _           <- runTick(engine)
+          result      <- awaitFinalStatus(repo, job.id)
+        } yield assertTrue(result.exists(_.status == JobStatus.Succeeded))
       } @@ TestAspect.withLiveClock,
     )
 

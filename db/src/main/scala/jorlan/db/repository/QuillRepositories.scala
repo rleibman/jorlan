@@ -52,7 +52,7 @@ object JorlanSchema {
 
   inline def qMessages = quote(querySchema[Message]("message"))
 
-  inline def qSkills = quote(querySchema[Skill]("skill"))
+  inline def qSkills = quote(querySchema[SkillRecord]("skill"))
 
   inline def qSkillVersions = quote(querySchema[SkillVersion]("skillVersion"))
 
@@ -332,7 +332,8 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
     val base = quote(
       qAgentSessions
         .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid))
-        .filter(sess => lift(s.userId).forall(uid => sess.userId == uid)),
+        .filter(sess => lift(s.userId).forall(uid => sess.userId == uid))
+        .filter(sess => lift(s.chatRef).forall(cr => sess.chatRef.exists(_ == cr))),
     )
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[AgentSession]] = s.sorts match {
@@ -357,6 +358,7 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
               .filter(_.id == lift(session.id))
               .update(
                 _.status    -> lift(session.status),
+                _.chatRef   -> lift(session.chatRef),
                 _.updatedAt -> lift(session.updatedAt),
               ),
           ).as(session),
@@ -426,15 +428,15 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   import JorlanSchema.*
   import qc.ctx.*
 
-  override def getById(id: SkillId): RepositoryTask[Option[Skill]] =
+  override def getById(id: SkillId): RepositoryTask[Option[SkillRecord]] =
     exec(qc.ctx.run(qSkills.filter(_.id == lift(id))).map(_.headOption))
 
-  override def search(s: SkillSearch): RepositoryTask[List[Skill]] = {
+  override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
     val base = quote(qSkills)
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
-    val sorted: Quoted[Query[Skill]] = s.sorts match {
+    val sorted: Quoted[Query[SkillRecord]] = s.sorts match {
       case Some(Sort(SkillOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
       case Some(Sort(SkillOrder.Name, OrderDirection.Asc))       => quote(limited.sortBy(_.name)(Ord.asc))
       case Some(Sort(SkillOrder.Name, OrderDirection.Desc))      => quote(limited.sortBy(_.name)(Ord.desc))
@@ -447,7 +449,7 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
     exec(qc.ctx.run(sorted))
   }
 
-  override def upsert(skill: Skill): RepositoryTask[Skill] =
+  override def upsert(skill: SkillRecord): RepositoryTask[SkillRecord] =
     exec(
       qc.ctx
         .run(

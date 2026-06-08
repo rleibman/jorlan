@@ -263,6 +263,80 @@ See dedicated section below.
 - `isError` field added to `ChunkData` decoder — not unit-tested
 - No test for WS reconnection or authentication header injection
 
+## Phase 11 Telegram Connector — Coverage Gaps (2026-06-07)
+
+### MessageIngressImpl — PARTIALLY COVERED
+- Known user dispatched to AgentRunner: COVERED
+- Unrecognized sender (Reject policy): COVERED
+- Capability gate denial (DefaultDeny): COVERED
+- MISSING: ExplicitDeny branch — only DefaultDeny tested; ExplicitDeny is a separate EvaluationResult case that also maps to the "dropped" path (line 73)
+- MISSING: Quarantine policy — `UnrecognizedIdentityPolicy.Quarantine` is defined in ingress.scala but never referenced in MessageIngressImpl, and no test verifies quarantine behavior
+- MISSING: session reuse by chatRef — `resolveOrCreateSession` (lines 86-113) finds an existing Active session matching chatRef; no test sends two messages to same chatRef and verifies the same sessionId is reused
+- MISSING: session status filter exclusion — sessions with status Completed or Cancelled are excluded from reuse candidates (line 100); no test creates a Completed session and verifies a new session is created
+- MISSING: event log written on dispatch — `logInboundEvent` is called after dispatch (line 81) and on unrecognized (line 55); no test asserts on EventLogZIORepository contents
+- MISSING: event log written on unrecognized sender — logInboundEvent called with actorId=None (line 55); not asserted
+- MISSING: userRepo failure propagation — `userByChannelIdentity` returning IO.fail propagated as JorlanError: not tested
+- MISSING: agentRunner failure path — processMessage failing; handleKnown swallows errors only via ignore: not tested
+- MISSING: actorId=None path (no actor) — RecordingAgentRunner tests always supply Some(userId); agentRunner.processMessage(sessionId, content, Some(user.id)) — the None case is unreachable from current code but not asserted
+
+### ConnectorManager — NO UNIT TESTS
+- `ConnectorManagerImpl.startAll` — no test for the happy path (connectors started successfully)
+- `ConnectorManagerImpl.stopAll` — no test for the happy path
+- `startAll` with a connector that fails start — `.tapError(...).ignore` swallows error; no test verifies the log message and continued iteration
+- `stopAll` with a connector that fails stop — same `.tapError(...).ignore` pattern; not tested
+- `ConnectorManager.empty.startAll` — trivially correct but untested
+- `ConnectorManager.fromSkills(List(skill)).startAll` with all-success: NOT TESTED
+
+### TelegramConnectorSkill — MOSTLY COVERED, gaps remain
+- descriptor shape and connectorType: COVERED
+- send_message invoke: COVERED
+- invoke unknown tool returns error: COVERED
+- start/stop lifecycle (smoke test): COVERED
+- long-poll loop normalizes and passes to ingress: COVERED
+- MISSING: send_photo invoke — `telegram.send_photo` calls `apiClient.sendPhoto`; no test calls `skill.invoke(ctx, "telegram.send_photo", ...)` and asserts on `FakeTelegramApiClient.sendPhoto`
+- MISSING: send_file invoke — `telegram.send_file` calls `apiClient.sendDocument`; not tested
+- MISSING: filterUpdates with non-empty allowedChatIds — updates from non-allowed chats are dropped; config always uses `Set.empty` in tests
+- MISSING: filterUpdates with non-empty allowedUserIds — updates from non-allowed users are dropped; never tested
+- MISSING: filterUpdates where message has no `from` (channel post) with allowedUserIds filter — `userId` is None → filtered out; not tested
+- MISSING: ingress.receive error during polling — `.ignore` swallows it; no test injects a failing MessageIngress
+- MISSING: pollLoop offset advancement — after processing updateId=5, next offset=6; no test verifies offset increments correctly
+- MISSING: pollLoop with empty update list — offset stays same; not explicitly tested (FakeTelegramApiClient returns empty list on second call, which causes infinite loop in tests using withLiveClock)
+
+### TelegramMessageNormalizer — WELL COVERED, one gap
+- private chat: COVERED
+- group chat: COVERED
+- channel post (no from): COVERED
+- supergroup: COVERED
+- update without message/channelPost: COVERED
+- message without text: COVERED
+- MISSING: unknown chat type → defaults to ChatKind.Private (line 44 `case _ => ChatKind.Private`): tested implicitly by channel post (type "channel" maps explicitly), but no test sends an unrecognized type string like "unknown_type" to verify the fallback
+
+### TelegramApiClientLive — NO UNIT TESTS (live HTTP only)
+- `getUpdates` success path: NOT UNIT-TESTED (requires real Telegram API or HTTP mock)
+- `getUpdates` with `"ok":false` response body — log warning, return Nil (lines 116-117): NOT TESTED
+- `getUpdates` JSON parse error — `JorlanError("Telegram JSON parse error")`: NOT TESTED
+- `getUpdates` decode failure — `"Telegram getUpdates decode failed"`: NOT TESTED
+- `sendMessage` success path: NOT UNIT-TESTED
+- `sendMessage` non-2xx response — returns IO.fail: NOT TESTED
+- `sendPhoto` multipart body construction: NOT TESTED
+- `sendDocument` multipart body construction: NOT TESTED
+- Note: TelegramManualTest in `integration/src/main/scala/` covers live behavior manually but is not an automated test
+
+### DB: userByChannelIdentity — NOT INTEGRATION-TESTED
+- `QuillRepositories.userByChannelIdentity` (lines 250-263) is the join of channelIdentity + user tables: NOT integration-tested
+- `RepositorySpec.channel_identities` test covers upsert/get/delete but NEVER calls `userByChannelIdentity`
+- This is a critical path: MessageIngressImpl calls it on every inbound message
+
+### DB: chatRef column on AgentSession — NOT INTEGRATION-TESTED
+- `upsertSession` update path sets `chatRef` (line 360 of QuillRepositories)
+- `RepositorySpec.agent_sessions` test creates and fetches sessions but NEVER sets or queries `chatRef`
+- No integration test round-trips a session with chatRef set and verifies persistence
+
+### EnvironmentBuilder.liveConnectorManagerLayer — NOT TESTED
+- Config parse failure for a connector (Left branch, line 96) — logs warning and returns None: NOT TESTED
+- Config parse success (Right branch) — TelegramConnectorSkill constructed: NOT TESTED (requires live DB + HTTP client)
+- Multiple connectors of different types: NOT TESTED
+
 ## Phase 10 Durable Scheduler — Coverage Gaps (2026-06-04)
 
 ### TriggerEngine — advanceTriggers NEVER TESTED

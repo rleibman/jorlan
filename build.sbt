@@ -57,6 +57,7 @@ enablePlugins(
   com.github.sbt.git.GitVersioning,
 )
 
+val telegramiumVersion = "10.906.0"
 val calibanClientVersion = "3.1.2"
 val calibanVersion = "3.1.2"
 val commonsCodecVersion = "1.21.0"
@@ -148,6 +149,52 @@ lazy val model = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Connector API — plugin trait seam (Skill, ConnectorSkill, MessageIngress, InboundMessage, ...)
+
+lazy val connectorApi = project
+  .in(file("connector-api"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(model)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-connector-api",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Telegram Connector — TelegramConnectorSkill + TelegramApiClient
+
+lazy val telegramConnector = project
+  .in(file("telegram"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(model, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-telegram",
+    libraryDependencies ++= Seq(
+      "dev.zio"                 %% "zio"               % zioVersion withSources (),
+      "dev.zio"                 %% "zio-json"          % zioJsonVersion withSources (),
+      "dev.zio"                 %% "zio-http"          % zioHttpVersion withSources (),
+      "io.github.apimorphism"   %% "telegramium-core"  % telegramiumVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Analytics
 
 lazy val analytics = project
@@ -224,7 +271,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(model, db, ai, analytics)
+  .dependsOn(model, db, ai, analytics, connectorApi, telegramConnector)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -263,6 +310,8 @@ lazy val server = project
       "dev.zio"      %% "zio-test-sbt"                 % zioVersion           % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
+    Test / fork                      := true,
     coverageExcludedFiles            := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
   )
 
@@ -274,7 +323,7 @@ lazy val integration = project
     com.github.sbt.git.GitVersioning,
   )
   .settings(commonSettings)
-  .dependsOn(model, db, server, shell)
+  .dependsOn(model, db, server, shell, connectorApi, telegramConnector)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-integration",
@@ -463,6 +512,8 @@ lazy val ai = project
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
+    Test / fork := true,
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -471,6 +522,8 @@ lazy val root = project
   .in(file("."))
   .aggregate(
     model,
+    connectorApi,
+    telegramConnector,
     db,
     ai,
     server,

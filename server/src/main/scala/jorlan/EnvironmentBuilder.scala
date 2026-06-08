@@ -14,9 +14,14 @@ import _root_.ai.LangChainConfig
 import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import jorlan.auth.JorlanAuthServer
+import jorlan.connector.*
+import jorlan.connector.telegram.*
 import jorlan.db.FlywayMigration
-import jorlan.db.repository.QuillRepositories
+import jorlan.db.repository.{QuillRepositories, SkillZIORepository}
+import jorlan.domain.*
 import jorlan.service.*
+import zio.http.Client
+import zio.json.*
 import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
 
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
@@ -67,6 +72,30 @@ object EnvironmentBuilder {
         },
       ).flatten
 
+  private val liveConnectorManagerLayer: URLayer[SkillZIORepository & MessageIngress & Client, ConnectorManager] =
+    ZLayer.fromZIO {
+      for {
+        skillRepo  <- ZIO.service[SkillZIORepository]
+        ingress    <- ZIO.service[MessageIngress]
+        httpClient <- ZIO.service[Client]
+        connectors <- skillRepo
+          .searchConnectors(ConnectorSearch())
+          .mapError(e => new RuntimeException(e.msg))
+          .orDie
+        telegramSkills <- ZIO.foreach(connectors.filter(_.connectorType == ConnectorType.Telegram)) { ci =>
+          ZIO
+            .fromEither(ci.configJson.as[TelegramConfig])
+            .foldZIO(
+              err => ZIO.logWarning(s"[connector:${ci.id}] Failed to parse TelegramConfig: $err").as(None),
+              cfg => {
+                val apiClient = TelegramApiClientLive(cfg, httpClient)
+                TelegramConnectorSkill.make(cfg, ci.id, apiClient, ingress).map(Some(_))
+              },
+            )
+        }
+      } yield ConnectorManager.fromSkills(telegramSkills.flatten)
+    }
+
   val live: ULayer[JorlanEnvironment] =
     ZLayer
       .make[JorlanEnvironment](
@@ -94,6 +123,9 @@ object EnvironmentBuilder {
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,
+        MessageIngressImpl.live,
+        liveConnectorManagerLayer,
+        Client.default,
         // TODO Phase 12: wire SchedulerSkill.live once SkillRegistry is available
       ).orDie
 

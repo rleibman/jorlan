@@ -5,3 +5,4 @@
 - [Phase 8.5 Manual Testing Performance Findings](phase85_perf.md) — SessionHub sequential publish, appendToLastMessage O(n) init, token Vector accumulation, ConversationLogger MDC alloc, logRequests query body
 - [Phase 9 Memory System Performance Findings](phase9_perf.md) — in-process textSearch filter, checkpoint N+1 upserts, buildMemoryContext repeated session query, loadPersonality uncached, runCollect on LLM stream
 - [Phase 10 Durable Scheduler Performance Findings](phase10_perf.md) — AgentRunnerState map leak per job, stream runCollect buffering, R/W double-query on mutations, session never terminated, sequential trigger advance, missing schedulerTrigger(jobId) index, InetAddress blocking init
+- [Phase 11 Telegram Connector Performance Findings](phase11_perf.md) — resolveOrCreateSession in-memory chatRef filter, sequential update dispatch, ZLayer.succeed per-call, multipart triple-copy, Instant.now() in pure fn, startAll sequential

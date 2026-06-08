@@ -194,6 +194,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
             None,
             SessionStatus.Active,
             None,
+            None,
             T0.minusSeconds(10),
             T0,
           ),
@@ -205,6 +206,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
             user.id,
             None,
             SessionStatus.Active,
+            None,
             None,
             T0.plusSeconds(10),
             T0,
@@ -229,6 +231,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
             None,
             SessionStatus.Active,
             None,
+            None,
             T0.minusSeconds(30),
             T0,
           ),
@@ -240,6 +243,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
             user.id,
             None,
             SessionStatus.Active,
+            None,
             None,
             T0.plusSeconds(30),
             T0,
@@ -263,7 +267,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "UpdSessUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "UpdSessAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         _       <- agentRepo.upsertSession(sess.copy(status = SessionStatus.Completed, updatedAt = T0.plusSeconds(1)))
         fetched <- agentRepo.getSession(sess.id)
@@ -282,7 +286,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.minusSeconds(5)))
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.plusSeconds(5)))
@@ -303,7 +307,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser2", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.minusSeconds(50)))
         _   <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0.plusSeconds(50)))
@@ -334,7 +338,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         conv <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         _ <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "msg1", None, T0.minusSeconds(2)))
@@ -358,7 +362,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser2", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         conv <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         _ <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "first", None, T0.minusSeconds(5)))
@@ -383,7 +387,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
         user      <- userRepo.upsert(User(UserId.empty, "ConvGetUser", "", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvGetAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         conv    <- convRepo.create(Conversation(ConversationId.empty, sess.id, T0))
         fetched <- convRepo.getById(conv.id)
@@ -397,16 +401,16 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
     test("search skills sorted by id desc") {
       for {
         repo <- ZIO.service[SkillZIORepository]
-        _    <- repo.upsert(Skill(SkillId.empty, "sort-skill-1", None, SkillTier.BuiltIn, T0))
-        _    <- repo.upsert(Skill(SkillId.empty, "sort-skill-2", None, SkillTier.Plugin, T0))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "sort-skill-1", None, SkillTier.BuiltIn, T0))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "sort-skill-2", None, SkillTier.Plugin, T0))
         res  <- repo.search(SkillSearch(pageSize = 50, sorts = Some(Sort(SkillOrder.Id, OrderDirection.Desc))))
       } yield assertTrue(res.map(_.id.value) == res.map(_.id.value).sorted.reverse)
     },
     test("search skills sorted by name asc and desc") {
       for {
         repo <- ZIO.service[SkillZIORepository]
-        _    <- repo.upsert(Skill(SkillId.empty, "zzz-skill", None, SkillTier.Scripted, T0))
-        _    <- repo.upsert(Skill(SkillId.empty, "aaa-skill", None, SkillTier.Scripted, T0))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "zzz-skill", None, SkillTier.Scripted, T0))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "aaa-skill", None, SkillTier.Scripted, T0))
         asc  <- repo.search(SkillSearch(pageSize = 50, sorts = Some(Sort(SkillOrder.Name, OrderDirection.Asc))))
         desc <- repo.search(SkillSearch(pageSize = 50, sorts = Some(Sort(SkillOrder.Name, OrderDirection.Desc))))
       } yield assertTrue(
@@ -417,8 +421,8 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
     test("search skills sorted by createdAt asc and desc") {
       for {
         repo <- ZIO.service[SkillZIORepository]
-        _    <- repo.upsert(Skill(SkillId.empty, "old-skill", None, SkillTier.Declarative, T0.minusSeconds(60)))
-        _    <- repo.upsert(Skill(SkillId.empty, "new-skill", None, SkillTier.Declarative, T0.plusSeconds(60)))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "old-skill", None, SkillTier.Declarative, T0.minusSeconds(60)))
+        _    <- repo.upsert(SkillRecord(SkillId.empty, "new-skill", None, SkillTier.Declarative, T0.plusSeconds(60)))
         asc  <- repo.search(SkillSearch(pageSize = 50, sorts = Some(Sort(SkillOrder.CreatedAt, OrderDirection.Asc))))
         desc <- repo.search(SkillSearch(pageSize = 50, sorts = Some(Sort(SkillOrder.CreatedAt, OrderDirection.Desc))))
       } yield assertTrue(
@@ -429,7 +433,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
     test("searchVersions sorted by id desc and by version asc/desc") {
       for {
         repo  <- ZIO.service[SkillZIORepository]
-        skill <- repo.upsert(Skill(SkillId.empty, "versioned-skill", None, SkillTier.BuiltIn, T0))
+        skill <- repo.upsert(SkillRecord(SkillId.empty, "versioned-skill", None, SkillTier.BuiltIn, T0))
         _     <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, skill.id, "1.0.0", Json.Obj(), SkillStatus.Active, T0.minusSeconds(10)),
         )
@@ -482,7 +486,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
     test("getVersion retrieves by id") {
       for {
         repo  <- ZIO.service[SkillZIORepository]
-        skill <- repo.upsert(Skill(SkillId.empty, "get-version-skill", None, SkillTier.BuiltIn, T0))
+        skill <- repo.upsert(SkillRecord(SkillId.empty, "get-version-skill", None, SkillTier.BuiltIn, T0))
         sv    <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, skill.id, "3.0.0", Json.Obj(), SkillStatus.Active, T0),
         )
