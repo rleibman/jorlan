@@ -102,10 +102,10 @@ object ShellStateSpec extends ZIOSpecDefault {
         test("LiveSession.start delivers chunk with non-empty content to queue") {
           for {
             ls <- LiveSession.start(sessionId)
-            _  <- ZIO.sleep(50.millis)
-            v  <- ls.tokenQueue.poll
+            v  <- ls.tokenQueue.take
             _  <- ls.subscriptionFiber.interrupt
-          } yield assertTrue(v.isDefined || v.isEmpty) // subscription emitted empty stream token
+          } yield assertTrue(v == Right(Some(ResponseChunk(sessionId = sessionId, content = "hello", finished = false, isError = false))))
+        }
         }.provide(
           ShellState.live ++
             ZLayer.succeed(new SubscriptionClient {
