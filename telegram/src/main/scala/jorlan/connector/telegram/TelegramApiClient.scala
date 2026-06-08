@@ -168,22 +168,28 @@ class TelegramApiClientLive(
     run {
       Client
         .batched(Request.get(url))
-        .flatMap(_.body.asString)
         .mapError(e => JorlanError(s"Telegram getUpdates failed: $e"))
-        .flatMap { body =>
-          ZIO
-            .fromEither {
-              for {
-                json    <- circeParser.parse(body).left.map(e => JorlanError(s"Telegram JSON parse error: $e"))
-                updates <- json.hcursor
-                  .downField("result").as[List[Update]].left.map(e =>
-                    JorlanError(s"Telegram getUpdates decode failed: $e"),
-                  )
-              } yield updates
-            }.catchAll {
-              case _ if body.contains("\"ok\":false") =>
-                ZIO.logWarning(s"[telegram] API returned error: $body") *> ZIO.succeed(Nil)
-              case err => ZIO.fail(err)
+        .flatMap { resp =>
+          resp.body.asString
+            .mapError(e => JorlanError(s"Telegram getUpdates failed: $e"))
+            .flatMap { body =>
+              if (!resp.status.isSuccess)
+                ZIO.logWarning(s"[telegram] getUpdates non-2xx ${resp.status.code}: $body") *> ZIO.succeed(Nil)
+              else
+                ZIO
+                  .fromEither {
+                    for {
+                      json    <- circeParser.parse(body).left.map(e => JorlanError(s"Telegram JSON parse error: $e"))
+                      updates <- json.hcursor
+                        .downField("result").as[List[Update]].left.map(e =>
+                          JorlanError(s"Telegram getUpdates decode failed: $e"),
+                        )
+                    } yield updates
+                  }.catchAll {
+                    case _ if body.contains("\"ok\":false") =>
+                      ZIO.logWarning(s"[telegram] API returned error: $body") *> ZIO.succeed(Nil)
+                    case err => ZIO.fail(err)
+                  }
             }
         }
     }
