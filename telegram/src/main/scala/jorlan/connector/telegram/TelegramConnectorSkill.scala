@@ -171,9 +171,12 @@ class TelegramConnectorSkill(
   }
 
   override def start: IO[JorlanError, Unit] =
-    pollLoop(offset = 0L).forkDaemon
-      .flatMap(f => pollingFiber.set(Some(f)))
-
+    pollingFiber.get.flatMap {
+      case Some(_) => ZIO.unit
+      case None    =>
+        pollLoop(offset = 0L).forkDaemon
+          .flatMap(f => pollingFiber.set(Some(f)))
+    }
   // ZIO 2 fiber scheduling trampolines recursive flatMap chains — this is stack-safe.
   private def pollLoop(offset: Long): UIO[Unit] =
     pollStep(offset)
