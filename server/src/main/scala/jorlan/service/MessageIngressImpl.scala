@@ -92,7 +92,7 @@ class MessageIngressImpl(
         case EvaluationResult.DefaultDeny =>
           ZIO.logWarning(
             s"[ingress:${msg.channelType}] User ${user.id} denied by default for capability $agentMessageCapability — message dropped",
-          )
+          ) *> logInboundEvent(msg, actorId = Some(user.id), sessionId = None)
         case _ =>
           for {
             sessionId <- resolveOrCreateSession(user, msg)
