@@ -104,8 +104,9 @@ object ShellStateSpec extends ZIOSpecDefault {
             ls <- LiveSession.start(sessionId)
             v  <- ls.tokenQueue.take
             _  <- ls.subscriptionFiber.interrupt
-          } yield assertTrue(v == Right(Some(ResponseChunk(sessionId = sessionId, content = "hello", finished = false, isError = false))))
-        }
+          } yield assertTrue(
+            v == Right(Some(ResponseChunk(sessionId = sessionId, content = "hello", finished = false, isError = false))),
+          )
         }.provide(
           ShellState.live ++
             ZLayer.succeed(new SubscriptionClient {
