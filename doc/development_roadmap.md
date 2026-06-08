@@ -604,9 +604,9 @@ See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugi
 - [x] `db/src/main/scala/jorlan/db/repository/QuillRepositories.scala` — update Quill query mappings
 - [x] Grep `\bSkill\b` and fix any GraphQL / test references (leave `SkillVersion`, `SkillId`, `SkillTier`, `SkillStatus` unchanged)
 
-### Runtime Trait Seam (model)
+### Runtime Trait Seam (connector-api)
 
-- [x] New file `model/src/main/scala/jorlan/service/Skill.scala`: define `Skill` trait (`descriptor`, `invoke`)
+- [x] New file `connector-api/src/main/scala/jorlan/connector/Skill.scala`: define `Skill` trait (`descriptor`, `invoke`)
 - [x] `ConnectorSkill extends Skill` trait: add `connectorType`, `instanceId`, `start`, `stop`
 - [x] Supporting types in same file: `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`
 
