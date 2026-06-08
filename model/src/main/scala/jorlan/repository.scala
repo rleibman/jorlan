@@ -57,13 +57,12 @@ case class AgentSearch(
 
 enum AgentSessionOrder { case Id, CreatedAt }
 case class AgentSessionSearch(
-  agentId:     Option[AgentId] = None,
-  userId:      Option[UserId] = None,
-  chatRef:     Option[String] = None,
-  channelType: Option[ChannelType] = None,
-  page:        Int = 0,
-  pageSize:    Int = 20,
-  sorts:       Option[Sort[AgentSessionOrder]] = None,
+  agentId:  Option[AgentId] = None,
+  userId:   Option[UserId] = None,
+  chatRef:  Option[String] = None,
+  page:     Int = 0,
+  pageSize: Int = 20,
+  sorts:    Option[Sort[AgentSessionOrder]] = None,
 ) extends Search[AgentSessionOrder]
 
 enum ConversationOrder { case Id, StartedAt }
