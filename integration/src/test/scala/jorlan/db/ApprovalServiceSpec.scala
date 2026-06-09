@@ -20,14 +20,9 @@ import zio.test.*
 
 import java.time.Instant
 
-object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator & ApprovalService] {
+object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
 
-  override def bootstrap: TaskLayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
-    ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
-      JorlanContainer.repositoryLayer,
-      CapabilityEvaluatorImpl.live,
-      ApprovalServiceImpl.live,
-    )
+  override val boostrap: TaskLayer[ZIORepositories] = JorlanContainer.repositoryLayer
   private def capReq(
     userId: UserId,
     cap:    String,
@@ -40,15 +35,15 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       resourceConstraints = None,
     )
 
-  override def spec: Spec[ZIORepositories & CapabilityEvaluator & ApprovalService & TestEnvironment & Scope, Any] =
-    suite("ApprovalService integration")(
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
+    (suite("ApprovalService integration")(
       test("Persistent grant → Allowed and CapabilityAllowed event written") {
         for {
           userRepo     <- ZIO.serviceWith[ZIORepositories](_.user)
           permRepo     <- ZIO.serviceWith[ZIORepositories](_.permission)
           eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           svc          <- ZIO.service[ApprovalService]
-          user         <- userRepo.upsert(User(UserId.empty, "ASUser1", "", T0, T0))
+          user         <- userRepo.upsert(User(UserId.empty, "ASUser1", "ASUser1@test.local", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -75,7 +70,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           permRepo     <- ZIO.serviceWith[ZIORepositories](_.permission)
           eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           svc          <- ZIO.service[ApprovalService]
-          user         <- userRepo.upsert(User(UserId.empty, "ASUser2", "", T0, T0))
+          user         <- userRepo.upsert(User(UserId.empty, "ASUser2", "ASUser2@test.local", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -101,7 +96,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
           permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
-          user     <- userRepo.upsert(User(UserId.empty, "ASUser3", "", T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "ASUser3", "ASUser3@test.local", T0, T0))
           _        <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -128,7 +123,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
           permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
-          user     <- userRepo.upsert(User(UserId.empty, "ASUser4", "", T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "ASUser4", "ASUser4@test.local", T0, T0))
           // Two pending requests with past expiresAt (truly in the past)
           _ <- permRepo.createApprovalRequest(
             ApprovalRequest(
@@ -166,7 +161,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
           permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
-          user     <- userRepo.upsert(User(UserId.empty, "ASUser5", "", T0, T0))
+          user     <- userRepo.upsert(User(UserId.empty, "ASUser5", "ASUser5@test.local", T0, T0))
           // A pending request with future expiresAt
           _ <- permRepo.createApprovalRequest(
             ApprovalRequest(
@@ -185,6 +180,11 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           count <- svc.expireStaleRequests()
         } yield assertTrue(count == 0L)
       },
-    ) @@ TestAspect.sequential
+    ).provideSomeLayer[ZIORepositories](
+      ZLayer.makeSome[ZIORepositories, CapabilityEvaluator & ApprovalService](
+        CapabilityEvaluatorImpl.live,
+        ApprovalServiceImpl.live,
+      ),
+    )) @@ TestAspect.sequential
 
 }

@@ -25,7 +25,7 @@ object AuthServerSpec extends ZIOSpec[ZIORepositories & AuthServer[User, UserId,
 
   private type AuthEnv = ZIORepositories & AuthServer[User, UserId, ConnectionId]
 
-  override def bootstrap: ZLayer[Any, Any, AuthEnv] =
+  override val boostrap: ZLayer[Any, Any, AuthEnv] =
     ZLayer.make[AuthEnv](JorlanContainer.repositoryLayer, JorlanAuthServer.live)
 
   override def spec: Spec[AuthEnv & TestEnvironment & Scope, Any] =
@@ -68,7 +68,7 @@ object AuthServerSpec extends ZIOSpec[ZIORepositories & AuthServer[User, UserId,
         for {
           repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-          user       <- repo.upsert(User(UserId.empty, "PkLookup", "", T0, T0))
+          user       <- repo.upsert(User(UserId.empty, "PkLookup", "PkLookup@test.local", T0, T0))
           found      <- authServer.userByPK(user.id)
           miss       <- authServer.userByPK(UserId(Long.MaxValue))
         } yield assertTrue(

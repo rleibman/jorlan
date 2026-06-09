@@ -22,7 +22,7 @@ import zio.test.*
 /** Exercises all sort-branch variants of every Quill repository so scoverage picks them up. */
 object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
 
-  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+  override val boostrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("Sorting branches")(
@@ -40,16 +40,16 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
     test("search sorted by id desc") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        _    <- repo.upsert(User(UserId.empty, "SortU1", "", T0.minusSeconds(2), T0))
-        _    <- repo.upsert(User(UserId.empty, "SortU2", "", T0.minusSeconds(1), T0))
+        _    <- repo.upsert(User(UserId.empty, "SortU1", "SortU1@test.local", T0.minusSeconds(2), T0))
+        _    <- repo.upsert(User(UserId.empty, "SortU2", "SortU2@test.local", T0.minusSeconds(1), T0))
         res  <- repo.search(UserSearch(pageSize = 50, sorts = Some(Sort(UserOrder.Id, OrderDirection.Desc))))
       } yield assertTrue(res.map(_.id.value) == res.map(_.id.value).sorted.reverse)
     },
     test("search sorted by displayName asc") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        _    <- repo.upsert(User(UserId.empty, "ZebraSort", "", T0, T0))
-        _    <- repo.upsert(User(UserId.empty, "AardvarkSort", "", T0, T0))
+        _    <- repo.upsert(User(UserId.empty, "ZebraSort", "ZebraSort@test.local", T0, T0))
+        _    <- repo.upsert(User(UserId.empty, "AardvarkSort", "AardvarkSort@test.local", T0, T0))
         res  <- repo.search(UserSearch(pageSize = 50, sorts = Some(Sort(UserOrder.DisplayName, OrderDirection.Asc))))
         names = res.map(_.displayName)
       } yield assertTrue(names.zip(names.tail).forall { case (a, b) => a.compareToIgnoreCase(b) <= 0 })
@@ -57,8 +57,8 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
     test("search sorted by displayName desc") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        _    <- repo.upsert(User(UserId.empty, "ZebraSort2", "", T0, T0))
-        _    <- repo.upsert(User(UserId.empty, "AardvarkSort2", "", T0, T0))
+        _    <- repo.upsert(User(UserId.empty, "ZebraSort2", "ZebraSort2@test.local", T0, T0))
+        _    <- repo.upsert(User(UserId.empty, "AardvarkSort2", "AardvarkSort2@test.local", T0, T0))
         res  <- repo.search(UserSearch(pageSize = 50, sorts = Some(Sort(UserOrder.DisplayName, OrderDirection.Desc))))
         names = res.map(_.displayName)
       } yield assertTrue(names.zip(names.tail).forall { case (a, b) => a.compareToIgnoreCase(b) >= 0 })
@@ -66,8 +66,8 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
     test("search sorted by createdAt asc") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        _    <- repo.upsert(User(UserId.empty, "CreatedAscU1", "", T0.minusSeconds(100), T0))
-        _    <- repo.upsert(User(UserId.empty, "CreatedAscU2", "", T0.plusSeconds(100), T0))
+        _    <- repo.upsert(User(UserId.empty, "CreatedAscU1", "CreatedAscU1@test.local", T0.minusSeconds(100), T0))
+        _    <- repo.upsert(User(UserId.empty, "CreatedAscU2", "CreatedAscU2@test.local", T0.plusSeconds(100), T0))
         res  <- repo.search(UserSearch(pageSize = 50, sorts = Some(Sort(UserOrder.CreatedAt, OrderDirection.Asc))))
         times = res.map(_.createdAt)
       } yield assertTrue(times == times.sorted)
@@ -75,8 +75,8 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
     test("search sorted by createdAt desc") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        _    <- repo.upsert(User(UserId.empty, "CreatedDescU1", "", T0.minusSeconds(200), T0))
-        _    <- repo.upsert(User(UserId.empty, "CreatedDescU2", "", T0.plusSeconds(200), T0))
+        _    <- repo.upsert(User(UserId.empty, "CreatedDescU1", "CreatedDescU1@test.local", T0.minusSeconds(200), T0))
+        _    <- repo.upsert(User(UserId.empty, "CreatedDescU2", "CreatedDescU2@test.local", T0.plusSeconds(200), T0))
         res  <- repo.search(UserSearch(pageSize = 50, sorts = Some(Sort(UserOrder.CreatedAt, OrderDirection.Desc))))
         times = res.map(_.createdAt)
       } yield assertTrue(times == times.sorted.reverse)
@@ -84,7 +84,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
     test("search filtered by active=false") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.user)
-        u    <- repo.upsert(User(UserId.empty, "InactiveUser", "", T0, T0))
+        u    <- repo.upsert(User(UserId.empty, "InactiveUser", "InactiveUser@test.local", T0, T0))
         _    <- repo.deactivate(u.id)
         res  <- repo.search(UserSearch(active = Some(false), pageSize = 50))
       } yield assertTrue(res.exists(_.id == u.id))
@@ -186,7 +186,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
-        user      <- userRepo.upsert(User(UserId.empty, "SortSessUser", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "SortSessUser", "SortSessUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SortSessAgent", None, None, 0, T0))
         _         <- agentRepo.upsertSession(
           AgentSession(
@@ -223,7 +223,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
-        user      <- userRepo.upsert(User(UserId.empty, "SortSessUser2", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "SortSessUser2", "SortSessUser2@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SortSessAgent2", None, None, 0, T0))
         _         <- agentRepo.upsertSession(
           AgentSession(
@@ -266,7 +266,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
-        user      <- userRepo.upsert(User(UserId.empty, "UpdSessUser", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "UpdSessUser", "UpdSessUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "UpdSessAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -285,7 +285,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
-        user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser", "ConvSortUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -306,7 +306,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
-        user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser2", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "ConvSortUser2", "ConvSortUser2@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -337,7 +337,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
-        user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser", "MsgSortUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -361,7 +361,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
-        user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser2", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "MsgSortUser2", "MsgSortUser2@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "MsgSortAgent2", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -386,7 +386,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
-        user      <- userRepo.upsert(User(UserId.empty, "ConvGetUser", "", T0, T0))
+        user      <- userRepo.upsert(User(UserId.empty, "ConvGetUser", "ConvGetUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvGetAgent", None, None, 0, T0))
         sess      <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
@@ -536,7 +536,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser1", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser1", "MemSortUser1@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -579,7 +579,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser2", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser2", "MemSortUser2@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -633,7 +633,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser3", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser3", "MemSortUser3@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -687,7 +687,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser4", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemSortUser4", "MemSortUser4@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -761,7 +761,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "PrivateScopeUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "PrivateScopeUser", "PrivateScopeUser@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -783,7 +783,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "PaginateUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "PaginateUser", "PaginateUser@test.local", T0, T0))
         _        <- ZIO.foreachDiscard(1 to 4)(i =>
           memRepo.upsert(
             MemoryRecord(
@@ -816,7 +816,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "PurgeUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "PurgeUser", "PurgeUser@test.local", T0, T0))
         expired  <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -853,7 +853,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemDeleteUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemDeleteUser", "MemDeleteUser@test.local", T0, T0))
         stored   <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -876,7 +876,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemTextSearchUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemTextSearchUser", "MemTextSearchUser@test.local", T0, T0))
         _        <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -914,7 +914,7 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
       for {
         userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
         memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
-        user     <- userRepo.upsert(User(UserId.empty, "MemUpdateScopeUser", "", T0, T0))
+        user     <- userRepo.upsert(User(UserId.empty, "MemUpdateScopeUser", "MemUpdateScopeUser@test.local", T0, T0))
         stored   <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
