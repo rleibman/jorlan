@@ -21,7 +21,7 @@ import zio.test.*
 
 object RepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override val boostrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("Repository integration tests")(

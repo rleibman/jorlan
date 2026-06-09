@@ -103,7 +103,7 @@ object JorlanEndToEndSpec
 
   private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
-  override def bootstrap: ZLayer[Any, Any, FullEnv] =
+  override val bootstrap: ZLayer[Any, Any, FullEnv] =
     ZLayer.make[FullEnv](
       envLayer,
       ZLayer.succeed(JorlanSession.serverSession),

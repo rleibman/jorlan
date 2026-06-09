@@ -20,7 +20,7 @@ import zio.test.*
 
 object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
 
-  override def bootstrap: ULayer[ZIORepositories] = InMemoryRepositories.live()
+  override val bootstrap: ULayer[ZIORepositories] = InMemoryRepositories.live()
 
   private val sessionId = AgentSessionId(42L)
   private val userId = UserId(1L)

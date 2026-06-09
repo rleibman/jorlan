@@ -22,7 +22,7 @@ import java.net.URI
 
 object ArtifactRepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override val boostrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   private val pdfMime: MediaType = MediaType.application.pdf
   private val txtMime: MediaType = MediaType.text.plain

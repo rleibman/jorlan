@@ -29,7 +29,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
     content: String,
   ) = Message(MessageId.empty, ConversationId.empty, role, content, None, now)
 
-  override def bootstrap: ULayer[CheckpointSummarizer] =
+  override val bootstrap: ULayer[CheckpointSummarizer] =
     ZLayer.make[CheckpointSummarizer](
       FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")),
       CheckpointSummarizerImpl.live,

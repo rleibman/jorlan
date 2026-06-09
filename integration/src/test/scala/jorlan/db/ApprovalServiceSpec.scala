@@ -22,7 +22,7 @@ import java.time.Instant
 
 object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
 
-  override val boostrap: TaskLayer[ZIORepositories] = JorlanContainer.repositoryLayer
+  override val bootstrap: TaskLayer[ZIORepositories] = JorlanContainer.repositoryLayer
   private def capReq(
     userId: UserId,
     cap:    String,

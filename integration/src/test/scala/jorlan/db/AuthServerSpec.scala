@@ -25,7 +25,7 @@ object AuthServerSpec extends ZIOSpec[ZIORepositories & AuthServer[User, UserId,
 
   private type AuthEnv = ZIORepositories & AuthServer[User, UserId, ConnectionId]
 
-  override val boostrap: ZLayer[Any, Any, AuthEnv] =
+  override val bootstrap: ZLayer[Any, Any, AuthEnv] =
     ZLayer.make[AuthEnv](JorlanContainer.repositoryLayer, JorlanAuthServer.live)
 
   override def spec: Spec[AuthEnv & TestEnvironment & Scope, Any] =

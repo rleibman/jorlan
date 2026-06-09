@@ -32,7 +32,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
 
   }
 
-  override def bootstrap: ULayer[MemoryService] =
+  override val bootstrap: ULayer[MemoryService] =
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
       ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),

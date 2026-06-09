@@ -100,7 +100,7 @@ object SubscriptionClientIntegrationSpec
       Client.default,
     )
 
-  override def bootstrap: ZLayer[Any, Any, FullEnv] =
+  override val bootstrap: ZLayer[Any, Any, FullEnv] =
     ZLayer.make[FullEnv](
       envLayer,
       ZLayer.succeed(JorlanSession.serverSession),

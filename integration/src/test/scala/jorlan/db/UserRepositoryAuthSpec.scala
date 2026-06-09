@@ -19,7 +19,7 @@ import zio.test.*
 
 object UserRepositoryAuthSpec extends ZIOSpec[ZIORepositories] {
 
-  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("UserRepository — auth paths")(

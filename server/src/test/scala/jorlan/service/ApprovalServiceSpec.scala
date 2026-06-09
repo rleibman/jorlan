@@ -21,7 +21,7 @@ import java.time.Instant
 
 object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator & ApprovalService] {
 
-  override def bootstrap: ULayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
+  override val bootstrap: ULayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
     ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
       InMemoryRepositories.live(),
       CapabilityEvaluatorImpl.live,

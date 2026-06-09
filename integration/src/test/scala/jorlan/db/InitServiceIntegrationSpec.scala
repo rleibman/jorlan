@@ -31,7 +31,7 @@ import scala.language.unsafeNulls
   */
 object InitServiceIntegrationSpec extends ZIOSpec[ZIORepositories & InitTokenStore & InitService] {
 
-  override def bootstrap: ZLayer[Any, Any, ZIORepositories & InitTokenStore & InitService] =
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories & InitTokenStore & InitService] =
     ZLayer.make[ZIORepositories & InitTokenStore & InitService](
       JorlanContainer.repositoryLayer,
       ZLayer.fromZIO(InitTokenStore.make(false)),
@@ -62,10 +62,9 @@ object InitServiceIntegrationSpec extends ZIOSpec[ZIORepositories & InitTokenSto
       },
       test("3. admin user created during init is queryable via UserZIORepository") {
         for {
-          userRepo     <- ZIO.serviceWith[ZIORepositories](_.user)
-          eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
-          users        <- userRepo.search(jorlan.UserSearch())
-        } yield assertTrue(users.exists(_.email.contains("admin@example.com")))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          found    <- userRepo.userByEmail("admin@example.com")
+        } yield assertTrue(found.isDefined)
       },
       test("4. second complete fails with already initialized") {
         for {

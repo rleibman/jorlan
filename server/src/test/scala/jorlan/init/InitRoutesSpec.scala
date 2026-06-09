@@ -29,7 +29,7 @@ import scala.language.unsafeNulls
   */
 object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
 
-  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = InMemoryRepositories.live()
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = InMemoryRepositories.live()
 
   import TestUtil.*
 

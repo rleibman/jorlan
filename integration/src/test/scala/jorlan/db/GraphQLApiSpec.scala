@@ -48,7 +48,7 @@ object GraphQLApiSpec
     }: ApprovalService,
   )
 
-  override def bootstrap: ZLayer[Any, Any, GraphQLEnv] =
+  override val bootstrap: ZLayer[Any, Any, GraphQLEnv] =
     ZLayer.make[GraphQLEnv](
       JorlanContainer.repositoryLayer,
       stubCapabilityEvaluator,
