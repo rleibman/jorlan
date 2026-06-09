@@ -20,12 +20,14 @@ import zio.test.*
 
 import java.net.URI
 
-object ArtifactRepositorySpec extends ZIOSpecDefault {
+object ArtifactRepositorySpec extends ZIOSpec[ZIORepositories] {
+
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   private val pdfMime: MediaType = MediaType.application.pdf
   private val txtMime: MediaType = MediaType.text.plain
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("ArtifactRepository")(
       test("upsert and retrieve an artifact") {
         for {
@@ -382,6 +384,6 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
           createdDesc.map(_.createdAt) == createdDesc.map(_.createdAt).sorted.reverse,
         )
       },
-    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

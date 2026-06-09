@@ -19,11 +19,21 @@ import zio.test.*
 
 import java.time.Instant
 
-object MemoryServiceSpec extends ZIOSpecDefault {
-
+object MemoryServiceSpec extends ZIOSpec[MemoryService] {
+  override def bootstrap: ULayer[MemoryService] = ZLayer.make[MemoryService](
+    InMemoryRepositories.live(),
+    ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+    ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+    ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+    FakeModelGateway.layer(List("- User prefers Scala\n")),
+    CheckpointSummarizerImpl.live,
+    MemoryServiceImpl.live,
+  )
+  
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
-
+  
+  
   private def makeRecord(
     key:   String,
     text:  String,
@@ -66,7 +76,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
       MemoryServiceImpl.live,
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec =
     suite("MemoryService")(
       test("store and query returns the record") {
         for {
@@ -267,16 +277,6 @@ object MemoryServiceSpec extends ZIOSpecDefault {
             CheckpointSummarizerImpl.live,
             MemoryServiceImpl.live,
           ),
-        ),
-      ).provide(
-        ZLayer.make[MemoryService](
-          InMemoryRepositories.live(),
-          ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-          ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-          ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-          FakeModelGateway.layer(List("- User prefers Scala\n")),
-          CheckpointSummarizerImpl.live,
-          MemoryServiceImpl.live,
         ),
       )
 

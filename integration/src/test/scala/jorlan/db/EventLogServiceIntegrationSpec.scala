@@ -18,9 +18,11 @@ import jorlan.service.{CorrelationId, EventLogFilter, EventLogOrder}
 import zio.*
 import zio.test.*
 
-object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
+object EventLogServiceIntegrationSpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("EventLog integration")(
       test("append and search roundtrip against real DB") {
         for {
@@ -160,6 +162,6 @@ object EventLogServiceIntegrationSpec extends ZIOSpecDefault {
           }
         } yield assertTrue(cid.contains(corrId))
       },
-    ).provideShared(JorlanContainer.repositoryLayer)
+    )
 
 }

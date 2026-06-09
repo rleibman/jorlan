@@ -128,7 +128,10 @@ object MessageIngressSpec extends ZIOSpecDefault {
     cap:      ULayer[CapabilityEvaluator],
   ): ULayer[ZIORepositories & CapabilityEvaluator] =
     ZLayer
-      .make[ZIORepositories & CapabilityEvaluator](InMemoryRepositories.fromLayers(userRepoOpt = Some(userRepo)), cap)
+      .make[ZIORepositories & CapabilityEvaluator](
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(userRepoOpt = Some(userRepo)),
+        cap,
+      )
 
   private def buildIngress(
     repo:       ZIORepositories,

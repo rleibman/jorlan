@@ -20,8 +20,14 @@ import zio.test.*
 
 import java.time.Instant
 
-object ApprovalServiceSpec extends ZIOSpecDefault {
+object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator & ApprovalService] {
 
+  override def bootstrap: TaskLayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
+    ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
+      JorlanContainer.repositoryLayer,
+      CapabilityEvaluatorImpl.live,
+      ApprovalServiceImpl.live,
+    )
   private def capReq(
     userId: UserId,
     cap:    String,
@@ -34,7 +40,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       resourceConstraints = None,
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & CapabilityEvaluator & ApprovalService & TestEnvironment & Scope, Any] =
     suite("ApprovalService integration")(
       test("Persistent grant → Allowed and CapabilityAllowed event written") {
         for {
@@ -179,10 +185,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           count <- svc.expireStaleRequests()
         } yield assertTrue(count == 0L)
       },
-    ).provideShared(
-      JorlanContainer.repositoryLayer,
-      CapabilityEvaluatorImpl.live,
-      ApprovalServiceImpl.live,
     ) @@ TestAspect.sequential
 
 }

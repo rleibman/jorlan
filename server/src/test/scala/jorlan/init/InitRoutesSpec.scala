@@ -27,7 +27,9 @@ import scala.language.unsafeNulls
   *
   * Tests cover: status shape, 400/403/500 distinction, malformed JSON, 503 catch-all.
   */
-object InitRoutesSpec extends ZIOSpecDefault {
+object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
+
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = InMemoryRepositories.live()
 
   import TestUtil.*
 
@@ -105,7 +107,7 @@ object InitRoutesSpec extends ZIOSpecDefault {
 
   // ─── Tests ──────────────────────────────────────────────────────────────────
 
-  override def spec: Spec[Any, Any] =
+  override def spec: Spec[ZIORepositories & (TestEnvironment & Scope), Any] =
     suite("InitRoutes")(
       suite("StatusRoutes")(
         test("returns 200 with initialized=false when not yet set up") {
@@ -261,6 +263,6 @@ object InitRoutesSpec extends ZIOSpecDefault {
           } yield assertTrue(resp.status == Status.Forbidden, !done)
         },
       ),
-    ).provideShared(InMemoryRepositories.live())
+    )
 
 }

@@ -662,7 +662,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
 
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
     test("cancelJob fails when caller does not own the job") {
       for {
@@ -670,7 +674,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""mutation { cancelJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
     test("deleteJob fails when caller does not own the job") {
       for {
@@ -678,7 +686,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""mutation { deleteJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
     test("addTrigger fails when caller does not own the target job") {
       for {
@@ -688,7 +700,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         )
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
     test("createJob fails when no active agent session (resolveAgentIdStrict)") {
       for {
@@ -769,7 +785,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""mutation { resumeJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
     test("triggerNow fails when caller does not own the job") {
       for {
@@ -777,7 +797,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result <- interp.execute("""mutation { triggerNow(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
-      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+      makeAppLayer(repoLayer =
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(schedulerRepoOpt =
+          Some(foreignJobRepoLayer),
+        ),
+      ),
     ),
   )
 

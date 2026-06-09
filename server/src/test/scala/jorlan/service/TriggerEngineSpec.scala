@@ -24,9 +24,7 @@ import java.time.{Duration, Instant}
 /** Uses [[ZIOSpecDefault]] rather than [[ZIOSpec]] because each test requires fresh mutable state (independent
   * `Ref`-backed repos) — a shared `bootstrap` would cause cross-test contamination.
   */
-object TriggerEngineSpec extends ZIOSpec[ZIORepositories] {
-
-  override def bootstrap: ULayer[ZIORepositories] = InMemoryRepositories.live()
+object TriggerEngineSpec extends ZIOSpecDefault {
 
   private val agentId = AgentId(1L)
   private val userId = UserId(1L)
@@ -174,7 +172,7 @@ object TriggerEngineSpec extends ZIOSpec[ZIORepositories] {
       .timeout(timeout)
       .map(_.flatten)
 
-  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
+  override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("TriggerEngine")(
       test("tick claims and executes a pending job to Succeeded") {
         for {
@@ -465,6 +463,6 @@ object TriggerEngineSpec extends ZIOSpec[ZIORepositories] {
           result      <- awaitFinalStatus(repo, job.id)
         } yield assertTrue(result.exists(_.status == JobStatus.Succeeded))
       } @@ TestAspect.withLiveClock,
-    )
+    ).provide(InMemoryRepositories.live())
 
 }

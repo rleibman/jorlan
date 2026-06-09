@@ -18,7 +18,10 @@ import jorlan.service.*
 import zio.*
 import zio.test.*
 
-object CapabilityEvaluatorSpec extends ZIOSpecDefault {
+object CapabilityEvaluatorSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator] {
+
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories & CapabilityEvaluator] =
+    ZLayer.make[ZIORepositories & CapabilityEvaluator](JorlanContainer.repositoryLayer, CapabilityEvaluatorImpl.live)
 
   private def capReq(
     userId: UserId,
@@ -32,7 +35,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       resourceConstraints = None,
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & CapabilityEvaluator & TestEnvironment & Scope, Any] =
     suite("CapabilityEvaluator integration")(
       test("default deny when user has no permissions or grants") {
         for {
@@ -166,6 +169,6 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           result <- evaluator.evaluate(capReq(user.id, "shell.sudo.execute"))
         } yield assertTrue(result == EvaluationResult.ResourcePermissionAllows)
       },
-    ).provideShared(JorlanContainer.repositoryLayer, CapabilityEvaluatorImpl.live) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

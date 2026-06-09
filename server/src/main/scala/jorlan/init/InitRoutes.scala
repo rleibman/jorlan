@@ -109,13 +109,20 @@ object SetupModeApp {
                         ZIO.succeed(
                           Response(Status.BadRequest, body = Body.fromString(Map("error" -> v.getMessage).toJson)),
                         )
-                      case _: JorlanError =>
+                      case _: RepositoryError =>
                         ZIO.succeed(
                           Response(
                             Status.InternalServerError,
                             body = Body.fromString(
                               Map("error" -> "Internal server error during initialization").toJson,
                             ),
+                          ),
+                        )
+                      case e: JorlanError =>
+                        ZIO.succeed(
+                          Response(
+                            Status.Forbidden,
+                            body = Body.fromString(Map("error" -> e.getMessage).toJson),
                           ),
                         )
                     },

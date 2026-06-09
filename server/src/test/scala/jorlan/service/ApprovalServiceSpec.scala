@@ -19,7 +19,14 @@ import zio.test.*
 
 import java.time.Instant
 
-object ApprovalServiceSpec extends ZIOSpecDefault {
+object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator & ApprovalService] {
+
+  override def bootstrap: ULayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
+    ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
+      InMemoryRepositories.live(),
+      CapabilityEvaluatorImpl.live,
+      ApprovalServiceImpl.live,
+    )
 
   private val T0: Instant = Instant.parse("2026-01-15T12:00:00Z")
 
@@ -68,7 +75,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
 
   // ─── Tests ───────────────────────────────────────────────────────────────────
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & CapabilityEvaluator & ApprovalService & TestEnvironment & Scope, Any] =
     suite("ApprovalService")(
       recordDecisionSuite,
       sessionBranchSuite,
@@ -141,7 +148,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
         saved.decision == ApprovalStatus.Rejected,
       )
     },
-  ).provide(InMemoryRepositories.live(), CapabilityEvaluatorImpl.live, ApprovalServiceImpl.live)
+  )
 
   private val sessionBranchSuite = suite("authorize with sessionId branch")(
     test("Session grant with sessionId in request triggers findApprovedRequest with sessionId") {
@@ -192,7 +199,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
         result <- svc.authorize(capReq("shell.execute", sessionId = None))
       } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
     },
-  ).provide(InMemoryRepositories.live(), CapabilityEvaluatorImpl.live, ApprovalServiceImpl.live)
+  )
 
   private val serviceMethodsSuite = suite("ApprovalService methods")(
     test("service methods work end-to-end") {
@@ -231,13 +238,6 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
         result == AuthorizationResult.Allowed,
       )
     },
-  ).provide(
-    /** Build a fresh set of layers for each test. All service layers share the same in-memory repositories so that
-      * objects created via PermissionZIORepository are visible to CapabilityEvaluator and vice-versa.
-      */
-    InMemoryRepositories.live(),
-    CapabilityEvaluatorImpl.live,
-    ApprovalServiceImpl.live,
   )
 
 }

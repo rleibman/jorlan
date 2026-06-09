@@ -20,9 +20,11 @@ import zio.json.ast.Json
 import zio.test.*
 
 /** Exercises all sort-branch variants of every Quill repository so scoverage picks them up. */
-object SortingAndSortingSpec extends ZIOSpecDefault {
+object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("Sorting branches")(
       userSortSuite,
       agentSortSuite,
@@ -30,7 +32,7 @@ object SortingAndSortingSpec extends ZIOSpecDefault {
       skillSortSuite,
       memorySortSuite,
       eventLogSortSuite,
-    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
   // ─── User ────────────────────────────────────────────────────────────────────
 

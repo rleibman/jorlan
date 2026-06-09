@@ -19,9 +19,11 @@ import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
-object RepositorySpec extends ZIOSpecDefault {
+object RepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("Repository integration tests")(
       userSuite,
       agentSuite,
@@ -29,7 +31,7 @@ object RepositorySpec extends ZIOSpecDefault {
       skillSuite,
       memorySuite,
       eventLogSuite,
-    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
   // ─── User ────────────────────────────────────────────────────────────────
 

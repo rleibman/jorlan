@@ -17,9 +17,11 @@ import jorlan.domain.*
 import zio.*
 import zio.test.*
 
-object PermissionRepositorySpec extends ZIOSpecDefault {
+object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("PermissionRepository")(
       test("upsert and search capability grants") {
         for {
@@ -350,6 +352,6 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           )
         } yield assertTrue(byName.isEmpty, byNameDesc.isEmpty, byIdDesc.isEmpty)
       },
-    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

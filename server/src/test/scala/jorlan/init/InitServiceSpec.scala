@@ -14,7 +14,6 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
-import jorlan.testing.InMemoryRepositories.InMemoryServerSettingsRepo
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -66,7 +65,7 @@ object InitServiceSpec extends ZIOSpecDefault {
 
   // ─── Tests ─────────────────────────────────────────────────────────────────
 
-  override def spec: Spec[Any, Any] =
+  override def spec =
     suite("InitService")(
       test("invalid token returns JorlanError") {
         for {
@@ -160,7 +159,9 @@ object InitServiceSpec extends ZIOSpecDefault {
           flagAfter.contains(Json.Bool(false)),
         )
       }.provide(
-        InMemoryRepositories.fromLayers(userRepoOpt = Some(failingUserRepo)) >>> uninitializedSettings,
+        InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(userRepoOpt =
+          Some(failingUserRepo),
+        ) >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
         initServiceLayer,
       ),

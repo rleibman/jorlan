@@ -17,7 +17,9 @@ import jorlan.domain.*
 import zio.*
 import zio.test.*
 
-object SchedulerRepositorySpec extends ZIOSpecDefault {
+object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
+
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   private def makeJob(
     agentId: AgentId,
@@ -56,7 +58,7 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       agent <- agentRepo.upsert(Agent(AgentId.empty, s"Agent$suffix", None, None, 0, T0)).orDie
     } yield (user.id, agent.id)
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("SchedulerRepository")(
       test("upsert and retrieve a job") {
         for {
@@ -251,6 +253,6 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           !filtered.exists(_.name == "agent2-only"),
         )
       },
-    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

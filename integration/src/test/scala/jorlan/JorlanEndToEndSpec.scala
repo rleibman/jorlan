@@ -32,7 +32,13 @@ import scala.language.unsafeNulls
   *   - GraphQL queries/mutations work end-to-end through the full service layer
   *   - The server-identity session (seeded user id=1) is present and queryable
   */
-object JorlanEndToEndSpec extends ZIOSpecDefault {
+object JorlanEndToEndSpec
+    extends ZIOSpec[
+      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+    ] {
+
+  private type FullEnv = JorlanEnvironment & JorlanSession &
+    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
   private val configLayer = JorlanContainer.configLayer
 
@@ -95,24 +101,16 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
       Client.default,
     )
 
-  private val interpLayer: ZLayer[
-    JorlanAPI.JorlanApiEnv & JorlanSession,
-    Nothing,
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
-  ] =
-    ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
-
-  private val fullLayer: TaskLayer[
-    JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
-  ] = ZLayer.make[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
-    envLayer,
-    ZLayer.succeed(JorlanSession.serverSession),
-    interpLayer,
-  )
-
   private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, FullEnv] =
+    ZLayer.make[FullEnv](
+      envLayer,
+      ZLayer.succeed(JorlanSession.serverSession),
+      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
+    )
+
+  override def spec: Spec[FullEnv & TestEnvironment & Scope, Any] =
     suite("Jorlan end-to-end (real DB)")(
       test("Jorlan.buildRoutes succeeds with full environment") {
         Jorlan.zapp().as(assertTrue(true))
@@ -230,6 +228,6 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
           sharedList.data.toString.contains("e2e.share"),
         )
       },
-    ).provideLayerShared(fullLayer) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
+    ) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
 
 }

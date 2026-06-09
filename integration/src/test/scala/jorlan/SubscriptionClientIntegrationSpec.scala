@@ -29,7 +29,13 @@ import scala.language.unsafeNulls
 /** Integration test that starts a real zio-http server (backed by Testcontainers MariaDB) and exercises
   * [[SubscriptionClient]] end-to-end over WebSocket using the `subscriptions-transport-ws` protocol.
   */
-object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
+object SubscriptionClientIntegrationSpec
+    extends ZIOSpec[
+      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+    ] {
+
+  private type FullEnv = JorlanEnvironment & JorlanSession &
+    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
   // ─── Copy JorlanEndToEndSpec's proven environment setup ─────────────────────
 
@@ -94,19 +100,11 @@ object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
       Client.default,
     )
 
-  private val interpLayer: ZLayer[
-    JorlanAPI.JorlanApiEnv & JorlanSession,
-    Nothing,
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
-  ] =
-    ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
-
-  private val fullLayer
-    : TaskLayer[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]] =
-    ZLayer.make[JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
+  override def bootstrap: ZLayer[Any, Any, FullEnv] =
+    ZLayer.make[FullEnv](
       envLayer,
       ZLayer.succeed(JorlanSession.serverSession),
-      interpLayer,
+      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 
   // ─── Stub AuthClient: no JWT token needed for the test server ────────────────
@@ -121,7 +119,7 @@ object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
     override def currentToken: UIO[Option[String]] = ZIO.none
   })
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[FullEnv & TestEnvironment & Scope, Any] =
     suite("SubscriptionClient WebSocket integration")(
       test("server starts and health check succeeds") {
         for {
@@ -198,6 +196,6 @@ object SubscriptionClientIntegrationSpec extends ZIOSpecDefault {
           chunks.isDefined,
         )
       },
-    ).provideLayerShared(fullLayer) @@ TestAspect.withLiveClock @@ TestAspect.sequential
+    ) @@ TestAspect.withLiveClock @@ TestAspect.sequential
 
 }

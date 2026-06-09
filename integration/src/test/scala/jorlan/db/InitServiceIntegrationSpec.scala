@@ -29,14 +29,16 @@ import scala.language.unsafeNulls
   *   4. The user created during init is queryable via `UserZIORepository`.
   *   5. A second `complete` call fails with "already initialized".
   */
-object InitServiceIntegrationSpec extends ZIOSpecDefault {
+object InitServiceIntegrationSpec extends ZIOSpec[ZIORepositories & InitTokenStore & InitService] {
 
-  private val dbLayer = JorlanContainer.repositoryLayer
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories & InitTokenStore & InitService] =
+    ZLayer.make[ZIORepositories & InitTokenStore & InitService](
+      JorlanContainer.repositoryLayer,
+      ZLayer.fromZIO(InitTokenStore.make(false)),
+      InitServiceImpl.layer,
+    )
 
-  private val tokenStoreLayer: ULayer[InitTokenStore] =
-    ZLayer.fromZIO(InitTokenStore.make(false))
-
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & InitTokenStore & InitService & TestEnvironment & Scope, Any] =
     suite("InitService integration (real DB)")(
       test("1. fresh DB has initialized = false (V017 seed row present)") {
         for {
@@ -80,8 +82,6 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
           tokenAfter <- tokenStore.token
         } yield assertTrue(tokenAfter.isEmpty)
       },
-    ).provideShared(dbLayer, tokenStoreLayer, InitServiceImpl.layer) @@ TestAspect.sequential @@ TestAspect.timeout(
-      60.seconds,
-    )
+    ) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
 
 }

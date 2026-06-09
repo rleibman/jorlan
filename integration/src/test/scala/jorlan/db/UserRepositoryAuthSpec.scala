@@ -17,9 +17,11 @@ import jorlan.domain.*
 import zio.*
 import zio.test.*
 
-object UserRepositoryAuthSpec extends ZIOSpecDefault {
+object UserRepositoryAuthSpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("UserRepository — auth paths")(
       test("login returns user for correct credentials") {
         for {
@@ -72,6 +74,6 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
           none.isEmpty,
         )
       },
-    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

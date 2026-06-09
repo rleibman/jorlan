@@ -21,11 +21,14 @@ import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
-object AuthServerSpec extends ZIOSpecDefault {
+object AuthServerSpec extends ZIOSpec[ZIORepositories & AuthServer[User, UserId, ConnectionId]] {
 
   private type AuthEnv = ZIORepositories & AuthServer[User, UserId, ConnectionId]
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ZLayer[Any, Any, AuthEnv] =
+    ZLayer.make[AuthEnv](JorlanContainer.repositoryLayer, JorlanAuthServer.live)
+
+  override def spec: Spec[AuthEnv & TestEnvironment & Scope, Any] =
     suite("JorlanAuthServer")(
       test("login returns user for valid credentials") {
         for {
@@ -116,9 +119,6 @@ object AuthServerSpec extends ZIOSpecDefault {
           result     <- authServer.createUser("NewUser", "new@test.com", "pass").exit
         } yield assertTrue(result.isFailure)
       },
-    ).provideShared(
-      JorlanContainer.repositoryLayer,
-      JorlanAuthServer.live,
     ) @@ TestAspect.sequential
 
 }
