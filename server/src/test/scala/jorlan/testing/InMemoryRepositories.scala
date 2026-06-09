@@ -31,7 +31,7 @@ object InMemoryRepositories {
   class InMemoryUserRepo(
     idGen: Ref[Long],
     store: Ref[Map[Long, User]],
-  ) extends UserZIORepository {
+  ) extends ZIOUserRepository {
 
     override def getById(id: UserId): RepositoryTask[Option[User]] =
       store.get.map(_.get(id.value))
@@ -80,7 +80,7 @@ object InMemoryRepositories {
         InMemoryUserRepo(idGen, store)
       }
 
-    val layer: ULayer[UserZIORepository] = ZLayer(make.map(r => r: UserZIORepository))
+    val layer: ULayer[ZIOUserRepository] = ZLayer(make.map(r => r: ZIOUserRepository))
 
   }
 
@@ -96,7 +96,7 @@ object InMemoryRepositories {
     grants:        Ref[Map[Long, CapabilityGrant]],
     approvalIdGen: Ref[Long],
     approvals:     Ref[Map[Long, ApprovalRequest]],
-  ) extends PermissionZIORepository {
+  ) extends ZIOPermissionRepository {
 
     override def getRole(id: RoleId): RepositoryTask[Option[Role]] = roles.get.map(_.get(id.value))
 
@@ -286,7 +286,7 @@ object InMemoryRepositories {
         approvals,
       )
 
-    val layer: ULayer[PermissionZIORepository] = ZLayer(make.map(r => r: PermissionZIORepository))
+    val layer: ULayer[ZIOPermissionRepository] = ZLayer(make.map(r => r: ZIOPermissionRepository))
 
   }
 
@@ -295,7 +295,7 @@ object InMemoryRepositories {
   class InMemoryEventLogRepo(
     idGen: Ref[Long],
     store: Ref[List[EventLog[Json]]],
-  ) extends EventLogZIORepository {
+  ) extends ZIOEventLogRepository {
 
     override def append[R: zio.json.JsonEncoder](event: EventLog[R]): RepositoryTask[EventLog[R]] =
       for {
@@ -332,7 +332,7 @@ object InMemoryRepositories {
         InMemoryEventLogRepo(idGen, store)
       }
 
-    val layer: ULayer[EventLogZIORepository] = ZLayer(make.map(r => r: EventLogZIORepository))
+    val layer: ULayer[ZIOEventLogRepository] = ZLayer(make.map(r => r: ZIOEventLogRepository))
 
   }
 
@@ -343,7 +343,7 @@ object InMemoryRepositories {
     agentStore:   Ref[Map[Long, Agent]],
     sessionIdGen: Ref[Long],
     sessionStore: Ref[Map[Long, AgentSession]],
-  ) extends AgentZIORepository {
+  ) extends ZIOAgentRepository {
 
     override def getById(id: AgentId): RepositoryTask[Option[Agent]] =
       agentStore.get.map(_.get(id.value))
@@ -395,7 +395,7 @@ object InMemoryRepositories {
         sessionStore <- Ref.make(Map.empty[Long, AgentSession])
       } yield InMemoryAgentRepo(agentIdGen, agentStore, sessionIdGen, sessionStore)
 
-    val layer: ULayer[AgentZIORepository] = ZLayer(make.map(r => r: AgentZIORepository))
+    val layer: ULayer[ZIOAgentRepository] = ZLayer(make.map(r => r: ZIOAgentRepository))
 
   }
 
@@ -406,7 +406,7 @@ object InMemoryRepositories {
     convStore: Ref[Map[Long, Conversation]],
     msgIdGen:  Ref[Long],
     msgStore:  Ref[Map[Long, Message]],
-  ) extends ConversationZIORepository {
+  ) extends ZIOConversationRepository {
 
     override def getById(id: ConversationId): RepositoryTask[Option[Conversation]] =
       convStore.get.map(_.get(id.value))
@@ -447,7 +447,7 @@ object InMemoryRepositories {
         msgStore  <- Ref.make(Map.empty[Long, Message])
       } yield InMemoryConversationRepo(convIdGen, convStore, msgIdGen, msgStore)
 
-    val layer: ULayer[ConversationZIORepository] = ZLayer(make.map(r => r: ConversationZIORepository))
+    val layer: ULayer[ZIOConversationRepository] = ZLayer(make.map(r => r: ZIOConversationRepository))
 
   }
 
@@ -456,7 +456,7 @@ object InMemoryRepositories {
   class InMemoryMemoryRepo(
     idGen: Ref[Long],
     store: Ref[Map[Long, MemoryRecord]],
-  ) extends MemoryZIORepository {
+  ) extends ZIOMemoryRepository {
 
     override def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]] =
       store.get.map(_.get(id.value))
@@ -515,13 +515,13 @@ object InMemoryRepositories {
         InMemoryMemoryRepo(idGen, store)
       }
 
-    val layer: ULayer[MemoryZIORepository] = ZLayer(make.map(r => r: MemoryZIORepository))
+    val layer: ULayer[ZIOMemoryRepository] = ZLayer(make.map(r => r: ZIOMemoryRepository))
 
   }
 
   // ─── ServerSettings ────────────────────────────────────────────────────────────
 
-  class InMemoryServerSettingsRepo(store: Ref[Map[String, Json]]) extends ServerSettingsRepository {
+  class InMemoryServerSettingsRepo(store: Ref[Map[String, Json]]) extends ZIOServerSettingsRepository {
 
     override def get(key: String): UIO[Option[Json]] = store.get.map(_.get(key))
 
@@ -534,19 +534,18 @@ object InMemoryRepositories {
 
   object InMemoryServerSettingsRepo {
 
-    def make: UIO[InMemoryServerSettingsRepo] =
-      Ref.make(Map.empty[String, Json]).map(InMemoryServerSettingsRepo(_))
+    def make(m: Map[String, Json] = Map.empty): UIO[ZIOServerSettingsRepository] =
+      Ref.make(m).map(InMemoryServerSettingsRepo(_))
 
-    val layer: ULayer[ServerSettingsRepository] =
-      ZLayer(make.map(r => r: ServerSettingsRepository))
+    val layer = ZLayer(make())
 
   }
 
   // ─── Scheduler (no-op stub for unit tests) ────────────────────────────────────
 
-  class NoOpSchedulerRepo extends SchedulerZIORepository {
+  class NoOpSchedulerRepo extends ZIOSchedulerRepository {
 
-    override def getJob(id:             SchedulerJobId):     RepositoryTask[Option[SchedulerJob]] = ZIO.succeed(None)
+    override def getJob(id:             SchedulerJobId):     RepositoryTask[Option[SchedulerJob]] = ZIO.none
     override def listJobs(agentId:      Option[AgentId]):    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def getPendingJobs:                             RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def upsertJob(job:         SchedulerJob):       RepositoryTask[SchedulerJob] = ZIO.succeed(job)
@@ -574,7 +573,7 @@ object InMemoryRepositories {
 
   object NoOpSchedulerRepo {
 
-    val layer: ULayer[SchedulerZIORepository] = ZLayer.succeed(NoOpSchedulerRepo(): SchedulerZIORepository)
+    val layer: ULayer[ZIOSchedulerRepository] = ZLayer.succeed(NoOpSchedulerRepo(): ZIOSchedulerRepository)
 
   }
 
@@ -585,7 +584,7 @@ object InMemoryRepositories {
     jobs:      Ref[Map[SchedulerJobId, SchedulerJob]],
     trigIdGen: Ref[Long],
     triggers:  Ref[Map[SchedulerTriggerId, SchedulerTrigger]],
-  ) extends SchedulerZIORepository {
+  ) extends ZIOSchedulerRepository {
 
     override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
       jobs.get.map(_.get(id))
@@ -696,8 +695,202 @@ object InMemoryRepositories {
         triggers  <- Ref.make(Map.empty[SchedulerTriggerId, SchedulerTrigger])
       } yield InMemorySchedulerRepo(jobIdGen, jobs, trigIdGen, triggers)
 
-    val layer: ULayer[SchedulerZIORepository] = ZLayer(make.map(r => r: SchedulerZIORepository))
+    val layer: ULayer[ZIOSchedulerRepository] = ZLayer(make.map(r => r: ZIOSchedulerRepository))
 
   }
+
+  object InMemorySkillRepo {
+
+    def make: UIO[ZIOSkillRepository] =
+      for {
+        idGen <- Ref.make(0L)
+        store <- Ref.make(Map.empty[Long, SkillRecord])
+      } yield new ZIOSkillRepository {
+        override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] = ???
+
+        override def getVersion(id: SkillVersionId): RepositoryTask[Option[SkillVersion]] = ???
+
+        override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = ???
+
+        override def upsertVersion(v: SkillVersion): RepositoryTask[SkillVersion] = ???
+
+        override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] = ???
+
+        override def searchConnectors(s: ConnectorSearch): RepositoryTask[List[ConnectorInstance]] = ???
+
+        override def upsertConnector(ci: ConnectorInstance): RepositoryTask[ConnectorInstance] = ???
+
+        override def getById(id: SkillId): RepositoryTask[Option[SkillRecord]] =
+          store.get.map(_.get(id.value))
+
+        override def upsert(record: SkillRecord): RepositoryTask[SkillRecord] =
+          for {
+            id <- if (record.id == SkillId.empty) idGen.updateAndGet(_ + 1) else ZIO.succeed(record.id.value)
+            saved = record.copy(id = SkillId(id))
+            _ <- store.update(_.updated(id, saved))
+          } yield saved
+      }
+
+  }
+
+  object InMemoryArtifactRepo {
+
+    def make: UIO[ZIOArtifactRepository] =
+      for {
+        idGen <- Ref.make(0L)
+        store <- Ref.make(Map.empty[Long, Artifact])
+      } yield new ZIOArtifactRepository {
+        override def getById(id: ArtifactId): RepositoryTask[Option[Artifact]] = ???
+
+        override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] = ???
+
+        override def upsert(artifact: Artifact): RepositoryTask[Artifact] = ???
+
+        override def delete(id: ArtifactId): RepositoryTask[Long] = ???
+
+        override def getWorkspace(id: WorkspaceId): RepositoryTask[Option[Workspace]] = ???
+
+        override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] = ???
+
+        override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] = ???
+      }
+
+  }
+
+  def fromLayers(
+    userRepoOpt:         Option[ULayer[ZIOUserRepository]] = None,
+    agentRepoOpt:        Option[ULayer[ZIOAgentRepository]] = None,
+    conversationRepoOpt: Option[ULayer[ZIOConversationRepository]] = None,
+    skillRepoOpt:        Option[ULayer[ZIOSkillRepository]] = None,
+    memoryRepoOpt:       Option[ULayer[ZIOMemoryRepository]] = None,
+    eventLogRepoOpt:     Option[ULayer[ZIOEventLogRepository]] = None,
+    schedulerRepoOpt:    Option[ULayer[ZIOSchedulerRepository]] = None,
+    artifactRepoOpt:     Option[ULayer[ZIOArtifactRepository]] = None,
+    permissionRepoOpt:   Option[ULayer[ZIOPermissionRepository]] = None,
+    settingsRepoOpt:     Option[ULayer[ZIOServerSettingsRepository]] = None,
+  ): ULayer[ZIORepositories] =
+    ZLayer.fromZIO {
+      ZIO.scoped {
+        for {
+          userRepo         <- ZIO.foreach(userRepoOpt)(_.build.map(_.get))
+          agentRepo        <- ZIO.foreach(agentRepoOpt)(_.build.map(_.get))
+          conversationRepo <- ZIO.foreach(conversationRepoOpt)(_.build.map(_.get))
+          skillRepo        <- ZIO.foreach(skillRepoOpt)(_.build.map(_.get))
+          memoryRepo       <- ZIO.foreach(memoryRepoOpt)(_.build.map(_.get))
+          eventLogRepo     <- ZIO.foreach(eventLogRepoOpt)(_.build.map(_.get))
+          schedulerRepo    <- ZIO.foreach(schedulerRepoOpt)(_.build.map(_.get))
+          artifactRepo     <- ZIO.foreach(artifactRepoOpt)(_.build.map(_.get))
+          permissionRepo   <- ZIO.foreach(permissionRepoOpt)(_.build.map(_.get))
+          settingsRepo     <- ZIO.foreach(settingsRepoOpt)(_.build.map(_.get))
+        } yield live(
+          userRepo,
+          agentRepo,
+          conversationRepo,
+          skillRepo,
+          memoryRepo,
+          eventLogRepo,
+          schedulerRepo,
+          artifactRepo,
+          permissionRepo,
+          settingsRepo,
+        )
+      }
+    }.flatten
+
+  def withOverridenLayers(
+    userRepoOpt:         Option[ULayer[ZIOUserRepository]] = None,
+    agentRepoOpt:        Option[ULayer[ZIOAgentRepository]] = None,
+    conversationRepoOpt: Option[ULayer[ZIOConversationRepository]] = None,
+    skillRepoOpt:        Option[ULayer[ZIOSkillRepository]] = None,
+    memoryRepoOpt:       Option[ULayer[ZIOMemoryRepository]] = None,
+    eventLogRepoOpt:     Option[ULayer[ZIOEventLogRepository]] = None,
+    schedulerRepoOpt:    Option[ULayer[ZIOSchedulerRepository]] = None,
+    artifactRepoOpt:     Option[ULayer[ZIOArtifactRepository]] = None,
+    permissionRepoOpt:   Option[ULayer[ZIOPermissionRepository]] = None,
+    settingsRepoOpt:     Option[ULayer[ZIOServerSettingsRepository]] = None,
+  ): URLayer[ZIORepositories, ZIORepositories] =
+    ZLayer.fromZIO {
+      ZIO.scoped(for {
+        original         <- ZIO.service[ZIORepositories]
+        userRepo         <- userRepoOpt.fold(ZIO.succeed(original.user))(_.build.map(_.get[ZIOUserRepository]))
+        agentRepo        <- agentRepoOpt.fold(ZIO.succeed(original.agent))(_.build.map(_.get[ZIOAgentRepository]))
+        conversationRepo <- conversationRepoOpt.fold(ZIO.succeed(original.conversation))(
+          _.build.map(_.get[ZIOConversationRepository]),
+        )
+        skillRepo     <- skillRepoOpt.fold(ZIO.succeed(original.skill))(_.build.map(_.get[ZIOSkillRepository]))
+        memoryRepo    <- memoryRepoOpt.fold(ZIO.succeed(original.memory))(_.build.map(_.get[ZIOMemoryRepository]))
+        eventLogRepo  <- eventLogRepoOpt.fold(ZIO.succeed(original.eventLog))(_.build.map(_.get[ZIOEventLogRepository]))
+        schedulerRepo <- schedulerRepoOpt.fold(ZIO.succeed(original.scheduler))(
+          _.build.map(_.get[ZIOSchedulerRepository]),
+        )
+        artifactRepo <- artifactRepoOpt.fold(ZIO.succeed(original.artifact))(_.build.map(_.get[ZIOArtifactRepository]))
+        permissionRepo <- permissionRepoOpt.fold(ZIO.succeed(original.permission))(
+          _.build.map(_.get[ZIOPermissionRepository]),
+        )
+        settingsRepo <- settingsRepoOpt.fold(ZIO.succeed(original.setting))(
+          _.build.map(_.get[ZIOServerSettingsRepository]),
+        )
+      } yield new ZIORepositories {
+        override def user:         ZIOUserRepository = userRepo
+        override def agent:        ZIOAgentRepository = agentRepo
+        override def conversation: ZIOConversationRepository = conversationRepo
+        override def skill:        ZIOSkillRepository = skillRepo
+        override def memory:       ZIOMemoryRepository = memoryRepo
+        override def eventLog:     ZIOEventLogRepository = eventLogRepo
+        override def scheduler:    ZIOSchedulerRepository = schedulerRepo
+        override def artifact:     ZIOArtifactRepository = artifactRepo
+        override def permission:   ZIOPermissionRepository = permissionRepo
+        override def setting:      ZIOServerSettingsRepository = settingsRepo
+      })
+    }
+
+  def live(
+    userRepoOpt:         Option[ZIOUserRepository] = None,
+    agentRepoOpt:        Option[ZIOAgentRepository] = None,
+    conversationRepoOpt: Option[ZIOConversationRepository] = None,
+    skillRepoOpt:        Option[ZIOSkillRepository] = None,
+    memoryRepoOpt:       Option[ZIOMemoryRepository] = None,
+    eventLogRepoOpt:     Option[ZIOEventLogRepository] = None,
+    schedulerRepoOpt:    Option[ZIOSchedulerRepository] = None,
+    artifactRepoOpt:     Option[ZIOArtifactRepository] = None,
+    permissionRepoOpt:   Option[ZIOPermissionRepository] = None,
+    settingsRepoOpt:     Option[ZIOServerSettingsRepository] = None,
+  ): ULayer[ZIORepositories] =
+    ZLayer.fromZIO {
+      for {
+        userRepo <- userRepoOpt.fold((Ref.make(0L) <*> Ref.make(Map.empty[Long, User])).map { case (idGen, store) =>
+          InMemoryUserRepo(idGen, store)
+        })(ZIO.succeed)
+        agentRepo        <- agentRepoOpt.fold(InMemoryAgentRepo.make)(ZIO.succeed)
+        conversationRepo <- conversationRepoOpt.fold(InMemoryConversationRepo.make)(ZIO.succeed)
+        skillRepo        <- skillRepoOpt.fold(InMemorySkillRepo.make)(ZIO.succeed)
+        memoryRepo       <- memoryRepoOpt.fold(InMemoryMemoryRepo.make)(ZIO.succeed)
+        eventLogRepo     <- eventLogRepoOpt.fold(InMemoryEventLogRepo.make)(ZIO.succeed)
+        schedulerRepo    <- schedulerRepoOpt.fold(InMemorySchedulerRepo.make)(ZIO.succeed)
+        artifactRepo     <- artifactRepoOpt.fold(InMemoryArtifactRepo.make)(ZIO.succeed)
+        permissionRepo   <- permissionRepoOpt.fold(InMemoryPermissionRepo.make)(ZIO.succeed)
+        settingsRepo     <- settingsRepoOpt.fold(InMemoryServerSettingsRepo.make())(ZIO.succeed)
+      } yield new ZIORepositories {
+        override def user: ZIOUserRepository = userRepo
+
+        override def agent: ZIOAgentRepository = agentRepo
+
+        override def conversation: ZIOConversationRepository = conversationRepo
+
+        override def skill: ZIOSkillRepository = skillRepo
+
+        override def memory: ZIOMemoryRepository = memoryRepo
+
+        override def eventLog: ZIOEventLogRepository = eventLogRepo
+
+        override def scheduler: ZIOSchedulerRepository = schedulerRepo
+
+        override def artifact: ZIOArtifactRepository = artifactRepo
+
+        override def permission: ZIOPermissionRepository = permissionRepo
+
+        override def setting: ZIOServerSettingsRepository = settingsRepo
+      }
+    }
 
 }

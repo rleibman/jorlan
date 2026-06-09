@@ -12,7 +12,7 @@ package jorlan.service
 
 import cron4s.expr.CronExpr
 import jorlan.*
-import jorlan.db.repository.{EventLogZIORepository, SchedulerZIORepository}
+import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -24,7 +24,9 @@ import java.time.{Duration, Instant}
 /** Uses [[ZIOSpecDefault]] rather than [[ZIOSpec]] because each test requires fresh mutable state (independent
   * `Ref`-backed repos) — a shared `bootstrap` would cause cross-test contamination.
   */
-object TriggerEngineSpec extends ZIOSpecDefault {
+object TriggerEngineSpec extends ZIOSpec[ZIORepositories] {
+
+  override def bootstrap: ULayer[ZIORepositories] = InMemoryRepositories.live()
 
   private val agentId = AgentId(1L)
   private val userId = UserId(1L)
@@ -90,7 +92,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
         AgentSession(sessionId, AgentId(1L), userId, None, SessionStatus.Active, None, None, now, now)
       }
 
-    override def getSession(id:       AgentSessionId): IO[JorlanError, Option[AgentSession]] = ZIO.succeed(None)
+    override def getSession(id:       AgentSessionId): IO[JorlanError, Option[AgentSession]] = ZIO.none
     override def suspendSession(id:   AgentSessionId): IO[JorlanError, AgentSession] = ZIO.fail(JorlanError("stub"))
     override def terminateSession(id: AgentSessionId): IO[JorlanError, AgentSession] = ZIO.fail(JorlanError("stub"))
     override def listSessions(
@@ -118,7 +120,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
         _ <- invoked.update(_ :+ (sessionId, content))
         _ <- hub.publish(ResponseChunk(sessionId, "done", finished = false))
         _ <- hub.publish(ResponseChunk(sessionId, "", finished = true))
-        _ <- if (shouldSucceed) ZIO.unit else ZIO.fail(JorlanError("simulated failure"))
+        _ <- ZIO.fail(JorlanError("simulated failure")).unless(shouldSucceed)
       } yield ()
 
     override def subscribeToSession(
@@ -130,8 +132,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
   }
 
   private def makeEngine(
-    repo:          SchedulerZIORepository,
-    eventLog:      EventLogZIORepository,
+    repo:          ZIORepositories,
     sessionId:     AgentSessionId,
     shouldSucceed: Boolean = true,
     pollInterval:  Duration = Duration.ofSeconds(1),
@@ -141,7 +142,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       invoked <- Ref.make(List.empty[(AgentSessionId, String)])
       sm = StubSessionManager(sessionId)
       runner = StubAgentRunner(hub, invoked, shouldSucceed)
-      engine = TriggerEngine(repo, eventLog, sm, runner, pollInterval)
+      engine = TriggerEngine(repo = repo, sessionManager = sm, agentRunner = runner, pollInterval = pollInterval)
     } yield (engine, invoked)
 
   /** Run a single tick on the engine using a deterministic worker ID and fresh cron cache. */
@@ -153,35 +154,34 @@ object TriggerEngineSpec extends ZIOSpecDefault {
 
   /** Poll repo until the job reaches a non-Running/non-Pending status, or timeout. */
   private def awaitFinalStatus(
-    repo:    InMemoryRepositories.InMemorySchedulerRepo,
+    repo:    ZIORepositories,
     jobId:   SchedulerJobId,
     timeout: Duration = 5.seconds,
   ): ZIO[Any, Nothing, Option[SchedulerJob]] =
-    (repo.getJob(jobId).orDie <* ZIO.sleep(50.millis))
+    (repo.scheduler.getJob(jobId).orDie <* ZIO.sleep(50.millis))
       .repeatUntil(_.exists(j => j.status != JobStatus.Running && j.status != JobStatus.Pending))
       .timeout(timeout)
       .map(_.flatten)
 
   /** Poll repo until the job is Pending with no lease, or timeout. */
   private def awaitPendingNoLease(
-    repo:    InMemoryRepositories.InMemorySchedulerRepo,
+    repo:    ZIORepositories,
     jobId:   SchedulerJobId,
     timeout: Duration = 5.seconds,
   ): ZIO[Any, Nothing, Option[SchedulerJob]] =
-    (repo.getJob(jobId).orDie <* ZIO.sleep(50.millis))
+    (repo.scheduler.getJob(jobId).orDie <* ZIO.sleep(50.millis))
       .repeatUntil(_.exists(j => j.status == JobStatus.Pending && j.leasedAt.isEmpty))
       .timeout(timeout)
       .map(_.flatten)
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("TriggerEngine")(
       test("tick claims and executes a pending job to Succeeded") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(42L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid)
-          job               <- repo.upsertJob(makeJob("tick-test"))
+          (engine, invoked) <- makeEngine(repo, sid)
+          job               <- repo.scheduler.upsertJob(makeJob("tick-test"))
           _                 <- TestClock.setTime(T0)
           _                 <- runTick(engine)
           result            <- awaitFinalStatus(repo, job.id)
@@ -194,11 +194,10 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("tick does not claim an already-leased Running job") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(43L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid)
-          job               <- repo.upsertJob(makeJob("no-double-claim"))
+          (engine, invoked) <- makeEngine(repo, sid)
+          job               <- repo.scheduler.upsertJob(makeJob("no-double-claim"))
           _                 <- TestClock.setTime(T0)
           _                 <- runTick(engine)
           result            <- awaitFinalStatus(repo, job.id)
@@ -208,11 +207,10 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("failure with retries remaining increments retryCount and reschedules to Pending") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(44L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, shouldSucceed = false)
-          job         <- repo.upsertJob(makeJob("retry-test", maxRetries = 2))
+          (engine, _) <- makeEngine(repo, sid, shouldSucceed = false)
+          job         <- repo.scheduler.upsertJob(makeJob("retry-test", maxRetries = 2))
           _           <- TestClock.setTime(T0)
           _           <- runTick(engine)
           result      <- awaitPendingNoLease(repo, job.id)
@@ -220,11 +218,10 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("failure with no retries marks job as Failed") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(45L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, shouldSucceed = false)
-          job         <- repo.upsertJob(makeJob("max-retries-test", maxRetries = 0))
+          (engine, _) <- makeEngine(repo, sid, shouldSucceed = false)
+          job         <- repo.scheduler.upsertJob(makeJob("max-retries-test", maxRetries = 0))
           _           <- TestClock.setTime(T0)
           _           <- runTick(engine)
           result      <- awaitFinalStatus(repo, job.id)
@@ -232,12 +229,11 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("expireLeases in tick re-executes stale Running job to completion") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(46L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid)
+          (engine, invoked) <- makeEngine(repo, sid)
           staleLeaseTime = T0.minusSeconds(600)
-          job <- repo.upsertJob(
+          job <- repo.scheduler.upsertJob(
             makeJob(
               "stale-lease-job",
               status = JobStatus.Running,
@@ -256,11 +252,10 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("exponential backoff schedules retry at 2x base interval") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(47L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, shouldSucceed = false)
-          job         <- repo.upsertJob(
+          (engine, _) <- makeEngine(repo, sid, shouldSucceed = false)
+          job         <- repo.scheduler.upsertJob(
             makeJob(
               "exp-backoff",
               maxRetries = 3,
@@ -283,12 +278,11 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("advanceTriggers re-queues job with Interval trigger after success") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(48L)
-          (engine, _) <- makeEngine(repo, eventLog, sid)
-          job         <- repo.upsertJob(makeJob("interval-trigger"))
-          _           <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
+          (engine, _) <- makeEngine(repo, sid)
+          job         <- repo.scheduler.upsertJob(makeJob("interval-trigger"))
+          _           <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
           _           <- TestClock.setTime(T0)
           _           <- runTick(engine)
           result      <- awaitPendingNoLease(repo, job.id)
@@ -302,18 +296,17 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       test("advanceTriggers re-queues job with Cron trigger after success") {
         val originalScheduledAt = T0.minusSeconds(60)
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(49L)
-          (engine, _) <- makeEngine(repo, eventLog, sid)
+          (engine, _) <- makeEngine(repo, sid)
           // Cron: at minute 0 of every hour — guaranteed to have a future next occurrence
-          job <- repo.upsertJob(makeJob("cron-trigger", scheduledAt = originalScheduledAt))
+          job <- repo.scheduler.upsertJob(makeJob("cron-trigger", scheduledAt = originalScheduledAt))
           // 6-field cron4s format: second=0 minute=0 hour=* dom=? month=* dow=1 (Mon)
-          _ <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
+          _ <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
           _ <- TestClock.setTime(T0)
           _ <- runTick(engine)
           // Wait until advanceTriggers re-queues to Pending with a new (future) scheduledAt
-          result <- (repo.getJob(job.id).orDie <* ZIO.sleep(50.millis))
+          result <- (repo.scheduler.getJob(job.id).orDie <* ZIO.sleep(50.millis))
             .repeatUntil(_.exists(j => j.status == JobStatus.Pending && j.scheduledAt != originalScheduledAt))
             .timeout(8.seconds)
             .map(_.flatten)
@@ -325,25 +318,23 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("advanceTriggers disables OneShot trigger after first run") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(50L)
-          (engine, _) <- makeEngine(repo, eventLog, sid)
-          job         <- repo.upsertJob(makeJob("oneshot-trigger"))
-          _           <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.OneShot, T0.toString))
+          (engine, _) <- makeEngine(repo, sid)
+          job         <- repo.scheduler.upsertJob(makeJob("oneshot-trigger"))
+          _           <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.OneShot, T0.toString))
           _           <- TestClock.setTime(T0)
           _           <- runTick(engine)
           _           <- awaitFinalStatus(repo, job.id)
-          triggers    <- repo.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 10)).orDie
+          triggers    <- repo.scheduler.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 10)).orDie
         } yield assertTrue(triggers.forall(!_.enabled))
       } @@ TestAspect.withLiveClock,
       test("start loop runs at least one tick and transitions a pending job to Succeeded") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(52L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
-          job               <- repo.upsertJob(makeJob("start-loop-job"))
+          (engine, invoked) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
+          job               <- repo.scheduler.upsertJob(makeJob("start-loop-job"))
           fiber             <- engine.start.forkDaemon
           result            <- awaitFinalStatus(repo, job.id)
           _                 <- fiber.interrupt
@@ -355,20 +346,19 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("recomputeStaleTriggers advances stale Interval job with Skip policy to future scheduledAt") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(51L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
+          (engine, _) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
           // Stale job: scheduled 10 hours ago with a 1-hour interval trigger and Skip policy
-          job <- repo.upsertJob(
+          job <- repo.scheduler.upsertJob(
             makeJob("skip-startup", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.Skip),
           )
-          _ <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
+          _ <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
           // engine.start calls recomputeStaleTriggers before the tick loop
           fiber  <- engine.start.forkDaemon
           _      <- ZIO.sleep(300.millis)
           _      <- fiber.interrupt
-          result <- repo.getJob(job.id).orDie
+          result <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(
           result.exists(_.scheduledAt.isAfter(T0.minusSeconds(36000))),
         )
@@ -377,11 +367,10 @@ object TriggerEngineSpec extends ZIOSpecDefault {
         // Use a Cron that will parse OK but then manually verify advanceTriggers handles None from next()
         // We test this indirectly: a job with disabled triggers leaves the job succeeded (not re-queued Pending)
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(53L)
-          (engine, _) <- makeEngine(repo, eventLog, sid)
-          job         <- repo.upsertJob(makeJob("no-trigger-job"))
+          (engine, _) <- makeEngine(repo, sid)
+          job         <- repo.scheduler.upsertJob(makeJob("no-trigger-job"))
           // No triggers at all — advanceTriggers iterates nothing and job stays Succeeded
           _      <- TestClock.setTime(T0)
           _      <- runTick(engine)
@@ -390,15 +379,14 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("tick skips Paused job — Paused job is not in getPendingJobs") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(54L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid)
-          job               <- repo.upsertJob(makeJob("paused-job", status = JobStatus.Paused))
+          (engine, invoked) <- makeEngine(repo, sid)
+          job               <- repo.scheduler.upsertJob(makeJob("paused-job", status = JobStatus.Paused))
           _                 <- TestClock.setTime(T0)
           _                 <- runTick(engine)
           calls             <- invoked.get
-          result            <- repo.getJob(job.id).orDie
+          result            <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(
           calls.isEmpty,
           result.exists(_.status == JobStatus.Paused),
@@ -406,16 +394,15 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("tick does not execute future-scheduled job") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(55L)
-          (engine, invoked) <- makeEngine(repo, eventLog, sid)
+          (engine, invoked) <- makeEngine(repo, sid)
           // Schedule 1 hour from live-now so it is genuinely in the future
           liveNow   <- Clock.instant
-          futureJob <- repo.upsertJob(makeJob("future-job", scheduledAt = liveNow.plusSeconds(3600)))
+          futureJob <- repo.scheduler.upsertJob(makeJob("future-job", scheduledAt = liveNow.plusSeconds(3600)))
           _         <- runTick(engine)
           calls     <- invoked.get
-          result    <- repo.getJob(futureJob.id).orDie
+          result    <- repo.scheduler.getJob(futureJob.id).orDie
         } yield assertTrue(
           calls.isEmpty,
           result.exists(_.status == JobStatus.Pending),
@@ -423,60 +410,56 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       } @@ TestAspect.withLiveClock,
       test("recomputeStaleTriggers with RunOnce policy on Interval trigger leaves job stale (no-op branch)") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(56L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
-          job         <- repo.upsertJob(
+          (engine, _) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.scheduler.upsertJob(
             makeJob("run-once-interval", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.RunOnce),
           )
-          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
+          _      <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Interval, "PT1H"))
           fiber  <- engine.start.forkDaemon
           _      <- ZIO.sleep(300.millis)
           _      <- fiber.interrupt
-          result <- repo.getJob(job.id).orDie
+          result <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(result.isDefined)
       } @@ TestAspect.withLiveClock,
       test("recomputeStaleTriggers with RunOnce policy on Cron trigger takes no-op branch") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(57L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
-          job         <- repo.upsertJob(
+          (engine, _) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.scheduler.upsertJob(
             makeJob("run-once-cron", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.RunOnce),
           )
-          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
+          _      <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
           fiber  <- engine.start.forkDaemon
           _      <- ZIO.sleep(300.millis)
           _      <- fiber.interrupt
-          result <- repo.getJob(job.id).orDie
+          result <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(result.isDefined)
       } @@ TestAspect.withLiveClock,
       test("recomputeStaleTriggers ignores Event-type triggers (no-op branch)") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(58L)
-          (engine, _) <- makeEngine(repo, eventLog, sid, pollInterval = Duration.ofMillis(100))
-          job         <- repo.upsertJob(
+          (engine, _) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.scheduler.upsertJob(
             makeJob("event-trigger-job", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.Skip),
           )
-          _      <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "some.event"))
+          _      <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "some.event"))
           fiber  <- engine.start.forkDaemon
           _      <- ZIO.sleep(300.millis)
           _      <- fiber.interrupt
-          result <- repo.getJob(job.id).orDie
+          result <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(result.isDefined)
       } @@ TestAspect.withLiveClock,
       test("advanceTriggers ignores Event-type trigger after job succeeds") {
         for {
-          repo     <- InMemoryRepositories.InMemorySchedulerRepo.make
-          eventLog <- InMemoryRepositories.InMemoryEventLogRepo.make
+          repo <- ZIO.service[ZIORepositories]
           sid = AgentSessionId(59L)
-          (engine, _) <- makeEngine(repo, eventLog, sid)
-          job         <- repo.upsertJob(makeJob("event-advance"))
-          _           <- repo.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "my.event"))
+          (engine, _) <- makeEngine(repo, sid)
+          job         <- repo.scheduler.upsertJob(makeJob("event-advance"))
+          _           <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Event, "my.event"))
           _           <- TestClock.setTime(T0)
           _           <- runTick(engine)
           result      <- awaitFinalStatus(repo, job.id)

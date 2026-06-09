@@ -11,7 +11,7 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.{RepositoryError, ServerSettingsRepository}
+import jorlan.db.repository.{RepositoryError, ZIORepositories, ZIOServerSettingsRepository}
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -27,14 +27,14 @@ object StatusRoutes {
 
   def routes(
     startTime: Long,
-    settings:  ServerSettingsRepository,
-  ): Routes[Any, Nothing] =
+    repo:      ZIORepositories,
+  ): Routes[Any, JorlanError] =
     Routes(
       Method.GET / "api" / "status" -> handler {
         for {
           (initializedJson, nameJson) <-
-            settings.get(ServerSettingsRepository.InitializedKey) <&>
-              settings.get(ServerSettingsRepository.ServerNameKey)
+            repo.setting.get(ZIOServerSettingsRepository.InitializedKey) <&>
+              repo.setting.get(ZIOServerSettingsRepository.ServerNameKey)
           initialized = initializedJson.collect { case Json.Bool(v) => v }.getOrElse(false)
           name = nameJson.collect { case Json.Str(s) => s }.getOrElse("Jorlan")
           now <- Clock.currentTime(TimeUnit.MILLISECONDS)
@@ -70,11 +70,11 @@ object SetupModeApp {
     * initialization.
     */
   def make(
-    startTime:          Long,
-    serverSettingsRepo: ServerSettingsRepository,
-    initService:        InitService,
-    tokenStore:         InitTokenStore,
-    initDone:           Option[Promise[Nothing, Unit]] = None,
+    startTime:   Long,
+    repo:        ZIORepositories,
+    initService: InitService,
+    tokenStore:  InitTokenStore,
+    initDone:    Option[Promise[Nothing, Unit]] = None,
   ): Routes[Any, Nothing] = {
     val catchAll = Routes(
       Method.ANY / trailing -> handler {
@@ -86,7 +86,7 @@ object SetupModeApp {
       },
     )
 
-    val statusR = StatusRoutes.routes(startTime, serverSettingsRepo)
+    val statusR = StatusRoutes.routes(startTime, repo)
 
     val initR: Routes[Any, Nothing] = Routes(
       Method.POST / "api" / "init" -> handler { (req: Request) =>
@@ -109,7 +109,7 @@ object SetupModeApp {
                         ZIO.succeed(
                           Response(Status.BadRequest, body = Body.fromString(Map("error" -> v.getMessage).toJson)),
                         )
-                      case _: RepositoryError =>
+                      case _: JorlanError =>
                         ZIO.succeed(
                           Response(
                             Status.InternalServerError,
@@ -118,14 +118,8 @@ object SetupModeApp {
                             ),
                           ),
                         )
-                      case err =>
-                        ZIO.succeed(
-                          Response(Status.Forbidden, body = Body.fromString(Map("error" -> err.getMessage).toJson)),
-                        )
                     },
-                    _ =>
-                      ZIO.foreachDiscard(initDone)(_.succeed(())) *>
-                        ZIO.succeed(Response.json("""{"success":true}""")),
+                    _ => ZIO.foreachDiscard(initDone)(_.succeed(())).as(Response.json("""{"success":true}""")),
                   )
               } yield resp
           }
@@ -134,6 +128,6 @@ object SetupModeApp {
     )
 
     statusR ++ initR ++ catchAll
-  }
+  }.handleErrorCauseZIO(Jorlan.mapError)
 
 }

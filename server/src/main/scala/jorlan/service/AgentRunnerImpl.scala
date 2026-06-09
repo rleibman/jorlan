@@ -11,12 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{
-  AgentZIORepository,
-  ConversationZIORepository,
-  EventLogZIORepository,
-  ServerSettingsRepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import zio.*
 import zio.json.*
@@ -29,7 +24,7 @@ import java.time.Instant
   *   2. Reads the current personality from [[ServerSettingsRepository]].
   *   3. Injects relevant [[MemoryRecord]]s from [[MemoryService]] into the system prompt.
   *   4. Streams the model response token-by-token through [[SessionHub]].
-  *   5. Persists the user message and assistant response to [[ConversationZIORepository]].
+  *   5. Persists the user message and assistant response to [[ZIOConversationRepository]].
   *   6. Evaluates [[CheckpointPolicy]] and runs the checkpoint pipeline when triggered.
   */
 private class AgentRunnerState(
@@ -52,10 +47,7 @@ private object AgentRunnerState {
 class AgentRunnerImpl(
   modelGateway:  ModelGateway,
   sessionHub:    SessionHub,
-  eventLogRepo:  EventLogZIORepository,
-  settingsRepo:  ServerSettingsRepository,
-  convRepo:      ConversationZIORepository,
-  agentRepo:     AgentZIORepository,
+  repo:          ZIORepositories,
   memoryService: MemoryService,
   runnerState:   AgentRunnerState,
 ) extends AgentRunner {
@@ -105,7 +97,7 @@ class AgentRunnerImpl(
     actorId:   Option[UserId],
   ): UIO[Unit] =
     Clock.instant.flatMap { now =>
-      eventLogRepo
+      repo.eventLog
         .append(
           EventLog(
             id = EventLogId.empty,
@@ -160,7 +152,7 @@ class AgentRunnerImpl(
       cache.get(sessionId) match {
         case Some(id) => ZIO.succeed(id)
         case None     =>
-          agentRepo
+          repo.agent
             .getSession(sessionId)
             .mapError(JorlanError(_))
             .flatMap {
@@ -180,9 +172,8 @@ class AgentRunnerImpl(
       .modify { s =>
         if (s.contains(sessionId)) (true, s) else (false, s + sessionId)
       }.flatMap { alreadySeeded =>
-        if (alreadySeeded) ZIO.unit
-        else
-          loadConversationHistory(sessionId).flatMap { messages =>
+        loadConversationHistory(sessionId)
+          .flatMap { messages =>
             if (messages.isEmpty) ZIO.unit
             else {
               loadPersonality.flatMap { p =>
@@ -190,11 +181,11 @@ class AgentRunnerImpl(
                 modelGateway.seedHistory(sessionId, messages, systemPrompt)
               }
             }
-          }
+          }.unless(alreadySeeded).unit
       }
 
   private def loadConversationHistory(sessionId: AgentSessionId): IO[JorlanError, List[Message]] =
-    convRepo
+    repo.conversation
       .search(
         ConversationSearch(
           sessionId = sessionId,
@@ -206,7 +197,7 @@ class AgentRunnerImpl(
       .flatMap {
         case Nil    => ZIO.succeed(Nil)
         case c :: _ =>
-          convRepo
+          repo.conversation
             .searchMessages(
               MessageSearch(
                 conversationId = c.id,
@@ -227,7 +218,7 @@ class AgentRunnerImpl(
       }.flatMap {
         case Right(id) => ZIO.succeed(id)
         case Left(_)   =>
-          convRepo
+          repo.conversation
             .search(
               ConversationSearch(
                 sessionId = sessionId,
@@ -241,7 +232,7 @@ class AgentRunnerImpl(
                 activeConvs.update(_ + (sessionId -> c.id)).as(c.id)
               case Nil =>
                 Clock.instant.flatMap { now =>
-                  convRepo
+                  repo.conversation
                     .create(Conversation(id = ConversationId.empty, sessionId = sessionId, startedAt = now))
                     .mapError(JorlanError(_))
                     .flatMap(c => activeConvs.update(_ + (sessionId -> c.id)).as(c.id))
@@ -257,16 +248,15 @@ class AgentRunnerImpl(
     actorId:       Option[UserId],
     errMsg:        Option[String],
   ): UIO[Unit] = {
-    if (errMsg.isDefined && assistantText.isBlank) ZIO.unit
-    else
-      Clock.instant.flatMap { now =>
+    Clock.instant
+      .flatMap { now =>
         val userMsg = Message(MessageId.empty, convId, MessageRole.User, userText, None, now)
         val asstMsg = Message(MessageId.empty, convId, MessageRole.Assistant, assistantText, None, now)
-        (convRepo.addMessage(userMsg) *> convRepo.addMessage(asstMsg))
+        (repo.conversation.addMessage(userMsg) *> repo.conversation.addMessage(asstMsg))
           .mapError(JorlanError(_))
           .tapError(err => ZIO.logWarning(s"[session:$sessionId] Failed to persist messages: $err"))
           .ignore
-      }
+      }.unless(errMsg.isDefined && assistantText.isBlank).unit
   }
 
   private def runCheckpoint(
@@ -279,8 +269,7 @@ class AgentRunnerImpl(
     errMsg:        Option[String],
   ): UIO[Unit] =
     actorId.fold(ZIO.unit) { userId =>
-      if (errMsg.isDefined && assistantText.isBlank) ZIO.unit
-      else {
+      {
         val now = java.time.Instant.now()
         val userMsg = Message(MessageId.empty, ConversationId.empty, MessageRole.User, userText, None, now)
         val asstMsg =
@@ -289,7 +278,7 @@ class AgentRunnerImpl(
           .checkpoint(sessionId, List(userMsg, asstMsg), userId, agentId, CheckpointTrigger.SessionEnd)
           .tapError(err => ZIO.logWarning(s"[session:$sessionId] Checkpoint failed: $err"))
           .ignore
-      }
+      }.unless(errMsg.isDefined && assistantText.isBlank).unit
     }
 
   private def buildMemoryContext(
@@ -320,8 +309,8 @@ class AgentRunnerImpl(
         }
     }
 
-  private val loadPersonality: UIO[Personality] =
-    settingsRepo.get(ServerSettingsRepository.PersonalityKey).flatMap {
+  private val loadPersonality: ZIO[Any, RepositoryError, Personality] =
+    repo.setting.get(ZIOServerSettingsRepository.PersonalityKey).flatMap {
       case Some(json) =>
         json.as[Personality] match {
           case Right(p)  => ZIO.succeed(p)
@@ -336,30 +325,20 @@ class AgentRunnerImpl(
 
 object AgentRunnerImpl {
 
-  val live: URLayer[
-    ModelGateway & SessionHub & EventLogZIORepository & ServerSettingsRepository & ConversationZIORepository &
-      AgentZIORepository & MemoryService,
-    AgentRunner,
-  ] =
+  val live: URLayer[ModelGateway & SessionHub & ZIORepositories & MemoryService, AgentRunner] =
     ZLayer.fromZIO(
       for {
         modelGateway  <- ZIO.service[ModelGateway]
         sessionHub    <- ZIO.service[SessionHub]
-        eventLogRepo  <- ZIO.service[EventLogZIORepository]
-        settingsRepo  <- ZIO.service[ServerSettingsRepository]
-        convRepo      <- ZIO.service[ConversationZIORepository]
-        agentRepo     <- ZIO.service[AgentZIORepository]
+        repo          <- ZIO.service[ZIORepositories]
         memoryService <- ZIO.service[MemoryService]
         runnerState   <- AgentRunnerState.make
       } yield AgentRunnerImpl(
-        modelGateway,
-        sessionHub,
-        eventLogRepo,
-        settingsRepo,
-        convRepo,
-        agentRepo,
-        memoryService,
-        runnerState,
+        modelGateway = modelGateway,
+        sessionHub = sessionHub,
+        repo = repo,
+        memoryService = memoryService,
+        runnerState = runnerState,
       ),
     )
 

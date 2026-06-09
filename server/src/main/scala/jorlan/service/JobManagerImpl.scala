@@ -11,16 +11,16 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.SchedulerZIORepository
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
 import zio.*
 
-/** Service-layer implementation of [[JobManager]] backed by [[SchedulerZIORepository]].
+/** Service-layer implementation of [[JobManager]] backed by [[ZIOSchedulerRepository]].
   *
   * All state transitions validate the current job status before writing. `upsertJob` only updates runtime-state fields
   * (status, timestamps, lease, result); configuration fields are immutable after creation.
   */
-class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
+class JobManagerImpl(repo: ZIORepositories) extends JobManager {
 
   override def createJob(
     agentId:         AgentId,
@@ -34,7 +34,7 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
   ): IO[JorlanError, SchedulerJob] =
     for {
       now <- Clock.instant
-      job <- repo
+      job <- repo.scheduler
         .upsertJob(
           SchedulerJob(
             id = SchedulerJobId.empty,
@@ -65,16 +65,16 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
     jobId:   SchedulerJobId,
     trigger: SchedulerTrigger,
   ): IO[JorlanError, SchedulerTrigger] =
-    repo.upsertTrigger(trigger.copy(jobId = jobId)).mapError(JorlanError(_))
+    repo.scheduler.upsertTrigger(trigger.copy(jobId = jobId)).mapError(JorlanError(_))
 
   override def listTriggers(jobId: SchedulerJobId): IO[JorlanError, List[SchedulerTrigger]] =
-    repo.searchTriggers(TriggerSearch(jobId = jobId, pageSize = 1000)).mapError(JorlanError(_))
+    repo.scheduler.searchTriggers(TriggerSearch(jobId = jobId, pageSize = 1000)).mapError(JorlanError(_))
 
   override def listJobs(agentId: Option[AgentId]): UIO[List[SchedulerJob]] =
-    repo.listJobs(agentId).orDie
+    repo.scheduler.listJobs(agentId).orDie
 
   override def getJob(id: SchedulerJobId): IO[JorlanError, SchedulerJob] =
-    repo
+    repo.scheduler
       .getJob(id)
       .mapError(JorlanError(_))
       .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"Job ${id.value} not found")))
@@ -85,7 +85,7 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
       if (terminalStatuses.contains(job.status)) {
         ZIO.fail(JorlanError(s"Cannot pause a ${job.status} job"))
       } else {
-        repo.upsertJob(job.copy(status = JobStatus.Paused)).mapError(JorlanError(_)).unit
+        repo.scheduler.upsertJob(job.copy(status = JobStatus.Paused)).mapError(JorlanError(_)).unit
       }
     }
 
@@ -94,7 +94,7 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
       if (job.status != JobStatus.Paused) {
         ZIO.fail(JorlanError(s"Cannot resume a job with status ${job.status}; expected Paused"))
       } else {
-        repo.upsertJob(job.copy(status = JobStatus.Pending)).mapError(JorlanError(_)).unit
+        repo.scheduler.upsertJob(job.copy(status = JobStatus.Pending)).mapError(JorlanError(_)).unit
       }
     }
 
@@ -102,7 +102,7 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
     for {
       now <- Clock.instant
       job <- getJob(id)
-      _   <- repo
+      _   <- repo.scheduler
         .releaseJob(id, JobStatus.Cancelled, None, now)
         .mapError(JorlanError(_))
         .unless(job.status == JobStatus.Cancelled)
@@ -112,19 +112,19 @@ class JobManagerImpl(repo: SchedulerZIORepository) extends JobManager {
     for {
       now <- Clock.instant
       job <- getJob(id)
-      _   <- repo
+      _   <- repo.scheduler
         .upsertJob(job.released(JobStatus.Pending, now))
         .mapError(JorlanError(_))
     } yield ()
 
   override def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit] =
-    repo.deleteJob(id).mapError(JorlanError(_)).unit
+    repo.scheduler.deleteJob(id).mapError(JorlanError(_)).unit
 
 }
 
 object JobManagerImpl {
 
-  val live: URLayer[SchedulerZIORepository, JobManager] =
+  val live: ZLayer[ZIORepositories, Nothing, JobManagerImpl] =
     ZLayer.fromFunction(JobManagerImpl(_))
 
 }

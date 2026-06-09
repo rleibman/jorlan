@@ -13,13 +13,7 @@ package jorlan
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.db.FlywayMigration
-import jorlan.db.repository.{
-  EventLogZIORepository,
-  PermissionZIORepository,
-  SchedulerZIORepository,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
@@ -28,13 +22,13 @@ import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
 
+import java.io.*
 import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
   OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
-  SessionHub & ModelGateway & ServerSettingsRepository & UserZIORepository & PermissionZIORepository &
-  SchedulerZIORepository & EventLogZIORepository & MemoryService & MemorySkill & JobManager & TriggerEngine &
+  SessionHub & ModelGateway & ZIORepositories & MemoryService & MemorySkill & JobManager & TriggerEngine &
   ConnectorManager & Client
 
 /** Main entry point for the Jorlan server. */
@@ -51,19 +45,44 @@ object Jorlan extends ZIOApp {
     Method.GET / "health" -> Handler.ok,
   )
 
+  def mapError(original: Cause[Throwable]): UIO[Response] = {
+    lazy val contentTypeJson: Headers = Headers(Header.ContentType(MediaType.application.json).untyped)
+
+    val squashed = original.squash
+    val sw = StringWriter()
+    val pw = PrintWriter(sw)
+    squashed.printStackTrace(pw)
+
+    val body = "Error in DMScreen"
+    // We really don't want details
+
+    val status = squashed match {
+      case _: NotFoundError                    => Status.NotFound
+      case e: RepositoryError if e.isTransient => Status.BadGateway
+      case _: JorlanError                      => Status.InternalServerError
+      case _ => Status.InternalServerError
+    }
+    ZIO
+      .logErrorCause("Error in DMScreen", original).as(
+        Response.apply(body = Body.fromString(body), status = status, headers = contentTypeJson),
+      )
+  }
+
   /** Build the combined application routes. Extracted so integration tests can wire up the app with a test environment
     * without starting a real HTTP server on a production port.
     */
-  def buildRoutes(startTime: Long = 0L): ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
+  def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
     for {
-      authServer   <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      settingsRepo <- ZIO.service[ServerSettingsRepository]
-      authR        <- authServer.authRoutes
-      unauthR      <- authServer.unauthRoutes
-      graphqlR     <- JorlanRoutes.routes.orDie
-      statusR = StatusRoutes.routes(startTime, settingsRepo)
+      authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      repo       <- ZIO.service[ZIORepositories]
+      authR      <- authServer.authRoutes
+      unauthR    <- authServer.unauthRoutes
+      graphqlR   <- JorlanRoutes.routes
+      statusR = StatusRoutes.routes(startTime, repo)
     } yield {
-      ((healthRoutes ++ statusR ++ authR ++ graphqlR) @@ authServer.bearerSessionProvider ++ unauthR)
+      ((healthRoutes ++ statusR ++ authR ++ graphqlR).handleErrorCauseZIO(
+        mapError,
+      ) @@ authServer.bearerSessionProvider ++ unauthR)
         .handleErrorCause { cause =>
           cause.squash match {
             case ExpiredToken(msg, _) => Response.unauthorized(msg)
@@ -74,7 +93,7 @@ object Jorlan extends ZIOApp {
         }
     }
 
-  private def startServices: ZIO[TriggerEngine & ConnectorManager & Scope, Throwable, Unit] =
+  private def startServices: ZIO[TriggerEngine & ConnectorManager & Scope, JorlanError, Unit] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
       connectorManager <- ZIO.service[ConnectorManager]
@@ -82,33 +101,30 @@ object Jorlan extends ZIOApp {
     } yield ()
 
   // $COVERAGE-OFF$ Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
-  override def run: ZIO[Environment & ZIOAppArgs & Scope, Throwable, Unit] =
+  override def run: ZIO[JorlanEnvironment & ZIOAppArgs & Scope, Any, Any] =
     for {
-      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
-      _            <- FlywayMigration.runMigrations
-      startTime    <- Clock.currentTime(TimeUnit.MILLISECONDS)
-      settingsRepo <- ZIO.service[ServerSettingsRepository]
-      userRepo     <- ZIO.service[UserZIORepository]
-      eventLogRepo <- ZIO.service[EventLogZIORepository]
-      permRepo     <- ZIO.service[PermissionZIORepository]
-      initialized  <- settingsRepo.get(ServerSettingsRepository.InitializedKey).map {
+      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      _           <- FlywayMigration.runMigrations
+      startTime   <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      repo        <- ZIO.service[ZIORepositories]
+      initialized <- repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {
         case Some(zio.json.ast.Json.Bool(v)) => v
         case _                               => false
       }
       tokenStore <- InitTokenStore.make(initialized)
-      initService = InitServiceImpl(settingsRepo, userRepo, tokenStore, eventLogRepo, permRepo)
+      initService = InitServiceImpl(repo, tokenStore)
       _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       _ <-
         if (initialized) {
           for {
             _      <- startServices
-            routes <- buildRoutes(startTime)
+            routes <- zapp(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()
         } else {
           for {
             initDone <- Promise.make[Nothing, Unit]
-            setupApp = SetupModeApp.make(startTime, settingsRepo, initService, tokenStore, Some(initDone))
+            setupApp = SetupModeApp.make(startTime, repo, initService, tokenStore, Some(initDone))
             serverFiber <- Server
               .serve(setupApp)
               .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
@@ -117,7 +133,7 @@ object Jorlan extends ZIOApp {
             _      <- serverFiber.interrupt
             _      <- ZIO.logInfo("Server initialized — switching to full application routes")
             _      <- startServices
-            routes <- buildRoutes(startTime)
+            routes <- zapp(startTime)
             _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
           } yield ()
         }

@@ -1,6 +1,6 @@
 # Jorlan Manual Testing Guide
 
-> Last updated: 2026-06-05 (Phase 10 — durable scheduler, memory, capabilities, approvals, models, personality overhaul)
+> Last updated: 2026-06-07 (Phase 11 — Telegram connector; use-case prompts added with gap analysis)
 >
 > This document is maintained alongside the codebase. Run the `scala-doc-auditor` agent after
 > significant feature additions to keep this guide in sync.
@@ -293,7 +293,67 @@ Verify that exactly one WebSocket connection exists per session and fiber cleanu
 
 ---
 
-## Known Limitations (as of Phase 10)
+---
+
+## Section G — Use-Case Prompts
+
+Natural-language prompts that exercise end-to-end agent behaviour. Each prompt is listed with its current
+readiness status. Prompts marked **🚧 Phase 12+** cannot pass today; the gap analysis explains exactly what
+is missing and what needs to be built.
+
+---
+
+### G1. Simple direct Telegram message
+
+**Prompt:** `Send a telegram message to Sarah saying hello from Roberto.`
+
+**Status: 🚧 Phase 12+ — not testable today**
+
+**What would need to happen:**
+1. The LLM recognises the intent and decides to call the `telegram.send_message` tool.
+2. It maps "Sarah" to a Telegram `chatId` (e.g. `123456789`).
+3. It invokes `telegram.send_message` with `{ "chatId": "123456789", "text": "Hello from Roberto." }`.
+4. The connector sends the message via the Telegram Bot API.
+
+**Gaps (things that do not exist yet):**
+
+| Gap | Description | Planned phase |
+|-----|-------------|---------------|
+| Tool calling in `AgentRunnerImpl` | `AgentRunnerImpl.processMessage` streams text only; it never calls `ModelGateway` with tool definitions or handles tool-call results. The LLM has no mechanism to invoke skills. | Phase 12 |
+| `SkillRegistry` wired into the runner | The registry that enumerates available tools and routes `invoke` calls is deferred (noted in tech debt). Without it the LLM receives no tool descriptions and cannot request a tool call. | Phase 12 |
+| Name → chat ID resolution | "Sarah" is a display name. The connector needs a `chatId` (Telegram numeric ID). No contact directory or channel-identity lookup skill exists yet. The most natural path: query `ChannelIdentity` records by display name/email, retrieve the stored Telegram `channelUserId`. | Phase 12 |
+
+**When all gaps are closed:** start the server with a running Telegram bot, ensure a `ChannelIdentity` record
+for Sarah exists (with `channelType = Telegram` and her `channelUserId`), type the prompt into the shell, and
+confirm the Telegram message arrives in Sarah's DM.
+
+---
+
+### G2. Group Telegram message to multiple recipients
+
+**Prompt:** `Send a telegram group message to Sarah and Roberto telling them you love them.`
+
+**Status: 🚧 Phase 12+ — not testable today**
+
+**What would need to happen:**
+1. The LLM recognises multiple recipients and a Telegram group intent.
+2. It resolves "Sarah" and "Roberto" to their Telegram chat IDs (or a shared group chat ID).
+3. It calls `telegram.send_message` once per recipient, or once to a group chat that includes both.
+
+**Gaps (same as G1, plus):**
+
+| Gap | Description | Planned phase |
+|-----|-------------|---------------|
+| All gaps from G1 | See G1. | Phase 12 |
+| Multi-recipient dispatch | A single `telegram.send_message` call targets one `chatId`. Sending to multiple individuals requires the LLM to issue multiple tool calls, which requires the tool-calling loop in `AgentRunnerImpl` to support sequences of calls in a single turn. | Phase 12 |
+| Group chat ID awareness | If the intent is a shared group (not individual DMs), the system needs to store a group `chatId` and associate it with a set of members. There is currently no group-chat concept in `ChannelIdentity`. | Phase 13+ |
+
+**When all gaps are closed:** verify two separate DMs arrive (one to Sarah, one to Roberto) for the per-user
+path, or one group-chat message if a registered group chat ID is stored.
+
+---
+
+## Known Limitations (as of Phase 11)
 
 - Token-per-invocation and session-scoped capability approvals are not yet exercisable from the shell (planned for a future phase).
 - Scheduler shell commands are not yet implemented; use GraphQL directly.
@@ -302,3 +362,4 @@ Verify that exactly one WebSocket connection exists per session and fiber cleanu
 - Password is stored in plaintext in the shell config for reconnect purposes; JWT token refresh is planned for a future phase.
 - Context window size is not reported by `/models` (Ollama's tag endpoint does not include it; requires a per-model `showInformation` call).
 - Personality changes that reset conversation history are not surfaced to the user — the model silently starts fresh.
+- The Telegram connector receives inbound messages and routes them through the agent pipeline, but outbound tool-calling (agent sending a Telegram message in response to a prompt) is not yet wired — `AgentRunnerImpl` has no tool-calling loop and the `SkillRegistry` is deferred. See Section G for the detailed gap analysis.

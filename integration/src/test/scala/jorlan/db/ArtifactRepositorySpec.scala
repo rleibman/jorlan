@@ -29,8 +29,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
     suite("ArtifactRepository")(
       test("upsert and retrieve an artifact") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner", "", T0, T0))
           ws       <- repo.upsertWorkspace(
             Workspace(WorkspaceId.empty, owner.id, "my-ws", Some("desc"), T0, T0),
@@ -56,8 +56,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("search artifacts by workspace") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner2", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws2", None, T0, T0))
           _        <- repo.upsert(
@@ -91,8 +91,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("search artifacts sorted by name asc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner3", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws3", None, T0, T0))
           _        <- repo.upsert(
@@ -132,8 +132,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("search artifacts sorted by name desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner4", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws4", None, T0, T0))
           _        <- repo.upsert(
@@ -173,8 +173,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("search artifacts sorted by id desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner5", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws5", None, T0, T0))
           _        <- repo.upsert(
@@ -214,8 +214,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("search artifacts sorted by createdAt asc and desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner6", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws6", None, T0, T0))
           _        <- repo.upsert(
@@ -265,8 +265,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("delete removes artifact") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "ArtifactOwner7", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws7", None, T0, T0))
           a        <- repo.upsert(
@@ -288,8 +288,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("upsert workspace and retrieve it") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner1", "", T0, T0))
           ws <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "workspace-x", Some("A workspace"), T0, T0))
           fetched <- repo.getWorkspace(ws.id)
@@ -301,8 +301,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("upsert workspace updates mutable fields") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner2", "", T0, T0))
           ws       <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "upd-ws", None, T0, T0))
           updated  <- repo.upsertWorkspace(ws.copy(description = Some("updated"), updatedAt = T0.plusSeconds(1)))
@@ -314,8 +314,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("searchWorkspaces by owner") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner3", "", T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws-a", None, T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws-b", None, T0, T0))
@@ -324,8 +324,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("searchWorkspaces sorted by name asc and desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner4", "", T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "bravo", None, T0, T0))
           _        <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "alpha", None, T0, T0))
@@ -350,8 +350,8 @@ object ArtifactRepositorySpec extends ZIOSpecDefault {
       },
       test("searchWorkspaces sorted by id desc and createdAt asc/desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[ArtifactZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.artifact)
           owner    <- userRepo.upsert(User(UserId.empty, "WsOwner5", "", T0, T0))
           _ <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws-sort1", None, T0.minusSeconds(5), T0))
           _ <- repo.upsertWorkspace(Workspace(WorkspaceId.empty, owner.id, "ws-sort2", None, T0.plusSeconds(5), T0))

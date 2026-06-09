@@ -58,7 +58,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
 
   private val directLayers: ULayer[MemoryService] =
     ZLayer.make[MemoryService](
-      InMemoryRepositories.InMemoryMemoryRepo.layer,
+      InMemoryRepositories.live(),
       ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
       ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
       ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
@@ -259,7 +259,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
           } yield assertTrue(result.exists(_.recordKey == "episodic.checkpoint"))
         }.provide(
           ZLayer.make[MemoryService](
-            InMemoryRepositories.InMemoryMemoryRepo.layer,
+            InMemoryRepositories.live(),
             ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
             ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
             ZLayer.succeed(CheckpointPolicy.onSessionEnd),
@@ -270,7 +270,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
         ),
       ).provide(
         ZLayer.make[MemoryService](
-          InMemoryRepositories.InMemoryMemoryRepo.layer,
+          InMemoryRepositories.live(),
           ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
           ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
           ZLayer.succeed(CheckpointPolicy.onSessionEnd),

@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
+import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -23,7 +23,7 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
 
   // Seeds the "Jorlan Interactive" default agent so createSession can find it
   // (mirrors what V016 Flyway migration does against a real DB).
-  private val seededAgentRepoLayer: ULayer[AgentZIORepository] =
+  private val seededAgentRepoLayer: ULayer[ZIOAgentRepository] =
     ZLayer.fromZIO {
       for {
         now  <- Clock.instant
@@ -39,15 +39,14 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
             ),
           )
           .orDie
-      } yield repo: AgentZIORepository
+      } yield repo: ZIOAgentRepository
     }
 
-  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogZIORepository] =
-    ZLayer.make[AgentSessionManager & SessionHub & EventLogZIORepository](
-      seededAgentRepoLayer,
+  private val freshLayers: ULayer[AgentSessionManager & SessionHub & ZIORepositories] =
+    ZLayer.make[AgentSessionManager & SessionHub & ZIORepositories](
+      InMemoryRepositories.fromLayers(agentRepoOpt = Some(seededAgentRepoLayer)),
       SessionHub.live,
       FakeModelGateway.layer(Nil),
-      InMemoryRepositories.InMemoryEventLogRepo.layer,
       AgentSessionManagerImpl.live,
     )
 
@@ -68,8 +67,8 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
         for {
           mgr     <- ZIO.service[AgentSessionManager]
           session <- mgr.createSession(userId, None)
-          events  <- ZIO.serviceWithZIO[EventLogZIORepository](
-            _.search(EventLogFilter(eventType = Some(EventType.SessionCreated))),
+          events  <- ZIO.serviceWithZIO[ZIORepositories](
+            _.eventLog.search(EventLogFilter(eventType = Some(EventType.SessionCreated))),
           )
         } yield assertTrue(
           events.nonEmpty,

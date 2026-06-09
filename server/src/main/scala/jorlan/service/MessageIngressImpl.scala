@@ -12,14 +12,14 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository, UserZIORepository}
+import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
 import jorlan.domain.*
 import zio.*
 
 /** Connector-agnostic ingress pipeline.
   *
   * For each [[InboundMessage]]:
-  *   1. Resolves the sender to a canonical [[User]] via [[UserZIORepository.userByChannelIdentity]].
+  *   1. Resolves the sender to a canonical [[User]] via [[ZIOUserRepository.userByChannelIdentity]].
   *   2. Applies [[UnrecognizedIdentityPolicy]] if identity is not found: `Reject` drops and logs; `Quarantine` is
   *      log-only for Phase 11 (no persistence).
   *   3. Gates on the `agent.message` capability via [[CapabilityEvaluator]].
@@ -31,9 +31,7 @@ import zio.*
   * `Quarantine` case is log-only in Phase 11; persistent quarantine table is deferred.
   */
 class MessageIngressImpl(
-  userRepo:    UserZIORepository,
-  agentRepo:   AgentZIORepository,
-  eventLog:    EventLogZIORepository,
+  repo:        ZIORepositories,
   evaluator:   CapabilityEvaluator,
   sessionMgr:  AgentSessionManager,
   agentRunner: AgentRunner,
@@ -46,7 +44,7 @@ class MessageIngressImpl(
     unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
   ): IO[JorlanError, Unit] =
     for {
-      userOpt <- userRepo
+      userOpt <- repo.user
         .userByChannelIdentity(msg.channelType, msg.channelUserId)
         .mapError(JorlanError(_))
       _ <- userOpt match {
@@ -106,7 +104,7 @@ class MessageIngressImpl(
     user: User,
     msg:  InboundMessage,
   ): IO[JorlanError, AgentSessionId] =
-    agentRepo
+    repo.agent
       .searchSessions(
         AgentSessionSearch(
           userId = Some(user.id),
@@ -122,7 +120,7 @@ class MessageIngressImpl(
             sessionMgr
               .createSession(user.id, modelId = None)
               .flatMap { session =>
-                agentRepo
+                repo.agent
                   .upsertSession(session.copy(chatRef = Some(msg.chatRef)))
                   .mapError(JorlanError(_))
                   .map(_.id)
@@ -136,7 +134,7 @@ class MessageIngressImpl(
     sessionId: Option[AgentSessionId],
   ): UIO[Unit] =
     Clock.instant.flatMap { now =>
-      eventLog
+      repo.eventLog
         .append(
           EventLog[String](
             id = EventLogId.empty,
@@ -157,10 +155,9 @@ class MessageIngressImpl(
 object MessageIngressImpl {
 
   val live: URLayer[
-    UserZIORepository & AgentZIORepository & EventLogZIORepository & CapabilityEvaluator & AgentSessionManager &
-      AgentRunner,
+    ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner,
     MessageIngress,
   ] =
-    ZLayer.fromFunction(MessageIngressImpl(_, _, _, _, _, _))
+    ZLayer.fromFunction(MessageIngressImpl(_, _, _, _))
 
 }

@@ -20,12 +20,6 @@ import zio.test.*
 
 object CapabilityEvaluatorSpec extends ZIOSpecDefault {
 
-  private val appLayer =
-    ZLayer.make[CapabilityEvaluator & PermissionZIORepository & UserZIORepository](
-      JorlanContainer.repositoryLayer,
-      CapabilityEvaluatorImpl.live,
-    )
-
   private def capReq(
     userId: UserId,
     cap:    String,
@@ -42,7 +36,7 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
     suite("CapabilityEvaluator integration")(
       test("default deny when user has no permissions or grants") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser1", "", T0, T0))
           result    <- evaluator.evaluate(capReq(user.id, "shell.execute"))
@@ -50,8 +44,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("direct user permission → ResourcePermissionAllows") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser2", "", T0, T0))
           _         <- permRepo.upsertPermission(
@@ -62,8 +56,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("role-derived permission → RolePermissionAllows") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser3", "", T0, T0))
           role      <- permRepo.upsertRole(Role(RoleId.empty, "shell-operator", None))
@@ -76,8 +70,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("explicit deny grant wins over direct permission") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser4", "", T0, T0))
           _         <- permRepo.upsertPermission(
@@ -101,8 +95,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("active non-denied grant → CapabilityGrantAllows") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser5", "", T0, T0))
           grant     <- permRepo.upsertCapabilityGrant(
@@ -126,8 +120,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("multi-grant with one Denied among non-denied → ExplicitDeny") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser6", "", T0, T0))
           _         <- permRepo.upsertCapabilityGrant(
@@ -161,8 +155,8 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
       },
       test("3-part capability name uses first-dot split for permission matching") {
         for {
-          userRepo  <- ZIO.service[UserZIORepository]
-          permRepo  <- ZIO.service[PermissionZIORepository]
+          userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
           evaluator <- ZIO.service[CapabilityEvaluator]
           user      <- userRepo.upsert(User(UserId.empty, "CEUser7", "", T0, T0))
           // shell.sudo.execute → resource="shell", action="sudo.execute"
@@ -172,6 +166,6 @@ object CapabilityEvaluatorSpec extends ZIOSpecDefault {
           result <- evaluator.evaluate(capReq(user.id, "shell.sudo.execute"))
         } yield assertTrue(result == EvaluationResult.ResourcePermissionAllows)
       },
-    ).provideLayerShared(appLayer) @@ TestAspect.sequential
+    ).provideShared(JorlanContainer.repositoryLayer, CapabilityEvaluatorImpl.live) @@ TestAspect.sequential
 
 }

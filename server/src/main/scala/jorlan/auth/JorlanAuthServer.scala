@@ -13,12 +13,12 @@ package jorlan.auth
 import auth.*
 import auth.oauth.OAuthUserInfo
 import jorlan.*
-import jorlan.db.repository.UserZIORepository
+import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
 import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 
-/** Wires Jorlan's [[UserZIORepository]] into zio-auth's [[AuthServer]] contract.
+/** Wires Jorlan's [[ZIOUserRepository]] into zio-auth's [[AuthServer]] contract.
   *
   * Passwords are never stored or compared in Scala — the `login` and `changePassword` methods delegate to inline SQL
   * that calls `SHA2(password, 512)` on the database side.
@@ -28,9 +28,9 @@ import zio.json.ast.Json
   */
 object JorlanAuthServer {
 
-  val live: ZLayer[UserZIORepository, Nothing, AuthServer[User, UserId, ConnectionId]] =
+  val live: ZLayer[ZIORepositories, Nothing, AuthServer[User, UserId, ConnectionId]] =
     ZLayer.fromZIO {
-      ZIO.service[UserZIORepository].map { repo =>
+      ZIO.service[ZIORepositories].map { repo =>
         new AuthServer[User, UserId, ConnectionId] {
 
           override def getPK(user: User): UserId = user.id
@@ -39,7 +39,7 @@ object JorlanAuthServer {
             email:        String,
             password:     String,
             connectionId: Option[ConnectionId],
-          ): IO[AuthError, Option[User]] = repo.login(email, password).mapError(AuthError(_))
+          ): IO[AuthError, Option[User]] = repo.user.login(email, password).mapError(AuthError(_))
 
           override def logout(): ZIO[JorlanSession, AuthError, Unit] =
             ZIO.serviceWithZIO[JorlanSession](session =>
@@ -49,19 +49,19 @@ object JorlanAuthServer {
           override def changePassword(
             userPK:      UserId,
             newPassword: String,
-          ): ZIO[JorlanSession, AuthError, Unit] = repo.changePassword(userPK, newPassword).mapError(AuthError(_))
+          ): ZIO[JorlanSession, AuthError, Unit] = repo.user.changePassword(userPK, newPassword).mapError(AuthError(_))
 
           override def userByEmail(email: String): IO[AuthError, Option[User]] =
-            repo.userByEmail(email).mapError(AuthError(_))
+            repo.user.userByEmail(email).mapError(AuthError(_))
 
-          override def userByPK(pk: UserId): IO[AuthError, Option[User]] = repo.getById(pk).mapError(AuthError(_))
+          override def userByPK(pk: UserId): IO[AuthError, Option[User]] = repo.user.getById(pk).mapError(AuthError(_))
 
           override def userByOAuthProvider(
             provider:   String,
             providerId: String,
           ): IO[AuthError, Option[User]] =
             ChannelType.fromProvider(provider) match {
-              case Some(channelType) => repo.userByChannelIdentity(channelType, providerId).mapError(AuthError(_))
+              case Some(channelType) => repo.user.userByChannelIdentity(channelType, providerId).mapError(AuthError(_))
               case None              => ZIO.none
             }
 
@@ -72,7 +72,7 @@ object JorlanAuthServer {
           ): IO[AuthError, User] = {
             for {
               now  <- Clock.instant
-              user <- repo
+              user <- repo.user
                 .upsert(
                   User(
                     id = UserId.empty,
@@ -85,7 +85,7 @@ object JorlanAuthServer {
                 ).mapError(AuthError(_))
               _ <- ChannelType.fromProvider(provider) match {
                 case Some(channelType) =>
-                  repo
+                  repo.user
                     .upsertChannelIdentity(
                       ChannelIdentity(
                         id = ChannelIdentityId.empty,
@@ -112,7 +112,7 @@ object JorlanAuthServer {
               now <- Clock.instant
               _   <- ChannelType.fromProvider(provider) match {
                 case Some(channelType) =>
-                  repo
+                  repo.user
                     .upsertChannelIdentity(
                       ChannelIdentity(
                         id = ChannelIdentityId.empty,

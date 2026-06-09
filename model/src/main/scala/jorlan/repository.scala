@@ -422,17 +422,36 @@ trait PermissionRepository[F[_]] {
 
 }
 
+/** Read/write access to the `server_settings` key-value table.
+  *
+  * All values are stored as JSON so settings can hold scalars, strings, or nested objects without schema changes. The
+  * table is created by Flyway migration V017.
+  */
+trait ServerSettingsRepository[F[_]] {
+
+  /** Retrieves the JSON value for `key`, or `None` if absent. Never fails. */
+  def get(key: String): F[Option[Json]]
+
+  /** Upserts `value` under `key`. Never fails. */
+  def set(
+    key:   String,
+    value: Json,
+  ): F[Unit]
+
+}
+
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
-  def users:         UserRepository[F]
-  def agents:        AgentRepository[F]
-  def conversations: ConversationRepository[F]
-  def skills:        SkillRepository[F]
-  def memory:        MemoryRepository[F]
-  def eventLog:      EventLogRepository[F]
-  def scheduler:     SchedulerRepository[F]
-  def artifacts:     ArtifactRepository[F]
-  def permissions:   PermissionRepository[F]
+  def user:         UserRepository[F]
+  def agent:        AgentRepository[F]
+  def conversation: ConversationRepository[F]
+  def skill:        SkillRepository[F]
+  def memory:       MemoryRepository[F]
+  def eventLog:     EventLogRepository[F]
+  def scheduler:    SchedulerRepository[F]
+  def artifact:     ArtifactRepository[F]
+  def permission:   PermissionRepository[F]
+  def setting:      ServerSettingsRepository[F]
 
 }

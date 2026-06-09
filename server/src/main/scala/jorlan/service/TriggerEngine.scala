@@ -15,7 +15,7 @@ import cron4s.expr.CronExpr
 import cron4s.lib.javatime.*
 import cron4s.syntax.all.*
 import jorlan.*
-import jorlan.db.repository.{EventLogZIORepository, SchedulerZIORepository}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.domain.SchedulerJob.*
 import zio.*
@@ -52,8 +52,7 @@ import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
   * (`SchedulerConfig`).
   */
 class TriggerEngine(
-  repo:           SchedulerZIORepository,
-  eventLog:       EventLogZIORepository,
+  repo:           ZIORepositories,
   sessionManager: AgentSessionManager,
   agentRunner:    AgentRunner,
   pollInterval:   Duration = Duration.ofSeconds(10),
@@ -74,7 +73,7 @@ class TriggerEngine(
     job:       SchedulerJob,
   ): UIO[Unit] =
     Clock.instant.flatMap { now =>
-      eventLog
+      repo.eventLog
         .append(
           EventLog.entry(
             eventType = eventType,
@@ -98,7 +97,7 @@ class TriggerEngine(
     val zdtNow = ZonedDateTime.ofInstant(now, ZoneOffset.UTC)
     cronExpr.next(zdtNow) match {
       case Some(nextZdt) =>
-        repo.upsertJob(job.released(JobStatus.Pending, nextZdt.toInstant)).mapError(JorlanError(_)).unit
+        repo.scheduler.upsertJob(job.released(JobStatus.Pending, nextZdt.toInstant)).mapError(JorlanError(_)).unit
       case None =>
         ZIO.logWarning(
           s"[TriggerEngine] Cron trigger ${trigger.id.value} has no future occurrence — job will not re-queue",
@@ -115,7 +114,7 @@ class TriggerEngine(
       .attempt(Duration.parse(trigger.expression))
       .mapError(e => JorlanError(s"Invalid interval '${trigger.expression}': ${e.getMessage}"))
       .flatMap { duration =>
-        repo.upsertJob(job.released(JobStatus.Pending, now.plus(duration))).mapError(JorlanError(_)).unit
+        repo.scheduler.upsertJob(job.released(JobStatus.Pending, now.plus(duration))).mapError(JorlanError(_)).unit
       }
 
   /** After a successful run, advance recurring triggers to their next fire time. */
@@ -125,11 +124,11 @@ class TriggerEngine(
     now:       Instant,
   ): IO[JorlanError, Unit] =
     for {
-      triggers <- repo.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 100)).mapError(JorlanError(_))
+      triggers <- repo.scheduler.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 100)).mapError(JorlanError(_))
       _        <- ZIO.foreachDiscard(triggers.filter(_.enabled)) { trigger =>
         trigger.triggerType match {
           case TriggerType.OneShot =>
-            repo.upsertTrigger(trigger.copy(enabled = false)).mapError(JorlanError(_)).unit
+            repo.scheduler.upsertTrigger(trigger.copy(enabled = false)).mapError(JorlanError(_)).unit
           case TriggerType.Cron =>
             for {
               cronExpr <- cronCache.get.flatMap { cache =>
@@ -162,12 +161,12 @@ class TriggerEngine(
           // Use bit-shift to avoid floating-point precision loss; cap exponent at 62 to prevent overflow.
           job.backoffSeconds.toLong * (1L << math.min(job.retryCount, 62))
       }
-      repo
+      repo.scheduler
         .upsertJob(job.released(JobStatus.Pending, now.plusSeconds(backoff)).copy(retryCount = job.retryCount + 1))
         .orElseSucceed(())
         .unit
     } else {
-      repo.releaseJob(job.id, JobStatus.Failed, None, now).orElseSucceed(())
+      repo.scheduler.releaseJob(job.id, JobStatus.Failed, None, now).orElseSucceed(())
     }
 
   /** Execute a single claimed job: create a session, run the message, collect the result, then terminate the session.
@@ -184,7 +183,7 @@ class TriggerEngine(
         for {
           _   <- logJobEvent(EventType.SchedulerJobStarted, job)
           now <- Clock.instant
-          _   <- repo
+          _   <- repo.scheduler
             .upsertJob(
               job.copy(
                 status = JobStatus.Running,
@@ -210,7 +209,7 @@ class TriggerEngine(
             .timeout(jobTimeout)
             .map(_.getOrElse(""))
           now <- Clock.instant
-          _   <- repo
+          _   <- repo.scheduler
             .releaseJob(job.id, JobStatus.Succeeded, Some(result), now)
             .mapError(JorlanError(_))
           _ <- logJobEvent(EventType.SchedulerJobCompleted, job)
@@ -240,12 +239,12 @@ class TriggerEngine(
   private def recomputeStaleTriggers: UIO[Unit] =
     (for {
       now  <- Clock.instant
-      jobs <- repo.getPendingJobs
+      jobs <- repo.scheduler.getPendingJobs
       staleness = pollInterval.multipliedBy(2L)
       stale = jobs.filter(j => j.scheduledAt.plusMillis(staleness.toMillis).isBefore(now))
       _ <- ZIO.foreachDiscard(stale) { job =>
         (for {
-          triggers <- repo.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 100))
+          triggers <- repo.scheduler.searchTriggers(TriggerSearch(jobId = job.id, pageSize = 100))
           _        <- ZIO.foreachDiscard(triggers.filter(_.enabled)) { trigger =>
             trigger.triggerType match {
               case TriggerType.Cron =>
@@ -258,7 +257,7 @@ class TriggerEngine(
                       case Some(next) =>
                         job.missedRunPolicy match {
                           case MissedRunPolicy.Skip =>
-                            repo
+                            repo.scheduler
                               .upsertJob(job.released(JobStatus.Pending, next.toInstant)).mapError(JorlanError(_)).unit
                           case _ => ZIO.unit
                         }
@@ -272,7 +271,8 @@ class TriggerEngine(
                       .attempt(Duration.parse(trigger.expression))
                       .mapError(e => JorlanError(e.getMessage))
                       .flatMap { dur =>
-                        repo.upsertJob(job.released(JobStatus.Pending, now.plus(dur))).mapError(JorlanError(_)).unit
+                        repo.scheduler
+                          .upsertJob(job.released(JobStatus.Pending, now.plus(dur))).mapError(JorlanError(_)).unit
                       }
                   case _ => ZIO.unit
                 }
@@ -294,10 +294,10 @@ class TriggerEngine(
   ): UIO[Unit] = {
     for {
       now  <- Clock.instant
-      _    <- repo.expireLeases(now.minusSeconds(leaseTtl.toLong)).orDie
-      jobs <- repo.getPendingJobs.orDie
+      _    <- repo.scheduler.expireLeases(now.minusSeconds(leaseTtl.toLong)).orDie
+      jobs <- repo.scheduler.getPendingJobs.orDie
       _    <- ZIO.foreachDiscard(jobs) { job =>
-        repo
+        repo.scheduler
           .claimJob(job.id, workerId, now, leaseTtl)
           .orDie
           .flatMap { claimed =>
@@ -326,8 +326,8 @@ class TriggerEngine(
 object TriggerEngine {
 
   val live: URLayer[
-    SchedulerZIORepository & EventLogZIORepository & AgentSessionManager & AgentRunner,
+    ZIORepositories & AgentSessionManager & AgentRunner,
     TriggerEngine,
-  ] = ZLayer.fromFunction(TriggerEngine(_, _, _, _))
+  ] = ZLayer.fromFunction(TriggerEngine(_, _, _))
 
 }

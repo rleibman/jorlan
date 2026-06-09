@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{EventLogZIORepository, PermissionZIORepository}
+import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
 import jorlan.domain.*
 import zio.*
 
@@ -28,9 +28,8 @@ import java.time.Instant
   *   6. For direct `Allowed`/`Denied` results: write a `CapabilityAllowed`/`CapabilityDenied` audit event
   */
 private class ApprovalServiceImpl(
-  evaluator:      CapabilityEvaluator,
-  permissionRepo: PermissionZIORepository,
-  eventLogRepo:   EventLogZIORepository,
+  evaluator: CapabilityEvaluator,
+  repo:      ZIORepositories,
 ) extends ApprovalService {
 
   override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
@@ -54,7 +53,7 @@ private class ApprovalServiceImpl(
   override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
     for {
       now       <- Clock.instant
-      saved     <- permissionRepo.recordApprovalDecision(decision)
+      saved     <- repo.permission.recordApprovalDecision(decision)
       eventType <- saved.decision match {
         case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
         case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>
@@ -62,7 +61,7 @@ private class ApprovalServiceImpl(
         case ApprovalStatus.Pending =>
           ZIO.fail(JorlanError("recordApprovalDecision called with Pending status — invariant violated"))
       }
-      _ <- eventLogRepo.append(
+      _ <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -76,7 +75,7 @@ private class ApprovalServiceImpl(
       )
     } yield saved
 
-  override def expireStaleRequests(): IO[JorlanError, Long] = permissionRepo.expireAllStaleApprovalRequests()
+  override def expireStaleRequests(): IO[JorlanError, Long] = repo.permission.expireAllStaleApprovalRequests()
 
   private def requestApproval(
     req:     ApprovalRequest,
@@ -84,8 +83,8 @@ private class ApprovalServiceImpl(
   ): IO[JorlanError, ApprovalRequest] =
     for {
       now   <- Clock.instant
-      saved <- permissionRepo.createApprovalRequest(req)
-      _     <- eventLogRepo.append(
+      saved <- repo.permission.createApprovalRequest(req)
+      _     <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.ApprovalRequested,
@@ -105,10 +104,10 @@ private class ApprovalServiceImpl(
   ): IO[JorlanError, List[ApprovalRequest]] =
     evaluation match {
       case EvaluationResult.CapabilityGrantAllows(grant) if grant.approvalMode == ApprovalMode.Once =>
-        permissionRepo.findApprovedRequest(request.capability, request.requestorId, None).map(_.toList)
+        repo.permission.findApprovedRequest(request.capability, request.requestorId, None).map(_.toList)
       case EvaluationResult.CapabilityGrantAllows(grant)
           if grant.approvalMode == ApprovalMode.Session && request.sessionId.isDefined =>
-        permissionRepo.findApprovedRequest(request.capability, request.requestorId, request.sessionId).map(_.toList)
+        repo.permission.findApprovedRequest(request.capability, request.requestorId, request.sessionId).map(_.toList)
       case _ => ZIO.succeed(Nil)
     }
 
@@ -117,7 +116,7 @@ private class ApprovalServiceImpl(
     eventType: EventType,
     now:       Instant,
   ): IO[JorlanError, Unit] =
-    eventLogRepo
+    repo.eventLog
       .append(
         EventLog(
           id = EventLogId.empty,
@@ -135,7 +134,7 @@ private class ApprovalServiceImpl(
 
 object ApprovalServiceImpl {
 
-  val live: URLayer[CapabilityEvaluator & PermissionZIORepository & EventLogZIORepository, ApprovalService] =
-    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _))
+  val live: URLayer[CapabilityEvaluator & ZIORepositories, ApprovalService] =
+    ZLayer.fromFunction(ApprovalServiceImpl(_, _))
 
 }

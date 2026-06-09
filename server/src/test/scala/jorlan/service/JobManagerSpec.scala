@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -34,8 +35,7 @@ object JobManagerSpec extends ZIOSpecDefault {
   ): IO[JorlanError, SchedulerJob] =
     mgr.createJob(agentId, userId, name, None, maxRetries, backoffSecs, backoffPol, missedPol)
 
-  private def makeManager: UIO[JobManager] =
-    InMemoryRepositories.InMemorySchedulerRepo.make.map(JobManagerImpl(_))
+  private def makeManager = ZIO.serviceWith[ZIORepositories](JobManagerImpl(_))
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("JobManager")(
@@ -91,10 +91,10 @@ object JobManagerSpec extends ZIOSpecDefault {
       test("pauseJob fails on Succeeded job") {
         for {
           mgr  <- makeManager
-          repo <- InMemoryRepositories.InMemorySchedulerRepo.make
+          repo <- ZIO.service[ZIORepositories]
           mgr2 = JobManagerImpl(repo)
           job    <- mkJob("pause-succeeded")(mgr2)
-          _      <- repo.releaseJob(job.id, JobStatus.Succeeded, None, java.time.Instant.now()).orDie
+          _      <- repo.scheduler.releaseJob(job.id, JobStatus.Succeeded, None, java.time.Instant.now()).orDie
           result <- mgr2.pauseJob(job.id).either
         } yield assertTrue(result.isLeft)
       },
@@ -169,7 +169,7 @@ object JobManagerSpec extends ZIOSpecDefault {
       test("listJobs(Some(agentId)) returns only jobs for that agent") {
         for {
           mgr  <- makeManager
-          repo <- InMemoryRepositories.InMemorySchedulerRepo.make
+          repo <- ZIO.service[ZIORepositories]
           mgr2 = JobManagerImpl(repo)
           _ <- mgr2
             .createJob(agentId, userId, "agent1-job", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
@@ -194,6 +194,6 @@ object JobManagerSpec extends ZIOSpecDefault {
           )
         } yield assertTrue(trigger.id.value > 0L, trigger.expression == "0 9 * * 1-5")
       },
-    )
+    ).provideShared(InMemoryRepositories.live())
 
 }

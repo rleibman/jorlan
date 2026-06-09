@@ -23,7 +23,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
 
   override val bootstrap: ULayer[MemorySkill] =
     ZLayer.make[MemorySkill](
-      InMemoryRepositories.InMemoryMemoryRepo.layer,
+      InMemoryRepositories.live(),
       ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
       ZLayer.succeed(
         new CheckpointSummarizer {

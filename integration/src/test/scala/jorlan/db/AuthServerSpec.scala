@@ -23,16 +23,13 @@ import zio.test.*
 
 object AuthServerSpec extends ZIOSpecDefault {
 
-  private type AuthEnv = UserZIORepository & AuthServer[User, UserId, ConnectionId]
-
-  private val authServerLayer: ZLayer[UserZIORepository, Nothing, AuthServer[User, UserId, ConnectionId]] =
-    JorlanAuthServer.live
+  private type AuthEnv = ZIORepositories & AuthServer[User, UserId, ConnectionId]
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("JorlanAuthServer")(
       test("login returns user for valid credentials") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           user       <- repo.upsert(User(UserId.empty, "AuthLogin", "auth-login@test.com", T0, T0))
           _          <- repo.changePassword(user.id, "secure-pass")
@@ -44,7 +41,7 @@ object AuthServerSpec extends ZIOSpecDefault {
       },
       test("login returns None for wrong password") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           user       <- repo.upsert(User(UserId.empty, "AuthWrong", "auth-wrong@test.com", T0, T0))
           _          <- repo.changePassword(user.id, "real-pass")
@@ -53,7 +50,7 @@ object AuthServerSpec extends ZIOSpecDefault {
       },
       test("userByEmail returns the correct user") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           user       <- repo.upsert(User(UserId.empty, "EmailLookup", "email-lookup@test.com", T0, T0))
           found      <- authServer.userByEmail("email-lookup@test.com")
@@ -66,7 +63,7 @@ object AuthServerSpec extends ZIOSpecDefault {
       },
       test("userByPK returns the correct user") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           user       <- repo.upsert(User(UserId.empty, "PkLookup", "", T0, T0))
           found      <- authServer.userByPK(user.id)
@@ -79,7 +76,7 @@ object AuthServerSpec extends ZIOSpecDefault {
       },
       test("createOAuthUser creates a user and channel identity") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           oauthInfo = OAuthUserInfo(
             providerId = "google-uid-001",
@@ -101,7 +98,7 @@ object AuthServerSpec extends ZIOSpecDefault {
       },
       test("linkOAuthToUser adds a channel identity to an existing user") {
         for {
-          repo       <- ZIO.service[UserZIORepository]
+          repo       <- ZIO.serviceWith[ZIORepositories](_.user)
           authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
           user       <- repo.upsert(User(UserId.empty, "LinkOAuth", "link-oauth@test.com", T0, T0))
           linked     <- authServer.linkOAuthToUser(user, "github", "gh-user-42", Json.Obj())
@@ -119,8 +116,9 @@ object AuthServerSpec extends ZIOSpecDefault {
           result     <- authServer.createUser("NewUser", "new@test.com", "pass").exit
         } yield assertTrue(result.isFailure)
       },
-    ).provideLayerShared(
-      JorlanContainer.repositoryLayer ++ (JorlanContainer.repositoryLayer >>> authServerLayer),
+    ).provideShared(
+      JorlanContainer.repositoryLayer,
+      JorlanAuthServer.live,
     ) @@ TestAspect.sequential
 
 }

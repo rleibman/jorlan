@@ -40,38 +40,38 @@ object MessageIngressSpec extends ZIOSpecDefault {
 
   private val knownUser = User(UserId(1L), "Alice", "alice@example.com", now, now)
 
-  private def stubUserRepo(result: Option[User]): ULayer[UserZIORepository] =
+  private def stubUserRepo(result: Option[User]): ULayer[ZIOUserRepository] =
     ZLayer.fromZIO(
       InMemoryRepositories.InMemoryUserRepo.make.flatMap { base =>
         result.fold(ZIO.unit)(u => base.upsert(u).orDie.unit).as {
-          new UserZIORepository {
-            override def getById(id:                  UserId) = base.getById(id)
-            override def search(s:                    UserSearch) = base.search(s)
-            override def upsert(user:                 User) = base.upsert(user)
-            override def deactivate(id:               UserId) = base.deactivate(id)
-            override def getChannelIdentities(userId: UserId) = ZIO.succeed(Nil)
-            override def upsertChannelIdentity(ci:    ChannelIdentity) = ZIO.succeed(ci)
-            override def deleteChannelIdentity(id:    ChannelIdentityId) = ZIO.succeed(0L)
+          new ZIOUserRepository {
+            override def getById(id:    UserId):     RepositoryTask[Option[User]] = base.getById(id)
+            override def search(s:      UserSearch): RepositoryTask[List[User]] = base.search(s)
+            override def upsert(user:   User):       RepositoryTask[User] = base.upsert(user)
+            override def deactivate(id: UserId):     RepositoryTask[Long] = base.deactivate(id)
+            override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(Nil)
+            override def upsertChannelIdentity(ci: ChannelIdentity):   RepositoryTask[ChannelIdentity] = ZIO.succeed(ci)
+            override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] = ZIO.succeed(0L)
             override def login(
               email:    String,
               password: String,
-            ) = ZIO.none
-            override def userByEmail(email: String) = ZIO.none
+            ):                                       RepositoryTask[Option[User]] = ZIO.none
+            override def userByEmail(email: String): RepositoryTask[Option[User]] = ZIO.none
             override def changePassword(
               id: UserId,
               np: String,
-            ) = ZIO.unit
+            ): RepositoryTask[Unit] = ZIO.unit
             override def userByChannelIdentity(
               ct:   ChannelType,
               cuid: String,
-            ) = ZIO.succeed(result.filter(_ => ct == ChannelType.Telegram))
+            ): RepositoryTask[Option[User]] = ZIO.succeed(result.filter(_ => ct == ChannelType.Telegram))
           }
         }
       },
     )
 
-  private val knownUserRepo:   ULayer[UserZIORepository] = stubUserRepo(Some(knownUser))
-  private val unknownUserRepo: ULayer[UserZIORepository] = stubUserRepo(None)
+  private val knownUserRepo:   ULayer[ZIOUserRepository] = stubUserRepo(Some(knownUser))
+  private val unknownUserRepo: ULayer[ZIOUserRepository] = stubUserRepo(None)
 
   private val allowAll: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
@@ -82,7 +82,7 @@ object MessageIngressSpec extends ZIOSpecDefault {
   private val explicitDenyAll: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ExplicitDeny))
 
-  private def stubSessionMgr(agentRepo: AgentZIORepository): AgentSessionManager =
+  private def stubSessionMgr(agentRepo: ZIOAgentRepository): AgentSessionManager =
     new AgentSessionManager {
       override def createSession(
         userId:  UserId,
@@ -123,28 +123,23 @@ object MessageIngressSpec extends ZIOSpecDefault {
 
   }
 
-  private type Env = UserZIORepository & AgentZIORepository & EventLogZIORepository & CapabilityEvaluator
-
   private def baseLayer(
-    userRepo: ULayer[UserZIORepository],
+    userRepo: ULayer[ZIOUserRepository],
     cap:      ULayer[CapabilityEvaluator],
-  ): ULayer[Env] =
-    userRepo ++ InMemoryRepositories.InMemoryAgentRepo.layer ++ InMemoryRepositories.InMemoryEventLogRepo.layer ++ cap
+  ): ULayer[ZIORepositories & CapabilityEvaluator] =
+    ZLayer
+      .make[ZIORepositories & CapabilityEvaluator](InMemoryRepositories.fromLayers(userRepoOpt = Some(userRepo)), cap)
 
   private def buildIngress(
-    userRepo:   UserZIORepository,
-    agentRepo:  AgentZIORepository,
-    eventLog:   EventLogZIORepository,
+    repo:       ZIORepositories,
     evaluator:  CapabilityEvaluator,
     dispatched: Ref[List[(AgentSessionId, String)]],
   ): MessageIngressImpl =
     MessageIngressImpl(
-      userRepo,
-      agentRepo,
-      eventLog,
-      evaluator,
-      stubSessionMgr(agentRepo),
-      RecordingAgentRunner(dispatched),
+      repo = repo,
+      evaluator = evaluator,
+      sessionMgr = stubSessionMgr(repo.agent),
+      agentRunner = RecordingAgentRunner(dispatched),
     )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
@@ -152,11 +147,9 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("dispatches known user's message to AgentRunner") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _      <- ingress.receive(makeMsg())
           result <- dispatched.get
         } yield assertTrue(result.nonEmpty, result.head._2 == "hello")
@@ -164,11 +157,9 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("drops message when sender is unrecognized (Reject policy)") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _      <- ingress.receive(makeMsg(channelUserId = "unknown-9999", chatRef = "unknown-9999"))
           result <- dispatched.get
         } yield assertTrue(result.isEmpty)
@@ -176,11 +167,9 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("drops message when capability gate denies (DefaultDeny)") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _      <- ingress.receive(makeMsg())
           result <- dispatched.get
         } yield assertTrue(result.isEmpty)
@@ -188,25 +177,21 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("drops message and logs event when capability gate ExplicitDeny") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _          <- ingress.receive(makeMsg())
           dispatches <- dispatched.get
-          eventRepo  <- ZIO.service[EventLogZIORepository]
+          eventRepo  <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           logged     <- eventRepo.search(jorlan.service.EventLogFilter()).mapError(JorlanError(_))
         } yield assertTrue(dispatches.isEmpty, logged.nonEmpty)
       }.provide(baseLayer(knownUserRepo, explicitDenyAll)),
       test("resolveOrCreateSession reuses session for same chatRef") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _   <- ingress.receive(makeMsg(chatRef = "chat-1"))
           _   <- ingress.receive(makeMsg(chatRef = "chat-1"))
           all <- dispatched.get
@@ -221,13 +206,11 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("event log records inbound receipt with resolved sessionId") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _   <- ingress.receive(makeMsg())
-          log <- eventLog.search(jorlan.service.EventLogFilter()).mapError(JorlanError(_))
+          log <- repo.eventLog.search(jorlan.service.EventLogFilter()).mapError(JorlanError(_))
         } yield {
           val entry = log.find(_.eventType == EventType.UserMessageReceived)
           assertTrue(
@@ -240,17 +223,15 @@ object MessageIngressSpec extends ZIOSpecDefault {
       test("Quarantine policy drops message but still logs event") {
         for {
           dispatched <- Ref.make(List.empty[(AgentSessionId, String)])
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          eventLog   <- ZIO.service[EventLogZIORepository]
+          repo       <- ZIO.service[ZIORepositories]
           evaluator  <- ZIO.service[CapabilityEvaluator]
-          ingress = buildIngress(userRepo, agentRepo, eventLog, evaluator, dispatched)
+          ingress = buildIngress(repo, evaluator, dispatched)
           _ <- ingress.receive(
             makeMsg(channelUserId = "unknown-999", chatRef = "unknown-999"),
             UnrecognizedIdentityPolicy.Quarantine,
           )
           dispatches <- dispatched.get
-          logged     <- eventLog.search(jorlan.service.EventLogFilter()).mapError(JorlanError(_))
+          logged     <- repo.eventLog.search(jorlan.service.EventLogFilter()).mapError(JorlanError(_))
         } yield assertTrue(dispatches.isEmpty, logged.nonEmpty)
       }.provide(baseLayer(unknownUserRepo, allowAll)),
     )

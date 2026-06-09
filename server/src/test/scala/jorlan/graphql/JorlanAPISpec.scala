@@ -13,16 +13,10 @@ package jorlan.graphql
 import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
-import jorlan.db.repository.{
-  AgentZIORepository,
-  EventLogZIORepository,
-  PermissionZIORepository,
-  SchedulerZIORepository,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.testing.InMemoryRepositories.*
 import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.test.*
@@ -62,7 +56,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
   private def realMemoryServiceLayer: ULayer[MemoryService] = {
-    val memRepo = InMemoryRepositories.InMemoryMemoryRepo.layer
+    val repoLayer = InMemoryRepositories.live()
     val policy = ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy)
     val summarizer = ZLayer.succeed(
       new CheckpointSummarizer {
@@ -71,29 +65,33 @@ object JorlanAPISpec extends ZIOSpecDefault {
           userId:   UserId,
           agentId:  AgentId,
         ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-      }: CheckpointSummarizer,
+      },
     )
     val classifier = ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier)
     val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-    (memRepo ++ policy ++ summarizer ++ classifier ++ cpPolicy) >>> MemoryServiceImpl.live
+
+    ZLayer.make[CheckpointSummarizer & MemoryClassifier & CheckpointPolicy & MemoryAccessPolicy & ZIORepositories](
+      policy,
+      summarizer,
+      classifier,
+      cpPolicy,
+      repoLayer,
+    ) >>> MemoryServiceImpl.live
   }
 
   private def makeAppLayer(
-    capEval:        ULayer[CapabilityEvaluator] = allowAll,
-    session:        ULayer[JorlanSession] = serverSessionLayer,
-    memSvcLayer:    ULayer[MemoryService] = NoOpMemoryService.layer,
-    schedRepoLayer: ULayer[SchedulerZIORepository] = InMemoryRepositories.NoOpSchedulerRepo.layer,
+    capEval:     ULayer[CapabilityEvaluator] = allowAll,
+    session:     ULayer[JorlanSession] = serverSessionLayer,
+    memSvcLayer: ULayer[MemoryService] = NoOpMemoryService.layer,
+    repoLayer:   ULayer[ZIORepositories] = InMemoryRepositories.live(),
   ): ULayer[FullEnv] = {
-    val userRepoLayer: ULayer[UserZIORepository] = InMemoryRepositories.InMemoryUserRepo.layer
-    val permRepoLayer: ULayer[PermissionZIORepository] = InMemoryRepositories.InMemoryPermissionRepo.layer
-    val eventLogRepo:  ULayer[EventLogZIORepository] = InMemoryRepositories.InMemoryEventLogRepo.layer
-    val settingsRepo:  ULayer[ServerSettingsRepository] = InMemoryRepositories.InMemoryServerSettingsRepo.layer
     val hubLayer = SessionHub.live
-    val agentRepoLayer: ULayer[AgentZIORepository] = ZLayer.fromZIO {
-      for {
+
+    val agentRepoLayer: ULayer[ZIORepositories] = ZLayer.fromZIO {
+      (for {
         now  <- Clock.instant
-        repo <- InMemoryRepositories.InMemoryAgentRepo.make
-        _    <- repo
+        repo <- ZIO.service[ZIORepositories]
+        _    <- repo.agent
           .upsert(
             Agent(
               id = AgentId.empty,
@@ -104,8 +102,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
             ),
           )
           .orDie
-      } yield repo: AgentZIORepository
+      } yield repo).provide(repoLayer)
     }
+
     val approvalSvcLayer: ULayer[ApprovalService] = ZLayer.succeed(
       new ApprovalService {
         override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
@@ -116,21 +115,15 @@ object JorlanAPISpec extends ZIOSpecDefault {
       }: ApprovalService,
     )
     ZLayer.make[FullEnv](
-      userRepoLayer,
-      permRepoLayer,
-      eventLogRepo,
-      settingsRepo,
+      agentRepoLayer,
       hubLayer,
       capEval,
       session,
-      agentRepoLayer,
       FakeModelGateway.layer(List("ok")),
-      InMemoryRepositories.InMemoryConversationRepo.layer,
       AgentSessionManagerImpl.live,
       memSvcLayer,
       AgentRunnerImpl.live,
       memSvcLayer >>> MemorySkill.live,
-      schedRepoLayer,
       JobManagerImpl.live,
       approvalSvcLayer,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
@@ -606,9 +599,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
   // ─── Scheduler tests ─────────────────────────────────────────────────────────
 
   // Repo pre-seeded with a job owned by UserId(2) — distinct from serverSession's UserId(1).
-  private val foreignJobRepoLayer: ULayer[SchedulerZIORepository] = ZLayer.fromZIO {
+  private val foreignJobRepoLayer: ULayer[ZIOSchedulerRepository] = ZLayer.fromZIO {
     import InMemoryRepositories.InMemorySchedulerRepo
     import jorlan.domain.*
+
     import java.time.Instant
     InMemorySchedulerRepo.make.flatMap { repo =>
       val foreignJob = SchedulerJob(
@@ -632,7 +626,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         leasedBy = None,
         createdAt = Instant.now(),
       )
-      repo.upsertJob(foreignJob).orDie.as(repo: SchedulerZIORepository)
+      repo.upsertJob(foreignJob).orDie.as(repo: ZIOSchedulerRepository)
     }
   }
 
@@ -665,20 +659,27 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute("""mutation { pauseJob(value: 1) }""")
+
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
     test("cancelJob fails when caller does not own the job") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute("""mutation { cancelJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
     test("deleteJob fails when caller does not own the job") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute("""mutation { deleteJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
     test("addTrigger fails when caller does not own the target job") {
       for {
         interp <- ZIO.service[Interp]
@@ -686,7 +687,9 @@ object JorlanAPISpec extends ZIOSpecDefault {
           """mutation { addTrigger(jobId: 1, triggerType: "Interval", expression: "PT1H") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
     test("createJob fails when no active agent session (resolveAgentIdStrict)") {
       for {
         interp <- ZIO.service[Interp]
@@ -694,7 +697,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
           """mutation { createJob(name: "x", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
-    }.provideLayer(makeAppLayer(schedRepoLayer = InMemoryRepositories.InMemorySchedulerRepo.layer)),
+    }.provideLayer(makeAppLayer()),
     test("createJob fails when scheduler.manage capability is denied") {
       for {
         interp <- ZIO.service[Interp]
@@ -717,7 +720,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         result.data.toString.contains("my-job"),
         result.data.toString.contains("Pending"),
       )
-    }.provideLayer(makeAppLayer(schedRepoLayer = InMemoryRepositories.InMemorySchedulerRepo.layer)),
+    }.provideLayer(makeAppLayer()),
     test("pauseJob fails when scheduler.manage capability is denied") {
       for {
         interp <- ZIO.service[Interp]
@@ -765,13 +768,17 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp <- ZIO.service[Interp]
         result <- interp.execute("""mutation { resumeJob(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
     test("triggerNow fails when caller does not own the job") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute("""mutation { triggerNow(value: 1) }""")
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
-    }.provideLayer(makeAppLayer(schedRepoLayer = foreignJobRepoLayer)),
+    }.provideLayer(
+      makeAppLayer(repoLayer = InMemoryRepositories.fromLayers(schedulerRepoOpt = Some(foreignJobRepoLayer))),
+    ),
   )
 
 }

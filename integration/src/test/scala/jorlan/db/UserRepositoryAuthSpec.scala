@@ -23,7 +23,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
     suite("UserRepository — auth paths")(
       test("login returns user for correct credentials") {
         for {
-          repo   <- ZIO.service[UserZIORepository]
+          repo   <- ZIO.serviceWith[ZIORepositories](_.user)
           user   <- repo.upsert(User(UserId.empty, "LoginUser", "login@test.com", T0, T0))
           _      <- repo.changePassword(user.id, "correct-password")
           result <- repo.login("login@test.com", "correct-password")
@@ -35,7 +35,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       },
       test("login returns None for wrong password") {
         for {
-          repo   <- ZIO.service[UserZIORepository]
+          repo   <- ZIO.serviceWith[ZIORepositories](_.user)
           user   <- repo.upsert(User(UserId.empty, "WrongPassUser", "wrongpass@test.com", T0, T0))
           _      <- repo.changePassword(user.id, "real-password")
           result <- repo.login("wrongpass@test.com", "not-the-password")
@@ -43,13 +43,13 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       },
       test("login returns None for unknown email") {
         for {
-          repo   <- ZIO.service[UserZIORepository]
+          repo   <- ZIO.serviceWith[ZIORepositories](_.user)
           result <- repo.login("nobody@test.com", "any-password")
         } yield assertTrue(result.isEmpty)
       },
       test("changePassword allows login with new password and rejects old") {
         for {
-          repo    <- ZIO.service[UserZIORepository]
+          repo    <- ZIO.serviceWith[ZIORepositories](_.user)
           user    <- repo.upsert(User(UserId.empty, "ChangePwUser", "changepw@test.com", T0, T0))
           _       <- repo.changePassword(user.id, "old-password")
           _       <- repo.changePassword(user.id, "new-password")
@@ -62,7 +62,7 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
       },
       test("userByEmail finds user by exact email") {
         for {
-          repo  <- ZIO.service[UserZIORepository]
+          repo  <- ZIO.serviceWith[ZIORepositories](_.user)
           user  <- repo.upsert(User(UserId.empty, "EmailUser", "exact@test.com", T0, T0))
           found <- repo.userByEmail("exact@test.com")
           none  <- repo.userByEmail("exact")
@@ -72,6 +72,6 @@ object UserRepositoryAuthSpec extends ZIOSpecDefault {
           none.isEmpty,
         )
       },
-    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
 
 }

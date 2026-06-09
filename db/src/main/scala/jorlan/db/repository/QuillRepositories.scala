@@ -110,13 +110,7 @@ private[repository] abstract class QuillRepoBase(qc: QuillCtx) {
 
 object QuillRepositories {
 
-  val live: ZLayer[
-    DatabaseConfig,
-    Nothing,
-    UserZIORepository & AgentZIORepository & ConversationZIORepository & SkillZIORepository & MemoryZIORepository &
-      EventLogZIORepository & SchedulerZIORepository & ArtifactZIORepository & PermissionZIORepository &
-      ServerSettingsRepository,
-  ] =
+  val live: URLayer[DatabaseConfig, ZIORepositories] =
     ZLayer
       .scoped {
         for {
@@ -125,23 +119,39 @@ object QuillRepositories {
         } yield QuillCtx(hds)
       }.flatMap { env =>
         val qc = env.get
-        ZLayer.succeed(QuillUserRepository(qc): UserZIORepository) ++
-          ZLayer.succeed(QuillAgentRepository(qc): AgentZIORepository) ++
-          ZLayer.succeed(QuillConversationRepository(qc): ConversationZIORepository) ++
-          ZLayer.succeed(QuillSkillRepository(qc): SkillZIORepository) ++
-          ZLayer.succeed(QuillMemoryRepository(qc): MemoryZIORepository) ++
-          ZLayer.succeed(QuillEventLogRepository(qc): EventLogZIORepository) ++
-          ZLayer.succeed(QuillSchedulerRepository(qc): SchedulerZIORepository) ++
-          ZLayer.succeed(QuillArtifactRepository(qc): ArtifactZIORepository) ++
-          ZLayer.succeed(QuillPermissionRepository(qc): PermissionZIORepository) ++
-          ZLayer.succeed(QuillServerSettingsRepository(qc): ServerSettingsRepository)
+
+        ZLayer.succeed(QuillRepositories(qc))
       }
+
+}
+
+class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
+
+  override def user: ZIOUserRepository = QuillUserRepository(qc)
+
+  override def agent: ZIOAgentRepository = QuillAgentRepository(qc)
+
+  override def conversation: ZIOConversationRepository = QuillConversationRepository(qc)
+
+  override def skill: ZIOSkillRepository = QuillSkillRepository(qc)
+
+  override def memory: ZIOMemoryRepository = QuillMemoryRepository(qc)
+
+  override def eventLog: ZIOEventLogRepository = QuillEventLogRepository(qc)
+
+  override def scheduler: ZIOSchedulerRepository = QuillSchedulerRepository(qc)
+
+  override def artifact: ZIOArtifactRepository = QuillArtifactRepository(qc)
+
+  override def permission: ZIOPermissionRepository = QuillPermissionRepository(qc)
+
+  override def setting: ZIOServerSettingsRepository = QuillServerSettingsRepository(qc)
 
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────
 
-private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with UserZIORepository {
+private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOUserRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -269,7 +279,7 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with U
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
-private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with AgentZIORepository {
+private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOAgentRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -333,7 +343,7 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
       qAgentSessions
         .filter(sess => lift(s.agentId).forall(aid => sess.agentId == aid))
         .filter(sess => lift(s.userId).forall(uid => sess.userId == uid))
-        .filter(sess => lift(s.chatRef).forall(cr => sess.chatRef.exists(_ == cr))),
+        .filter(sess => lift(s.chatRef).forall(cr => sess.chatRef.contains(cr))),
     )
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[AgentSession]] = s.sorts match {
@@ -369,7 +379,7 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
 
 // ─── Conversation ─────────────────────────────────────────────────────────────
 
-private class QuillConversationRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ConversationZIORepository {
+private class QuillConversationRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOConversationRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -423,7 +433,7 @@ private class QuillConversationRepository(qc: QuillCtx) extends QuillRepoBase(qc
 
 // ─── Skill ────────────────────────────────────────────────────────────────────
 
-private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with SkillZIORepository {
+private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOSkillRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -561,7 +571,7 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
 
 // ─── Memory ───────────────────────────────────────────────────────────────────
 
-private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with MemoryZIORepository {
+private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOMemoryRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -655,7 +665,7 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
 
 // ─── EventLog ─────────────────────────────────────────────────────────────────
 
-private class QuillEventLogRepository(qc: QuillCtx) extends QuillRepoBase(qc) with EventLogZIORepository {
+private class QuillEventLogRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOEventLogRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -734,7 +744,7 @@ private class QuillEventLogRepository(qc: QuillCtx) extends QuillRepoBase(qc) wi
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
-private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) with SchedulerZIORepository {
+private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOSchedulerRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -888,7 +898,7 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
 
 // ─── Artifact ─────────────────────────────────────────────────────────────────
 
-private class QuillArtifactRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ArtifactZIORepository {
+private class QuillArtifactRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOArtifactRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -990,7 +1000,7 @@ private class QuillArtifactRepository(qc: QuillCtx) extends QuillRepoBase(qc) wi
 
 // ─── Permission ───────────────────────────────────────────────────────────────
 
-private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) with PermissionZIORepository {
+private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOPermissionRepository {
 
   import JorlanSchema.*
   import qc.ctx.*
@@ -1302,7 +1312,7 @@ private[repository] case class ServerSettingRow(
   value:      String,
 )
 
-private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ServerSettingsRepository {
+private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOServerSettingsRepository {
 
   import JorlanSchema.*
   import qc.ctx.{*, given}

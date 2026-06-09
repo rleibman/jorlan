@@ -73,10 +73,8 @@ object JorlanAPI {
             process(request)
     }
 
-  type JorlanApiEnv =
-    UserZIORepository & PermissionZIORepository & EventLogZIORepository & ServerSettingsRepository &
-      CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService & MemorySkill & JobManager &
-      ApprovalService & ModelGateway
+  type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
+    MemorySkill & JobManager & ApprovalService & ModelGateway
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -413,10 +411,10 @@ object JorlanAPI {
     actorId:   Option[UserId],
     resource:  Option[Any],
     now:       Instant,
-  ): ZIO[EventLogZIORepository, JorlanError, Unit] =
+  ): ZIO[ZIORepositories, JorlanError, Unit] =
     ZIO
-      .serviceWithZIO[EventLogZIORepository](
-        _.append(
+      .serviceWithZIO[ZIORepositories](
+        _.eventLog.append(
           EventLog[Nothing](
             id = EventLogId.empty,
             eventType = eventType,
@@ -442,15 +440,15 @@ object JorlanAPI {
     ](
       RootResolver(
         Queries(
-          user = input => ZIO.serviceWithZIO[UserZIORepository](_.getById(input)),
+          user = input => ZIO.serviceWithZIO[ZIORepositories](_.user.getById(input)),
           users = input =>
-            ZIO.serviceWithZIO[UserZIORepository](
-              _.search(UserSearch(page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(20))),
+            ZIO.serviceWithZIO[ZIORepositories](
+              _.user.search(UserSearch(page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(20))),
             ),
-          role = input => ZIO.serviceWithZIO[PermissionZIORepository](_.getRole(input)),
+          role = input => ZIO.serviceWithZIO[ZIORepositories](_.permission.getRole(input)),
           roles = input =>
-            ZIO.serviceWithZIO[PermissionZIORepository](
-              _.searchRoles(
+            ZIO.serviceWithZIO[ZIORepositories](
+              _.permission.searchRoles(
                 RoleSearch(
                   userId = input.userId,
                   page = input.page.getOrElse(0),
@@ -459,8 +457,8 @@ object JorlanAPI {
               ),
             ),
           permissions = input =>
-            ZIO.serviceWithZIO[PermissionZIORepository](
-              _.searchPermissions(
+            ZIO.serviceWithZIO[ZIORepositories](
+              _.permission.searchPermissions(
                 PermissionSearch(
                   userId = Some(input.userId),
                   page = input.page.getOrElse(0),
@@ -479,7 +477,7 @@ object JorlanAPI {
           serverPersonality = for {
             actorId <- actorIdFromSession
             _       <- requireCapability("admin.personality.read", actorId)
-            p       <- ServerSettingsRepository.getPersonality
+            p       <- ZIOServerSettingsRepository.getPersonality
           } yield p,
           listMemory = input =>
             for {
@@ -492,8 +490,8 @@ object JorlanAPI {
             } yield records,
           listCapabilities = for {
             actorId <- actorIdFromSession
-            grants  <- ZIO.serviceWithZIO[PermissionZIORepository](
-              _.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
+            grants  <- ZIO.serviceWithZIO[ZIORepositories](
+              _.permission.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
             )
           } yield grants,
           jobs = agentIdOpt =>
@@ -517,7 +515,7 @@ object JorlanAPI {
           listApprovals = for {
             actorId <- actorIdFromSession
             result  <- ZIO
-              .serviceWithZIO[PermissionZIORepository](_.listPendingApprovals(actorId)).mapError(JorlanError(_))
+              .serviceWithZIO[ZIORepositories](_.permission.listPendingApprovals(actorId)).mapError(JorlanError(_))
           } yield result,
           availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
         ),
@@ -528,8 +526,8 @@ object JorlanAPI {
               _       <- requireCapability("user.create", actorId)
               email   <- ZIO.fromOption(input.email).orElseFail(JorlanError("email is required"))
               now     <- Clock.instant
-              user    <- ZIO.serviceWithZIO[UserZIORepository](
-                _.upsert(User(UserId.empty, input.displayName, email, now, now)),
+              user    <- ZIO.serviceWithZIO[ZIORepositories](
+                _.user.upsert(User(UserId.empty, input.displayName, email, now, now)),
               )
               _ <- logEvent(EventType.UserCreated, Some(actorId), None, now)
             } yield user,
@@ -540,10 +538,10 @@ object JorlanAPI {
               email    <- ZIO.fromOption(input.email).orElseFail(JorlanError("email is required"))
               now      <- Clock.instant
               existing <- ZIO
-                .serviceWithZIO[UserZIORepository](_.getById(input.id))
+                .serviceWithZIO[ZIORepositories](_.user.getById(input.id))
                 .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"User ${input.id.value} not found")))
-              user <- ZIO.serviceWithZIO[UserZIORepository](
-                _.upsert(User(input.id, input.displayName, email, existing.createdAt, now, input.active)),
+              user <- ZIO.serviceWithZIO[ZIORepositories](
+                _.user.upsert(User(input.id, input.displayName, email, existing.createdAt, now, input.active)),
               )
               _ <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
             } yield user,
@@ -551,8 +549,8 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.create", actorId)
-              role    <- ZIO.serviceWithZIO[PermissionZIORepository](
-                _.upsertRole(Role(RoleId.empty, input.name, input.description)),
+              role    <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertRole(Role(RoleId.empty, input.name, input.description)),
               )
             } yield role,
           assignRole = input =>
@@ -560,7 +558,7 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.assign", actorId)
               now     <- Clock.instant
-              _       <- ZIO.serviceWithZIO[PermissionZIORepository](_.assignRole(input.userId, input.roleId))
+              _       <- ZIO.serviceWithZIO[ZIORepositories](_.permission.assignRole(input.userId, input.roleId))
               _       <- logEvent(EventType.RoleAssigned, Some(actorId), None, now)
             } yield (),
           revokeRole = input =>
@@ -568,7 +566,7 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("role.revoke", actorId)
               now     <- Clock.instant
-              _       <- ZIO.serviceWithZIO[PermissionZIORepository](_.removeRole(input.userId, input.roleId))
+              _       <- ZIO.serviceWithZIO[ZIORepositories](_.permission.removeRole(input.userId, input.roleId))
               _       <- logEvent(EventType.RoleRevoked, Some(actorId), None, now)
             } yield (),
           grantPermission = input =>
@@ -580,8 +578,8 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.grant", actorId)
               now     <- Clock.instant
-              perm    <- ZIO.serviceWithZIO[PermissionZIORepository](
-                _.upsertPermission(
+              perm    <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertPermission(
                   Permission(PermissionId.empty, input.roleId, input.userId, input.resource, input.action, None),
                 ),
               )
@@ -592,7 +590,7 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("permission.revoke", actorId)
               now     <- Clock.instant
-              count   <- ZIO.serviceWithZIO[PermissionZIORepository](_.deletePermission(input))
+              count   <- ZIO.serviceWithZIO[ZIORepositories](_.permission.deletePermission(input))
               _       <- logEvent(EventType.PermissionRevoked, Some(actorId), None, now)
             } yield count,
           createSession = input =>
@@ -613,7 +611,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.personality.update", actorId)
-              _       <- ServerSettingsRepository.setPersonality(input)
+              _       <- ZIOServerSettingsRepository.setPersonality(input)
             } yield input,
           storeMemory = input =>
             for {

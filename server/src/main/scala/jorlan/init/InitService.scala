@@ -11,12 +11,7 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.{
-  EventLogZIORepository,
-  PermissionZIORepository,
-  ServerSettingsRepository,
-  UserZIORepository,
-}
+import jorlan.db.repository.*
 import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
@@ -95,7 +90,7 @@ trait InitService {
 
   /** Returns `true` if the server has been initialized (i.e., the `initialized` flag is `true` in `server_settings`).
     */
-  def isInitialized: UIO[Boolean]
+  def isInitialized: IO[JorlanError, Boolean]
 
   /** Validates inputs, creates the admin user with the given password, persists server settings, and invalidates the
     * setup token. Fails with [[ValidationError]] (→ HTTP 400) for bad inputs, or [[JorlanError]] (→ HTTP 403) if the
@@ -124,7 +119,7 @@ trait InitService {
 
 object InitService {
 
-  def isInitialized: URIO[InitService, Boolean] =
+  def isInitialized: ZIO[InitService, JorlanError, Boolean] =
     ZIO.serviceWithZIO[InitService](_.isInitialized)
 
   def complete(
@@ -140,15 +135,12 @@ object InitService {
 
 @scala.annotation.nowarn("msg=IsUnionOf")
 class InitServiceImpl(
-  settings:     ServerSettingsRepository,
-  userRepo:     UserZIORepository,
-  tokenStore:   InitTokenStore,
-  eventLogRepo: EventLogZIORepository,
-  permRepo:     PermissionZIORepository,
+  repo:       ZIORepositories,
+  tokenStore: InitTokenStore,
 ) extends InitService {
 
-  override def isInitialized: UIO[Boolean] =
-    settings.get(ServerSettingsRepository.InitializedKey).map {
+  override def isInitialized: IO[JorlanError, Boolean] =
+    repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {
       case Some(Json.Bool(v)) => v
       case _                  => false
     }
@@ -167,13 +159,13 @@ class InitServiceImpl(
       _           <- ZIO.unless(tokenOk)(ZIO.fail(JorlanError("Invalid setup token")))
       _           <- validateInputs(serverName, adminEmail, adminPassword)
       now         <- Clock.instant
-      createdUser <- userRepo.upsert(User(UserId.empty, adminName, adminEmail, now, now))
-      _           <- userRepo.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
+      createdUser <- repo.user.upsert(User(UserId.empty, adminName, adminEmail, now, now))
+      _           <- repo.user.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
       _           <- seedAdminGrants(createdUser.id, now)
-      _           <- settings.set(ServerSettingsRepository.InitializedKey, Json.Bool(true))
-      _           <- settings.set(ServerSettingsRepository.ServerNameKey, Json.Str(serverName))
+      _           <- repo.setting.set(ZIOServerSettingsRepository.InitializedKey, Json.Bool(true))
+      _           <- repo.setting.set(ZIOServerSettingsRepository.ServerNameKey, Json.Str(serverName))
       _           <- tokenStore.invalidate
-      _           <- eventLogRepo.append(
+      _           <- repo.eventLog.append(
         EventLog[Nothing](
           id = EventLogId.empty,
           eventType = EventType.ServerInitialized,
@@ -210,7 +202,7 @@ class InitServiceImpl(
   ): IO[JorlanError, Unit] =
     ZIO
       .foreachDiscard(adminCapabilities) { cap =>
-        permRepo.upsertCapabilityGrant(
+        repo.permission.upsertCapabilityGrant(
           CapabilityGrant(
             id = CapabilityGrantId.empty,
             capability = cap,
@@ -247,10 +239,7 @@ object InitServiceImpl {
   // this layer. `InitTokenStore` requires the `initialized` flag read from the DB after Flyway has run,
   // which is not available at ZLayer bootstrap time. This layer is available for test code that
   // provides a pre-built `InitTokenStore` via its own setup logic.
-  val layer: URLayer[
-    ServerSettingsRepository & UserZIORepository & InitTokenStore & EventLogZIORepository & PermissionZIORepository,
-    InitService,
-  ] =
-    ZLayer.fromFunction(InitServiceImpl(_, _, _, _, _))
+  val layer: URLayer[ZIORepositories & InitTokenStore, InitService] =
+    ZLayer.fromFunction(InitServiceImpl(_, _))
 
 }

@@ -17,11 +17,10 @@ import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.connector.telegram.*
 import jorlan.db.FlywayMigration
-import jorlan.db.repository.{QuillRepositories, SkillZIORepository}
+import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.domain.*
 import jorlan.service.*
 import zio.http.Client
-import zio.json.*
 import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
 
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
@@ -72,10 +71,10 @@ object EnvironmentBuilder {
         },
       ).flatten
 
-  private val liveConnectorManagerLayer: URLayer[SkillZIORepository & MessageIngress & Client, ConnectorManager] =
+  private val liveConnectorManagerLayer: URLayer[ZIORepositories & MessageIngress & Client, ConnectorManager] =
     ZLayer.fromZIO {
       for {
-        skillRepo  <- ZIO.service[SkillZIORepository]
+        skillRepo  <- ZIO.serviceWith[ZIORepositories](_.skill)
         ingress    <- ZIO.service[MessageIngress]
         httpClient <- ZIO.service[Client]
         connectors <- skillRepo

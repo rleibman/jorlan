@@ -115,7 +115,7 @@ object JorlanEndToEndSpec extends ZIOSpecDefault {
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("Jorlan end-to-end (real DB)")(
       test("Jorlan.buildRoutes succeeds with full environment") {
-        Jorlan.buildRoutes().as(assertTrue(true))
+        Jorlan.zapp().as(assertTrue(true))
       },
       test("seeded server user is returned by users query") {
         for {

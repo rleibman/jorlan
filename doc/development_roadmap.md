@@ -279,6 +279,8 @@ does.
 > that executes tool calls via the skill runtime and re-submits results to the model (the "ReAct" pattern). This
 > architecture is intentionally deferred until Phase 12 introduces built-in skills. In Phase 8, `AgentRunner` is a
 > thin pass-through: message in → `streamedChat` → stream back. No multi-step loops, no tool dispatch.
+> See Phase 12 "Foundation" section for the concrete implementation plan. Until that lands, no natural-language
+> skill invocation works regardless of how many skills are registered.
 
 ### GraphQL changes
 
@@ -671,23 +673,53 @@ See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugi
 **Goal:** Core Tier-0 skills that unlock real agent utility — file access, shell, notifications, identity, and
 scheduling.
 
-- [ ] **Skill registry infrastructure** (`SkillRegistry` ZIO service): register, look up by id/tier, validate manifest
-  JSON schema
-- [ ] **Workspace/Filesystem skill** (`workspace.*`)
-    - `workspace.read` (read file by path within scoped workspace)
-    - `workspace.write` (write file; creates path if needed)
-    - `workspace.search` (find files by glob or text)
-    - `workspace.snapshot` (tar/zip of workspace)
+> **This phase is the prerequisite for all natural-language skill invocation.**  Until the items in
+> "Foundation" are complete, the LLM cannot call any tool regardless of how many skills are registered.
+> The use-case prompts in `doc/manual-testing-guide.md` Section G (e.g. "Send a telegram message to Sarah")
+> cannot work until this phase is done.
+
+### Foundation (must land first — blocks everything below)
+
+- [ ] **ReAct tool-calling loop in `AgentRunnerImpl`** — replaces the current thin pass-through with a
+  planner/dispatcher loop:
+    - `ModelGateway.streamedResponse` extended to accept a list of tool descriptors and signal tool-call
+      requests (LangChain4j `ToolSpecification` / `ToolExecutionRequest`)
+    - `AgentRunnerImpl.processMessage` iterates: send message → if model returns a tool call, invoke it via
+      `SkillRegistry`, append the result, re-submit; repeat until the model returns a final text answer
+    - `Planner` type that parses model output into `PlanStep` (either `FinalAnswer(text)` or
+      `ToolCall(name, args)`)
+    - Loop bounded by a configurable max-steps guard to prevent runaway chains
+    - Each tool call written to the event log (`ToolInvoked`, `ToolResult`)
+- [ ] **`SkillRegistry` ZIO service** — the bridge between the loop and registered skills:
+    - Register/look up `Skill` instances by id and tier
+    - `MemorySkill` (Phase 9) and `SchedulerSkill` (Phase 10) wired in at startup as Tier-0 skills
+    - `TelegramConnectorSkill` tools (`telegram.send_message`, `telegram.send_photo`, `telegram.send_file`)
+      wired in when the Telegram connector is configured
+    - Validate tool `args` JSON against each skill's manifest schema before invoking
+    - Enforce capability gate (`agent.skill.invoke`) per invocation
+
+### Skills
+
+- [ ] **Notification skill** (`notify.*`) — the idiomatic agent-facing wrapper over outbound connectors:
+    - `notify.user(userId, message)` — looks up the user's preferred channel identity, routes to
+      `NotificationRouter` → Telegram (or console fallback)
+    - `notify.channel(chatId, connectorType, message)` — sends to an explicit channel
+    - `NotificationRouter` ZIO service: given a `(UserId, message)`, resolves the active connector for that
+      user and calls `ConnectorSkill.invoke("send_message", …)` — this is the missing piece that makes
+      "Send a telegram message to Sarah" work end-to-end
+- [ ] **Identity and Contacts skill** (`identity.*`, `contacts.*`):
+    - `contacts.find(name)` — searches `ChannelIdentity` records by display name / email, returns
+      `channelUserId` and `channelType` — this is the missing name → chat ID resolution step
+    - `identity.resolve`, `identity.link`, `identity.verify`, `identity.listAliases`
+- [ ] **Workspace/Filesystem skill** (`workspace.*`):
+    - `workspace.read`, `workspace.write`, `workspace.search`, `workspace.snapshot`
     - `workspace.delete` (requires explicit approval)
-- [ ] **Shell execution skill** (`shell.*`)
+- [ ] **Shell execution skill** (`shell.*`):
     - `RiskClassifier` for shell commands (Class 0–5)
     - Structured command execution (`binary + args + cwd + timeout`; raw `bash -c` disabled by default)
     - Capture stdout/stderr, exit code → write to `ArtifactRepository`
     - Full trace: user, agent, workspace, binary, args, timing, exit code, artifact refs, approval ID
-- [ ] **Identity and Contacts skill** (`identity.*`, `contacts.*`): resolve, link, verify, list aliases, search contacts
-- [ ] **Notification skill** (`notify.*`): `notify.user`, `notify.channel` — delivers via `NotificationRouter` →
-  Telegram, or console fallback
-- [ ] Tests for each skill including permission enforcement
+- [ ] Tests for each skill including permission enforcement and the full tool-calling loop
 
 ---
 

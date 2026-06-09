@@ -47,8 +47,8 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
     )
 
   private def createUserAndAgent(
-    userRepo:  UserZIORepository,
-    agentRepo: AgentZIORepository,
+    userRepo:  ZIOUserRepository,
+    agentRepo: ZIOAgentRepository,
     suffix:    String,
   ): UIO[(UserId, AgentId)] =
     for {
@@ -60,9 +60,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
     suite("SchedulerRepository")(
       test("upsert and retrieve a job") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched1")
           job = makeJob(aid, uid, "nightly-cleanup")
           saved   <- repo.upsertJob(job)
@@ -75,9 +75,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("upsert updates mutable fields") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched2")
           job = makeJob(aid, uid, "updatable-job")
           saved   <- repo.upsertJob(job)
@@ -90,9 +90,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("getPendingJobs returns jobs scheduled in the past") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched3")
           past = T0.minusSeconds(3600)
           future = T0.plusSeconds(3600)
@@ -104,9 +104,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("deleteJob removes the job") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched4")
           job        <- repo.upsertJob(makeJob(aid, uid, "del-job"))
           count      <- repo.deleteJob(job.id)
@@ -115,9 +115,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("upsertTrigger and searchTriggers") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched5")
           job        <- repo.upsertJob(makeJob(aid, uid, "trig-job"))
           t1         <- repo.upsertTrigger(
@@ -137,9 +137,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("searchTriggers descending sort") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched6")
           job        <- repo.upsertJob(makeJob(aid, uid, "sort-job"))
           _          <- repo.upsertTrigger(
@@ -158,9 +158,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("upsertTrigger updates expression and enabled flag") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched7")
           job        <- repo.upsertJob(makeJob(aid, uid, "upd-trig-job"))
           t          <- repo.upsertTrigger(
@@ -172,9 +172,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("deleteTrigger removes the trigger") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched8")
           job        <- repo.upsertJob(makeJob(aid, uid, "deltrig-job"))
           t          <- repo.upsertTrigger(
@@ -186,9 +186,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("claimJob — only one worker wins") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched9")
           job        <- repo.upsertJob(makeJob(aid, uid, "claim-job"))
           win        <- repo.claimJob(job.id, "worker-A", T0, 300)
@@ -197,9 +197,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("releaseJob sets final status and clears lease") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched10")
           job        <- repo.upsertJob(makeJob(aid, uid, "release-job"))
           _          <- repo.claimJob(job.id, "worker-A", T0, 300)
@@ -214,9 +214,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("expireLeases reclaims stale Running jobs to Pending") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched11")
           job        <- repo.upsertJob(makeJob(aid, uid, "stale-lease"))
           leasedAt = T0.minusSeconds(600)
@@ -235,9 +235,9 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
       },
       test("listJobs(Some(agentId)) returns only jobs for that agent") {
         for {
-          userRepo   <- ZIO.service[UserZIORepository]
-          agentRepo  <- ZIO.service[AgentZIORepository]
-          repo       <- ZIO.service[SchedulerZIORepository]
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
           (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched12a")
           (_, aid2)  <- createUserAndAgent(userRepo, agentRepo, "Sched12b")
           _          <- repo.upsertJob(makeJob(aid, uid, "agent1-only"))
@@ -251,6 +251,6 @@ object SchedulerRepositorySpec extends ZIOSpecDefault {
           !filtered.exists(_.name == "agent2-only"),
         )
       },
-    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ).provideShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
 
 }

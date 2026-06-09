@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
+import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
 import zio.*
 
@@ -21,9 +21,8 @@ import zio.*
   * [[terminateSession]] also calls [[ModelGateway.invalidateSession]] to release any in-memory model state.
   */
 class AgentSessionManagerImpl(
-  agentRepo:            AgentZIORepository,
+  repo:                 ZIORepositories,
   modelGateway:         ModelGateway,
-  eventLogRepo:         EventLogZIORepository,
   cachedDefaultAgentId: Ref[Option[AgentId]],
 ) extends AgentSessionManager {
 
@@ -35,12 +34,12 @@ class AgentSessionManagerImpl(
   private def getDefaultAgent: IO[JorlanError, Agent] =
     cachedDefaultAgentId.get.flatMap {
       case Some(id) =>
-        agentRepo
+        repo.agent
           .getById(id)
           .mapError(JorlanError(_))
           .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"Default agent $id not found; check V016 migration")))
       case None =>
-        agentRepo
+        repo.agent
           .search(AgentSearch())
           .mapError(JorlanError(_))
           .flatMap { agents =>
@@ -68,8 +67,8 @@ class AgentSessionManagerImpl(
         createdAt = now,
         updatedAt = now,
       )
-      saved <- agentRepo.upsertSession(session).mapError(JorlanError(_))
-      _     <- eventLogRepo.append(
+      saved <- repo.agent.upsertSession(session).mapError(JorlanError(_))
+      _     <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.SessionCreated,
@@ -84,7 +83,7 @@ class AgentSessionManagerImpl(
     } yield saved
 
   override def getSession(id: AgentSessionId): IO[JorlanError, Option[AgentSession]] =
-    agentRepo.getSession(id).mapError(JorlanError(_))
+    repo.agent.getSession(id).mapError(JorlanError(_))
 
   private def updateStatus(
     id:        AgentSessionId,
@@ -92,15 +91,15 @@ class AgentSessionManagerImpl(
     eventType: EventType,
   ): IO[JorlanError, AgentSession] =
     for {
-      session <- agentRepo
+      session <- repo.agent
         .getSession(id)
         .mapError(JorlanError(_))
         .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"Session $id not found")))
       now   <- Clock.instant
-      saved <- agentRepo
+      saved <- repo.agent
         .upsertSession(session.copy(status = status, updatedAt = now))
         .mapError(JorlanError(_))
-      _ <- eventLogRepo.append(
+      _ <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -126,7 +125,7 @@ class AgentSessionManagerImpl(
     page:     Int,
     pageSize: Int,
   ): IO[JorlanError, List[AgentSession]] =
-    agentRepo
+    repo.agent
       .searchSessions(AgentSessionSearch(userId = Some(userId), page = page, pageSize = pageSize))
       .mapError(JorlanError(_))
 
@@ -135,14 +134,13 @@ class AgentSessionManagerImpl(
 object AgentSessionManagerImpl {
 
   /** Constructs the layer. Allocates a [[Ref]] for the cached default agent ID. */
-  val live: URLayer[AgentZIORepository & ModelGateway & EventLogZIORepository, AgentSessionManager] =
+  val live: URLayer[ZIORepositories & ModelGateway, AgentSessionManager] =
     ZLayer.fromZIO(
       for {
-        agentRepo    <- ZIO.service[AgentZIORepository]
+        repo         <- ZIO.service[ZIORepositories]
         modelGateway <- ZIO.service[ModelGateway]
-        eventLogRepo <- ZIO.service[EventLogZIORepository]
         cached       <- Ref.make(Option.empty[AgentId])
-      } yield AgentSessionManagerImpl(agentRepo, modelGateway, eventLogRepo, cached),
+      } yield AgentSessionManagerImpl(repo, modelGateway, cached),
     )
 
 }

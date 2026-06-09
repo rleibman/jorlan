@@ -23,7 +23,7 @@ object SchedulerSkillSpec extends ZIOSpec[SchedulerSkill & JobManager] {
 
   override val bootstrap: ULayer[SchedulerSkill & JobManager] =
     ZLayer.make[SchedulerSkill & JobManager](
-      InMemoryRepositories.InMemorySchedulerRepo.layer,
+      InMemoryRepositories.live(),
       JobManagerImpl.live,
       SchedulerSkill.live,
     )

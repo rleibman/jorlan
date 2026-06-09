@@ -22,13 +22,6 @@ import java.time.Instant
 
 object ApprovalServiceSpec extends ZIOSpecDefault {
 
-  private val appLayer =
-    ZLayer.make[ApprovalService & PermissionZIORepository & EventLogZIORepository & UserZIORepository](
-      JorlanContainer.repositoryLayer,
-      CapabilityEvaluatorImpl.live,
-      ApprovalServiceImpl.live,
-    )
-
   private def capReq(
     userId: UserId,
     cap:    String,
@@ -45,9 +38,9 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     suite("ApprovalService integration")(
       test("Persistent grant → Allowed and CapabilityAllowed event written") {
         for {
-          userRepo     <- ZIO.service[UserZIORepository]
-          permRepo     <- ZIO.service[PermissionZIORepository]
-          eventLogRepo <- ZIO.service[EventLogZIORepository]
+          userRepo     <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           svc          <- ZIO.service[ApprovalService]
           user         <- userRepo.upsert(User(UserId.empty, "ASUser1", "", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
@@ -72,9 +65,9 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       },
       test("Denied grant → Denied and CapabilityDenied event written") {
         for {
-          userRepo     <- ZIO.service[UserZIORepository]
-          permRepo     <- ZIO.service[PermissionZIORepository]
-          eventLogRepo <- ZIO.service[EventLogZIORepository]
+          userRepo     <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           svc          <- ZIO.service[ApprovalService]
           user         <- userRepo.upsert(User(UserId.empty, "ASUser2", "", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
@@ -99,8 +92,8 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       },
       test("PerInvocation grant → PendingApproval with real DB-assigned id") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          permRepo <- ZIO.service[PermissionZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser3", "", T0, T0))
           _        <- permRepo.upsertCapabilityGrant(
@@ -126,8 +119,8 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       test("expireStaleRequests returns count of expired requests") {
         for {
           _        <- TestClock.setTime(T0)
-          userRepo <- ZIO.service[UserZIORepository]
-          permRepo <- ZIO.service[PermissionZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser4", "", T0, T0))
           // Two pending requests with past expiresAt (truly in the past)
@@ -164,8 +157,8 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       },
       test("expireStaleRequests returns 0 when no stale requests") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          permRepo <- ZIO.service[PermissionZIORepository]
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
           svc      <- ZIO.service[ApprovalService]
           user     <- userRepo.upsert(User(UserId.empty, "ASUser5", "", T0, T0))
           // A pending request with future expiresAt
@@ -186,6 +179,10 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
           count <- svc.expireStaleRequests()
         } yield assertTrue(count == 0L)
       },
-    ).provideLayerShared(appLayer) @@ TestAspect.sequential
+    ).provideShared(
+      JorlanContainer.repositoryLayer,
+      CapabilityEvaluatorImpl.live,
+      ApprovalServiceImpl.live,
+    ) @@ TestAspect.sequential
 
 }
