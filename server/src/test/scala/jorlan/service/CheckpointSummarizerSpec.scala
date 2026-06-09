@@ -18,7 +18,7 @@ import zio.test.*
 
 import java.time.Instant
 
-object CheckpointSummarizerSpec extends ZIOSpecDefault {
+object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
 
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
@@ -29,7 +29,13 @@ object CheckpointSummarizerSpec extends ZIOSpecDefault {
     content: String,
   ) = Message(MessageId.empty, ConversationId.empty, role, content, None, now)
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def bootstrap: ULayer[CheckpointSummarizer] =
+    ZLayer.make[CheckpointSummarizer](
+      FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")),
+      CheckpointSummarizerImpl.live,
+    )
+
+  override def spec: Spec[CheckpointSummarizer & TestEnvironment & Scope, Any] =
     suite("CheckpointSummarizer")(
       test("empty messages produce no records") {
         for {
@@ -49,11 +55,6 @@ object CheckpointSummarizerSpec extends ZIOSpecDefault {
           // FakeModelGateway emits "- User prefers Python\n- Project is Jorlan"
           assertTrue(records.nonEmpty, records.forall(_.recordKey == "episodic.checkpoint"))
       },
-    ).provide(
-      ZLayer.make[CheckpointSummarizer](
-        FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")),
-        CheckpointSummarizerImpl.live,
-      ),
     ) +
       suite("degenerate LLM responses")(
         test("blank LLM response produces empty record list") {

@@ -17,13 +17,7 @@ import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
 
-object HumanApprovalNotifierSpec extends ZIOSpec[HumanApprovalNotifier & ZIORepositories] {
-
-  override def bootstrap: ULayer[HumanApprovalNotifier & ZIORepositories] =
-    ZLayer.make[HumanApprovalNotifier & ZIORepositories](
-      InMemoryRepositories.live(),
-      HumanApprovalNotifierImpl.live,
-    )
+object HumanApprovalNotifierSpec extends ZIOSpecDefault {
 
   private def makeRequest(id: Long): ApprovalRequest =
     ApprovalRequest(
@@ -39,7 +33,13 @@ object HumanApprovalNotifierSpec extends ZIOSpec[HumanApprovalNotifier & ZIORepo
       expiresAt = None,
     )
 
-  override def spec: Spec[HumanApprovalNotifier & ZIORepositories & TestEnvironment & Scope, Any] =
+  private val layer: ULayer[HumanApprovalNotifier & ZIORepositories] =
+    ZLayer.make[HumanApprovalNotifier & ZIORepositories](
+      InMemoryRepositories.live(),
+      HumanApprovalNotifierImpl.live,
+    )
+
+  override def spec =
     suite("HumanApprovalNotifier")(
       test("notifyApprovalRequired logs ApprovalRequested event") {
         val request = makeRequest(1L)
@@ -61,6 +61,6 @@ object HumanApprovalNotifierSpec extends ZIOSpec[HumanApprovalNotifier & ZIORepo
           result   <- notifier.notifyApprovalRequired(request)
         } yield assertTrue(result == ())
       },
-    )
+    ).provide(layer)
 
 }

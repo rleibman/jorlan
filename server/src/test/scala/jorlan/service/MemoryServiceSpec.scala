@@ -20,20 +20,31 @@ import zio.test.*
 import java.time.Instant
 
 object MemoryServiceSpec extends ZIOSpec[MemoryService] {
-  override def bootstrap: ULayer[MemoryService] = ZLayer.make[MemoryService](
-    InMemoryRepositories.live(),
-    ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-    ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-    ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-    FakeModelGateway.layer(List("- User prefers Scala\n")),
-    CheckpointSummarizerImpl.live,
-    MemoryServiceImpl.live,
-  )
-  
+
+  private class NoOpCheckpointSummarizer extends CheckpointSummarizer {
+
+    override def summarize(
+      messages: List[Message],
+      userId:   UserId,
+      agentId:  AgentId,
+    ): IO[JorlanError, List[MemoryRecord]] =
+      ZIO.succeed(Nil)
+
+  }
+
+  override def bootstrap: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.live(),
+      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
+      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
+      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+    )
+
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
-  
-  
+
   private def makeRecord(
     key:   String,
     text:  String,
@@ -54,30 +65,8 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
     )
   }
 
-  // Minimal no-op summarizer for MemoryServiceSpec
-  private class NoOpCheckpointSummarizer extends CheckpointSummarizer {
-
-    override def summarize(
-      messages: List[Message],
-      userId:   UserId,
-      agentId:  AgentId,
-    ): IO[JorlanError, List[MemoryRecord]] =
-      ZIO.succeed(Nil)
-
-  }
-
-  private val directLayers: ULayer[MemoryService] =
-    ZLayer.make[MemoryService](
-      InMemoryRepositories.live(),
-      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
-      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
-      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-      MemoryServiceImpl.live,
-    )
-
-  override def spec =
-    suite("MemoryService")(
+  override def spec: Spec[MemoryService & TestEnvironment & Scope, Any] =
+    (suite("MemoryService")(
       test("store and query returns the record") {
         for {
           svc <- ZIO.service[MemoryService]
@@ -243,7 +232,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
           result <- MemoryService.forget(stored.id, userId)
         } yield assertTrue(result)
       },
-    ).provide(directLayers) +
+    ) @@ TestAspect.sequential) +
       suite("checkpoint with real summarizer")(
         test("checkpoint writes summarizer output to repo") {
           for {
@@ -256,7 +245,17 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
             _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
             after  <- svc.query(MemoryScope.User, userId, agentId)
           } yield assertTrue(after.size > before.size)
-        },
+        }.provide(
+          ZLayer.make[MemoryService](
+            InMemoryRepositories.live(),
+            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+            FakeModelGateway.layer(List("- User prefers Scala\n")),
+            CheckpointSummarizerImpl.live,
+            MemoryServiceImpl.live,
+          ),
+        ),
         test("checkpoint classifies PII bullet as Private scope") {
           for {
             svc <- ZIO.service[MemoryService]

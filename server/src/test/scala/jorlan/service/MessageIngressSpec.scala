@@ -145,7 +145,7 @@ object MessageIngressSpec extends ZIOSpecDefault {
       agentRunner = RecordingAgentRunner(dispatched),
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec =
     suite("MessageIngressImpl")(
       test("dispatches known user's message to AgentRunner") {
         for {

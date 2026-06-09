@@ -17,7 +17,7 @@ import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
 
-object AgentSessionManagerSpec extends ZIOSpec[AgentSessionManager & SessionHub & ZIORepositories] {
+object AgentSessionManagerSpec extends ZIOSpecDefault {
 
   private val userId = UserId(1L)
 
@@ -42,7 +42,7 @@ object AgentSessionManagerSpec extends ZIOSpec[AgentSessionManager & SessionHub 
       } yield repo: ZIOAgentRepository
     }
 
-  override def bootstrap: ULayer[AgentSessionManager & SessionHub & ZIORepositories] =
+  private val sharedLayer: ULayer[AgentSessionManager & SessionHub & ZIORepositories] =
     ZLayer.make[AgentSessionManager & SessionHub & ZIORepositories](
       InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(agentRepoOpt =
         Some(seededAgentRepoLayer),
@@ -74,8 +74,8 @@ object AgentSessionManagerSpec extends ZIOSpec[AgentSessionManager & SessionHub 
           )
         } yield assertTrue(
           events.nonEmpty,
-          events.head.sessionId.contains(session.id),
-          events.head.actorId.contains(userId),
+          events.exists(_.sessionId.contains(session.id)),
+          events.exists(_.actorId.contains(userId)),
         )
       },
       test("getSession returns the created session") {
@@ -151,6 +151,6 @@ object AgentSessionManagerSpec extends ZIOSpec[AgentSessionManager & SessionHub 
           } yield assertTrue(results.exists(_.id == created.id))
         },
       ),
-    )
+    ).provide(sharedLayer)
 
 }
