@@ -33,6 +33,8 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       FakeModelGateway.layer(chunks, delay),
       SessionHub.live,
       NoOpMemoryService.layer,
+      SkillRegistry.live,
+      ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
     )
 
@@ -41,6 +43,8 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       FakeModelGateway.failingLayer(ModelUnavailable("offline")),
       SessionHub.live,
       NoOpMemoryService.layer,
+      SkillRegistry.live,
+      ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
     )
   }
@@ -203,6 +207,8 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
         InMemoryRepositories.live(),
         FakeModelGateway.layer(List("ok")),
         NoOpMemoryService.layer,
+        SkillRegistry.live,
+        ZLayer.succeed(AgentSettings()),
         AgentRunnerImpl.live,
         SessionHub.live,
       ),
@@ -238,6 +244,8 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
             FakeModelGateway.capturingLayer(List("ok"), capturedPrompts),
             SessionHub.live,
+            SkillRegistry.live,
+            ZLayer.succeed(AgentSettings()),
             AgentRunnerImpl.live,
             ZLayer.succeed(new CheckpointSummarizer {
               override def summarize(

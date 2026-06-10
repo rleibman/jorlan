@@ -347,7 +347,8 @@ is a JSON boolean; the server name is a JSON string; the personality (Phase 8.3)
 
 **Shell:**
 
-- [x] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order: `JORLAN_SHELL_CONFIG`
+- [x] `ShellConfig` config-file name changed from `jorlan.json` to `jorlan-shell.json`; load order:
+  `JORLAN_SHELL_CONFIG`
   env var → `--config` flag → `~/.jorlan/jorlan-shell.json` → `~/.jorlan/jorlan.json` (read-only backwards compat) →
   `application.conf` defaults
 - [x] `ShellConfig` writer: persists `serverUrl`, `email`, `password` to the resolved config path after successful
@@ -457,9 +458,11 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 
 ### 9.1 — Conversation History (Layer 1)
 
-- [x] V016 migration: `chat_message` table (session_id FK, role, content, created_at, index on session+time) — used existing V005 `conversation`/`message` tables; added indexes in V019
+- [x] V016 migration: `chat_message` table (session_id FK, role, content, created_at, index on session+time) — used
+  existing V005 `conversation`/`message` tables; added indexes in V019
 - [x] `ChatMessage` domain type + `ChatMessageId` opaque type in `model` — existing `Message`/`MessageId` types used
-- [x] `ConversationRepository` trait: `append`, `loadHistory(sessionId, limit)`, `deleteSession` — existing trait used; `addMessage`/`searchMessages` are the equivalents
+- [x] `ConversationRepository` trait: `append`, `loadHistory(sessionId, limit)`, `deleteSession` — existing trait used;
+  `addMessage`/`searchMessages` are the equivalents
 - [x] `ConversationRepositoryImpl` (Quill/MariaDB) in `db` — `QuillConversationRepository` already existed
 - [x] `AgentRunner.processMessage`: load history from `ConversationRepository` before model call
 - [x] `AgentRunner.processMessage`: persist user message + assistant response after model call
@@ -502,7 +505,7 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 - [x] `memory.forget` tool: id → `MemoryService.forget`
 - [x] `memory.mark_shared` tool: id → update scope to `Shared`
 - [x] `memory.mark_private` tool: id → update scope to `Private`
-- [ ] Register `MemorySkill` in `SkillRegistry` as Tier 0 (deferred to Phase 12 when SkillRegistry is built)
+- [x] Register `MemorySkill` in `SkillRegistry` as Tier 0 (completed Phase 12)
 - [x] Unit test: each tool invocation covered via `MemoryServiceSpec` and GraphQL tests
 
 ### 9.6 — GraphQL & Shell Surface
@@ -546,7 +549,8 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 - [x] `MissedRunPolicy` enum: `Skip | RunOnce | RunAllMissed`
 - [x] `RetryBackoffPolicy` enum: `Fixed | Exponential`
 - [x] `JobStatus.Paused` added (new variant)
-- [x] `SchedulerJob` extended: `userId`, `maxRetries`, `retryCount`, `backoffSeconds`, `backoffPolicy`, `missedRunPolicy`, `leasedAt`, `leasedBy`
+- [x] `SchedulerJob` extended: `userId`, `maxRetries`, `retryCount`, `backoffSeconds`, `backoffPolicy`,
+  `missedRunPolicy`, `leasedAt`, `leasedBy`
 - [x] V021 migration: new columns on `schedulerJob`, FK to `user`, lease index
 
 ### Repository Extensions
@@ -559,17 +563,22 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 
 ### Services
 
-- [x] `JobManager` ZIO service: `createJob`, `addTrigger`, `listJobs`, `getJob`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`
-- [x] `TriggerEngine` daemon fiber: polls pending jobs, claims + executes, handles missed-run policies; uses `cron4s-core` for cron expression parsing and ISO 8601 duration for interval triggers
+- [x] `JobManager` ZIO service: `createJob`, `addTrigger`, `listJobs`, `getJob`, `pauseJob`, `resumeJob`, `cancelJob`,
+  `triggerNow`
+- [x] `TriggerEngine` daemon fiber: polls pending jobs, claims + executes, handles missed-run policies; uses
+  `cron4s-core` for cron expression parsing and ISO 8601 duration for interval triggers
 - [x] `RetryEngine` (integrated into `TriggerEngine`): fixed + exponential backoff, `maxRetries` cap
-- [x] Wire: job fires → `AgentSessionManager.createSession(job.userId)` → `AgentRunner.processMessage` → collect result → `releaseJob`
-- [x] EventType additions: `SchedulerJobQueued`, `SchedulerJobStarted`, `SchedulerJobCompleted`, `SchedulerJobFailed`, `SchedulerJobCancelled`
+- [x] Wire: job fires → `AgentSessionManager.createSession(job.userId)` → `AgentRunner.processMessage` → collect
+  result → `releaseJob`
+- [x] EventType additions: `SchedulerJobQueued`, `SchedulerJobStarted`, `SchedulerJobCompleted`, `SchedulerJobFailed`,
+  `SchedulerJobCancelled`
 - [x] `TriggerEngine` started as daemon fiber in `Jorlan.run`
 
 ### GraphQL & Shell Surface
 
 - [x] Queries: `jobs(agentId)`, `job(id)`, `triggers(jobId)`, `listApprovals`
-- [x] Mutations: `createJob`, `addTrigger`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`, `deleteJob` — all gated on `scheduler.manage` capability
+- [x] Mutations: `createJob`, `addTrigger`, `pauseJob`, `resumeJob`, `cancelJob`, `triggerNow`, `deleteJob` — all gated
+  on `scheduler.manage` capability
 - [x] `decideApproval(id, decision)` mutation for approval lifecycle
 - [x] `terminateSession(id)` mutation
 - [x] `listCapabilities` query (P9-051 fix)
@@ -579,15 +588,18 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 
 ### `SchedulerSkill` (Tier 0 — logic only)
 
-- [x] `SchedulerSkill` implements `scheduler.create_job`, `scheduler.list_jobs`, `scheduler.pause_job`, `scheduler.resume_job`, `scheduler.cancel_job`, `scheduler.trigger_now`
-- [x] Registry wiring deferred to Phase 12 (same pattern as `MemorySkill`)
+- [x] `SchedulerSkill` implements `scheduler.create_job`, `scheduler.list_jobs`, `scheduler.pause_job`,
+  `scheduler.resume_job`, `scheduler.cancel_job`, `scheduler.trigger_now`
+- [x] Registry wiring completed in Phase 12
 
 ### Tests
 
 - [x] Integration tests for `claimJob`/`releaseJob` in `SchedulerRepositorySpec` (2 new tests)
-- [x] Unit tests: `JobManagerSpec` (9 tests), `TriggerEngineSpec` (6 tests, tick + retry + backoff + stale lease), `SchedulerSkillSpec` (6 tests); 685 total tests passing
+- [x] Unit tests: `JobManagerSpec` (9 tests), `TriggerEngineSpec` (6 tests, tick + retry + backoff + stale lease),
+  `SchedulerSkillSpec` (6 tests); 685 total tests passing
 - [x] Shell tests for `/agents list|stop` and `/approvals list|approve|deny` in `CommandHandlerSpec` (8 new tests)
-- [ ] Integration tests: `SchedulerRecoverySpec` (job survives simulated restart), `RetrySpec` (fail N then succeed) — deferred (complex Testcontainers lifecycle tests)
+- [ ] Integration tests: `SchedulerRecoverySpec` (job survives simulated restart), `RetrySpec` (fail N then succeed) —
+  deferred (complex Testcontainers lifecycle tests)
 
 ---
 
@@ -602,35 +614,47 @@ See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugi
 ### Pre-work: Rename `Skill` record → `SkillRecord`
 
 - [x] `model/src/main/scala/jorlan/domain/skill.scala` — rename `case class Skill` → `SkillRecord`
-- [x] `model/src/main/scala/jorlan/repository.scala` — update `SkillRepository` return types and `SkillSearch` sort enum references
+- [x] `model/src/main/scala/jorlan/repository.scala` — update `SkillRepository` return types and `SkillSearch` sort enum
+  references
 - [x] `db/src/main/scala/jorlan/db/repository/QuillRepositories.scala` — update Quill query mappings
-- [x] Grep `\bSkill\b` and fix any GraphQL / test references (leave `SkillVersion`, `SkillId`, `SkillTier`, `SkillStatus` unchanged)
+- [x] Grep `\bSkill\b` and fix any GraphQL / test references (leave `SkillVersion`, `SkillId`, `SkillTier`,
+  `SkillStatus` unchanged)
 
 ### Runtime Trait Seam (connector-api)
 
-- [x] New file `connector-api/src/main/scala/jorlan/connector/Skill.scala`: define `Skill` trait (`descriptor`, `invoke`)
+- [x] New file `connector-api/src/main/scala/jorlan/connector/Skill.scala`: define `Skill` trait (`descriptor`,
+  `invoke`)
 - [x] `ConnectorSkill extends Skill` trait: add `connectorType`, `instanceId`, `start`, `stop`
 - [x] Supporting types in same file: `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`
 
 ### Reusable Ingress Pipeline
 
-- [x] New file `model/src/main/scala/jorlan/domain/ingress.scala`: `InboundMessage`, `ChatKind` enum, `UnrecognizedIdentityPolicy` enum
-- [x] New file `model/src/main/scala/jorlan/service/MessageIngress.scala`: `MessageIngress` trait (`receive(msg): IO[JorlanError, Unit]`)
-- [x] `MessageIngressImpl` in `server/.../service/`: identity resolution → unrecognized policy → capability gate (`agent.message`) → resolve-or-create `AgentSession` for `(user, chatRef)` → dispatch to `AgentRunner.processMessage` → write inbound receipt event
-- [ ] Reply path: deferred to Phase 12 `NotificationRouter` — `agentRunner` parameter removed from `TelegramConnectorSkill`; see P11-001 in phase review
+- [x] New file `model/src/main/scala/jorlan/domain/ingress.scala`: `InboundMessage`, `ChatKind` enum,
+  `UnrecognizedIdentityPolicy` enum
+- [x] New file `model/src/main/scala/jorlan/service/MessageIngress.scala`: `MessageIngress` trait (
+  `receive(msg): IO[JorlanError, Unit]`)
+- [x] `MessageIngressImpl` in `server/.../service/`: identity resolution → unrecognized policy → capability gate (
+  `agent.message`) → resolve-or-create `AgentSession` for `(user, chatRef)` → dispatch to `AgentRunner.processMessage` →
+  write inbound receipt event
+- [x] Reply path: deferred to Phase 12 `NotificationRouter` — `agentRunner` parameter removed from
+  `TelegramConnectorSkill`; see P11-001 in phase review
 
 ### Telegram Bot API Client
 
-- [x] `TelegramApiClient` trait: `getUpdates(offset, timeoutSeconds)`, `sendMessage(chatId, text)`, `sendPhoto(chatId, photo, caption?)`, `sendDocument(chatId, file, filename)`
+- [x] `TelegramApiClient` trait: `getUpdates(offset, timeoutSeconds)`, `sendMessage(chatId, text)`,
+  `sendPhoto(chatId, photo, caption?)`, `sendDocument(chatId, file, filename)`
 - [x] `TelegramApiClientImpl` over `zio-http`
-- [x] `TelegramConfig` case class: `botToken`, `allowedChatIds`, `allowedUserIds`, `unrecognizedPolicy`, `useWebhook` — parsed from `ConnectorInstance.configJson`
+- [x] `TelegramConfig` case class: `botToken`, `allowedChatIds`, `allowedUserIds`, `unrecognizedPolicy`, `useWebhook` —
+  parsed from `ConnectorInstance.configJson`
 - [x] `FakeTelegramApiClient` for tests (returns canned `getUpdates` responses; no live token in CI)
 
 ### `TelegramConnectorSkill extends ConnectorSkill`
 
-- [x] `TelegramMessageNormalizer`: `TelegramUpdate` → `InboundMessage` (maps `chat.type` → `ChatKind`, `from.id` → `channelUserId`, `chat.id` → `chatRef`)
+- [x] `TelegramMessageNormalizer`: `TelegramUpdate` → `InboundMessage` (maps `chat.type` → `ChatKind`, `from.id` →
+  `channelUserId`, `chat.id` → `chatRef`)
 - [x] `TelegramConnectorSkill`: `connectorType = Telegram`, bound to `ConnectorInstance`
-- [x] `start`: fork long-poll loop (`getUpdates(offset, 30)` → normalizer → `MessageIngress.receive`, advance offset); handle private/group/channel/supergroup; gate groups on `allowedChatIds`
+- [x] `start`: fork long-poll loop (`getUpdates(offset, 30)` → normalizer → `MessageIngress.receive`, advance offset);
+  handle private/group/channel/supergroup; gate groups on `allowedChatIds`
 - [x] `stop`: interrupt polling fiber
 - [x] `invoke` egress tools (each gated by capability `telegram.send`, `RiskClass ExternalEffect`):
     - `telegram.send_message { chatId, text }`
@@ -647,20 +671,25 @@ See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugi
 
 ### Migration V023 (Quarantine persistence)
 
-- [x] Decision: quarantine is log-only for Phase 11 (no DB table). V023 was already used for scheduler index fixes; V024 adds `chat_ref` column to `agentSession` for durable connector-bound sessions.
+- [x] Decision: quarantine is log-only for Phase 11 (no DB table). V023 was already used for scheduler index fixes; V024
+  adds `chat_ref` column to `agentSession` for durable connector-bound sessions.
 
 ### Tests
 
 - [x] `TelegramMessageNormalizerSpec`: `TelegramUpdate` → `InboundMessage` for private / group / channel / supergroup
-- [x] `MessageIngressSpec`: identity hit; `Reject` miss; capability gate deny; resolve-or-create session; dispatch — uses `InMemoryRepositories` + fake `AgentRunner`
-- [x] `TelegramConnectorSkillSpec`: `start`/`stop` lifecycle; each egress `invoke` tool via `FakeTelegramApiClient`; long-poll loop end-to-end with mock client
+- [x] `MessageIngressSpec`: identity hit; `Reject` miss; capability gate deny; resolve-or-create session; dispatch —
+  uses `InMemoryRepositories` + fake `AgentRunner`
+- [x] `TelegramConnectorSkillSpec`: `start`/`stop` lifecycle; each egress `invoke` tool via `FakeTelegramApiClient`;
+  long-poll loop end-to-end with mock client
 - [x] `sbt scalafmtAll` clean before merge
 - [x] Update `development_roadmap.md` checkboxes as items complete
 
 ### Module restructuring (added per Phase 11 review)
 
-- [x] `connector-api` SBT module — `Skill`, `ConnectorSkill`, `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`, `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy` — package `jorlan.connector`
-- [x] `telegram` SBT module — `TelegramConnectorSkill`, `TelegramApiClient`, `TelegramMessageNormalizer`, `FakeTelegramApiClient` — package `jorlan.connector.telegram`
+- [x] `connector-api` SBT module — `Skill`, `ConnectorSkill`, `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`,
+  `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy` — package `jorlan.connector`
+- [x] `telegram` SBT module — `TelegramConnectorSkill`, `TelegramApiClient`, `TelegramMessageNormalizer`,
+  `FakeTelegramApiClient` — package `jorlan.connector.telegram`
 
 ### Appendix updates
 
@@ -670,56 +699,126 @@ See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugi
 
 ## Phase 12: Built-in Skills
 
-**Goal:** Core Tier-0 skills that unlock real agent utility — file access, shell, notifications, identity, and
-scheduling.
+**Goal:** Core Tier-0 skills that unlock real agent utility — the full ReAct tool-calling loop,
+skill registry, notification routing, identity/contacts lookup, workspace file access, and shell execution.
 
-> **This phase is the prerequisite for all natural-language skill invocation.**  Until the items in
-> "Foundation" are complete, the LLM cannot call any tool regardless of how many skills are registered.
-> The use-case prompts in `doc/manual-testing-guide.md` Section G (e.g. "Send a telegram message to Sarah")
-> cannot work until this phase is done.
+> **This phase is the prerequisite for all natural-language skill invocation.**  Until the Foundation
+> items are complete, the LLM cannot call any tool regardless of how many skills are registered.
+> The use-case prompts in `doc/manual-testing-guide.md` Section G cannot work until this phase is done.
+>
+> See `doc/mini-designs/phase12-built-in-skills.md` for the full design.
 
-### Foundation (must land first — blocks everything below)
+### Foundation — Step 1: `ModelGateway.chatStep` + LangChain4j wiring  *(blocks everything)*
 
-- [ ] **ReAct tool-calling loop in `AgentRunnerImpl`** — replaces the current thin pass-through with a
-  planner/dispatcher loop:
-    - `ModelGateway.streamedResponse` extended to accept a list of tool descriptors and signal tool-call
-      requests (LangChain4j `ToolSpecification` / `ToolExecutionRequest`)
-    - `AgentRunnerImpl.processMessage` iterates: send message → if model returns a tool call, invoke it via
-      `SkillRegistry`, append the result, re-submit; repeat until the model returns a final text answer
-    - `Planner` type that parses model output into `PlanStep` (either `FinalAnswer(text)` or
-      `ToolCall(name, args)`)
-    - Loop bounded by a configurable max-steps guard to prevent runaway chains
-    - Each tool call written to the event log (`ToolInvoked`, `ToolResult`)
-- [ ] **`SkillRegistry` ZIO service** — the bridge between the loop and registered skills:
-    - Register/look up `Skill` instances by id and tier
-    - `MemorySkill` (Phase 9) and `SchedulerSkill` (Phase 10) wired in at startup as Tier-0 skills
-    - `TelegramConnectorSkill` tools (`telegram.send_message`, `telegram.send_photo`, `telegram.send_file`)
-      wired in when the Telegram connector is configured
-    - Validate tool `args` JSON against each skill's manifest schema before invoking
-    - Enforce capability gate (`agent.skill.invoke`) per invocation
+- [x] `ChatStep` sealed trait in `model`: `FinalAnswer(stream: ZStream[Any, ModelError, String])` and
+  `ToolCallRequested(name: String, argsJson: String)`
+- [x] `AgentMessage` sealed trait in `model`: `SystemMsg`, `UserMsg`, `AssistantMsg`, `ToolCallMsg`,
+  `ToolResultMsg`; maps to LangChain4j `ChatMessage` in the `ai` module
+- [x]
+  `ModelGateway.chatStep(sessionId, messages: List[AgentMessage], tools: List[ToolSpec]): IO[ModelError, ChatStep]`
+  method added to the `ModelGateway` trait; `ToolSpec` is a model-module-safe view of a tool descriptor
+- [x] `OllamaModelGateway.chatStep` impl: convert `ToolSpec` → `ToolSpecification` via `ai.ToolSupport`;
+  submit via `StreamingChatLanguageModel`; return `ToolCallRequested` on `onCompleteResponse` with tool
+  requests, `FinalAnswer(stream)` otherwise
+- [x] `FakeModelGateway` extended: `stepsLayer(steps: List[ChatStep])` factory; successive `chatStep` calls
+  pop from the list; falls back to `FinalAnswer(chunks)` when exhausted
 
-### Skills
+### Foundation — Step 2: `SkillRegistry` ZIO service
 
-- [ ] **Notification skill** (`notify.*`) — the idiomatic agent-facing wrapper over outbound connectors:
-    - `notify.user(userId, message)` — looks up the user's preferred channel identity, routes to
-      `NotificationRouter` → Telegram (or console fallback)
-    - `notify.channel(chatId, connectorType, message)` — sends to an explicit channel
-    - `NotificationRouter` ZIO service: given a `(UserId, message)`, resolves the active connector for that
-      user and calls `ConnectorSkill.invoke("send_message", …)` — this is the missing piece that makes
-      "Send a telegram message to Sarah" work end-to-end
-- [ ] **Identity and Contacts skill** (`identity.*`, `contacts.*`):
-    - `contacts.find(name)` — searches `ChannelIdentity` records by display name / email, returns
-      `channelUserId` and `channelType` — this is the missing name → chat ID resolution step
-    - `identity.resolve`, `identity.link`, `identity.verify`, `identity.listAliases`
-- [ ] **Workspace/Filesystem skill** (`workspace.*`):
-    - `workspace.read`, `workspace.write`, `workspace.search`, `workspace.snapshot`
-    - `workspace.delete` (requires explicit approval)
-- [ ] **Shell execution skill** (`shell.*`):
-    - `RiskClassifier` for shell commands (Class 0–5)
-    - Structured command execution (`binary + args + cwd + timeout`; raw `bash -c` disabled by default)
-    - Capture stdout/stderr, exit code → write to `ArtifactRepository`
-    - Full trace: user, agent, workspace, binary, args, timing, exit code, artifact refs, approval ID
-- [ ] Tests for each skill including permission enforcement and the full tool-calling loop
+- [x] `SkillRegistry` trait in `server`: `register(skill: Skill)`, `allTools: UIO[List[ToolDescriptor]]`,
+  `allToolSpecs: UIO[List[ToolSpec]]`,
+  `invoke(toolName, argsJson, context: InvocationContext): UIO[Json]` (errors returned as `Json.Str`)
+- [x] `SkillRegistryLive`: `Ref[Map[String, Skill]]`; validates required fields from `argsJson` against
+  input schema; on tool error returns `Json.Str("Error: …")` (no JVM exception propagation)
+- [ ] `InvocationContext` extended in `connector-api`: add `workspaceId: Option[WorkspaceId]`,
+  `approvalId: Option[ApprovalId]`, `traceId: String`
+- [x] `MemorySkill` (Phase 9) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via `EnvironmentBuilder`
+- [x] `SchedulerSkill` (Phase 10) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via `EnvironmentBuilder`
+- [x] `TelegramConnectorSkill` egress tools wired at startup: registered in `SkillRegistry` via `startServices` after `ConnectorManager` starts
+
+### Foundation — Step 3: `AgentRunnerImpl` ReAct loop
+
+- [x] `AgentRunnerImpl.processMessage` replaced with ReAct loop:
+    - Load history + memory + build system prompt (existing logic preserved)
+    - Fetch `allToolSpecs` from `SkillRegistry`
+    - Loop up to `maxToolSteps` (default 10): call `chatStep` → on `ToolCallRequested` invoke
+        + append result + continue; on `FinalAnswer` stream chunks to `SessionHub` + persist + break
+    - If max steps exceeded: publish error chunk + log `ToolLoopExceeded` event + terminate turn
+- [x] New `EventType` variant: `ToolLoopExceeded` (added to `SkillInvoked`, `SkillSucceeded`, `SkillFailed` group)
+- [x] `jorlan.agent.maxToolSteps` config key added to `JorlanConfig` / `application.conf` (via `AgentSettings`)
+- [ ] Shell `toolEvents(sessionId)` subscription wired: `SkillInvoked` and `SkillSucceeded` events streamed to
+  shell so user sees `⟳ calling <tool>…` spinner per invocation (inline `ResponseChunk` feedback currently)
+- [x] Unit test `AgentRunnerReActSpec`: `FakeModelGateway.stepsLayer` returning `ToolCallRequested` → `FinalAnswer`;
+  assert correct tool invocation, event log entries, and chunk delivery order
+- [ ] Integration test `ToolCallingLoopSpec` (Testcontainers + `FakeModelGateway`): full pipeline from
+  `submitMessage` → two tool calls → final answer → `agentResponseStream` delivers chunks in order
+
+### Step 4: Notification Skill + `NotificationRouter`
+
+- [x] `NotificationRouter` ZIO service trait + `NotificationRouterImpl` in `server`:
+    - `notifyUser(userId, message)`: resolves user's channel identities (preference: Telegram first),
+      calls `notifyChannel`
+    - `notifyChannel(chatId, connectorType, message)`: invokes connector skill directly via `ConnectorManager`
+      (avoids circular dep: router→registry→skill); returns error if no matching connector active
+- [x] `NotifySkill` registered in `SkillRegistry` at startup: `notify.user { userId, message }` and
+  `notify.channel { chatId, connectorType, message }` — require `notify.send` capability
+- [x] `notify.send` capability grant seeded for admin user in `InitService.complete`
+- [ ] Unit test `NotificationRouterSpec`: known/unknown user identity; active/inactive connector
+
+### Step 5: Contacts + Identity Skill
+
+- [x] `ContactsSkill` registered in `SkillRegistry` at startup:
+    - `contacts.find { name }`: case-insensitive substring search on `User.displayName`; returns list of
+      `{ userId, displayName, identities: [{ channelType, channelUserId }] }` records; requires `contacts.read`
+    - `identity.resolve { channelType, channelUserId }` → canonical `User` or null; `contacts.read`
+    - `identity.link { userId, channelType, channelUserId }` → links identity; requires `identity.manage`
+    - `identity.listAliases { userId }` → all `ChannelIdentity` rows for user; `contacts.read`
+- [x] `contacts.read` and `identity.manage` capability grants seeded for admin in `InitService.complete`
+- [ ] `/contacts find <name>` shell command: calls `contacts.find` directly without agent
+- [ ] Unit test `ContactsSkillSpec`: match, no match, multiple matches; `IdentitySkillSpec`: resolve hit/miss
+
+### Step 6: Workspace Skill
+
+- [x] Flyway **V025**: `workspace_id` column already exists in `agent_sessions` from V004 — no migration needed
+- [x] `jorlan.workspace.root` config key added to `WorkspaceSettings` / `application.conf`
+- [x] `WorkspaceSkill` registered in `SkillRegistry` at startup:
+    - `workspace.read { path }` — requires `workspace.read` capability; path-traversal guard
+    - `workspace.write { path, content }` — requires `workspace.write` capability
+    - `workspace.search { prefix? }` — requires `workspace.read`; lists files matching prefix
+    - `workspace.delete { path }` — requires `workspace.write`; path-traversal guard
+- [x] `workspace.read` + `workspace.write` capability grants seeded for admin in `InitService.complete`
+- [ ] Unit test `WorkspaceSkillSpec`: path-traversal rejection, read/write round-trip
+
+### Step 7: Shell Execution Skill
+
+- [x] `ShellSkill` registered in `SkillRegistry` at startup:
+    - `shell.run { binary, args, cwd?, timeoutSeconds? }` — structured invocation via `zio-process`;
+      binary must appear in `jorlan.shell.allowedBinaries`; unlisted → error (no execution)
+- [x] Binary allowlist enforced from `jorlan.shell.allowedBinaries` config key; default safe set
+- [x] `jorlan.shell.allowedBinaries` and `jorlan.shell.timeoutSeconds` config keys in `ShellSettings`
+- [x] `shell.execute` capability grant seeded for admin in `InitService.complete`
+- [ ] Stdout + stderr captured; if output > threshold, stored as artifact
+- [ ] Event log: `ShellCommandInvoked` + `ShellCommandCompleted` events
+- [ ] Unit test `ShellSkillSpec`: allowed binary executes; blocked binary rejected; timeout fires;
+  non-zero exit code returned as result (not exception)
+
+### Step 8: GraphQL + Shell surface
+
+- [x] `skills: [SkillInfo!]!` GraphQL query — lists registered skills, their tools, tier (groups tools by namespace)
+- [ ] `toolEvents(sessionId: Long!): ToolEvent` GraphQL subscription — streams `ToolInvoked` / `ToolResult`
+- [ ] `notifyUser(userId: ID!, message: String!): Boolean!` mutation (admin; calls `NotificationRouter`)
+- [ ] `/skills` shell command: calls `skills` GQL query; shows skill name, tier, and tool list
+- [ ] Shell spinner: during a tool-calling turn, each `ToolInvoked` subscription event shows
+  `⟳ calling <toolName>…` (replaced by final answer stream when `FinalAnswer` arrives)
+
+### Step 9: Tests, scalafmt, roadmap checkboxes
+
+- [ ] Overall test coverage ≥ 80% for new Phase 12 code
+- [x] `sbt --error scalafmtAll` clean before merge
+- [x] `SkillRegistrySpec` — 7 tests: register, lookup, required-field validation, unknown namespace, liveWith
+- [x] `AgentRunnerReActSpec` — 3 tests: FinalAnswer, ToolCall→FinalAnswer, ToolLoopExceeded
+- [ ] `NotificationRouterSpec`, `ContactsSkillSpec`, `WorkspaceSkillSpec`, `ShellSkillSpec`
+- [ ] All `development_roadmap.md` checkboxes above marked `[x]`
 
 ---
 
@@ -777,7 +876,7 @@ managing sessions, reviewing approvals, inspecting execution history, and browsi
   project, this is to reduce the amount of dependencies we need in our main server and shell projects, so we'll need to
   set up a similar project for our web interface, but if you have an alrenative I'm all ears. If we use the same
   approach as dmscreen, we need to figure out how to make it work in CI
-- [ ] Decide frontend approach (Scala.js + Laminar / TypeScript + React / other — decide at implementation time)
+- [ ] The front end approach will be scalajs, scalajs-react, elementalUI
 - [ ] Agent session list and detail view
 - [ ] Approval queue: view pending requests, approve/deny with optional scope override
 - [ ] Execution history and event log browser (filterable by session, actor, event type)
@@ -793,6 +892,10 @@ managing sessions, reviewing approvals, inspecting execution history, and browsi
 - [ ] autocomplete of / commands. When a user starts typing a command, the shell should suggest available commands that
   match the input. This can be implemented using a simple prefix matching algorithm that filters the list of available
   commands based on the user's input.
+- [ ] **Fuzzy contact search in `contacts.find`**: Phase 12 uses case-insensitive substring match on
+  `User.displayName`. Upgrade to fuzzy/phonetic matching (e.g. Levenshtein distance or MariaDB
+  `SOUNDEX`) so that "Roberto" matches "Robert Leibman" and "Sara" matches "Sarah Smith". Ensures
+  natural-language name resolution works without exact display-name spelling.
 
 ## Phase 17: Advanced Features
 
@@ -882,35 +985,35 @@ model
 
 **Status legend:** `[x]` implemented · `[~]` stub/partial (planned for a later phase) · `[ ]` not yet started
 
-| Status | Command         | Type     | Priority | Parameters                                        | Description                                                 |
-|:------:|-----------------|----------|----------|---------------------------------------------------|-------------------------------------------------------------|
-|  [x]   | `/help`         | Built-in | 0        | —                                                 | Same as `/commands` — shows full command list with key bindings |
-|  [x]   | `/commands`     | Built-in | 0        | —                                                 | List all available commands with key bindings               |
-|  [x]   | `/quit`         | Built-in | 0        | —                                                 | Exit the shell cleanly                                      |
-|  [x]   | `/exit`         | Built-in | 0        | —                                                 | Alias for `/quit`                                           |
-|  [x]   | `/about`        | Built-in | 0        | —                                                 | Show version and platform information                       |
-|  [x]   | `/status`       | Built-in | 0        | —                                                 | Server connectivity, client version, server version, uptime |
-|  [x]   | `/whoami`       | Built-in | 0        | —                                                 | Show current authenticated user (parsed: name, email, ID)   |
-|  [x]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`       | Set log/trace level                                         |
-|  [x]   | `/personality`  | Admin    |          | —                                                 | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
-|  [ ]   | `/clear`        | Built-in |          | —                                                 | Clear the conversation display                              |
-|  [ ]   | `/connect`      | Built-in |          | `[url]`                                           | Connect to a different server URL                           |
-|  [ ]   | `/disconnect`   | Built-in |          | —                                                 | Disconnect from the current server                          |
-|  [ ]   | `/logs`         | Built-in |          | `[n]`                                             | Tail the last *n* lines from `~/.jorlan/shell.log`          |
-|  [x]   | `/new`          | Session  |          | `[model]`                                         | Start a new agent session with optional model override      |
-|  [x]   | `/model`        | Session  |          | —                                                 | Show active session ID, model, and status (queries server)  |
-|  [x]   | `/models`       | Session  |          | —                                                 | List models available on the connected server               |
-|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`             | Manage agent sessions                                       |
-|  [ ]   | `/history`      | Session  |          | `[n]`                                             | Show the last *n* messages in the current session           |
-|  [ ]   | `/configure`    | Session  |          | `<name>`                                          | Interactively configure a skill or function                 |
-|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                  | Run a skill by name                                         |
-|  [x]   | `/capabilities` | Auth     |          | —                                                 | List your current capability grants                         |
-|  [x]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`               | View and action pending approval requests                   |
-|  [x]   | `/agents`       | Agent    |          | `list \| stop <id>`                               | List and terminate running agent sessions                   |
-|  [x]   | `/memory`       | Memory   |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries |
-|  [ ]   | `/restart`      | Admin    |          | —                                                 | Restart the Jorlan server process (Phase 10)                |
-|  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable` | Manage server plugins (Phase 12)                            |
-|  [ ]   | `/mcp`          | Plugin   |          | —                                                 | MCP protocol tools and adapter management (Phase 12)        |
+| Status | Command         | Type     | Priority | Parameters                                                           | Description                                                                                                                                                                                                  |
+|:------:|-----------------|----------|----------|----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|  [x]   | `/help`         | Built-in | 0        | —                                                                    | Same as `/commands` — shows full command list with key bindings                                                                                                                                              |
+|  [x]   | `/commands`     | Built-in | 0        | —                                                                    | List all available commands with key bindings                                                                                                                                                                |
+|  [x]   | `/quit`         | Built-in | 0        | —                                                                    | Exit the shell cleanly                                                                                                                                                                                       |
+|  [x]   | `/exit`         | Built-in | 0        | —                                                                    | Alias for `/quit`                                                                                                                                                                                            |
+|  [x]   | `/about`        | Built-in | 0        | —                                                                    | Show version and platform information                                                                                                                                                                        |
+|  [x]   | `/status`       | Built-in | 0        | —                                                                    | Server connectivity, client version, server version, uptime                                                                                                                                                  |
+|  [x]   | `/whoami`       | Built-in | 0        | —                                                                    | Show current authenticated user (parsed: name, email, ID)                                                                                                                                                    |
+|  [x]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`                          | Set log/trace level                                                                                                                                                                                          |
+|  [x]   | `/personality`  | Admin    |          | —                                                                    | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
+|  [ ]   | `/clear`        | Built-in |          | —                                                                    | Clear the conversation display                                                                                                                                                                               |
+|  [ ]   | `/connect`      | Built-in |          | `[url]`                                                              | Connect to a different server URL                                                                                                                                                                            |
+|  [ ]   | `/disconnect`   | Built-in |          | —                                                                    | Disconnect from the current server                                                                                                                                                                           |
+|  [ ]   | `/logs`         | Built-in |          | `[n]`                                                                | Tail the last *n* lines from `~/.jorlan/shell.log`                                                                                                                                                           |
+|  [x]   | `/new`          | Session  |          | `[model]`                                                            | Start a new agent session with optional model override                                                                                                                                                       |
+|  [x]   | `/model`        | Session  |          | —                                                                    | Show active session ID, model, and status (queries server)                                                                                                                                                   |
+|  [x]   | `/models`       | Session  |          | —                                                                    | List models available on the connected server                                                                                                                                                                |
+|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`                                | Manage agent sessions                                                                                                                                                                                        |
+|  [ ]   | `/history`      | Session  |          | `[n]`                                                                | Show the last *n* messages in the current session                                                                                                                                                            |
+|  [ ]   | `/configure`    | Session  |          | `<name>`                                                             | Interactively configure a skill or function                                                                                                                                                                  |
+|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                                     | Run a skill by name                                                                                                                                                                                          |
+|  [x]   | `/capabilities` | Auth     |          | —                                                                    | List your current capability grants                                                                                                                                                                          |
+|  [x]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`                                  | View and action pending approval requests                                                                                                                                                                    |
+|  [x]   | `/agents`       | Agent    |          | `list \| stop <id>`                                                  | List and terminate running agent sessions                                                                                                                                                                    |
+|  [x]   | `/memory`       | Memory   |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries                                                                                                                                                                       |
+|  [ ]   | `/restart`      | Admin    |          | —                                                                    | Restart the Jorlan server process (Phase 10)                                                                                                                                                                 |
+|  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable`                    | Manage server plugins (Phase 12)                                                                                                                                                                             |
+|  [ ]   | `/mcp`          | Plugin   |          | —                                                                    | MCP protocol tools and adapter management (Phase 12)                                                                                                                                                         |
 
 ## Appendix: Supported skills
 
@@ -922,8 +1025,8 @@ model
 |  [ ]   | Google Calendar  | 1        | Plugin      |             |
 |  [ ]   | MCP Connector    |          | Built-in    |             |
 |  [ ]   | Declarative Json |          | Built-in    |             |
-|  [ ]   | ``               |          | Built-in    |             |
-|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | Calculator       |          | Built-in    |             |
+|  [ ]   | Search           |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |
@@ -936,7 +1039,7 @@ model
 
 | Status | Skill              | Priority | Type     | Description |
 |:------:|--------------------|----------|----------|-------------|
-  |  [x]   | Telegram           | 1        | Built-in |             |
+|  [x]   | Telegram           | 1        | Built-in |             |
 |  [ ]   | Slack              |          | Built-in |             |
 |  [ ]   | Whatsapp           |          | Built-in |             |
 |  [ ]   | Discord            | 2        | Built-in |             |

@@ -1,6 +1,6 @@
 # Jorlan Manual Testing Guide
 
-> Last updated: 2026-06-07 (Phase 11 — Telegram connector; use-case prompts added with gap analysis)
+> Last updated: 2026-06-09 (Phase 12 — use cases G3–G5 added; G1–G2 gap analyses updated)
 >
 > This document is maintained alongside the codebase. Run the `scala-doc-auditor` agent after
 > significant feature additions to keep this guide in sync.
@@ -303,58 +303,107 @@ is missing and what needs to be built.
 
 ---
 
-### G1. Simple direct Telegram message
+### G1. Remember a fact  *(simplest tool-calling test — do this first)*
+
+**Prompt:** `Remember that my favorite color is blue.`
+
+**Status: 🚧 Phase 12 — requires ReAct loop + SkillRegistry**
+
+**What needs to happen:**
+1. The LLM recognises the storage intent and decides to call `memory.remember`.
+2. It invokes `memory.remember { "key": "favorite_color", "text": "My favorite color is blue." }`.
+3. `MemorySkill.invoke` stores the record via `MemoryService`.
+4. The model receives the success result and replies with a confirmation.
+
+**How to verify once Phase 12 lands:**
+1. Start a session. Type the prompt above.
+2. Shell shows a spinner: `⟳ calling memory.remember…` then the confirmation message.
+3. Run `/memory list` — the record `My favorite color is blue.` appears.
+4. In the same session, ask `What do you know about my color preferences?` — the agent
+   calls `memory.search` and cites the stored fact in its answer.
+
+**Prerequisites:** none beyond a running server.
+
+---
+
+### G2. Send a telegram to Sarah  *(two-tool-call chain)*
 
 **Prompt:** `Send a telegram message to Sarah saying hello from Roberto.`
 
-**Status: 🚧 Phase 12+ — not testable today**
+**Status: 🚧 Phase 12 — requires ReAct loop + SkillRegistry + ContactsSkill + NotificationRouter**
 
-**What would need to happen:**
-1. The LLM recognises the intent and decides to call the `telegram.send_message` tool.
-2. It maps "Sarah" to a Telegram `chatId` (e.g. `123456789`).
-3. It invokes `telegram.send_message` with `{ "chatId": "123456789", "text": "Hello from Roberto." }`.
-4. The connector sends the message via the Telegram Bot API.
+**What needs to happen:**
+1. The LLM calls `contacts.find { "name": "Sarah" }` → receives
+   `{ "channelType": "Telegram", "channelUserId": "123456789" }`.
+2. The LLM calls `telegram.send_message { "chatId": "123456789", "text": "Hello from Roberto." }`.
+3. The Telegram Bot API delivers the message to Sarah's DM.
 
-**Gaps (things that do not exist yet):**
+**Prerequisites:**
+- A Telegram bot configured in `ConnectorInstance`.
+- A `User` record with `displayName = "Sarah"` and a linked `ChannelIdentity` row:
+  `channelType = Telegram`, `channelUserId = <Sarah's Telegram numeric ID>`.
 
-| Gap | Description | Planned phase |
-|-----|-------------|---------------|
-| Tool calling in `AgentRunnerImpl` | `AgentRunnerImpl.processMessage` streams text only; it never calls `ModelGateway` with tool definitions or handles tool-call results. The LLM has no mechanism to invoke skills. | Phase 12 |
-| `SkillRegistry` wired into the runner | The registry that enumerates available tools and routes `invoke` calls is deferred (noted in tech debt). Without it the LLM receives no tool descriptions and cannot request a tool call. | Phase 12 |
-| Name → chat ID resolution | "Sarah" is a display name. The connector needs a `chatId` (Telegram numeric ID). No contact directory or channel-identity lookup skill exists yet. The most natural path: query `ChannelIdentity` records by display name/email, retrieve the stored Telegram `channelUserId`. | Phase 12 |
-
-**When all gaps are closed:** start the server with a running Telegram bot, ensure a `ChannelIdentity` record
-for Sarah exists (with `channelType = Telegram` and her `channelUserId`), type the prompt into the shell, and
-confirm the Telegram message arrives in Sarah's DM.
-
----
-
-### G2. Group Telegram message to multiple recipients
-
-**Prompt:** `Send a telegram group message to Sarah and Roberto telling them you love them.`
-
-**Status: 🚧 Phase 12+ — not testable today**
-
-**What would need to happen:**
-1. The LLM recognises multiple recipients and a Telegram group intent.
-2. It resolves "Sarah" and "Roberto" to their Telegram chat IDs (or a shared group chat ID).
-3. It calls `telegram.send_message` once per recipient, or once to a group chat that includes both.
-
-**Gaps (same as G1, plus):**
-
-| Gap | Description | Planned phase |
-|-----|-------------|---------------|
-| All gaps from G1 | See G1. | Phase 12 |
-| Multi-recipient dispatch | A single `telegram.send_message` call targets one `chatId`. Sending to multiple individuals requires the LLM to issue multiple tool calls, which requires the tool-calling loop in `AgentRunnerImpl` to support sequences of calls in a single turn. | Phase 12 |
-| Group chat ID awareness | If the intent is a shared group (not individual DMs), the system needs to store a group `chatId` and associate it with a set of members. There is currently no group-chat concept in `ChannelIdentity`. | Phase 13+ |
-
-**When all gaps are closed:** verify two separate DMs arrive (one to Sarah, one to Roberto) for the per-user
-path, or one group-chat message if a registered group chat ID is stored.
+**How to verify once Phase 12 lands:**
+1. Insert Sarah's user + channel identity (SQL or GraphQL mutation).
+2. Start a session. Type the prompt above.
+3. Shell shows spinners: `⟳ calling contacts.find…` then `⟳ calling telegram.send_message…`
+   then the model's confirmation text.
+4. Confirm the Telegram DM arrives in Sarah's account.
 
 ---
 
-## Known Limitations (as of Phase 11)
+### G3. Send a Telegram to Roberto every morning at 10am  *(scheduler + two-tool chain)*
 
+**Prompt:** `Send a telegram to Roberto every morning at 10am saying good morning.`
+
+**Status: 🚧 Phase 12 — requires ReAct loop + ContactsSkill + SchedulerSkill + NotificationRouter**
+
+**What needs to happen:**
+1. The LLM calls `contacts.find { "name": "Roberto" }` → receives Roberto's Telegram chatId.
+2. The LLM calls `scheduler.create_job` with:
+   - `triggerType: "Cron"`, `expression: "0 10 * * *"`
+   - `toolName: "telegram.send_message"`, `args: { "chatId": "<id>", "text": "Good morning!" }`
+3. `JobManager` persists the job and trigger.
+4. At 10:00 each morning `TriggerEngine` fires the job → `AgentRunner.processMessage` →
+   `SkillRegistry.invoke("telegram.send_message", …)` → message delivered.
+
+**Prerequisites:**
+- A `User` record for Roberto with a Telegram `ChannelIdentity`.
+- A running Telegram bot.
+
+**How to verify once Phase 12 lands:**
+1. Type the prompt. Confirm the agent creates the job (ask it to list your scheduled jobs).
+2. Run `/jobs` (or the equivalent GQL query) — a job with cron `0 10 * * *` appears.
+3. To test firing without waiting until 10am: call `triggerNow` on the job.
+4. Confirm the Telegram message arrives.
+
+---
+
+### G4. Group Telegram message to multiple recipients
+
+**Prompt:** `Send a telegram message to both Sarah and Roberto saying I love you both.`
+
+**Status: 🚧 Phase 12+ — not testable today**
+
+**What would need to happen:**
+1. The LLM calls `contacts.find("Sarah")` and `contacts.find("Roberto")` — two separate calls.
+2. For each resolved `chatId`, the LLM calls `telegram.send_message`.
+3. Two DMs arrive, one to each recipient.
+
+**Remaining gaps:**
+
+| Gap | Description | Planned phase |
+|-----|-------------|---------------|
+| All gaps from G2 | See G2. | Phase 12 |
+| Multi-recipient multi-call | The ReAct loop must support issuing multiple tool calls in one turn. The Phase 12 loop design already supports this (each `ToolCallRequested` step continues the loop). | Phase 12 |
+| Group chat concept | Sending to a shared group chat (rather than individual DMs) requires storing a group `chatId` and associating members with it. Not in scope until Phase 13+. | Phase 13+ |
+
+---
+
+## Known Limitations (as of Phase 11 / pre-Phase 12)
+
+- **Tool calling not yet wired** — `AgentRunnerImpl` passes messages through to the model without tool descriptors;
+  no skill can be invoked via natural language. This is the primary Phase 12 deliverable.
 - Token-per-invocation and session-scoped capability approvals are not yet exercisable from the shell (planned for a future phase).
 - Scheduler shell commands are not yet implemented; use GraphQL directly.
 - The shell shows LLM tokens in plain text; no markdown rendering.
@@ -362,4 +411,4 @@ path, or one group-chat message if a registered group chat ID is stored.
 - Password is stored in plaintext in the shell config for reconnect purposes; JWT token refresh is planned for a future phase.
 - Context window size is not reported by `/models` (Ollama's tag endpoint does not include it; requires a per-model `showInformation` call).
 - Personality changes that reset conversation history are not surfaced to the user — the model silently starts fresh.
-- The Telegram connector receives inbound messages and routes them through the agent pipeline, but outbound tool-calling (agent sending a Telegram message in response to a prompt) is not yet wired — `AgentRunnerImpl` has no tool-calling loop and the `SkillRegistry` is deferred. See Section G for the detailed gap analysis.
+- The Telegram connector receives inbound messages and routes them through the agent pipeline, but outbound tool-calling (agent sending a Telegram message in response to a prompt) is not yet wired. See Section G use cases for details.

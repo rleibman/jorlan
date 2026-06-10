@@ -122,6 +122,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
       FakeModelGateway.layer(List("ok")),
       AgentSessionManagerImpl.live,
       memSvcLayer,
+      SkillRegistry.live,
+      ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
       memSvcLayer >>> MemorySkill.live,
       JobManagerImpl.live,

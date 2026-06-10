@@ -11,9 +11,11 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.connector.InvocationContext
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 
 object MemorySkillSpec extends ZIOSpec[MemorySkill] {
@@ -85,6 +87,170 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
           skill   <- ZIO.service[MemorySkill]
           results <- skill.search("nonexistent_xyz_string", MemoryScope.User, userId, agentId)
         } yield assertTrue(results.isEmpty)
+      },
+      // ─── Skill.invoke dispatch ─────────────────────────────────────────────────
+      test("invoke memory.remember stores a record and returns JSON") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(
+            ctx,
+            "memory.remember",
+            Json.Obj("key" -> Json.Str("invoke.test"), "text" -> Json.Str("via invoke")),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            val key = fields.collectFirst { case ("key", Json.Str(v)) => v }
+            assertTrue(key.contains("invoke.test"))
+          case _ => assertTrue(false)
+        }
+      },
+      test("invoke memory.search returns JSON array") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill <- ZIO.service[MemorySkill]
+          _     <- skill
+            .invoke(ctx, "memory.remember", Json.Obj("key" -> Json.Str("s.key"), "text" -> Json.Str("searchable")))
+          result <- skill.invoke(
+            ctx,
+            "memory.search",
+            Json.Obj("text" -> Json.Str("searchable"), "scope" -> Json.Str("user")),
+          )
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke memory.forget removes a record") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill   <- ZIO.service[MemorySkill]
+          _       <- skill.remember("forget.via.invoke", "gone", MemoryScope.User, userId, agentId)
+          records <- skill.search("gone", MemoryScope.User, userId, agentId)
+          id = records.find(_.recordKey == "forget.via.invoke").map(_.id.value.toString).getOrElse("0")
+          result <- skill.invoke(ctx, "memory.forget", Json.Obj("id" -> Json.Str(id)))
+        } yield result match {
+          case Json.Bool(_) => assertTrue(true)
+          case _            => assertTrue(false)
+        }
+      },
+      test("invoke memory.mark_shared changes scope") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill   <- ZIO.service[MemorySkill]
+          _       <- skill.remember("mark.shared.invoke", "fact", MemoryScope.User, userId, agentId)
+          records <- skill.search("fact", MemoryScope.User, userId, agentId)
+          id = records.find(_.recordKey == "mark.shared.invoke").map(_.id.value.toString).getOrElse("0")
+          result <- skill.invoke(ctx, "memory.mark_shared", Json.Obj("id" -> Json.Str(id)))
+        } yield result match {
+          case Json.Obj(fields) =>
+            val scope = fields.collectFirst { case ("scope", Json.Str(v)) => v }
+            assertTrue(scope.contains("Shared"))
+          case _ => assertTrue(false)
+        }
+      },
+      test("invoke memory.mark_private changes scope") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill   <- ZIO.service[MemorySkill]
+          _       <- skill.remember("mark.private.invoke", "priv", MemoryScope.Shared, userId, agentId)
+          records <- skill.search("priv", MemoryScope.Shared, userId, agentId)
+          id = records.find(_.recordKey == "mark.private.invoke").map(_.id.value.toString).getOrElse("0")
+          result <- skill.invoke(ctx, "memory.mark_private", Json.Obj("id" -> Json.Str(id)))
+        } yield result match {
+          case Json.Obj(fields) =>
+            val scope = fields.collectFirst { case ("scope", Json.Str(v)) => v }
+            assertTrue(scope.contains("Private"))
+          case _ => assertTrue(false)
+        }
+      },
+      test("invoke unknown tool returns failure") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.nonexistent", Json.Obj()).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("invoke returns failure when required field is missing") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.remember", Json.Obj("text" -> Json.Str("no key"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      // ─── scope=user path + search results body ────────────────────────────────
+      test("invoke memory.remember with scope=user stores in user scope, search returns result") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill <- ZIO.service[MemorySkill]
+          _     <- skill.invoke(
+            ctx,
+            "memory.remember",
+            Json.Obj("key" -> Json.Str("user.scoped"), "text" -> Json.Str("user text"), "scope" -> Json.Str("user")),
+          )
+          result <- skill.invoke(
+            ctx,
+            "memory.search",
+            Json.Obj("text" -> Json.Str("user text"), "scope" -> Json.Str("user")),
+          )
+        } yield result match {
+          case Json.Arr(elems) =>
+            val keys = elems.collect { case Json.Obj(fs) =>
+              fs.collectFirst { case ("key", Json.Str(k)) => k }
+            }.flatten
+            assertTrue(elems.nonEmpty, keys.contains("user.scoped"))
+          case _ => assertTrue(false)
+        }
+      },
+      // ─── invalid id for forget / markShared / markPrivate ─────────────────────
+      test("invoke memory.forget with non-numeric id fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.forget", Json.Obj("id" -> Json.Str("not-a-number"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("invoke memory.mark_shared with non-numeric id fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.mark_shared", Json.Obj("id" -> Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("invoke memory.mark_private with non-numeric id fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.mark_private", Json.Obj("id" -> Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      // ─── scope=shared path ───────────────────────────────────────────────────
+      test("invoke memory.remember with scope=shared stores in shared scope") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill <- ZIO.service[MemorySkill]
+          _     <- skill.invoke(
+            ctx,
+            "memory.remember",
+            Json.Obj("key" -> Json.Str("shared.key"), "text" -> Json.Str("shared text"), "scope" -> Json.Str("shared")),
+          )
+          result <- skill.invoke(
+            ctx,
+            "memory.search",
+            Json.Obj("text" -> Json.Str("shared text"), "scope" -> Json.Str("shared")),
+          )
+        } yield result match {
+          case Json.Arr(elems) => assertTrue(elems.nonEmpty)
+          case _               => assertTrue(false)
+        }
+      },
+      // ─── non-object args path ─────────────────────────────────────────────────
+      test("invoke with non-object args fails (covers non-Obj branch in field helper)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[MemorySkill]
+          result <- skill.invoke(ctx, "memory.remember", Json.Arr(Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
       },
     )
 

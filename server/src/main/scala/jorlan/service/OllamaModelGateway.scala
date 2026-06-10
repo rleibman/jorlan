@@ -13,16 +13,26 @@ package jorlan.service
 // $COVERAGE-OFF$
 
 import ai.{*, given}
-import dev.langchain4j.data.message.{AiMessage, SystemMessage, UserMessage}
+import dev.langchain4j.agent.tool.ToolExecutionRequest
+import dev.langchain4j.data.message.{
+  AiMessage,
+  ChatMessage as LCChatMessage,
+  SystemMessage,
+  ToolExecutionResultMessage,
+  UserMessage as LCUserMessage,
+}
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
+import dev.langchain4j.model.chat.response.{ChatResponse, StreamingChatResponseHandler}
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
 import zio.*
+import zio.json.JsonDecoder
 import zio.stream.ZStream
 
-import zio.json.{JsonDecoder, jsonField}
+import java.util as jutil
+import scala.jdk.CollectionConverters.*
 import scala.language.unsafeNulls
 
 private case class OllamaModelDetails(
@@ -38,8 +48,6 @@ private case class OllamaTagModel(
 private case class OllamaTagsResponse(
   models: List[OllamaTagModel],
 ) derives JsonDecoder
-
-// Future: consider how much of this belongs in the ai module and how much of it should should be using it directly.
 
 /** Holds one LangChain4j assistant and the system prompt it was built with.
   *
@@ -158,6 +166,68 @@ private class OllamaModelGateway(
     }
   }
 
+  override def chatStep(
+    sessionId: AgentSessionId,
+    messages:  List[AgentMessage],
+    tools:     List[ToolSpec],
+  ): IO[ModelError, ChatStep] = {
+    val lcMessages: jutil.List[LCChatMessage] = messages.map {
+      case SystemMsg(c)                => SystemMessage.from(c): LCChatMessage
+      case UserMsg(c)                  => LCUserMessage.from(c): LCChatMessage
+      case AssistantMsg(c)             => AiMessage.from(c):     LCChatMessage
+      case ToolCallMsg(id, name, args) =>
+        AiMessage.from(
+          jutil.List.of(
+            ToolExecutionRequest.builder().id(id).name(name).arguments(args).build(),
+          ),
+        ): LCChatMessage
+      case ToolResultMsg(id, name, result) =>
+        ToolExecutionResultMessage.from(id, name, result): LCChatMessage
+    }.asJava
+
+    val lcTools: jutil.List[dev.langchain4j.agent.tool.ToolSpecification] =
+      tools
+        .map(t => ToolSupport.buildToolSpecification(ScalaToolSpec(t.name, t.description, t.inputSchemaJson)))
+        .asJava
+
+    for {
+      runtime    <- ZIO.runtime[Any]
+      tokenQueue <- Queue.unbounded[String]
+      done       <- Promise.make[ModelError, ChatStep]
+      _          <- ZIO
+        .attempt {
+          sharedModel.chat(
+            lcMessages,
+            lcTools,
+            new StreamingChatResponseHandler {
+              override def onPartialResponse(s: String): Unit =
+                Unsafe.unsafe(implicit u => runtime.unsafe.run(tokenQueue.offer(s).unit))
+
+              override def onCompleteResponse(response: ChatResponse): Unit = {
+                val effect = ToolSupport.extractToolCall(response) match {
+                  case Some(call) =>
+                    tokenQueue.shutdown *>
+                      done.succeed(ToolCallRequested(call.id, call.name, call.argsJson))
+                  case None =>
+                    tokenQueue.shutdown *>
+                      done.succeed(FinalAnswer(ZStream.fromQueue(tokenQueue)))
+                }
+                Unsafe.unsafe(implicit u => runtime.unsafe.run(effect))
+              }
+
+              override def onError(e: Throwable): Unit = {
+                val msg = Option(e.getMessage).getOrElse(e.getClass.getName)
+                Unsafe.unsafe { implicit u =>
+                  runtime.unsafe.run(tokenQueue.shutdown *> done.fail(ModelUnavailable(msg)))
+                }
+              }
+            },
+          )
+        }.mapError(e => ModelUnavailable(e.getMessage): ModelError)
+      step <- done.await
+    } yield step
+  }
+
   override def availableModels: UIO[List[ModelInfo]] = {
     // OllamaClient is package-private in LangChain4j, so we call Ollama's REST API directly.
     // GET /api/tags returns all locally downloaded models (equivalent to `ollama list`).
@@ -213,7 +283,7 @@ private class OllamaModelGateway(
             val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
               case MessageRole.Assistant => AiMessage.from(msg.content)
               case MessageRole.System    => SystemMessage.from(msg.content)
-              case _                     => UserMessage.from(msg.content)
+              case _                     => LCUserMessage.from(msg.content)
             }
             memory.add(lc4j)
           }

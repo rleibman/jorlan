@@ -64,3 +64,4 @@ dist
 *.deb
 /stLib/node_modules/.yarn-integrity
 /landing/build/
+/.claude/worktrees

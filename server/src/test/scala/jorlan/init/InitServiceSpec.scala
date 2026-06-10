@@ -181,12 +181,13 @@ object InitServiceSpec extends ZIOSpecDefault {
         ZLayer.fromZIO(InitTokenStore.make(false)),
         initServiceLayer,
       ),
-      // P85-033 / Phase 9: all 14 admin capability grants are seeded after successful init
-      test("successful init seeds all 14 admin capability grants") {
+      // P85-033 / Phase 9 + Phase 12: all admin capability grants are seeded after successful init
+      test("successful init seeds all admin capability grants") {
         val expectedCapabilities = Set(
           "agent.session.create",
           "agent.session.list",
           "agent.message",
+          "agent.session.terminate",
           "admin.personality.read",
           "admin.personality.update",
           "user.create",
@@ -196,8 +197,17 @@ object InitServiceSpec extends ZIOSpecDefault {
           "role.revoke",
           "permission.grant",
           "permission.revoke",
+          "approval.decide",
           "memory.read",
           "memory.write",
+          "agent.skill.invoke",
+          "notify.send",
+          "contacts.read",
+          "identity.manage",
+          "workspace.read",
+          "workspace.write",
+          "shell.execute",
+          "scheduler.manage",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]

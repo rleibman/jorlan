@@ -451,6 +451,54 @@ object TriggerEngineSpec extends ZIOSpecDefault {
           result <- repo.scheduler.getJob(job.id).orDie
         } yield assertTrue(result.isDefined)
       } @@ TestAspect.withLiveClock,
+      test("recomputeStaleTriggers advances stale Cron job with Skip policy to future scheduledAt") {
+        for {
+          repo <- ZIO.service[ZIORepositories]
+          sid = AgentSessionId(60L)
+          (engine, _) <- makeEngine(repo, sid, pollInterval = Duration.ofMillis(100))
+          job         <- repo.scheduler.upsertJob(
+            makeJob("skip-cron-startup", scheduledAt = T0.minusSeconds(36000), missedPol = MissedRunPolicy.Skip),
+          )
+          // Cron: every hour on the hour, guaranteed to have a future occurrence
+          _      <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
+          fiber  <- engine.start.forkDaemon
+          _      <- ZIO.sleep(300.millis)
+          _      <- fiber.interrupt
+          result <- repo.scheduler.getJob(job.id).orDie
+        } yield assertTrue(
+          result.exists(_.scheduledAt.isAfter(T0.minusSeconds(36000))),
+        )
+      } @@ TestAspect.withLiveClock,
+      test("advanceTriggers with Cron trigger reuses cached cron expression on second tick") {
+        for {
+          repo <- ZIO.service[ZIORepositories]
+          sid = AgentSessionId(61L)
+          (engine, _) <- makeEngine(repo, sid)
+          originalScheduledAt = T0.minusSeconds(60)
+          job <- repo.scheduler.upsertJob(makeJob("cron-cache-hit", scheduledAt = originalScheduledAt))
+          _   <- repo.scheduler.upsertTrigger(makeTrigger(job.id, TriggerType.Cron, "0 0 * ? * 1"))
+          // Use the same cronCache across two ticks so the second tick hits the cached expression
+          cronCache <- Ref.make(Map.empty[SchedulerTriggerId, CronExpr])
+          _         <- engine.tick("cache-worker", cronCache)
+          result    <- (repo.scheduler.getJob(job.id).orDie <* ZIO.sleep(50.millis))
+            .repeatUntil(_.exists(j => j.status == JobStatus.Pending && j.scheduledAt != originalScheduledAt))
+            .timeout(8.seconds)
+            .map(_.flatten)
+          // Reset job to Pending with old scheduled time so we can run it again
+          _ <- result.fold(ZIO.unit)(j =>
+            repo.scheduler
+              .upsertJob(
+                j.copy(scheduledAt = T0.minusSeconds(60), status = JobStatus.Pending, leasedAt = None, leasedBy = None),
+              )
+              .orDie,
+          )
+          _       <- engine.tick("cache-worker", cronCache)
+          result2 <- (repo.scheduler.getJob(job.id).orDie <* ZIO.sleep(50.millis))
+            .repeatUntil(_.exists(j => j.status == JobStatus.Pending && j.scheduledAt != T0.minusSeconds(60)))
+            .timeout(8.seconds)
+            .map(_.flatten)
+        } yield assertTrue(result.isDefined, result2.isDefined)
+      } @@ TestAspect.withLiveClock,
       test("advanceTriggers ignores Event-type trigger after job succeeds") {
         for {
           repo <- ZIO.service[ZIORepositories]

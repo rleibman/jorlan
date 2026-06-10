@@ -74,7 +74,20 @@ object JorlanAPI {
     }
 
   type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-    MemorySkill & JobManager & ApprovalService & ModelGateway
+    MemorySkill & JobManager & ApprovalService & ModelGateway & SkillRegistry
+
+  /** GQL-safe view of a single tool exposed by a registered skill. */
+  case class SkillToolInfo(
+    name:        String,
+    description: String,
+  )
+
+  /** GQL-safe view of a registered skill and its tools. */
+  case class SkillInfo(
+    name:  String,
+    tier:  String,
+    tools: List[SkillToolInfo],
+  )
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 
@@ -246,6 +259,8 @@ object JorlanAPI {
     listApprovals: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ApprovalRequest]],
     /** Returns the list of AI models available on this server. */
     availableModels: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ModelInfo]],
+    /** Returns all registered skills and their tools. */
+    skills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillInfo]],
   )
 
   case class Mutations(
@@ -318,6 +333,8 @@ object JorlanAPI {
   private given Schema[Any, Formality] =
     Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
   private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
+  private given Schema[Any, SkillToolInfo] = Schema.gen[Any, SkillToolInfo]
+  private given Schema[Any, SkillInfo] = Schema.gen[Any, SkillInfo]
 
   private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
   private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
@@ -518,6 +535,19 @@ object JorlanAPI {
               .serviceWithZIO[ZIORepositories](_.permission.listPendingApprovals(actorId)).mapError(JorlanError(_))
           } yield result,
           availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
+          skills = ZIO.serviceWithZIO[SkillRegistry](_.allTools).map { tools =>
+            tools
+              .groupBy(t => t.name.takeWhile(_ != '.'))
+              .toList
+              .sortBy(_._1)
+              .map { case (ns, tds) =>
+                SkillInfo(
+                  name = ns,
+                  tier = tds.headOption.map(_ => "BuiltIn").getOrElse("Unknown"),
+                  tools = tds.map(td => SkillToolInfo(td.name, td.description)),
+                )
+              }
+          },
         ),
         Mutations(
           createUser = input =>

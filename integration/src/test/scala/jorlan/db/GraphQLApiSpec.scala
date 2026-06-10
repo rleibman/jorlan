@@ -63,6 +63,8 @@ object GraphQLApiSpec
       ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
       MemorySkill.live,
+      SkillRegistry.live,
+      ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

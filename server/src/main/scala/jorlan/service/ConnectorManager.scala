@@ -27,10 +27,13 @@ trait ConnectorManager {
   /** Stop ingress for all registered connectors in parallel and release resources. */
   def stopAll: UIO[Unit]
 
+  /** All registered connector skills (for wiring into [[SkillRegistry]]). */
+  def connectors: List[ConnectorSkill]
+
 }
 
 /** [[ConnectorManager]] backed by a fixed set of [[ConnectorSkill]]s. */
-class ConnectorManagerImpl(connectors: List[ConnectorSkill]) extends ConnectorManager {
+class ConnectorManagerImpl(val connectors: List[ConnectorSkill]) extends ConnectorManager {
 
   override def startAll: UIO[Unit] =
     ZIO.foreachParDiscard(connectors) { c =>

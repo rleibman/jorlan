@@ -11,9 +11,11 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.connector.InvocationContext
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 
 object SchedulerSkillSpec extends ZIOSpec[SchedulerSkill & JobManager] {
@@ -80,6 +82,108 @@ object SchedulerSkillSpec extends ZIOSpec[SchedulerSkill & JobManager] {
           _      <- skill.triggerNow(job.id)
           result <- mgr.getJob(job.id)
         } yield assertTrue(result.status == JobStatus.Pending)
+      },
+      // ─── Skill.invoke dispatch ─────────────────────────────────────────────────
+      test("invoke scheduler.create_job returns id and name") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(
+            ctx,
+            "scheduler.create_job",
+            Json.Obj("name" -> Json.Str("invoke-job"), "cronExpression" -> Json.Str("0 * * * *")),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            val name = fields.collectFirst { case ("name", Json.Str(n)) => n }
+            assertTrue(name.contains("invoke-job"))
+          case _ => assertTrue(false)
+        }
+      },
+      test("invoke scheduler.list_jobs returns array") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill <- ZIO.service[SchedulerSkill]
+          _     <- skill.invoke(
+            ctx,
+            "scheduler.create_job",
+            Json.Obj("name" -> Json.Str("listed"), "cronExpression" -> Json.Str("0 * * * *")),
+          )
+          result <- skill.invoke(ctx, "scheduler.list_jobs", Json.Obj())
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke scheduler.pause_job returns Bool(true)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          job    <- skill.createJob(agentId, userId, "pause-invoke", None)
+          result <- skill.invoke(ctx, "scheduler.pause_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
+        } yield assertTrue(result == Json.Bool(true))
+      },
+      test("invoke scheduler.resume_job returns Bool(true)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          job    <- skill.createJob(agentId, userId, "resume-invoke", None)
+          _      <- skill.pauseJob(job.id)
+          result <- skill.invoke(ctx, "scheduler.resume_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
+        } yield assertTrue(result == Json.Bool(true))
+      },
+      test("invoke scheduler.cancel_job returns Bool(true)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          job    <- skill.createJob(agentId, userId, "cancel-invoke", None)
+          result <- skill.invoke(ctx, "scheduler.cancel_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
+        } yield assertTrue(result == Json.Bool(true))
+      },
+      test("invoke scheduler.trigger_now returns Bool(true)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          job    <- skill.createJob(agentId, userId, "trigger-invoke", None)
+          result <- skill.invoke(ctx, "scheduler.trigger_now", Json.Obj("id" -> Json.Str(job.id.value.toString)))
+        } yield assertTrue(result == Json.Bool(true))
+      },
+      test("invoke unknown tool returns failure") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(ctx, "scheduler.unknown", Json.Obj()).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("invoke scheduler.create_job fails when required field is missing") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(ctx, "scheduler.create_job", Json.Obj("name" -> Json.Str("no-cron"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      // ─── invalid job id (non-numeric) ─────────────────────────────────────────
+      test("invoke scheduler.pause_job with non-numeric id fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(ctx, "scheduler.pause_job", Json.Obj("id" -> Json.Str("not-a-number"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("invoke scheduler.resume_job with non-numeric id fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(ctx, "scheduler.resume_job", Json.Obj("id" -> Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      // ─── non-object args ──────────────────────────────────────────────────────
+      test("invoke with non-object args fails (non-Obj branch in field helper)") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- ZIO.service[SchedulerSkill]
+          result <- skill.invoke(ctx, "scheduler.create_job", Json.Arr(Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
       },
     )
 

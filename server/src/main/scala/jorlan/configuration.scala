@@ -47,13 +47,38 @@ case class AuthSettings(
   discord:          Option[OAuthProviderSettings] = None,
 )
 
+/** Agent runtime configuration. */
+case class AgentSettings(
+  maxToolSteps: Int = 10,
+)
+
+/** Workspace filesystem configuration. */
+case class WorkspaceSettings(
+  root: String = "/var/lib/jorlan/workspaces",
+)
+
+/** Shell execution configuration.
+  *
+  * @param allowedBinaries
+  *   Comma-separated list of absolute paths or bare binary names permitted for `shell.run`. Empty = all denied.
+  * @param timeoutSeconds
+  *   Maximum wall-clock time for a shell command before it is killed.
+  */
+case class ShellSettings(
+  allowedBinaries: List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
+  timeoutSeconds:  Int = 30,
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:     DatabaseConfig,
-  flyway: FlywayConfig = FlywayConfig(),
-  http:   HttpConfig = HttpConfig(),
-  auth:   AuthSettings,
-  ai:     LangChainConfig = LangChainConfig(),
+  db:        DatabaseConfig,
+  flyway:    FlywayConfig = FlywayConfig(),
+  http:      HttpConfig = HttpConfig(),
+  auth:      AuthSettings,
+  ai:        LangChainConfig = LangChainConfig(),
+  agent:     AgentSettings = AgentSettings(),
+  workspace: WorkspaceSettings = WorkspaceSettings(),
+  shell:     ShellSettings = ShellSettings(),
 )
 
 /** Root application configuration. */

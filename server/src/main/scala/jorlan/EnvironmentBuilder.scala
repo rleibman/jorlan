@@ -95,6 +95,27 @@ object EnvironmentBuilder {
       } yield ConnectorManager.fromSkills(telegramSkills.flatten)
     }
 
+  private val agentSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, AgentSettings] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent))
+
+  private val workspaceSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, WorkspaceSettings] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.workspace))
+
+  private val shellSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, ShellSettings] =
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.shell))
+
+  private val liveSkillRegistryLayer: URLayer[MemorySkill & SchedulerSkill, SkillRegistry] =
+    ZLayer.fromZIO {
+      for {
+        memorySkill    <- ZIO.service[MemorySkill]
+        schedulerSkill <- ZIO.service[SchedulerSkill]
+        ref            <- zio.Ref.make(Map.empty[String, jorlan.connector.Skill])
+        registry = new SkillRegistryLive(ref)
+        _ <- registry.register(memorySkill)
+        _ <- registry.register(schedulerSkill)
+      } yield registry: SkillRegistry
+    }
+
   val live: ULayer[JorlanEnvironment] =
     ZLayer
       .make[JorlanEnvironment](
@@ -119,13 +140,22 @@ object EnvironmentBuilder {
         ZLayer.succeed(CheckpointPolicy.onSessionEnd),
         MemoryServiceImpl.live,
         MemorySkill.live,
+        SchedulerSkill.live,
+        NotificationRouter.live,
+        NotifySkill.live,
+        ContactsSkill.live,
+        workspaceSettingsLayer,
+        WorkspaceSkill.live,
+        shellSettingsLayer,
+        ShellSkill.live,
+        liveSkillRegistryLayer,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,
         MessageIngressImpl.live,
         liveConnectorManagerLayer,
+        agentSettingsLayer,
         Client.default,
-        // TODO Phase 12: wire SchedulerSkill.live once SkillRegistry is available
       ).orDie
 
 }

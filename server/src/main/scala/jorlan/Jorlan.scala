@@ -28,8 +28,9 @@ import java.util.concurrent.TimeUnit
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
   OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
-  SessionHub & ModelGateway & ZIORepositories & MemoryService & MemorySkill & JobManager & TriggerEngine &
-  ConnectorManager & Client
+  SessionHub & ModelGateway & ZIORepositories & MemoryService & MemorySkill & SkillRegistry & JobManager &
+  TriggerEngine & ConnectorManager & NotificationRouter & NotifySkill & ContactsSkill & WorkspaceSkill & ShellSkill &
+  Client
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -93,10 +94,25 @@ object Jorlan extends ZIOApp {
         }
     }
 
-  private def startServices: ZIO[TriggerEngine & ConnectorManager & Scope, JorlanError, Unit] =
+  private def startServices: ZIO[
+    TriggerEngine & ConnectorManager & SkillRegistry & NotifySkill & ContactsSkill & WorkspaceSkill & ShellSkill &
+      Scope,
+    JorlanError,
+    Unit,
+  ] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
       connectorManager <- ZIO.service[ConnectorManager]
+      registry         <- ZIO.service[SkillRegistry]
+      notifySkill      <- ZIO.service[NotifySkill]
+      contactsSkill    <- ZIO.service[ContactsSkill]
+      workspaceSkill   <- ZIO.service[WorkspaceSkill]
+      shellSkill       <- ZIO.service[ShellSkill]
+      _                <- registry.register(notifySkill)
+      _                <- registry.register(contactsSkill)
+      _                <- registry.register(workspaceSkill)
+      _                <- registry.register(shellSkill)
+      _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)
       _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
