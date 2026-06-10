@@ -54,6 +54,8 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 
 - `ai` — All the communication with ai is located here, we're using langchain4j
 - `model` — domain types, shared across modules
+- `connector-api` — shared connector/skill contract: `Skill`, `ConnectorSkill`, `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy`
+- `telegram` — Telegram connector: `TelegramConnectorSkill`, `TelegramApiClient`, `TelegramMessageNormalizer`
 - `db` — Quill repositories, Flyway migrations
 - `server` — Caliban GraphQL, HTTP server, connectors, agent runtime
 - `analytics` — analytics subsystem

@@ -23,4 +23,6 @@ metadata:
 ## V-migration latest
 - V021: scheduler extensions (retry, lease, userId columns).
 - V022: user.email NOT NULL; backfills with `<displayName>-<id>@jorlan.internal`.
-- V023 is next.
+- V023: scheduler index fixes (idx_st_job_id, idx_sj_agent_id; drops redundant idx_scheduler_job_status).
+- V024: agentSession.chatRef VARCHAR(255) NULL + index on (userId, chatRef) — Phase 11.
+- V025 is next.

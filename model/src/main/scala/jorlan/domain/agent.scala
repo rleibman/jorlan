@@ -58,6 +58,9 @@ case class Agent(
   *   Optional workspace scope; `None` for sessions without a file-system context.
   * @param modelId
   *   The LLM model used for this session. Overrides the agent's `defaultModel` when set.
+  * @param chatRef
+  *   Optional connector-native chat identifier (e.g. Telegram chat id). Used to bind a durable session to a specific
+  *   external chat so conversations persist across server restarts.
   */
 case class AgentSession(
   id:          AgentSessionId,
@@ -66,6 +69,7 @@ case class AgentSession(
   workspaceId: Option[WorkspaceId],
   status:      SessionStatus,
   modelId:     Option[ModelId],
+  chatRef:     Option[String] = None,
   createdAt:   Instant,
   updatedAt:   Instant,
 ) derives JsonEncoder, JsonDecoder

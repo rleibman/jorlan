@@ -10,7 +10,7 @@
 
 package jorlan.db
 
-import jorlan.db.repository.{ServerSettingsRepository, UserZIORepository}
+import jorlan.db.repository.*
 import jorlan.init.{InitService, InitServiceImpl, InitTokenStore}
 import zio.*
 import zio.json.ast.Json
@@ -29,27 +29,20 @@ import scala.language.unsafeNulls
   *   4. The user created during init is queryable via `UserZIORepository`.
   *   5. A second `complete` call fails with "already initialized".
   */
-object InitServiceIntegrationSpec extends ZIOSpecDefault {
+object InitServiceIntegrationSpec extends ZIOSpec[ZIORepositories & InitTokenStore & InitService] {
 
-  private val dbLayer = JorlanContainer.repositoryLayer
-
-  private val tokenStoreLayer: ULayer[InitTokenStore] =
-    ZLayer.fromZIO(InitTokenStore.make(false))
-
-  private val fullLayer: TaskLayer[
-    ServerSettingsRepository & UserZIORepository & InitTokenStore & InitService,
-  ] =
-    ZLayer.make[ServerSettingsRepository & UserZIORepository & InitTokenStore & InitService](
-      dbLayer,
-      tokenStoreLayer,
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories & InitTokenStore & InitService] =
+    ZLayer.make[ZIORepositories & InitTokenStore & InitService](
+      JorlanContainer.repositoryLayer,
+      ZLayer.fromZIO(InitTokenStore.make(false)),
       InitServiceImpl.layer,
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & InitTokenStore & InitService & TestEnvironment & Scope, Any] =
     suite("InitService integration (real DB)")(
       test("1. fresh DB has initialized = false (V017 seed row present)") {
         for {
-          settings    <- ZIO.service[ServerSettingsRepository]
+          settings    <- ZIO.serviceWith[ZIORepositories](_.setting)
           initialized <- settings.get("initialized")
         } yield assertTrue(initialized.contains(Json.Bool(false)))
       },
@@ -59,7 +52,7 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
           token       <- tokenStore.token.map(_.getOrElse(""))
           svc         <- ZIO.service[InitService]
           _           <- svc.complete(token, "TestServer", "admin@example.com", "Admin User", "adminPassword123!")
-          settings    <- ZIO.service[ServerSettingsRepository]
+          settings    <- ZIO.serviceWith[ZIORepositories](_.setting)
           initialized <- settings.get("initialized")
           serverName  <- settings.get("serverName")
         } yield assertTrue(
@@ -69,9 +62,9 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
       },
       test("3. admin user created during init is queryable via UserZIORepository") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          users    <- userRepo.search(jorlan.UserSearch())
-        } yield assertTrue(users.exists(_.email.contains("admin@example.com")))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          found    <- userRepo.userByEmail("admin@example.com")
+        } yield assertTrue(found.isDefined)
       },
       test("4. second complete fails with already initialized") {
         for {
@@ -88,6 +81,6 @@ object InitServiceIntegrationSpec extends ZIOSpecDefault {
           tokenAfter <- tokenStore.token
         } yield assertTrue(tokenAfter.isEmpty)
       },
-    ).provideLayerShared(fullLayer) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
+    ) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
 
 }

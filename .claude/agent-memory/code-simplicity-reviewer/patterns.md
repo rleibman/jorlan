@@ -1,6 +1,6 @@
 ---
 name: Jorlan Codebase Patterns
-description: Recurring idioms, duplication hotspots, and conventions confirmed across Phases 0-2 code review
+description: Recurring idioms, duplication hotspots, and conventions confirmed across Phases 0-11 code review
 type: project
 ---
 
@@ -126,6 +126,19 @@ type: project
 - `agentId = agentSessions.headOption.map(_.agentId).getOrElse(AgentId.empty)` appears **twice** in `JorlanAPI` at lines 377 and 480 (in `listMemory` and `storeMemory`). Extract to a private helper `resolveAgentId(sessions)` or consolidate into a single method.
 - `CommandHandler.listMemory` and `searchMemory` have near-identical `foldZIO` bodies; they differ only in the error message string and the "no results" message. The formatting of a record (`[id] (scope) key: value`) is duplicated between lines 268 and 279.
 - `ShellCommand.parse` uses a `return` statement on line 52 (`return Message(line)`) — non-idiomatic. Previously flagged in Phase 7 review. Still present.
+
+## Phase 11 Telegram Connector Observations (2026-06-07)
+- `TelegramConnectorSkill` takes `agentRunner: AgentRunner` as a constructor parameter but never calls any method on it — dead field. The `AgentRunner` dependency also forces a downstream `ZStream` import that is equally unused. Both should be removed.
+- `TelegramConnectorSkill.invoke` duplicates `val obj = args.asObject.getOrElse(...)` and then repeats `obj.get("chatId").flatMap(_.asString).getOrElse("")` three times across the three match arms. Extract `def strArg(key: String): String` locally to remove the 3x repetition.
+- `sendPhoto` and `sendDocument` in `TelegramApiClientLive` share an identical multipart body assembly pattern (same `boundary`, same header/footer structure, same `Body.fromChunk`, same `.addHeader(ContentType(multipart/form-data, boundary=...))`, same `.flatMap(r => if success ZIO.unit else fail)`, same `.mapError`). Only the field name ("photo"/"document") and Content-Type differ. A private `sendMultipart` helper would deduplicate ~25 lines.
+- The success/error response check `.flatMap(r => if (r.status.isSuccess) ZIO.unit else r.body.asString.flatMap(b => ZIO.fail(new Exception(b))))` appears three times in `TelegramApiClientLive` (sendMessage, sendPhoto, sendDocument). A private `checkSuccess` method would centralize it.
+- `TelegramConnectorSkill.filterUpdates` applies two sequential filter passes, each guarded by an `isEmpty` check. Could be collapsed into a single `updates.filter { u => chatOk(u) && userOk(u) }` with two private predicate methods, removing the named `chatFiltered`/`userFiltered` intermediates.
+- `MessageIngressImpl` test (`MessageIngressSpec`): `knownUserRepo` and `unknownUserRepo` both define an anonymous `UserZIORepository` with 8 overridden methods, 7 of which are identical. Extract a `StubUserRepo` class parameterised by the `userByChannelIdentity` override — saves ~40 lines of copy-paste.
+- `MessageIngressSpec`: all three test bodies repeat the same 4-line `ZIO.service` extraction block (`userRepo`, `agentRepo`, `eventLog`, `evaluator`). Extracting a `makeIngress(agentRunner)` helper inside `spec` would remove this repetition.
+- `liveConnectorManagerLayer` in `EnvironmentBuilder` uses `ZIO.foreach(connectors.filter(...)) { ci => ci.configJson.as[TelegramConfig] match { ... } }` producing `List[Option[ConnectorSkill]]` then `.flatten`. The `collect`+`flatMap` idiom (or `ZIO.collectAll` with `ZIO.foreach` returning `Option`) would be more idiomatic: use `.flatMap` on `ZIO.foreach` with a `collect`.
+- `TelegramMessageNormalizer.normalizeMessage` calls `java.time.Instant.now()` directly — side-effecting operation inside an otherwise pure `Option`-returning method. Should accept `receivedAt: Instant` as a parameter (passed from the caller which has access to the ZIO clock), or be documented as intentionally impure.
+- `ConnectorManager.startAll` return type is `IO[JorlanError, Unit]` but the implementation uses `.ignore` on each connector, so it can never actually fail. The method signature lies about its error channel; `UIO[Unit]` would be more honest (or document why the `JorlanError` channel is retained for future use).
+- `TelegramConnectorSkill.pollLoop` computes `updates.map(_.updateId.toLong).maxOption.map(_ + 1L).getOrElse(offset)` for the next offset. `updates.maxByOption(_.updateId).map(_.updateId.toLong + 1L).getOrElse(offset)` avoids the full `.map` allocation before `maxOption`.
 
 ## Phase 10 Durable Scheduler Observations (2026-06-04)
 - `job.copy(status = ..., scheduledAt = ..., leasedAt = None, leasedBy = None)` appears 4 times across `JobManagerImpl` (lines 100-107) and `TriggerEngine` (lines 107-116, 124-128, 149-156). A `SchedulerJob` extension method `resetLease(status, scheduledAt)` or a private helper would consolidate these.

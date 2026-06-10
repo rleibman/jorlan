@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -34,130 +35,142 @@ object JobManagerSpec extends ZIOSpecDefault {
   ): IO[JorlanError, SchedulerJob] =
     mgr.createJob(agentId, userId, name, None, maxRetries, backoffSecs, backoffPol, missedPol)
 
-  private def makeManager: UIO[JobManager] =
-    InMemoryRepositories.InMemorySchedulerRepo.make.map(JobManagerImpl(_))
+  private def makeManager = ZIO.serviceWith[ZIORepositories](JobManagerImpl(_))
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("JobManager")(
-      test("createJob returns a job with Pending status and the given name") {
-        for {
-          mgr <- makeManager
-          job <- mkJob("test-job")(mgr)
-        } yield assertTrue(
-          job.name == "test-job",
-          job.status == JobStatus.Pending,
-          job.agentId == agentId,
-          job.userId == userId,
-          job.maxRetries == 0,
-        )
-      },
-      test("createJob propagates retry and backoff settings") {
-        for {
-          mgr <- makeManager
-          job <- mgr.createJob(
-            agentId,
-            userId,
-            "retry-job",
-            Some("""{"key":"value"}"""),
-            maxRetries = 3,
-            backoffSeconds = 120,
-            backoffPolicy = RetryBackoffPolicy.Exponential,
-            missedRunPolicy = MissedRunPolicy.RunOnce,
+      suite("job lifecycle")(
+        test("createJob returns a job with Pending status and the given name") {
+          for {
+            mgr <- makeManager
+            job <- mkJob("test-job")(mgr)
+          } yield assertTrue(
+            job.name == "test-job",
+            job.status == JobStatus.Pending,
+            job.agentId == agentId,
+            job.userId == userId,
+            job.maxRetries == 0,
           )
-        } yield assertTrue(
-          job.maxRetries == 3,
-          job.backoffSeconds == 120,
-          job.backoffPolicy == RetryBackoffPolicy.Exponential,
-          job.missedRunPolicy == MissedRunPolicy.RunOnce,
-          job.inputJson.contains("""{"key":"value"}"""),
-        )
-      },
-      test("pauseJob sets status to Paused") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("pause-me")(mgr)
-          _      <- mgr.pauseJob(job.id)
-          result <- mgr.getJob(job.id)
-        } yield assertTrue(result.status == JobStatus.Paused)
-      },
-      test("pauseJob fails on Cancelled job") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("pause-cancelled")(mgr)
-          _      <- mgr.cancelJob(job.id)
-          result <- mgr.pauseJob(job.id).either
-        } yield assertTrue(result.isLeft)
-      },
-      test("pauseJob fails on Succeeded job") {
-        for {
-          mgr  <- makeManager
-          repo <- InMemoryRepositories.InMemorySchedulerRepo.make
-          mgr2 = JobManagerImpl(repo)
-          job    <- mkJob("pause-succeeded")(mgr2)
-          _      <- repo.releaseJob(job.id, JobStatus.Succeeded, None, java.time.Instant.now()).orDie
-          result <- mgr2.pauseJob(job.id).either
-        } yield assertTrue(result.isLeft)
-      },
-      test("resumeJob sets status back to Pending") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("resume-me")(mgr)
-          _      <- mgr.pauseJob(job.id)
-          _      <- mgr.resumeJob(job.id)
-          result <- mgr.getJob(job.id)
-        } yield assertTrue(result.status == JobStatus.Pending)
-      },
-      test("resumeJob fails on a non-Paused job") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("resume-running")(mgr)
-          result <- mgr.resumeJob(job.id).either
-        } yield assertTrue(result.isLeft)
-      },
-      test("cancelJob sets status to Cancelled") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("cancel-me")(mgr)
-          _      <- mgr.cancelJob(job.id)
-          result <- mgr.getJob(job.id)
-        } yield assertTrue(result.status == JobStatus.Cancelled)
-      },
-      test("cancelJob is idempotent — calling on already-Cancelled job succeeds without error") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("cancel-twice")(mgr)
-          _      <- mgr.cancelJob(job.id)
-          result <- mgr.cancelJob(job.id).either
-        } yield assertTrue(result.isRight)
-      },
-      test("triggerNow resets scheduledAt to now and sets Pending") {
-        for {
-          mgr    <- makeManager
-          before <- Clock.instant
-          job    <- mkJob("trigger-me")(mgr)
-          _      <- mgr.pauseJob(job.id)
-          _      <- mgr.triggerNow(job.id)
-          result <- mgr.getJob(job.id)
-        } yield assertTrue(
-          result.status == JobStatus.Pending,
-          !result.scheduledAt.isBefore(before),
-          result.leasedAt.isEmpty,
-        )
-      },
-      test("deleteJob removes the job — getJob fails afterward") {
-        for {
-          mgr    <- makeManager
-          job    <- mkJob("delete-me")(mgr)
-          _      <- mgr.deleteJob(job.id)
-          result <- mgr.getJob(job.id).either
-        } yield assertTrue(result.isLeft)
-      },
-      test("getJob fails with JorlanError for unknown id") {
-        for {
-          mgr    <- makeManager
-          result <- mgr.getJob(SchedulerJobId(999L)).either
-        } yield assertTrue(result.isLeft)
-      },
+        },
+        test("createJob propagates retry and backoff settings") {
+          for {
+            mgr <- makeManager
+            job <- mgr.createJob(
+              agentId,
+              userId,
+              "retry-job",
+              Some("""{"key":"value"}"""),
+              maxRetries = 3,
+              backoffSeconds = 120,
+              backoffPolicy = RetryBackoffPolicy.Exponential,
+              missedRunPolicy = MissedRunPolicy.RunOnce,
+            )
+          } yield assertTrue(
+            job.maxRetries == 3,
+            job.backoffSeconds == 120,
+            job.backoffPolicy == RetryBackoffPolicy.Exponential,
+            job.missedRunPolicy == MissedRunPolicy.RunOnce,
+            job.inputJson.contains("""{"key":"value"}"""),
+          )
+        },
+        test("pauseJob sets status to Paused") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("pause-me")(mgr)
+            _      <- mgr.pauseJob(job.id)
+            result <- mgr.getJob(job.id)
+          } yield assertTrue(result.status == JobStatus.Paused)
+        },
+        test("pauseJob fails on Cancelled job") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("pause-cancelled")(mgr)
+            _      <- mgr.cancelJob(job.id)
+            result <- mgr.pauseJob(job.id).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("pauseJob fails on Succeeded job") {
+          for {
+            mgr  <- makeManager
+            repo <- ZIO.service[ZIORepositories]
+            mgr2 = JobManagerImpl(repo)
+            job    <- mkJob("pause-succeeded")(mgr2)
+            _      <- repo.scheduler.releaseJob(job.id, JobStatus.Succeeded, None, java.time.Instant.now()).orDie
+            result <- mgr2.pauseJob(job.id).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("resumeJob sets status back to Pending") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("resume-me")(mgr)
+            _      <- mgr.pauseJob(job.id)
+            _      <- mgr.resumeJob(job.id)
+            result <- mgr.getJob(job.id)
+          } yield assertTrue(result.status == JobStatus.Pending)
+        },
+        test("resumeJob fails on a non-Paused job") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("resume-running")(mgr)
+            result <- mgr.resumeJob(job.id).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("cancelJob sets status to Cancelled") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("cancel-me")(mgr)
+            _      <- mgr.cancelJob(job.id)
+            result <- mgr.getJob(job.id)
+          } yield assertTrue(result.status == JobStatus.Cancelled)
+        },
+        test("cancelJob is idempotent — calling on already-Cancelled job succeeds without error") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("cancel-twice")(mgr)
+            _      <- mgr.cancelJob(job.id)
+            result <- mgr.cancelJob(job.id).either
+          } yield assertTrue(result.isRight)
+        },
+        test("triggerNow resets scheduledAt to now and sets Pending") {
+          for {
+            mgr    <- makeManager
+            before <- Clock.instant
+            job    <- mkJob("trigger-me")(mgr)
+            _      <- mgr.pauseJob(job.id)
+            _      <- mgr.triggerNow(job.id)
+            result <- mgr.getJob(job.id)
+          } yield assertTrue(
+            result.status == JobStatus.Pending,
+            !result.scheduledAt.isBefore(before),
+            result.leasedAt.isEmpty,
+          )
+        },
+        test("deleteJob removes the job — getJob fails afterward") {
+          for {
+            mgr    <- makeManager
+            job    <- mkJob("delete-me")(mgr)
+            _      <- mgr.deleteJob(job.id)
+            result <- mgr.getJob(job.id).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("getJob fails with JorlanError for unknown id") {
+          for {
+            mgr    <- makeManager
+            result <- mgr.getJob(SchedulerJobId(999L)).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("addTrigger attaches a trigger to the job") {
+          for {
+            mgr     <- makeManager
+            job     <- mkJob("trigger-job")(mgr)
+            now     <- Clock.instant
+            trigger <- mgr.addTrigger(
+              job.id,
+              SchedulerTrigger(SchedulerTriggerId.empty, job.id, TriggerType.Cron, "0 9 * * 1-5", true, now),
+            )
+          } yield assertTrue(trigger.id.value > 0L, trigger.expression == "0 9 * * 1-5")
+        },
+      ).provideShared(InMemoryRepositories.live()),
       test("listJobs(None) returns exactly the created jobs") {
         for {
           mgr <- makeManager
@@ -165,11 +178,11 @@ object JobManagerSpec extends ZIOSpecDefault {
           _   <- mkJob("job-b")(mgr)
           all <- mgr.listJobs(None)
         } yield assertTrue(all.size == 2, all.exists(_.name == "job-a"), all.exists(_.name == "job-b"))
-      },
+      }.provide(InMemoryRepositories.live()),
       test("listJobs(Some(agentId)) returns only jobs for that agent") {
         for {
           mgr  <- makeManager
-          repo <- InMemoryRepositories.InMemorySchedulerRepo.make
+          repo <- ZIO.service[ZIORepositories]
           mgr2 = JobManagerImpl(repo)
           _ <- mgr2
             .createJob(agentId, userId, "agent1-job", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
@@ -182,18 +195,7 @@ object JobManagerSpec extends ZIOSpecDefault {
           filtered.size == 1,
           filtered.head.name == "agent1-job",
         )
-      },
-      test("addTrigger attaches a trigger to the job") {
-        for {
-          mgr     <- makeManager
-          job     <- mkJob("trigger-job")(mgr)
-          now     <- Clock.instant
-          trigger <- mgr.addTrigger(
-            job.id,
-            SchedulerTrigger(SchedulerTriggerId.empty, job.id, TriggerType.Cron, "0 9 * * 1-5", true, now),
-          )
-        } yield assertTrue(trigger.id.value > 0L, trigger.expression == "0 9 * * 1-5")
-      },
+      }.provide(InMemoryRepositories.live()),
     )
 
 }

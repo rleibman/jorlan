@@ -57,6 +57,22 @@ type: project
 - `ArgBuilder[TriggerType/RetryBackoffPolicy/MissedRunPolicy]` use bare `.valueOf` which throws `IllegalArgumentException` on unknown enum values — should use `.Try(valueOf)` like `MemoryScope` does
 - Missing event log writes: `pauseJob`, `resumeJob`, `triggerNow`, `deleteJob`, `addTrigger` mutations in JorlanAPI have no `logEvent` call; `SchedulerJobPaused`/`SchedulerJobResumed`/`SchedulerJobDeleted` event types don't even exist in `EventType`
 - `decideApproval` mutation has no `requireCapability` guard — any authenticated user can approve/reject any approval request
+
+## Phase 11 Findings (2026-06-07)
+- `TelegramConnectorSkill` injects `AgentRunner` but never calls it — dead dependency; only `MessageIngress` is used for dispatch
+- `TelegramConnectorSkill` imports `jorlan.service.AgentRunner` from `server` module while `telegram` module only declares `dependsOn(model, connectorApi)` — cross-module boundary violation (only compiles because server is a transitive dep via test scope; fragile)
+- `MessageIngressImpl` depends on `UserZIORepository`, `AgentZIORepository`, `EventLogZIORepository` directly — server/service layer should depend on abstract repository traits or service interfaces, not db-layer ZIO aliases
+- `resolveOrCreateSession` loads up to 100 sessions and filters in-memory for `chatRef` match — should pass `chatRef` to `AgentSessionSearch` and filter at DB level; race condition on concurrent messages too
+- `UnrecognizedIdentityPolicy.Quarantine` enum case defined but completely unimplemented — `handleUnrecognized` always drops regardless of configured policy
+- `EvaluationResult.CapabilityGrantAllows` is not handled in `MessageIngressImpl.handleKnown` — if a grant requires human approval the message is silently dispatched anyway; the `_` wildcard match swallows the case
+- `java.time.Instant.now()` used directly in `TelegramMessageNormalizer.normalizeMessage` (line 52) — bypasses ZIO Clock; not testable deterministically
+- `ZIO.sleep` used bare in `TelegramConnectorSkillSpec` tests (lines 118, 128) without `TestAspect.withLiveClock` wrapping at the correct level — contradicts the project's established test clock discipline (though `@@ TestAspect.withLiveClock` is applied at test level, the practice of wall-clock sleeps is fragile)
+- `pollLoop` is a naked ZIO tail-recursive method (`def pollLoop(offset)` calling itself) — works because it is forked as a daemon, but ZIO cannot optimize it via `tailRecM`; prefer `ZStream.unfoldZIO` or `ZIO.iterate`
+- `stopAll` is never called on server shutdown — `ConnectorManager.stopAll` exists but is not invoked in `Jorlan.run`'s teardown path; Telegram polling fibers leak on shutdown
+- `startAll` is duplicated identically in both branches of `Jorlan.run` (lines 98 and 114) — shotgun surgery risk, same pattern as `TriggerEngine` duplication flagged in Phase 10
+- `chatRef` session lookup does not scope to `channelType` — two connectors with coincidentally identical numeric chat IDs (Telegram + Slack both use numeric IDs) would share sessions incorrectly
+- `FakeTelegramApiClient` lives in production source (`telegram/src/main/scala/`) not test source — test doubles belong in `src/test/scala/` to avoid shipping them in the production JAR
+- `val boundary = "ZioBoundary"` duplicated in both `sendPhoto` and `sendDocument` — should be a private constant; also a static string is not RFC 2046-safe as a real multipart boundary
 - `resolveAgentId` silently falls back to `AgentId.empty` (0 sentinel) when no session exists; a job created with `AgentId.empty` stored in DB will fail the FK constraint on any schema that enforces `agentId` references
 
 ## Phase 8.1 Findings (2026-05-31)

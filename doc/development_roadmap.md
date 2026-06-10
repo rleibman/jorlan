@@ -279,6 +279,8 @@ does.
 > that executes tool calls via the skill runtime and re-submits results to the model (the "ReAct" pattern). This
 > architecture is intentionally deferred until Phase 12 introduces built-in skills. In Phase 8, `AgentRunner` is a
 > thin pass-through: message in → `streamedChat` → stream back. No multi-step loops, no tool dispatch.
+> See Phase 12 "Foundation" section for the concrete implementation plan. Until that lands, no natural-language
+> skill invocation works regardless of how many skills are registered.
 
 ### GraphQL changes
 
@@ -592,16 +594,77 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 ## Phase 11: Telegram Connector
 
 **Goal:** Users can interact with Jorlan via Telegram; messages are resolved to canonical users and processed by agents.
+The phase also lays the foundational plugin seam (`Skill` / `ConnectorSkill` traits + reusable ingress pipeline) every
+future connector will reuse.
 
-- [ ] Telegram Bot API integration (start with long-polling; webhook switchable via config)
-- [ ] `TelegramConnector` ZIO service: start polling, stop, send message, send photo/file
-- [ ] `MessageNormalizer`: Telegram message → internal `InboundMessage`
-- [ ] Identity resolution for Telegram users (Telegram user ID → `ChannelIdentity` → `User`)
-- [ ] Unrecognized Telegram identity policy: configurable — reject or quarantine
-- [ ] Outbound delivery for `NotificationRouter`
-- [ ] Channel-specific config: bot token, allowed chat IDs, allowed users
-- [ ] Integration tests using a mock Telegram API (no live bot token required for CI)
-- [ ] The system can interact with messages in telegram groups and channels.
+See `doc/mini-designs/phase11-telegram-connector.md` and `doc/mini-designs/plugin-architecture.md` for full design.
+
+### Pre-work: Rename `Skill` record → `SkillRecord`
+
+- [x] `model/src/main/scala/jorlan/domain/skill.scala` — rename `case class Skill` → `SkillRecord`
+- [x] `model/src/main/scala/jorlan/repository.scala` — update `SkillRepository` return types and `SkillSearch` sort enum references
+- [x] `db/src/main/scala/jorlan/db/repository/QuillRepositories.scala` — update Quill query mappings
+- [x] Grep `\bSkill\b` and fix any GraphQL / test references (leave `SkillVersion`, `SkillId`, `SkillTier`, `SkillStatus` unchanged)
+
+### Runtime Trait Seam (connector-api)
+
+- [x] New file `connector-api/src/main/scala/jorlan/connector/Skill.scala`: define `Skill` trait (`descriptor`, `invoke`)
+- [x] `ConnectorSkill extends Skill` trait: add `connectorType`, `instanceId`, `start`, `stop`
+- [x] Supporting types in same file: `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`
+
+### Reusable Ingress Pipeline
+
+- [x] New file `model/src/main/scala/jorlan/domain/ingress.scala`: `InboundMessage`, `ChatKind` enum, `UnrecognizedIdentityPolicy` enum
+- [x] New file `model/src/main/scala/jorlan/service/MessageIngress.scala`: `MessageIngress` trait (`receive(msg): IO[JorlanError, Unit]`)
+- [x] `MessageIngressImpl` in `server/.../service/`: identity resolution → unrecognized policy → capability gate (`agent.message`) → resolve-or-create `AgentSession` for `(user, chatRef)` → dispatch to `AgentRunner.processMessage` → write inbound receipt event
+- [ ] Reply path: deferred to Phase 12 `NotificationRouter` — `agentRunner` parameter removed from `TelegramConnectorSkill`; see P11-001 in phase review
+
+### Telegram Bot API Client
+
+- [x] `TelegramApiClient` trait: `getUpdates(offset, timeoutSeconds)`, `sendMessage(chatId, text)`, `sendPhoto(chatId, photo, caption?)`, `sendDocument(chatId, file, filename)`
+- [x] `TelegramApiClientImpl` over `zio-http`
+- [x] `TelegramConfig` case class: `botToken`, `allowedChatIds`, `allowedUserIds`, `unrecognizedPolicy`, `useWebhook` — parsed from `ConnectorInstance.configJson`
+- [x] `FakeTelegramApiClient` for tests (returns canned `getUpdates` responses; no live token in CI)
+
+### `TelegramConnectorSkill extends ConnectorSkill`
+
+- [x] `TelegramMessageNormalizer`: `TelegramUpdate` → `InboundMessage` (maps `chat.type` → `ChatKind`, `from.id` → `channelUserId`, `chat.id` → `chatRef`)
+- [x] `TelegramConnectorSkill`: `connectorType = Telegram`, bound to `ConnectorInstance`
+- [x] `start`: fork long-poll loop (`getUpdates(offset, 30)` → normalizer → `MessageIngress.receive`, advance offset); handle private/group/channel/supergroup; gate groups on `allowedChatIds`
+- [x] `stop`: interrupt polling fiber
+- [x] `invoke` egress tools (each gated by capability `telegram.send`, `RiskClass ExternalEffect`):
+    - `telegram.send_message { chatId, text }`
+    - `telegram.send_photo { chatId, photo, caption? }`
+    - `telegram.send_file { chatId, file, filename }`
+- [x] `descriptor` listing all three `ToolDescriptor`s with JSON schemas and required capabilities
+
+### Minimal `ConnectorManager` + Boot Wiring
+
+- [x] `ConnectorManager` trait: `startAll`, `stopAll`
+- [x] `ConnectorManagerImpl`: collect `ConnectorSkill`s from registered set, start/stop ingress
+- [x] Wire `TelegramConnectorSkill.live` + `MessageIngressImpl.live` + `TelegramApiClient.live` in `EnvironmentBuilder`
+- [x] Fork `ConnectorManager.startAll` as daemon in `Jorlan.run` (mirror `TriggerEngine` startup pattern)
+
+### Migration V023 (Quarantine persistence)
+
+- [x] Decision: quarantine is log-only for Phase 11 (no DB table). V023 was already used for scheduler index fixes; V024 adds `chat_ref` column to `agentSession` for durable connector-bound sessions.
+
+### Tests
+
+- [x] `TelegramMessageNormalizerSpec`: `TelegramUpdate` → `InboundMessage` for private / group / channel / supergroup
+- [x] `MessageIngressSpec`: identity hit; `Reject` miss; capability gate deny; resolve-or-create session; dispatch — uses `InMemoryRepositories` + fake `AgentRunner`
+- [x] `TelegramConnectorSkillSpec`: `start`/`stop` lifecycle; each egress `invoke` tool via `FakeTelegramApiClient`; long-poll loop end-to-end with mock client
+- [x] `sbt scalafmtAll` clean before merge
+- [x] Update `development_roadmap.md` checkboxes as items complete
+
+### Module restructuring (added per Phase 11 review)
+
+- [x] `connector-api` SBT module — `Skill`, `ConnectorSkill`, `SkillDescriptor`, `ToolDescriptor`, `InvocationContext`, `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy` — package `jorlan.connector`
+- [x] `telegram` SBT module — `TelegramConnectorSkill`, `TelegramApiClient`, `TelegramMessageNormalizer`, `FakeTelegramApiClient` — package `jorlan.connector.telegram`
+
+### Appendix updates
+
+- [x] Mark `Telegram` connector `[x]` in the Connectors appendix table
 
 ---
 
@@ -610,23 +673,53 @@ See `doc/mini-designs/phase10-durable-scheduler.md` for full design.
 **Goal:** Core Tier-0 skills that unlock real agent utility — file access, shell, notifications, identity, and
 scheduling.
 
-- [ ] **Skill registry infrastructure** (`SkillRegistry` ZIO service): register, look up by id/tier, validate manifest
-  JSON schema
-- [ ] **Workspace/Filesystem skill** (`workspace.*`)
-    - `workspace.read` (read file by path within scoped workspace)
-    - `workspace.write` (write file; creates path if needed)
-    - `workspace.search` (find files by glob or text)
-    - `workspace.snapshot` (tar/zip of workspace)
+> **This phase is the prerequisite for all natural-language skill invocation.**  Until the items in
+> "Foundation" are complete, the LLM cannot call any tool regardless of how many skills are registered.
+> The use-case prompts in `doc/manual-testing-guide.md` Section G (e.g. "Send a telegram message to Sarah")
+> cannot work until this phase is done.
+
+### Foundation (must land first — blocks everything below)
+
+- [ ] **ReAct tool-calling loop in `AgentRunnerImpl`** — replaces the current thin pass-through with a
+  planner/dispatcher loop:
+    - `ModelGateway.streamedResponse` extended to accept a list of tool descriptors and signal tool-call
+      requests (LangChain4j `ToolSpecification` / `ToolExecutionRequest`)
+    - `AgentRunnerImpl.processMessage` iterates: send message → if model returns a tool call, invoke it via
+      `SkillRegistry`, append the result, re-submit; repeat until the model returns a final text answer
+    - `Planner` type that parses model output into `PlanStep` (either `FinalAnswer(text)` or
+      `ToolCall(name, args)`)
+    - Loop bounded by a configurable max-steps guard to prevent runaway chains
+    - Each tool call written to the event log (`ToolInvoked`, `ToolResult`)
+- [ ] **`SkillRegistry` ZIO service** — the bridge between the loop and registered skills:
+    - Register/look up `Skill` instances by id and tier
+    - `MemorySkill` (Phase 9) and `SchedulerSkill` (Phase 10) wired in at startup as Tier-0 skills
+    - `TelegramConnectorSkill` tools (`telegram.send_message`, `telegram.send_photo`, `telegram.send_file`)
+      wired in when the Telegram connector is configured
+    - Validate tool `args` JSON against each skill's manifest schema before invoking
+    - Enforce capability gate (`agent.skill.invoke`) per invocation
+
+### Skills
+
+- [ ] **Notification skill** (`notify.*`) — the idiomatic agent-facing wrapper over outbound connectors:
+    - `notify.user(userId, message)` — looks up the user's preferred channel identity, routes to
+      `NotificationRouter` → Telegram (or console fallback)
+    - `notify.channel(chatId, connectorType, message)` — sends to an explicit channel
+    - `NotificationRouter` ZIO service: given a `(UserId, message)`, resolves the active connector for that
+      user and calls `ConnectorSkill.invoke("send_message", …)` — this is the missing piece that makes
+      "Send a telegram message to Sarah" work end-to-end
+- [ ] **Identity and Contacts skill** (`identity.*`, `contacts.*`):
+    - `contacts.find(name)` — searches `ChannelIdentity` records by display name / email, returns
+      `channelUserId` and `channelType` — this is the missing name → chat ID resolution step
+    - `identity.resolve`, `identity.link`, `identity.verify`, `identity.listAliases`
+- [ ] **Workspace/Filesystem skill** (`workspace.*`):
+    - `workspace.read`, `workspace.write`, `workspace.search`, `workspace.snapshot`
     - `workspace.delete` (requires explicit approval)
-- [ ] **Shell execution skill** (`shell.*`)
+- [ ] **Shell execution skill** (`shell.*`):
     - `RiskClassifier` for shell commands (Class 0–5)
     - Structured command execution (`binary + args + cwd + timeout`; raw `bash -c` disabled by default)
     - Capture stdout/stderr, exit code → write to `ArtifactRepository`
     - Full trace: user, agent, workspace, binary, args, timing, exit code, artifact refs, approval ID
-- [ ] **Identity and Contacts skill** (`identity.*`, `contacts.*`): resolve, link, verify, list aliases, search contacts
-- [ ] **Notification skill** (`notify.*`): `notify.user`, `notify.channel` — delivers via `NotificationRouter` →
-  Telegram, or console fallback
-- [ ] Tests for each skill including permission enforcement
+- [ ] Tests for each skill including permission enforcement and the full tool-calling loop
 
 ---
 
@@ -843,7 +936,7 @@ model
 
 | Status | Skill              | Priority | Type     | Description |
 |:------:|--------------------|----------|----------|-------------|
-|  [ ]   | Telegram           | 1        | Built-in |             |
+  |  [x]   | Telegram           | 1        | Built-in |             |
 |  [ ]   | Slack              |          | Built-in |             |
 |  [ ]   | Whatsapp           |          | Built-in |             |
 |  [ ]   | Discord            | 2        | Built-in |             |

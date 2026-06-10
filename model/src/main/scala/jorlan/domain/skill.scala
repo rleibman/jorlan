@@ -58,7 +58,7 @@ enum ConnectorType derives JsonEncoder, JsonDecoder {
   * @param currentVersion
   *   The semver string of the currently `Active` version, or `None` if no version is active yet.
   */
-case class Skill(
+case class SkillRecord(
   id:             SkillId,
   name:           String,
   currentVersion: Option[SemVer],
@@ -66,7 +66,7 @@ case class Skill(
   createdAt:      Instant,
 ) derives JsonEncoder, JsonDecoder
 
-/** An immutable snapshot of a [[Skill]] at a specific semver version.
+/** An immutable snapshot of a [[SkillRecord]] at a specific semver version.
   *
   * @param manifestJson
   *   Full JSON skill manifest: input/output JSON schema, required capabilities, description, and any connector-specific

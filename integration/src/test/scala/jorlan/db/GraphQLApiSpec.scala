@@ -24,7 +24,13 @@ import zio.test.*
   * Testcontainers and a server-identity session. Caliban flattens input-type fields as individual arguments (no
   * `input:` wrapper), so queries use e.g. `createUser(displayName: "x")` — not `createUser(input: {displayName: "x"})`.
   */
-object GraphQLApiSpec extends ZIOSpecDefault {
+object GraphQLApiSpec
+    extends ZIOSpec[
+      JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+    ] {
+
+  private type GraphQLEnv =
+    JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
 
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed(new CapabilityEvaluator {
@@ -42,33 +48,27 @@ object GraphQLApiSpec extends ZIOSpecDefault {
     }: ApprovalService,
   )
 
-  private val appLayer = ZLayer.make[
-    JorlanAPI.JorlanApiEnv & JorlanSession,
-  ](
-    JorlanContainer.repositoryLayer,
-    stubCapabilityEvaluator,
-    stubApprovalService,
-    ZLayer.succeed(JorlanSession.serverSession),
-    SessionHub.live,
-    FakeModelGateway.layer(List("test")),
-    AgentSessionManagerImpl.live,
-    MemoryClassifierImpl.live,
-    MemoryAccessPolicyImpl.live,
-    CheckpointSummarizerImpl.live,
-    ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-    MemoryServiceImpl.live,
-    MemorySkill.live,
-    AgentRunnerImpl.live,
-    JobManagerImpl.live,
-  )
+  override val bootstrap: ZLayer[Any, Any, GraphQLEnv] =
+    ZLayer.make[GraphQLEnv](
+      JorlanContainer.repositoryLayer,
+      stubCapabilityEvaluator,
+      stubApprovalService,
+      ZLayer.succeed(JorlanSession.serverSession),
+      SessionHub.live,
+      FakeModelGateway.layer(List("test")),
+      AgentSessionManagerImpl.live,
+      MemoryClassifierImpl.live,
+      MemoryAccessPolicyImpl.live,
+      CheckpointSummarizerImpl.live,
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+      MemorySkill.live,
+      AgentRunnerImpl.live,
+      JobManagerImpl.live,
+      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
+    )
 
-  private val interpreterLayer: ZLayer[JorlanAPI.JorlanApiEnv, Nothing, GraphQLInterpreter[
-    JorlanAPI.JorlanApiEnv & JorlanSession,
-    Any,
-  ]] =
-    ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie)
-
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[GraphQLEnv & TestEnvironment & Scope, Any] =
     suite("GraphQL API")(
       test("schema renders with expected types") {
         ZIO.succeed(JorlanAPI.api.render).map { schema =>
@@ -274,12 +274,6 @@ object GraphQLApiSpec extends ZIOSpecDefault {
           !permsResult.data.toString.contains("memory"),
         )
       },
-    ).provideLayerShared(
-      ZLayer
-        .make[JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]](
-          appLayer,
-          interpreterLayer,
-        ),
     ) @@ TestAspect.sequential
 
   private def extractLongField(

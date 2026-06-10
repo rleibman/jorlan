@@ -12,13 +12,12 @@ package jorlan.service
 
 // $COVERAGE-OFF$
 
-import ai.*
-import ai.given_Conversion_ChatMemory_ChatMemory
+import ai.{*, given}
 import dev.langchain4j.data.message.{AiMessage, SystemMessage, UserMessage}
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
-import jorlan.db.repository.EventLogZIORepository
+import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
 import zio.*
 import zio.stream.ZStream
@@ -68,7 +67,7 @@ private class OllamaModelGateway(
   config:       LangChainConfig,
   sharedModel:  StreamingChatLanguageModel,
   sessions:     Ref[Map[AgentSessionId, SessionEntry]],
-  eventLogRepo: EventLogZIORepository,
+  eventLogRepo: ZIOEventLogRepository,
 ) extends ModelGateway {
 
   private def buildAssistant(
@@ -239,11 +238,11 @@ private class OllamaModelGateway(
 
 object OllamaModelGateway {
 
-  val live: URLayer[LangChainConfig & EventLogZIORepository, ModelGateway] =
+  val live: URLayer[LangChainConfig & ZIORepositories, ModelGateway] =
     ZLayer.fromZIO(
       for {
         config       <- ZIO.service[LangChainConfig]
-        eventLogRepo <- ZIO.service[EventLogZIORepository]
+        eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         model        <- ZIO.attempt {
           StreamingChatLanguageModel.fromJava(
             dev.langchain4j.model.ollama.OllamaStreamingChatModel.builder

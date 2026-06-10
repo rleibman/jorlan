@@ -26,10 +26,11 @@ import zio.json.{JsonDecoder, JsonEncoder}
   *   - `Millennial` — culturally fluent, collaborative, occasionally ironic
   *   - `GenZ` — internet-native, brief, emoji-adjacent wit
   *   - `GenAlpha` — hyper-digital, gamified framing, maximum engagement
+  *   - `Custom` — no additional instructions; admin must write the full prompt in `Personality.prompt`
   */
 enum Formality derives JsonEncoder {
 
-  case Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha
+  case Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha, Custom
 
 }
 
@@ -111,6 +112,7 @@ object Personality {
         "You are an internet-native assistant. Be brief, direct, and unafraid of dry humour or emoji-adjacent wit. No corporate speak."
       case Formality.GenAlpha =>
         "You are a hyper-digital assistant tuned for maximum engagement. Frame everything as a quest, gamify the interaction, and keep responses fast and punchy."
+      case Formality.Custom => ""
     }
 
     val langInstr =

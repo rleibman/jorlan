@@ -19,7 +19,28 @@ import zio.test.*
 
 import java.time.Instant
 
-object MemoryServiceSpec extends ZIOSpecDefault {
+object MemoryServiceSpec extends ZIOSpec[MemoryService] {
+
+  private class NoOpCheckpointSummarizer extends CheckpointSummarizer {
+
+    override def summarize(
+      messages: List[Message],
+      userId:   UserId,
+      agentId:  AgentId,
+    ): IO[JorlanError, List[MemoryRecord]] =
+      ZIO.succeed(Nil)
+
+  }
+
+  override val bootstrap: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.live(),
+      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
+      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
+      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
+      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      MemoryServiceImpl.live,
+    )
 
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
@@ -44,30 +65,8 @@ object MemoryServiceSpec extends ZIOSpecDefault {
     )
   }
 
-  // Minimal no-op summarizer for MemoryServiceSpec
-  private class NoOpCheckpointSummarizer extends CheckpointSummarizer {
-
-    override def summarize(
-      messages: List[Message],
-      userId:   UserId,
-      agentId:  AgentId,
-    ): IO[JorlanError, List[MemoryRecord]] =
-      ZIO.succeed(Nil)
-
-  }
-
-  private val directLayers: ULayer[MemoryService] =
-    ZLayer.make[MemoryService](
-      InMemoryRepositories.InMemoryMemoryRepo.layer,
-      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
-      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
-      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-      MemoryServiceImpl.live,
-    )
-
-  override def spec: Spec[TestEnvironment & Scope, Any] =
-    suite("MemoryService")(
+  override def spec: Spec[MemoryService & TestEnvironment & Scope, Any] =
+    (suite("MemoryService")(
       test("store and query returns the record") {
         for {
           svc <- ZIO.service[MemoryService]
@@ -233,7 +232,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
           result <- MemoryService.forget(stored.id, userId)
         } yield assertTrue(result)
       },
-    ).provide(directLayers) +
+    ) @@ TestAspect.sequential) +
       suite("checkpoint with real summarizer")(
         test("checkpoint writes summarizer output to repo") {
           for {
@@ -246,7 +245,17 @@ object MemoryServiceSpec extends ZIOSpecDefault {
             _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
             after  <- svc.query(MemoryScope.User, userId, agentId)
           } yield assertTrue(after.size > before.size)
-        },
+        }.provide(
+          ZLayer.make[MemoryService](
+            InMemoryRepositories.live(),
+            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
+            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
+            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+            FakeModelGateway.layer(List("- User prefers Scala\n")),
+            CheckpointSummarizerImpl.live,
+            MemoryServiceImpl.live,
+          ),
+        ),
         test("checkpoint classifies PII bullet as Private scope") {
           for {
             svc <- ZIO.service[MemoryService]
@@ -259,7 +268,7 @@ object MemoryServiceSpec extends ZIOSpecDefault {
           } yield assertTrue(result.exists(_.recordKey == "episodic.checkpoint"))
         }.provide(
           ZLayer.make[MemoryService](
-            InMemoryRepositories.InMemoryMemoryRepo.layer,
+            InMemoryRepositories.live(),
             ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
             ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
             ZLayer.succeed(CheckpointPolicy.onSessionEnd),
@@ -267,16 +276,6 @@ object MemoryServiceSpec extends ZIOSpecDefault {
             CheckpointSummarizerImpl.live,
             MemoryServiceImpl.live,
           ),
-        ),
-      ).provide(
-        ZLayer.make[MemoryService](
-          InMemoryRepositories.InMemoryMemoryRepo.layer,
-          ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-          ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-          ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-          FakeModelGateway.layer(List("- User prefers Scala\n")),
-          CheckpointSummarizerImpl.live,
-          MemoryServiceImpl.live,
         ),
       )
 

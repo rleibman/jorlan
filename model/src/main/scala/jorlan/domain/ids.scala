@@ -153,7 +153,7 @@ object MessageId {
 
 }
 
-/** Primary key for [[Skill]] records. */
+/** Primary key for [[SkillRecord]] records. */
 opaque type SkillId = Long
 object SkillId {
 

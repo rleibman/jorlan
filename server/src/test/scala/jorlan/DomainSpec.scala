@@ -244,6 +244,53 @@ object DomainSpec extends ZIOSpecDefault {
       val prompt = Personality.buildSystemPrompt(p)
       assertTrue(!prompt.contains("deep expertise"))
     },
+    test("buildSystemPrompt Quirky contains 'quirky'") {
+      val p = Personality.default.copy(formality = Formality.Quirky)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("quirky"))
+    },
+    test("buildSystemPrompt Fresh contains 'upbeat'") {
+      val p = Personality.default.copy(formality = Formality.Fresh)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("upbeat"))
+    },
+    test("buildSystemPrompt Rude contains 'blunt'") {
+      val p = Personality.default.copy(formality = Formality.Rude)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("blunt"))
+    },
+    test("buildSystemPrompt Boomer contains '1960'") {
+      val p = Personality.default.copy(formality = Formality.Boomer)
+      assertTrue(Personality.buildSystemPrompt(p).contains("1960"))
+    },
+    test("buildSystemPrompt GenX contains 'sardonic'") {
+      val p = Personality.default.copy(formality = Formality.GenX)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("sardonic"))
+    },
+    test("buildSystemPrompt Millennial contains 'collaborative'") {
+      val p = Personality.default.copy(formality = Formality.Millennial)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("collaborative"))
+    },
+    test("buildSystemPrompt GenZ contains 'internet-native'") {
+      val p = Personality.default.copy(formality = Formality.GenZ)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("internet-native"))
+    },
+    test("buildSystemPrompt GenAlpha contains 'hyper-digital'") {
+      val p = Personality.default.copy(formality = Formality.GenAlpha)
+      assertTrue(Personality.buildSystemPrompt(p).toLowerCase.contains("hyper-digital"))
+    },
+    test("buildSystemPrompt Custom returns empty formality instruction") {
+      val p = Personality.default.copy(formality = Formality.Custom, prompt = "My custom prompt")
+      val result = Personality.buildSystemPrompt(p)
+      assertTrue(!result.toLowerCase.contains("you are a"), result.contains("My custom prompt"))
+    },
+    test("buildSystemPrompt with multiple languages includes all languages") {
+      val p = Personality.default.copy(languages = List("en", "es", "fr"))
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(prompt.contains("es"), prompt.contains("fr"))
+    },
+    test("buildSystemPrompt with empty language list omits language instruction") {
+      val p = Personality.default.copy(languages = Nil)
+      val prompt = Personality.buildSystemPrompt(p)
+      assertTrue(!prompt.contains("following languages"))
+    },
     test("Personality JSON roundtrip") {
       val p = Personality.default
       assertTrue(p.toJson.fromJson[Personality].contains(p))

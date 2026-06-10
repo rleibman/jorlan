@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{AgentZIORepository, EventLogZIORepository}
+import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -23,7 +23,7 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
 
   // Seeds the "Jorlan Interactive" default agent so createSession can find it
   // (mirrors what V016 Flyway migration does against a real DB).
-  private val seededAgentRepoLayer: ULayer[AgentZIORepository] =
+  private val seededAgentRepoLayer: ULayer[ZIOAgentRepository] =
     ZLayer.fromZIO {
       for {
         now  <- Clock.instant
@@ -39,19 +39,20 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
             ),
           )
           .orDie
-      } yield repo: AgentZIORepository
+      } yield repo: ZIOAgentRepository
     }
 
-  private val freshLayers: ULayer[AgentSessionManager & SessionHub & EventLogZIORepository] =
-    ZLayer.make[AgentSessionManager & SessionHub & EventLogZIORepository](
-      seededAgentRepoLayer,
+  private val sharedLayer: ULayer[AgentSessionManager & SessionHub & ZIORepositories] =
+    ZLayer.make[AgentSessionManager & SessionHub & ZIORepositories](
+      InMemoryRepositories.live() >>> InMemoryRepositories.withOverridenLayers(agentRepoOpt =
+        Some(seededAgentRepoLayer),
+      ),
       SessionHub.live,
       FakeModelGateway.layer(Nil),
-      InMemoryRepositories.InMemoryEventLogRepo.layer,
       AgentSessionManagerImpl.live,
     )
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec =
     suite("AgentSessionManager")(
       test("createSession returns a session with Active status") {
         for {
@@ -63,93 +64,93 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
           session.status == SessionStatus.Active,
           session.modelId.contains(ModelId("test-model")),
         )
-      }.provide(freshLayers),
+      },
       test("createSession logs SessionCreated event") {
         for {
           mgr     <- ZIO.service[AgentSessionManager]
           session <- mgr.createSession(userId, None)
-          events  <- ZIO.serviceWithZIO[EventLogZIORepository](
-            _.search(EventLogFilter(eventType = Some(EventType.SessionCreated))),
+          events  <- ZIO.serviceWithZIO[ZIORepositories](
+            _.eventLog.search(EventLogFilter(eventType = Some(EventType.SessionCreated))),
           )
         } yield assertTrue(
           events.nonEmpty,
-          events.head.sessionId.contains(session.id),
-          events.head.actorId.contains(userId),
+          events.exists(_.sessionId.contains(session.id)),
+          events.exists(_.actorId.contains(userId)),
         )
-      }.provide(freshLayers),
+      },
       test("getSession returns the created session") {
         for {
           mgr     <- ZIO.service[AgentSessionManager]
           created <- mgr.createSession(userId, None)
           found   <- mgr.getSession(created.id)
         } yield assertTrue(found.contains(created))
-      }.provide(freshLayers),
+      },
       test("getSession returns None for unknown id") {
         for {
           mgr    <- ZIO.service[AgentSessionManager]
           result <- mgr.getSession(AgentSessionId(999L))
         } yield assertTrue(result.isEmpty)
-      }.provide(freshLayers),
+      },
       test("suspendSession sets status to Paused") {
         for {
           mgr     <- ZIO.service[AgentSessionManager]
           created <- mgr.createSession(userId, None)
           paused  <- mgr.suspendSession(created.id)
         } yield assertTrue(paused.status == SessionStatus.Paused)
-      }.provide(freshLayers),
+      },
       test("terminateSession sets status to Completed") {
         for {
           mgr       <- ZIO.service[AgentSessionManager]
           created   <- mgr.createSession(userId, None)
           completed <- mgr.terminateSession(created.id)
         } yield assertTrue(completed.status == SessionStatus.Completed)
-      }.provide(freshLayers),
+      },
       test("createSession reuses existing Jorlan Interactive agent across calls") {
         for {
           mgr <- ZIO.service[AgentSessionManager]
           s1  <- mgr.createSession(userId, None)
           s2  <- mgr.createSession(userId, None)
         } yield assertTrue(s1.agentId == s2.agentId)
-      }.provide(freshLayers),
+      },
       test("suspendSession with unknown session ID returns JorlanError") {
         for {
           mgr    <- ZIO.service[AgentSessionManager]
           result <- mgr.suspendSession(AgentSessionId(999L)).flip
         } yield assertTrue(result.isInstanceOf[JorlanError])
-      }.provide(freshLayers),
+      },
       test("terminateSession transitions session status to Completed") {
         for {
           mgr        <- ZIO.service[AgentSessionManager]
           created    <- mgr.createSession(userId, None)
           terminated <- mgr.terminateSession(created.id)
         } yield assertTrue(terminated.status == SessionStatus.Completed)
-      }.provide(freshLayers),
+      },
       suite("service methods")(
         test("createSession works") {
           ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None)).as(assertCompletes)
-        }.provide(freshLayers),
+        },
         test("getSession works") {
           ZIO.serviceWithZIO[AgentSessionManager](_.getSession(AgentSessionId(999L))).as(assertCompletes)
-        }.provide(freshLayers),
+        },
         test("suspendSession round-trip") {
           for {
             created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
             _       <- ZIO.serviceWithZIO[AgentSessionManager](_.suspendSession(created.id))
           } yield assertCompletes
-        }.provide(freshLayers),
+        },
         test("terminateSession round-trip") {
           for {
             created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
             _       <- ZIO.serviceWithZIO[AgentSessionManager](_.terminateSession(created.id))
           } yield assertCompletes
-        }.provide(freshLayers),
+        },
         test("listSessions covers impl") {
           for {
             created <- ZIO.serviceWithZIO[AgentSessionManager](_.createSession(userId, None))
             results <- ZIO.serviceWithZIO[AgentSessionManager](_.listSessions(userId, 0, 10))
           } yield assertTrue(results.exists(_.id == created.id))
-        }.provide(freshLayers),
+        },
       ),
-    )
+    ).provide(sharedLayer)
 
 }

@@ -17,15 +17,17 @@ import jorlan.domain.*
 import zio.*
 import zio.test.*
 
-object PermissionRepositorySpec extends ZIOSpecDefault {
+object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("PermissionRepository")(
       test("upsert and search capability grants") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee1", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee1", "Grantee1@test.local", T0, T0))
           grant = CapabilityGrant(
             CapabilityGrantId.empty,
             CapabilityName("shell.execute"),
@@ -47,9 +49,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("searchGrants sorted by id desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", "Grantee2@test.local", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -83,9 +85,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("searchGrants sorted by grantedAt asc and desc") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", "Grantee3@test.local", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -133,9 +135,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("revokeGrant removes the grant") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", "Grantee4@test.local", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -155,9 +157,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("upsertCapabilityGrant updates mutable fields") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", "Grantee5@test.local", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
               CapabilityGrantId.empty,
@@ -179,9 +181,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("createApprovalRequest and getApprovalRequest") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor1", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor1", "Requestor1@test.local", T0, T0))
           req = ApprovalRequest(
             ApprovalRequestId.empty,
             CapabilityName("dangerous.op"),
@@ -205,9 +207,9 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("cancelApprovalRequest transitions status to Cancelled") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor2", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor2", "Requestor2@test.local", T0, T0))
           req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
@@ -231,10 +233,10 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("recordApprovalDecision persists the decision") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "Requestor3", "", T0, T0))
-          approver <- userRepo.upsert(User(UserId.empty, "Approver1", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "Requestor3", "Requestor3@test.local", T0, T0))
+          approver <- userRepo.upsert(User(UserId.empty, "Approver1", "Approver1@test.local", T0, T0))
           req      <- repo.createApprovalRequest(
             ApprovalRequest(
               ApprovalRequestId.empty,
@@ -266,25 +268,25 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("searchRoles returns empty list for user with no roles") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "NoRoleUser", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "NoRoleUser", "NoRoleUser@test.local", T0, T0))
           roles    <- repo.searchRoles(RoleSearch(userId = user.id, pageSize = 20))
         } yield assertTrue(roles.isEmpty)
       },
       test("searchPermissions returns empty list when no permissions exist for user") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "NoPermUser", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "NoPermUser", "NoPermUser@test.local", T0, T0))
           perms    <- repo.searchPermissions(PermissionSearch(userId = Some(user.id), pageSize = 20))
         } yield assertTrue(perms.isEmpty)
       },
       test("searchPermissions with sort variants returns empty gracefully") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "SortPermUser", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "SortPermUser", "SortPermUser@test.local", T0, T0))
           byIdDesc <- repo.searchPermissions(
             PermissionSearch(
               userId = Some(user.id),
@@ -330,15 +332,15 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
       },
       test("getRole returns None for non-existent id") {
         for {
-          repo   <- ZIO.service[PermissionZIORepository]
+          repo   <- ZIO.serviceWith[ZIORepositories](_.permission)
           result <- repo.getRole(RoleId(999999L))
         } yield assertTrue(result.isEmpty)
       },
       test("searchRoles with sort variants returns empty gracefully") {
         for {
-          userRepo <- ZIO.service[UserZIORepository]
-          repo     <- ZIO.service[PermissionZIORepository]
-          user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", "", T0, T0))
+          userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+          repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
+          user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", "SortRoleUser@test.local", T0, T0))
           byName   <- repo.searchRoles(
             RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Asc))),
           )
@@ -350,6 +352,6 @@ object PermissionRepositorySpec extends ZIOSpecDefault {
           )
         } yield assertTrue(byName.isEmpty, byNameDesc.isEmpty, byIdDesc.isEmpty)
       },
-    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
 }

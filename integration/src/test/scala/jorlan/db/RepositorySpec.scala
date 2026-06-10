@@ -19,9 +19,11 @@ import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
-object RepositorySpec extends ZIOSpecDefault {
+object RepositorySpec extends ZIOSpec[ZIORepositories] {
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
+
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("Repository integration tests")(
       userSuite,
       agentSuite,
@@ -29,18 +31,18 @@ object RepositorySpec extends ZIOSpecDefault {
       skillSuite,
       memorySuite,
       eventLogSuite,
-    ).provideLayerShared(JorlanContainer.repositoryLayer) @@ TestAspect.sequential
+    ) @@ TestAspect.sequential
 
   // ─── User ────────────────────────────────────────────────────────────────
 
   private val userSuite = suite("UserRepository")(
     test("upsert and retrieve a user") {
       for {
-        repo <- ZIO.service[UserZIORepository]
-        user = User(UserId.empty, "Alice", "", T0, T0)
+        repo <- ZIO.serviceWith[ZIORepositories](_.user)
+        user = User(UserId.empty, "Alice", "Alice@test.local", T0, T0)
         saved    <- repo.upsert(user)
         fetched  <- repo.getById(saved.id)
-        allUsers <- repo.search(UserSearch())
+        allUsers <- repo.search(UserSearch(pageSize = 1000))
       } yield {
         assertTrue(
           saved.id.value > 0,
@@ -52,8 +54,8 @@ object RepositorySpec extends ZIOSpecDefault {
     },
     test("deactivate a user") {
       for {
-        repo    <- ZIO.service[UserZIORepository]
-        user    <- repo.upsert(User(UserId.empty, "Bob", "", T0, T0))
+        repo    <- ZIO.serviceWith[ZIORepositories](_.user)
+        user    <- repo.upsert(User(UserId.empty, "Bob", "Bob@test.local", T0, T0))
         count   <- repo.deactivate(user.id)
         fetched <- repo.getById(user.id)
         all     <- repo.search(UserSearch(active = Some(true)))
@@ -65,8 +67,8 @@ object RepositorySpec extends ZIOSpecDefault {
     },
     test("channel identities") {
       for {
-        repo <- ZIO.service[UserZIORepository]
-        user <- repo.upsert(User(UserId.empty, "Carol", "", T0, T0))
+        repo <- ZIO.serviceWith[ZIORepositories](_.user)
+        user <- repo.upsert(User(UserId.empty, "Carol", "Carol@test.local", T0, T0))
         ci = ChannelIdentity(
           ChannelIdentityId.empty,
           user.id,
@@ -88,6 +90,19 @@ object RepositorySpec extends ZIOSpecDefault {
         )
       }
     },
+    test("userByChannelIdentity resolves a known Telegram user") {
+      for {
+        repo <- ZIO.serviceWith[ZIORepositories](_.user)
+        user <- repo.upsert(User(UserId.empty, "Diana", "diana@example.com", T0, T0))
+        ci = ChannelIdentity(ChannelIdentityId.empty, user.id, ChannelType.Telegram, "777", verified = true, None, T0)
+        _     <- repo.upsertChannelIdentity(ci)
+        found <- repo.userByChannelIdentity(ChannelType.Telegram, "777")
+        miss  <- repo.userByChannelIdentity(ChannelType.Telegram, "999")
+      } yield assertTrue(
+        found.exists(_.id == user.id),
+        miss.isEmpty,
+      )
+    },
   )
 
   // ─── Agent ───────────────────────────────────────────────────────────────
@@ -95,11 +110,11 @@ object RepositorySpec extends ZIOSpecDefault {
   private val agentSuite = suite("AgentRepository")(
     test("upsert and retrieve an agent") {
       for {
-        repo <- ZIO.service[AgentZIORepository]
+        repo <- ZIO.serviceWith[ZIORepositories](_.agent)
         agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some(ModelId("claude-3")), 1, T0)
         saved   <- repo.upsert(agent)
         fetched <- repo.getById(saved.id)
-        all     <- repo.search(AgentSearch())
+        all     <- repo.search(AgentSearch(pageSize = 1000))
       } yield {
         assertTrue(
           saved.id.value > 0,
@@ -110,11 +125,11 @@ object RepositorySpec extends ZIOSpecDefault {
     },
     test("agent sessions") {
       for {
-        agentRepo <- ZIO.service[AgentZIORepository]
-        userRepo  <- ZIO.service[UserZIORepository]
-        user      <- userRepo.upsert(User(UserId.empty, "SessionUser", "", T0, T0))
+        agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
+        userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+        user      <- userRepo.upsert(User(UserId.empty, "SessionUser", "SessionUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, T0))
-        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0)
+        session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0)
         saved    <- agentRepo.upsertSession(session)
         fetched  <- agentRepo.getSession(saved.id)
         sessions <- agentRepo.searchSessions(AgentSessionSearch(agentId = Some(agent.id)))
@@ -126,6 +141,35 @@ object RepositorySpec extends ZIOSpecDefault {
         )
       }
     },
+    test("session chatRef persists and is searchable") {
+      for {
+        agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
+        userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+        user      <- userRepo.upsert(User(UserId.empty, "ChatRefUser", "ChatRefUser@test.local", T0, T0))
+        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ChatRefAgent", None, None, 0, T0))
+        session = AgentSession(
+          AgentSessionId.empty,
+          agent.id,
+          user.id,
+          None,
+          SessionStatus.Active,
+          None,
+          Some("telegram-chat-42"),
+          T0,
+          T0,
+        )
+        saved   <- agentRepo.upsertSession(session)
+        fetched <- agentRepo.getSession(saved.id)
+        byRef   <- agentRepo.searchSessions(
+          AgentSessionSearch(userId = Some(user.id), chatRef = Some("telegram-chat-42")),
+        )
+        noMatch <- agentRepo.searchSessions(AgentSessionSearch(userId = Some(user.id), chatRef = Some("other-ref")))
+      } yield assertTrue(
+        fetched.exists(_.chatRef.contains("telegram-chat-42")),
+        byRef.exists(_.id == saved.id),
+        noMatch.isEmpty,
+      )
+    },
   )
 
   // ─── Conversation ─────────────────────────────────────────────────────────
@@ -133,13 +177,13 @@ object RepositorySpec extends ZIOSpecDefault {
   private val conversationSuite = suite("ConversationRepository")(
     test("create conversation and add messages") {
       for {
-        convRepo  <- ZIO.service[ConversationZIORepository]
-        agentRepo <- ZIO.service[AgentZIORepository]
-        userRepo  <- ZIO.service[UserZIORepository]
-        user      <- userRepo.upsert(User(UserId.empty, "ConvUser", "", T0, T0))
+        convRepo  <- ZIO.serviceWith[ZIORepositories](_.conversation)
+        agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
+        userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
+        user      <- userRepo.upsert(User(UserId.empty, "ConvUser", "ConvUser@test.local", T0, T0))
         agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
         session   <- agentRepo.upsertSession(
-          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, T0, T0),
+          AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )
         conv     <- convRepo.create(Conversation(ConversationId.empty, session.id, T0))
         _        <- convRepo.addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "Hello!", None, T0))
@@ -161,8 +205,8 @@ object RepositorySpec extends ZIOSpecDefault {
   private val skillSuite = suite("SkillRepository")(
     test("upsert skill and versions") {
       for {
-        repo <- ZIO.service[SkillZIORepository]
-        skill = Skill(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, T0)
+        repo <- ZIO.serviceWith[ZIORepositories](_.skill)
+        skill = SkillRecord(SkillId.empty, "shell-exec", None, SkillTier.BuiltIn, T0)
         saved <- repo.upsert(skill)
         sv    <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", Json.Obj(), SkillStatus.Active, T0),
@@ -180,7 +224,7 @@ object RepositorySpec extends ZIOSpecDefault {
     },
     test("connector instance CRUD") {
       for {
-        repo <- ZIO.service[SkillZIORepository]
+        repo <- ZIO.serviceWith[ZIORepositories](_.skill)
         ci = ConnectorInstance(ConnectorInstanceId.empty, ConnectorType.Telegram, "my-bot", Json.Obj(), "active", T0)
         saved  <- repo.upsertConnector(ci)
         all    <- repo.searchConnectors(ConnectorSearch())
@@ -200,9 +244,9 @@ object RepositorySpec extends ZIOSpecDefault {
   private val memorySuite = suite("MemoryRepository")(
     test("upsert and search memory records") {
       for {
-        memRepo  <- ZIO.service[MemoryZIORepository]
-        userRepo <- ZIO.service[UserZIORepository]
-        user     <- userRepo.upsert(User(UserId.empty, "MemUser", "", T0, T0))
+        memRepo  <- ZIO.serviceWith[ZIORepositories](_.memory)
+        userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
+        user     <- userRepo.upsert(User(UserId.empty, "MemUser", "MemUser@test.local", T0, T0))
         record1  <- memRepo.upsert(
           MemoryRecord(
             MemoryRecordId.empty,
@@ -251,7 +295,7 @@ object RepositorySpec extends ZIOSpecDefault {
   private val eventLogSuite = suite("EventLogRepository")(
     test("append and search events") {
       for {
-        repo  <- ZIO.service[EventLogZIORepository]
+        repo  <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         e1    <- repo.append(testEvent(EventType.AgentStarted))
         e2    <- repo.append(testEvent(EventType.SkillInvoked))
         all   <- repo.search(EventLogFilter(pageSize = 100))
@@ -266,7 +310,7 @@ object RepositorySpec extends ZIOSpecDefault {
       val t1 = T0
       val t2 = T0.plusSeconds(10)
       for {
-        repo    <- ZIO.service[EventLogZIORepository]
+        repo    <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         _       <- repo.append(testEvent(EventType.UserConnected, occurredAt = t1))
         _       <- repo.append(testEvent(EventType.UserConnected, occurredAt = t2))
         results <- repo.search(EventLogFilter(eventType = Some(EventType.UserConnected), pageSize = 10))
@@ -276,7 +320,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("filter events by session id") {
       val sid = AgentSessionId(777L)
       for {
-        repo  <- ZIO.service[EventLogZIORepository]
+        repo  <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         _     <- repo.append(testEvent(EventType.AgentStarted, sessionId = Some(sid)))
         _     <- repo.append(testEvent(EventType.AgentCompleted))
         bySid <- repo.search(EventLogFilter(sessionId = Some(sid), pageSize = 100))
@@ -285,7 +329,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("filter events by agent id") {
       val aid = AgentId(888L)
       for {
-        repo  <- ZIO.service[EventLogZIORepository]
+        repo  <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         _     <- repo.append(testEvent(EventType.AgentStarted, agentId = Some(aid)))
         _     <- repo.append(testEvent(EventType.AgentCompleted))
         byAid <- repo.search(EventLogFilter(agentId = Some(aid), pageSize = 100))
@@ -296,7 +340,7 @@ object RepositorySpec extends ZIOSpecDefault {
       val t2 = T0
       val t3 = T0.plusSeconds(10)
       for {
-        repo   <- ZIO.service[EventLogZIORepository]
+        repo   <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t1))
         _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t2))
         _      <- repo.append(testEvent(EventType.MemoryWritten, occurredAt = t3))
@@ -315,7 +359,7 @@ object RepositorySpec extends ZIOSpecDefault {
     },
     test("pageSize caps the result set exactly") {
       for {
-        repo <- ZIO.service[EventLogZIORepository]
+        repo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         _    <- ZIO.foreachDiscard(1 to 5) { _ =>
           repo.append(testEvent(EventType.ApprovalRequested))
         }
@@ -325,7 +369,7 @@ object RepositorySpec extends ZIOSpecDefault {
     test("replaySession returns events for session in ascending order") {
       val sid = AgentSessionId(5555L)
       for {
-        repo <- ZIO.service[EventLogZIORepository]
+        repo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         e1   <- repo.append(testEvent(EventType.AgentStarted, sessionId = Some(sid), occurredAt = T0))
         e2   <- repo.append(testEvent(EventType.SkillInvoked, sessionId = Some(sid), occurredAt = T0.plusSeconds(1)))
         e3   <- repo.append(testEvent(EventType.AgentCompleted, sessionId = Some(sid), occurredAt = T0.plusSeconds(2)))

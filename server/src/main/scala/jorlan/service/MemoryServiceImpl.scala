@@ -11,12 +11,12 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.MemoryZIORepository
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
 import zio.*
 
 class MemoryServiceImpl(
-  memoryRepo:   MemoryZIORepository,
+  repo:         ZIORepositories,
   accessPolicy: MemoryAccessPolicy,
   summarizer:   CheckpointSummarizer,
   classifier:   MemoryClassifier,
@@ -24,7 +24,7 @@ class MemoryServiceImpl(
 ) extends MemoryService {
 
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
-    memoryRepo.upsert(record).mapError(JorlanError(_))
+    repo.memory.upsert(record).mapError(JorlanError(_))
 
   override def query(
     scope:   MemoryScope,
@@ -37,7 +37,7 @@ class MemoryServiceImpl(
       case MemoryScope.Shared | MemoryScope.Workspace => None
       case _                                          => Some(userId)
     }
-    memoryRepo
+    repo.memory
       .search(MemorySearch(scope = scope, userId = userFilter, textSearch = text))
       .mapError(JorlanError(_))
       .flatMap(records => accessPolicy.filter(userId, agentId, records))
@@ -47,7 +47,7 @@ class MemoryServiceImpl(
     id:               MemoryRecordId,
     requestingUserId: UserId,
   ): IO[JorlanError, Boolean] =
-    memoryRepo
+    repo.memory
       .getById(id)
       .mapError(JorlanError(_))
       .flatMap {
@@ -55,7 +55,7 @@ class MemoryServiceImpl(
         case Some(r) =>
           ZIO.unless(r.userId.contains(requestingUserId))(
             ZIO.fail(JorlanError(s"Access denied: cannot delete another user's memory record")),
-          ) *> memoryRepo.delete(id).mapError(JorlanError(_)).map(_ > 0L)
+          ) *> repo.memory.delete(id).mapError(JorlanError(_)).map(_ > 0L)
       }
 
   override def markShared(
@@ -75,7 +75,7 @@ class MemoryServiceImpl(
     requestingUserId: UserId,
     newScope:         MemoryScope,
   ): IO[JorlanError, MemoryRecord] =
-    memoryRepo
+    repo.memory
       .getById(id)
       .mapError(JorlanError(_))
       .flatMap(ZIO.fromOption(_).orElseFail(JorlanError(s"MemoryRecord $id not found")))
@@ -83,7 +83,7 @@ class MemoryServiceImpl(
         ZIO.unless(r.userId.contains(requestingUserId))(
           ZIO.fail(JorlanError(s"Access denied: cannot modify another user's memory record")),
         ) *>
-          memoryRepo.updateScope(id, newScope).mapError(JorlanError(_)).as(r.copy(scope = newScope))
+          repo.memory.updateScope(id, newScope).mapError(JorlanError(_)).as(r.copy(scope = newScope))
       }
 
   override def checkpoint(
@@ -102,7 +102,7 @@ class MemoryServiceImpl(
           .flatMap(_.asString)
           .getOrElse(record.value.toString)
         classifier.classify(contentText).flatMap { scope =>
-          memoryRepo.upsert(record.copy(scope = scope)).mapError(JorlanError(_)).unit
+          repo.memory.upsert(record.copy(scope = scope)).mapError(JorlanError(_)).unit
         }
       }
     } yield ()
@@ -112,7 +112,7 @@ class MemoryServiceImpl(
 object MemoryServiceImpl {
 
   val live: URLayer[
-    MemoryZIORepository & MemoryAccessPolicy & CheckpointSummarizer & MemoryClassifier & CheckpointPolicy,
+    ZIORepositories & MemoryAccessPolicy & CheckpointSummarizer & MemoryClassifier & CheckpointPolicy,
     MemoryService,
   ] =
     ZLayer.fromFunction(MemoryServiceImpl(_, _, _, _, _))

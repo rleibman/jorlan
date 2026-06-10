@@ -59,6 +59,7 @@ enum AgentSessionOrder { case Id, CreatedAt }
 case class AgentSessionSearch(
   agentId:  Option[AgentId] = None,
   userId:   Option[UserId] = None,
+  chatRef:  Option[String] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[AgentSessionOrder]] = None,
@@ -249,14 +250,14 @@ trait ConversationRepository[F[_]] {
 
 }
 
-/** Repository for [[jorlan.domain.Skill]] entries, [[jorlan.domain.SkillVersion]] snapshots, and
+/** Repository for [[jorlan.domain.SkillRecord]] entries, [[jorlan.domain.SkillVersion]] snapshots, and
   * [[jorlan.domain.ConnectorInstance]] configurations.
   */
 trait SkillRepository[F[_]] {
 
-  def getById(id:         SkillId):             F[Option[Skill]]
-  def search(s:           SkillSearch):         F[List[Skill]]
-  def upsert(skill:       Skill):               F[Skill]
+  def getById(id:         SkillId):             F[Option[SkillRecord]]
+  def search(s:           SkillSearch):         F[List[SkillRecord]]
+  def upsert(skill:       SkillRecord):         F[SkillRecord]
   def getVersion(id:      SkillVersionId):      F[Option[SkillVersion]]
   def searchVersions(s:   SkillVersionSearch):  F[List[SkillVersion]]
   def upsertVersion(v:    SkillVersion):        F[SkillVersion]
@@ -421,17 +422,36 @@ trait PermissionRepository[F[_]] {
 
 }
 
+/** Read/write access to the `server_settings` key-value table.
+  *
+  * All values are stored as JSON so settings can hold scalars, strings, or nested objects without schema changes. The
+  * table is created by Flyway migration V017.
+  */
+trait ServerSettingsRepository[F[_]] {
+
+  /** Retrieves the JSON value for `key`, or `None` if absent. Never fails. */
+  def get(key: String): F[Option[Json]]
+
+  /** Upserts `value` under `key`. Never fails. */
+  def set(
+    key:   String,
+    value: Json,
+  ): F[Unit]
+
+}
+
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
-  def users:         UserRepository[F]
-  def agents:        AgentRepository[F]
-  def conversations: ConversationRepository[F]
-  def skills:        SkillRepository[F]
-  def memory:        MemoryRepository[F]
-  def eventLog:      EventLogRepository[F]
-  def scheduler:     SchedulerRepository[F]
-  def artifacts:     ArtifactRepository[F]
-  def permissions:   PermissionRepository[F]
+  def user:         UserRepository[F]
+  def agent:        AgentRepository[F]
+  def conversation: ConversationRepository[F]
+  def skill:        SkillRepository[F]
+  def memory:       MemoryRepository[F]
+  def eventLog:     EventLogRepository[F]
+  def scheduler:    SchedulerRepository[F]
+  def artifact:     ArtifactRepository[F]
+  def permission:   PermissionRepository[F]
+  def setting:      ServerSettingsRepository[F]
 
 }

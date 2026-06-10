@@ -11,7 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.PermissionZIORepository
+import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
 import jorlan.domain.*
 import zio.*
 
@@ -29,7 +29,7 @@ import zio.*
   * `shell.sudo.execute` → resource = `"shell"`, action = `"sudo.execute"`). If the name contains no `.`, the full name
   * is used as the resource with action `"use"`. Permission rows must be written with the same convention.
   */
-private class CapabilityEvaluatorImpl(repo: PermissionZIORepository) extends CapabilityEvaluator {
+private class CapabilityEvaluatorImpl(repo: ZIOPermissionRepository) extends CapabilityEvaluator {
 
   override def evaluate(request: CapabilityRequest): IO[JorlanError, EvaluationResult] = {
     val (resource, action) = splitCapability(request.capability)
@@ -71,7 +71,7 @@ private class CapabilityEvaluatorImpl(repo: PermissionZIORepository) extends Cap
 
 object CapabilityEvaluatorImpl {
 
-  val live: URLayer[PermissionZIORepository, CapabilityEvaluator] =
-    ZLayer.fromFunction((repo: PermissionZIORepository) => CapabilityEvaluatorImpl(repo))
+  val live: URLayer[ZIORepositories, CapabilityEvaluator] =
+    ZLayer.fromFunction((repo: ZIORepositories) => CapabilityEvaluatorImpl(repo.permission))
 
 }

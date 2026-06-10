@@ -61,6 +61,14 @@ type: project
 - `JobManager` trait placed correctly in `model/service/` with companion `ZIO.serviceWithZIO` accessors; `JobManagerImpl` in `server/service/` follows established pattern
 - `SchedulerSkill` class in `server/service/` wraps `JobManager` with `val live: URLayer[JobManager, SchedulerSkill]`; not yet wired into application environment (deferred to Phase 12)
 - `TriggerEngine.live` provides `URLayer[SchedulerZIORepository & EventLogZIORepository & AgentSessionManager & AgentRunner & SessionHub, TriggerEngine]` but is NOT used — `Jorlan.run` constructs `new TriggerEngine(...)` directly from ZIO.service calls
+
+## Phase 11 Conventions Added (2026-06-07)
+- `connector-api` module holds `Skill`, `ConnectorSkill`, `MessageIngress`, `InboundMessage`, `ChatKind`, `UnrecognizedIdentityPolicy` — pure ZIO/zio-json traits with no server/db deps
+- `telegram` module holds `TelegramApiClient`, `TelegramConnectorSkill`, `TelegramMessageNormalizer`, `TelegramConfig`, `FakeTelegramApiClient`; depends on `model + connectorApi` only (no `server` dep in build.sbt)
+- `ConnectorManager` trait + `ConnectorManagerImpl` live in `server/service/`; wired via `liveConnectorManagerLayer` in `EnvironmentBuilder.live`; queries `SkillZIORepository.searchConnectors` at boot to discover `ConnectorInstance` records, then instantiates `TelegramConnectorSkill` per record
+- `MessageIngressImpl` wired via `ZLayer.fromFunction` into `MessageIngress`; currently takes db-layer ZIO repositories directly (known inconsistency with established pattern)
+- `TelegramConnectorSkill.make` returns `UIO[TelegramConnectorSkill]` (not a ZLayer) — caller in `EnvironmentBuilder` uses `ZIO.foreach` to build skills then wraps in `ConnectorManager.fromSkills`
+- `FakeTelegramApiClient` is in production source (`telegram/src/main/scala/`) — intentional choice for cross-module test reuse, but deviates from convention
 - Scheduler queries (`job`, `triggers`) in `JorlanAPI` call `SchedulerZIORepository` directly, not through `JobManager` — inconsistent with other scheduler mutations which go through `JobManager`
 - `ServerUrl` opaque type added to `shell/` module; correct placement, follows opaque type pattern
 
