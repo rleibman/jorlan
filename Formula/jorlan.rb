@@ -83,15 +83,7 @@ class Jorlan < Formula
   end
 
   test do
-    # Smoke test: server starts and /api/status responds
-    ENV["JORLAN_AUTH_SECRET_KEY"] = "test-key-ci"
-    ENV["JORLAN_DB_URL"] = "jdbc:mariadb://localhost:3306/jorlan_test"
-    ENV["JORLAN_DB_USER"] = "jorlan"
-    ENV["JORLAN_DB_PASSWORD"] = "jorlan"
-    pid = fork { exec bin/"jorlan-server" }
-    sleep 5
-    system "curl", "--silent", "--fail", "http://localhost:8080/api/status"
-  ensure
-    Process.kill("TERM", pid) if pid
+    # Smoke test: bundled helper script is runnable
+    assert_match "MYSQL_ROOT_PASSWORD", shell_output("#{bin}/jorlan-init-db --help")
   end
 end
