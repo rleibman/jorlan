@@ -25,6 +25,12 @@ class Jorlan < Formula
     libexec.install Dir["*"]
     (bin/"jorlan-server").write <<~SH
       #!/bin/bash
+      ENV_FILE="#{etc}/jorlan/server.env"
+      if [[ -f "$ENV_FILE" ]]; then
+        set -a
+        . "$ENV_FILE"
+        set +a
+      fi
       export JAVA_HOME="#{Formula["openjdk@21"].opt_prefix}"
       exec "#{libexec}/bin/jorlan-server" "$@"
     SH
