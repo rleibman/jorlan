@@ -40,6 +40,7 @@ class Jorlan < Formula
     env_target = etc/"jorlan/server.env"
     unless env_target.exist?
       cp libexec/"conf/server.env", env_target
+      chmod 0600, env_target
     end
 
     # Expose init-db helper
