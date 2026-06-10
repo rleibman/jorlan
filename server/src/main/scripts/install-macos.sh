@@ -70,6 +70,7 @@ fi
 echo "==> Creating log directory $LOG_DIR ..."
 mkdir -p "$LOG_DIR/conversations"
 chown -R "$DAEMON_USER:$DAEMON_GROUP" "$LOG_DIR"
+chmod 750 "$LOG_DIR" "$LOG_DIR/conversations"
 
 echo "==> Installing env template to $ETC_DIR/server.env ..."
 mkdir -p "$ETC_DIR"
