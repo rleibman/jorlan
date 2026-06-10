@@ -66,9 +66,9 @@ from the [latest release](https://github.com/rleibman/jorlan/releases/latest), t
 
 ```bash
 # Install server (requires Java 21+)
-sudo tar -xzf jorlan-server-<version>.tgz -C /opt/jorlan-server --strip-components=1
-sudo bash /opt/jorlan-server/scripts/install-macos.sh jorlan-server-<version>.tgz
-
+mkdir -p /tmp/jorlan-server-install
+tar -xzf jorlan-server-<version>.tgz -C /tmp/jorlan-server-install --strip-components=1
+sudo bash /tmp/jorlan-server-install/scripts/install-macos.sh "${PWD}/jorlan-server-<version>.tgz"
 # Install shell
 tar -xzf jorlan-shell-<version>.tgz -C ~/jorlan-shell --strip-components=1
 echo 'export PATH="$HOME/jorlan-shell/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
