@@ -58,6 +58,18 @@ type: project
 - Missing event log writes: `pauseJob`, `resumeJob`, `triggerNow`, `deleteJob`, `addTrigger` mutations in JorlanAPI have no `logEvent` call; `SchedulerJobPaused`/`SchedulerJobResumed`/`SchedulerJobDeleted` event types don't even exist in `EventType`
 - `decideApproval` mutation has no `requireCapability` guard — any authenticated user can approve/reject any approval request
 
+## Phase 12 Findings (2026-06-10)
+- `getStr` helper duplicated verbatim in NotifySkill, ContactsSkill, WorkspaceSkill, ShellSkill — extract to a shared `SkillArgs` utility object
+- `parseChannelType` duplicated in ContactsSkill and NotifySkill — identical one-liner
+- `Instant.now()` used directly in ContactsSkill:183 and AgentRunnerImpl:368 — bypasses ZIO Clock; not deterministically testable
+- `liveSkillRegistryLayer` in EnvironmentBuilder only registers MemorySkill and SchedulerSkill; NotifySkill, ContactsSkill, WorkspaceSkill, ShellSkill are wired as ZLayers but never registered — they are dead code from the ReAct loop perspective
+- `requiredCapabilities` on ToolDescriptor is declared and propagated but never enforced by SkillRegistry.invoke — capability model is a no-op at runtime
+- `contactFind` (private method, line 109) vs `contactsFind` (thin wrapper, line 139) — rename artifact left in codebase; one of them should be removed
+- `logSkillEvent` (AgentRunnerImpl:186) records `payloadJson = Some(Json.Obj("tool" -> Json.Str(toolName)))` but ignores the `payload: String` parameter — argsJson and result are silently dropped from the event log
+- `addTrigger` in SchedulerSkill:136 silently swallowed with `.ignore` — if trigger creation fails the job exists without any schedule, and the caller sees success
+- `connType.toString.toLowerCase + ".send_message"` in NotificationRouter:125 hardcodes the naming convention for connector send tools as a magic string pattern — fragile contract across module boundary
+- WorkspaceSkill uses `ZIO.attempt` (not `ZIO.attemptBlockingIO`) for blocking filesystem operations (readAllBytes, Files.walk, Files.write) — these block a ZIO thread pool thread
+
 ## Phase 11 Findings (2026-06-07)
 - `TelegramConnectorSkill` injects `AgentRunner` but never calls it — dead dependency; only `MessageIngress` is used for dispatch
 - `TelegramConnectorSkill` imports `jorlan.service.AgentRunner` from `server` module while `telegram` module only declares `dependsOn(model, connectorApi)` — cross-module boundary violation (only compiles because server is a transitive dep via test scope; fragile)
