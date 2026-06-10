@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Jorlan Server — LaunchDaemon
+  Installed to /Library/LaunchDaemons/io.jorlan.server.plist by install-macos.sh.
+  Load:   sudo launchctl load /Library/LaunchDaemons/io.jorlan.server.plist
+  Unload: sudo launchctl unload /Library/LaunchDaemons/io.jorlan.server.plist
+  Logs:   /var/log/jorlan-server/server.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.jorlan.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/jorlan-server/bin/jorlan-server</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Populated by install-macos.sh from /etc/jorlan/server.env -->
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/jorlan-server</string>
+
+  <key>StandardOutPath</key>
+  <string>/var/log/jorlan-server/server.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/var/log/jorlan-server/server-error.log</string>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>UserName</key>
+  <string>jorlan</string>
+
+  <key>GroupName</key>
+  <string>jorlan</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>
