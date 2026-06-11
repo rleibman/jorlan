@@ -52,9 +52,10 @@ object StaticFileRoutes {
             }.orDie.flatMap { fileOpt =>
               val fileToServe = fileOpt.getOrElse(new File(root, "index.html"))
               ZIO.scoped(Handler.fromFile(fileToServe).orDie.apply(req)).map { resp =>
-                // index.html must revalidate; hashed assets can be cached for a year
-                val isIndex = fileToServe.getName == "index.html"
-                if (isIndex)
+                // index.html and non-fingerprinted assets must revalidate; fingerprinted assets can be cached for a year
+                val name          = fileToServe.getName
+                val fingerprinted = name.matches(""".+\.[0-9a-fA-F]{6,}\..+""")
+                if (name == "index.html" || !fingerprinted)
                   resp.addHeader(Header.CacheControl.NoCache)
                 else
                   resp.addHeader(Header.CacheControl.MaxAge(31536000))
