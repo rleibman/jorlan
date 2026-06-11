@@ -13,8 +13,10 @@ package jorlan
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
+import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.domain.SkillTier
 import jorlan.db.JorlanContainer
-import jorlan.db.repository.QuillRepositories
+import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.domain.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
@@ -24,6 +26,7 @@ import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.http.Client
+import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
@@ -33,15 +36,21 @@ import scala.language.unsafeNulls
   *
   * Exercises: `submitMessage` mutation → `FakeModelGateway` returns `ToolCallRequested` steps → tool invoked via
   * `SkillRegistry` → `FinalAnswer` → `agentResponseStream` delivers all chunks in order.
+  *
+  * The bootstrap provides only `ZIORepositories & ConfigurationService` (the shared DB layer). Each test constructs a
+  * fresh `FakeModelGateway.stepsLayer` via `provideSomeLayer` so the `Ref[List[ChatStep]]` is never shared between
+  * tests and tests remain independent.
   */
-object ToolCallingLoopSpec
-    extends ZIOSpec[
-      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any],
-    ] {
+object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationService] {
 
   private type FullEnv = JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
+  private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
-  private val configLayer = JorlanContainer.configLayer
+  override val bootstrap: TaskLayer[ZIORepositories & ConfigurationService] =
+    ZLayer.make[ZIORepositories & ConfigurationService](
+      JorlanContainer.configLayer,
+      QuillRepositories.live,
+    )
 
   private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
     ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.auth))
@@ -58,16 +67,42 @@ object ToolCallingLoopSpec
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
-  /** FakeModelGateway steps: one ToolCallRequested → FinalAnswer */
-  private val toolCallingSteps: List[ChatStep] = List(
-    ToolCallRequested(id = "tc-1", name = "echo.run", argsJson = """{}"""),
-    FinalAnswer(ZStream.fromIterable(List("Tool result: ", "done"))),
-  )
+  /** Stub skill registered in the registry so that `echo.run` invocations succeed rather than returning an error. */
+  private val echoSkill: Skill = new Skill {
 
-  private val envLayer: TaskLayer[JorlanEnvironment] =
-    ZLayer.make[JorlanEnvironment](
-      configLayer,
-      QuillRepositories.live,
+    override val descriptor: SkillDescriptor = SkillDescriptor(
+      name = "echo",
+      tier = SkillTier.BuiltIn,
+      tools = List(
+        ToolDescriptor(
+          name = "echo.run",
+          description = "Echo the tool name back",
+          inputSchema = Json.decoder
+            .decodeJson("""{"type":"object","properties":{},"required":[]}""")
+            .getOrElse(Json.Obj()),
+          outputSchema = Json.Obj("type" -> Json.Str("string")),
+          requiredCapabilities = Nil,
+        ),
+      ),
+    )
+
+    override def invoke(
+      ctx:  InvocationContext,
+      tool: String,
+      args: Json,
+    ): IO[JorlanError, Json] = ZIO.succeed(Json.Str(s"echo:$tool"))
+
+  }
+
+  /** Builds the full service stack above the shared DB layer for a given sequence of model steps.
+    *
+    * Each call to this method creates a fresh `FakeModelGateway.stepsLayer`, so two tests using different step
+    * sequences are fully independent.
+    */
+  private def fullEnvLayer(
+    steps: List[ChatStep],
+  ): ZLayer[ZIORepositories & ConfigurationService, Throwable, FullEnv] =
+    ZLayer.makeSome[ZIORepositories & ConfigurationService, FullEnv](
       stubCapabilityEvaluator,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
@@ -76,48 +111,37 @@ object ToolCallingLoopSpec
       OAuthStateStore.live(),
       SessionHub.live,
       ToolEventHub.live,
-      FakeModelGateway.stepsLayer(toolCallingSteps),
+      FakeModelGateway.stepsLayer(steps),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
-      SkillRegistry.live,
+      SkillRegistry.liveWith(echoSkill),
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       TriggerEngine.live,
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
       Client.default,
-    )
-
-  private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
-
-  override val bootstrap: ZLayer[Any, Any, FullEnv] =
-    ZLayer.make[FullEnv](
-      envLayer,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 
-  override def spec: Spec[FullEnv & TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & ConfigurationService & TestEnvironment & Scope, Any] =
     suite("ToolCallingLoop integration")(
       test("submitMessage triggers tool call and FinalAnswer chunks arrive via agentResponseStream") {
         for {
-          interp <- ZIO.service[Interp]
-          // Create an agent session
+          interp        <- ZIO.service[Interp]
           sessionResult <- interp.execute("""mutation { createSession { id } }""")
           sessionId = {
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(sessionResult.data.toString).map(m => AgentSessionId(m.group(1).toLong)).get
           }
-          // Subscribe to the response stream before submitting the message
           connId <- ConnectionId.randomZIO
           runner <- ZIO.service[AgentRunner]
           stream <- runner.subscribeToSession(sessionId, connId)
           fiber  <- stream.takeUntil(_.finished).runCollect.fork
-          // Submit the message
-          _ <- interp.execute(
+          _      <- interp.execute(
             s"""mutation { submitMessage(sessionId: ${sessionId.value}, content: "use tool") }""",
           )
-          // Collect the streamed chunks
           chunks <- fiber.join
         } yield {
           val texts = chunks.toList.filterNot(_.finished).map(_.content)
@@ -129,7 +153,14 @@ object ToolCallingLoopSpec
             texts.exists(t => t.contains("Tool result:") || t.contains("done")),
           )
         }
-      },
-    ) @@ TestAspect.sequential @@ TestAspect.timeout(60.seconds)
+      }.provideSomeLayer[ZIORepositories & ConfigurationService](
+        fullEnvLayer(
+          List(
+            ToolCallRequested(id = "tc-1", name = "echo.run", argsJson = """{}"""),
+            FinalAnswer(ZStream.fromIterable(List("Tool result: ", "done"))),
+          ),
+        ),
+      ),
+    ) @@ TestAspect.sequential @@ TestAspect.withLiveClock @@ TestAspect.timeout(60.seconds)
 
 }
