@@ -45,10 +45,23 @@ object ChatPage {
     ScalaFnComponent
       .withHooks[User]
       .useState(State(None, "", Nil, streaming = false, "", None, error = None))
+      .useRef(Option.empty[WebSocketHandler])
+      .useEffectOnMountBy {
+        (
+          _,
+          _,
+          handlerRef,
+        ) =>
+          CallbackTo {
+            // cleanup: close any active subscription when the component unmounts
+            handlerRef.get.flatMap(_.fold(Callback.empty)(_.close()))
+          }
+      }
       .render {
         (
           _,
           state,
+          handlerRef,
         ) =>
           def openStreamSubscription(sessionId: AgentSessionId): Callback =
             Callback {
@@ -92,6 +105,7 @@ object ChatPage {
                       }
                   },
                 )
+              handlerRef.set(Some(handler)).runNow()
               state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
             }
 

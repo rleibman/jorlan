@@ -344,6 +344,8 @@ lazy val server = project
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
     Test / fork                      := true,
     coverageExcludedFiles            := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
+    // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
+    Compile / doc / sources          := Seq.empty,
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -626,7 +628,11 @@ lazy val web: Project = project
   )
   .settings(
     scalacOptions ++= scala3Opts,
-    name := "jorlan-web",
+    name             := "jorlan-web",
+    // The entire web module compiles to JavaScript (Scala.js) and requires a
+    // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
+    // doesn't instrument Scala.js bytecode or report 0% coverage.
+    coverageEnabled  := false,
     libraryDependencies ++= Seq(
       "dev.zio" %%% "zio"      % zioVersion withSources (),
       "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),

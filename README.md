@@ -4,6 +4,78 @@
 
 ---
 
+## Installation
+
+> **Pre-built packages** are attached to every [GitHub Release](https://github.com/rleibman/jorlan/releases).
+
+### Linux (Ubuntu / Debian)
+
+```bash
+# Download the latest .deb packages from GitHub Releases:
+#   https://github.com/rleibman/jorlan/releases/latest
+#   → jorlan-server_<version>_all.deb
+#   → jorlan-shell_<version>_all.deb
+
+# Install (requires Java 21+: sudo apt install default-jre-headless)
+sudo dpkg -i jorlan-server_<version>_all.deb
+sudo dpkg -i jorlan-shell_<version>_all.deb   # optional — CLI client
+
+# Set up the database (requires MariaDB and root credentials)
+sudo jorlan-init-db --root-password <root-pw> --app-password <app-pw>
+
+# Edit the env file — at minimum set JORLAN_AUTH_SECRET_KEY
+sudo nano /etc/jorlan/server.env
+
+# Enable and start the server
+sudo systemctl enable jorlan-server
+sudo systemctl start jorlan-server
+
+# Run the shell to complete first-run setup
+jorlan
+```
+
+### macOS (Homebrew — recommended)
+
+```bash
+# Add the Jorlan tap
+brew tap rleibman/jorlan
+
+# Install server and shell
+brew install jorlan          # server daemon
+brew install jorlan-shell    # CLI client (optional)
+
+# Start the server
+brew services start jorlan   # as your user
+# or:
+sudo brew services start jorlan  # as a system daemon (starts at boot)
+
+# Set up the database
+jorlan-init-db --root-password <root-pw> --app-password <app-pw>
+
+# Edit the env file
+nano "$(brew --prefix)/etc/jorlan/server.env"
+
+# Run the shell to complete first-run setup
+jorlan
+```
+
+### macOS (manual tarball)
+
+For non-Homebrew users: download `jorlan-server-<version>.tgz` and `jorlan-shell-<version>.tgz`
+from the [latest release](https://github.com/rleibman/jorlan/releases/latest), then:
+
+```bash
+# Install server (requires Java 21+)
+mkdir -p /tmp/jorlan-server-install
+tar -xzf jorlan-server-<version>.tgz -C /tmp/jorlan-server-install --strip-components=1
+sudo bash /tmp/jorlan-server-install/scripts/install-macos.sh "${PWD}/jorlan-server-<version>.tgz"
+# Install shell
+tar -xzf jorlan-shell-<version>.tgz -C ~/jorlan-shell --strip-components=1
+echo 'export PATH="$HOME/jorlan-shell/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+---
+
 ## Overview
 
 Jorlan is a secure, observable, extensible, and model-agnostic runtime platform for AI agents and intelligent workflows.
@@ -363,12 +435,13 @@ All persistence goes through typed repository traits in `model`. The `db` module
 | **10** | **Durable scheduler — cron/interval triggers, DB locking, retry/backoff** | **✅ Complete** |
 | **11** | **Telegram connector** | **✅ Complete** |
 | **12** | **Built-in skills — ReAct loop, SkillRegistry, 8 skills** | **✅ Complete** |
+| **18** | **Installer and distribution (.deb, macOS Homebrew)** | **✅ Complete** |
 | 13 | Email and Calendar skills | Planned |
 | 14 | Orchestrator integration | Planned |
 | **15** | **Web frontend (Scala.js + React 19 + MUI v9)** | **✅ Complete** |
 | 16 | Additional features (shell autocomplete, etc.) | Planned |
 | 17 | Advanced features — declarative skills, MCP adapter, vector memory | Planned |
-| 18 | Installer and distribution (.deb, macOS tarball) | Planned |
+| 18 | Installer and distribution (.deb, macOS Homebrew) | ✅ Complete |
 
 See `doc/development_roadmap.md` for the detailed task breakdown per phase.
 

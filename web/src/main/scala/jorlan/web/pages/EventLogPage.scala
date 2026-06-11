@@ -44,7 +44,7 @@ object EventLogPage {
           _,
           state,
         ) =>
-          Callback {
+          CallbackTo {
             // Buffer incoming events and flush in a single setState every 100 ms to avoid per-message re-renders
             var pendingBatch:   List[JorlanClient.EventLogJson.EventLogJsonView] = Nil
             var flushScheduled: Boolean = false
@@ -97,8 +97,9 @@ object EventLogPage {
                 },
                 onClientError = { ex => state.setState(state.value.copy(error = Some(ex.getMessage), running = false)) },
               )
-            // Store the handler so it can be closed on navigate-away
             state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            // cleanup: close the subscription when the component unmounts
+            handler.close()
           }
       }
       .render {

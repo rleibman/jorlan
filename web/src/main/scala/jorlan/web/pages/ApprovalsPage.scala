@@ -41,7 +41,7 @@ object ApprovalsPage {
           _,
           state,
         ) =>
-          Callback {
+          CallbackTo {
             // Initial load of pending approvals
             JorlanWebApp
               .makeAdapter()
@@ -82,6 +82,8 @@ object ApprovalsPage {
                 },
               )
             state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            // cleanup: close the subscription when the component unmounts
+            handler.close()
           }
       }
       .render {

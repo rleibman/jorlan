@@ -41,7 +41,7 @@ object StaticFileRoutes {
                   new File(root, segments.mkString("/"))
 
               // Reject path traversal: canonical path must stay under webRoot
-              val rootPath      = root.getCanonicalFile.toPath
+              val rootPath = root.getCanonicalFile.toPath
               val candidatePath = candidate.getCanonicalFile.toPath
               if (!candidatePath.startsWith(rootPath))
                 None // traversal attempt — fall through to index.html
@@ -53,7 +53,7 @@ object StaticFileRoutes {
               val fileToServe = fileOpt.getOrElse(new File(root, "index.html"))
               ZIO.scoped(Handler.fromFile(fileToServe).orDie.apply(req)).map { resp =>
                 // index.html and non-fingerprinted assets must revalidate; fingerprinted assets can be cached for a year
-                val name          = fileToServe.getName
+                val name = fileToServe.getName
                 val fingerprinted = name.matches(""".+\.[0-9a-fA-F]{6,}\..+""")
                 if (name == "index.html" || !fingerprinted)
                   resp.addHeader(Header.CacheControl.NoCache)
