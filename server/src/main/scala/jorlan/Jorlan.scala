@@ -31,12 +31,12 @@ import java.util.concurrent.TimeUnit
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService &
   OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub &
-  ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine & ConnectorManager &
-  NotificationRouter & Client
+  ToolEventHub & ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine &
+  ConnectorManager & NotificationRouter & Client
 
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-  JobManager & ApprovalService & ModelGateway & SkillRegistry
+  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {

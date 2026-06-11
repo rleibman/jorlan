@@ -75,8 +75,11 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
       override def deleteJob(id:          SchedulerJobId):   RepositoryTask[Long] = deleteJobFn(id)
       override def searchTriggers(s:      TriggerSearch):    RepositoryTask[List[SchedulerTrigger]] = searchTriggerFn(s)
       override def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger] = upsertTriggerFn(trigger)
-      override def listJobs(agentId:      Option[AgentId]):  RepositoryTask[List[SchedulerJob]] = alwaysFail
-      override def getPendingJobs:                           RepositoryTask[List[SchedulerJob]] = alwaysFail
+      override def listJobs(
+        agentId: Option[AgentId],
+        limit:   Int = 200,
+      ):                                                  RepositoryTask[List[SchedulerJob]] = alwaysFail
+      override def getPendingJobs:                        RepositoryTask[List[SchedulerJob]] = alwaysFail
       override def deleteTrigger(id: SchedulerTriggerId): RepositoryTask[Long] = alwaysFail
       override def claimJob(
         id:              SchedulerJobId,

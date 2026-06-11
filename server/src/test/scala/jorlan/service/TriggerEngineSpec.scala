@@ -14,7 +14,7 @@ import cron4s.expr.CronExpr
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
 import jorlan.domain.*
-import jorlan.service.schedule.TriggerEngine
+import jorlan.service.schedule.{TriggerEngine, TriggerEngineImpl}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.stream.ZStream
@@ -135,17 +135,17 @@ object TriggerEngineSpec extends ZIOSpecDefault {
     sessionId:     AgentSessionId,
     shouldSucceed: Boolean = true,
     pollInterval:  Duration = Duration.ofSeconds(1),
-  ): ZIO[Any, Nothing, (TriggerEngine, Ref[List[(AgentSessionId, String)]])] =
+  ): ZIO[Any, Nothing, (TriggerEngineImpl, Ref[List[(AgentSessionId, String)]])] =
     for {
       hub     <- SessionHub.make
       invoked <- Ref.make(List.empty[(AgentSessionId, String)])
       sm = StubSessionManager(sessionId)
       runner = StubAgentRunner(hub, invoked, shouldSucceed)
-      engine = TriggerEngine(repo = repo, sessionManager = sm, agentRunner = runner, pollInterval = pollInterval)
+      engine = TriggerEngineImpl(repo = repo, sessionManager = sm, agentRunner = runner, pollInterval = pollInterval)
     } yield (engine, invoked)
 
   /** Run a single tick on the engine using a deterministic worker ID and fresh cron cache. */
-  private def runTick(engine: TriggerEngine): UIO[Unit] =
+  private def runTick(engine: TriggerEngineImpl): UIO[Unit] =
     for {
       cronCache <- Ref.make(Map.empty[SchedulerTriggerId, CronExpr])
       _         <- engine.tick("test-worker", cronCache)

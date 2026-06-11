@@ -66,6 +66,7 @@ private object AgentRunnerState {
 class AgentRunnerImpl(
   modelGateway:  ModelGateway,
   sessionHub:    SessionHub,
+  toolEventHub:  ToolEventHub,
   repo:          ZIORepositories,
   memoryService: MemoryService,
   skillRegistry: SkillRegistry,
@@ -150,6 +151,7 @@ class AgentRunnerImpl(
             val toolFeedback = s"⟳ calling $name…\n"
             for {
               _ <- sessionHub.publish(ResponseChunk(sessionId, toolFeedback, finished = false))
+              _ <- toolEventHub.publish(ToolEvent.ToolInvokedEvent(sessionId, name, argsJson))
               _ <- logEvent(
                 sessionId,
                 EventType.SkillInvoked,
@@ -161,7 +163,10 @@ class AgentRunnerImpl(
                 ),
               )
               resultJson <- skillRegistry.invoke(name, argsJson, ctx)
-              _          <- logEvent(
+              _          <- toolEventHub.publish(
+                ToolEvent.ToolResultEvent(sessionId, name, resultJson.toString, succeeded = true),
+              )
+              _ <- logEvent(
                 sessionId,
                 EventType.SkillSucceeded,
                 actorId,
@@ -424,13 +429,14 @@ object AgentRunnerImpl {
   val defaultMaxToolSteps: Int = 10
 
   val live: URLayer[
-    ModelGateway & SessionHub & ZIORepositories & MemoryService & SkillRegistry & ConfigurationService,
+    ModelGateway & SessionHub & ToolEventHub & ZIORepositories & MemoryService & SkillRegistry & ConfigurationService,
     AgentRunner,
   ] =
     ZLayer.fromZIO(
       for {
         modelGateway  <- ZIO.service[ModelGateway]
         sessionHub    <- ZIO.service[SessionHub]
+        toolEventHub  <- ZIO.service[ToolEventHub]
         repo          <- ZIO.service[ZIORepositories]
         memoryService <- ZIO.service[MemoryService]
         skillRegistry <- ZIO.service[SkillRegistry]
@@ -439,6 +445,7 @@ object AgentRunnerImpl {
       } yield AgentRunnerImpl(
         modelGateway = modelGateway,
         sessionHub = sessionHub,
+        toolEventHub = toolEventHub,
         repo = repo,
         memoryService = memoryService,
         skillRegistry = skillRegistry,

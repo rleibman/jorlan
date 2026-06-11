@@ -23,6 +23,11 @@ object SubscriptionClientSpec extends ZIOSpecDefault {
     override def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
       ZStream.fromIterable(chunks)
 
+    override def toolEventsStream(
+      sessionId: AgentSessionId,
+    ): ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+      ZStream.empty
+
   }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =

@@ -52,6 +52,8 @@ object CommandHandler {
       case ShellCommand.MemoryShare(id)                     => shareMemory(id)
       case ShellCommand.MemoryPrivatize(id)                 => privatizeMemory(id)
       case ShellCommand.MemoryRemember(key, text, scopeOpt) => rememberMemory(key, text, scopeOpt)
+      case ShellCommand.Skills                              => showSkills
+      case ShellCommand.ContactsFind(name)                  => findContacts(name)
       case ShellCommand.Capabilities                        => showCapabilities
       case ShellCommand.AgentsList                          => listAgents
       case ShellCommand.AgentsStop(id)                      => stopAgent(id)
@@ -210,9 +212,20 @@ object CommandHandler {
           for {
             // Tear down any existing session's subscription fiber before replacing it.
             existing <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
-            _        <- ZIO.foreachDiscard(existing)(ls => ls.subscriptionFiber.interrupt)
-            _        <- LiveSession.start(session.id)
-            _        <- ZIO.serviceWithZIO[JorlanScreen](
+            _        <- ZIO.foreachDiscard(existing) { ls =>
+              ls.subscriptionFiber.interrupt *> ls.toolEventFiber.interrupt
+            }
+            screenSvc <- ZIO.service[JorlanScreen]
+            _         <- LiveSession.start(
+              session.id,
+              onToolEvent = ev =>
+                if (ev.eventType == "SkillInvoked")
+                  screenSvc.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}…")
+                else if (ev.eventType == "SkillSucceeded")
+                  screenSvc.addMessage(MessageKind.System, s"✓ ${ev.toolName} done")
+                else ZIO.unit,
+            )
+            _ <- ZIO.serviceWithZIO[JorlanScreen](
               _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
             )
             _ <- screen(_.addMessage(MessageKind.System, s"Session $id started."))
@@ -436,6 +449,7 @@ object CommandHandler {
           existing <- ZIO.serviceWithZIO[ShellState](_.getLiveSession)
           _        <- ZIO.foreachDiscard(existing.filter(_.sessionId == id)) { ls =>
             ls.subscriptionFiber.interrupt *>
+              ls.toolEventFiber.interrupt *>
               ZIO.serviceWithZIO[ShellState](_.clearLiveSession) *>
               ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(" [no session]  [disconnected]"))
           }
@@ -491,5 +505,69 @@ object CommandHandler {
             _ => screen(_.addMessage(MessageKind.System, s"Log level set to: $level")),
           ).flatten
     }
+
+  private val showSkills: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.skills(JorlanClient.SkillInfo.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list skills: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No skills registered."))
+        case Some(skills)     =>
+          val lines = skills
+            .map { s =>
+              val toolLines = s.tools
+                .map(t => s"    • ${t.name}  [${t.requiredCapabilities.mkString(", ")}]")
+                .mkString("\n")
+              s"  ${s.name}  (${s.tier})\n$toolLines"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Registered skills:\n$lines"))
+      },
+    )
+
+  private def findContacts(name: String): ZIO[Env, Nothing, Unit] = {
+    val query =
+      s"""query { contacts(name: ${'"'}$name${'"'}) { userId displayName identities { channelType channelUserId } } }"""
+
+    def strField(
+      fields: Seq[(String, zio.json.ast.Json)],
+      key:    String,
+    ): String =
+      fields.collectFirst { case (`key`, zio.json.ast.Json.Str(v)) => v }.getOrElse("?")
+
+    def renderContact(fields: Seq[(String, zio.json.ast.Json)]): String = {
+      val displayName = strField(fields, "displayName")
+      val userId = fields
+        .collectFirst { case ("userId", zio.json.ast.Json.Num(n)) => n.longValue.toString }
+        .getOrElse("?")
+      val ids = fields
+        .collectFirst { case ("identities", zio.json.ast.Json.Arr(is)) =>
+          is.collect { case zio.json.ast.Json.Obj(i) =>
+            s"${strField(i.toSeq, "channelType")}:${strField(i.toSeq, "channelUserId")}"
+          }.mkString(", ")
+        }.getOrElse("")
+      s"  [$userId] $displayName  $ids"
+    }
+
+    gql(_.execute(query)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"contacts.find failed: $err")),
+      json => {
+        val users: Seq[zio.json.ast.Json] = json match {
+          case zio.json.ast.Json.Obj(root) =>
+            root
+              .collectFirst { case ("data", zio.json.ast.Json.Obj(data)) =>
+                data.collectFirst { case ("contacts", zio.json.ast.Json.Arr(arr)) => arr.toSeq }.getOrElse(Seq.empty)
+              }.getOrElse(Seq.empty)
+          case _ => Seq.empty
+        }
+        if (users.isEmpty) {
+          screen(_.addMessage(MessageKind.System, s"No contacts found matching '$name'."))
+        } else {
+          val lines = users
+            .collect { case zio.json.ast.Json.Obj(fields) => renderContact(fields.toSeq) }
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Contacts matching '$name':\n$lines"))
+        }
+      },
+    )
+  }
 
 }

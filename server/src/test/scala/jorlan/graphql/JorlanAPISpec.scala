@@ -15,6 +15,7 @@ import caliban.GraphQLInterpreter
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.domain.ChannelType
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
@@ -99,9 +100,25 @@ object JorlanAPISpec extends ZIOSpecDefault {
         override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
       }: ApprovalService,
     )
+    val noOpNotificationRouter: ULayer[NotificationRouter] = ZLayer.succeed(
+      new NotificationRouter {
+        override def notifyUser(
+          userId:  UserId,
+          message: String,
+          ctx:     jorlan.connector.InvocationContext,
+        ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
+        override def notifyChannel(
+          channelUserId: String,
+          channelType:   ChannelType,
+          message:       String,
+          ctx:           jorlan.connector.InvocationContext,
+        ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
+      },
+    )
     ZLayer.make[FullEnv](
       agentRepoLayer,
       hubLayer,
+      ToolEventHub.live,
       capEval,
       session,
       FakeModelGateway.layer(List("ok")),
@@ -115,6 +132,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       approvalSvcLayer,
+      noOpNotificationRouter,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
   }

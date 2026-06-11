@@ -309,8 +309,11 @@ trait EventLogRepository[F[_]] {
   */
 trait SchedulerRepository[F[_]] {
 
-  def getJob(id:             SchedulerJobId):     F[Option[SchedulerJob]]
-  def listJobs(agentId:      Option[AgentId]):    F[List[SchedulerJob]]
+  def getJob(id: SchedulerJobId): F[Option[SchedulerJob]]
+  def listJobs(
+    agentId: Option[AgentId],
+    limit:   Int = 200,
+  ):                                              F[List[SchedulerJob]]
   def getPendingJobs:                             F[List[SchedulerJob]]
   def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
   def deleteJob(id:          SchedulerJobId):     F[Long]

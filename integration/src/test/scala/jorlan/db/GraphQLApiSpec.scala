@@ -59,6 +59,7 @@ object GraphQLApiSpec
       stubApprovalService,
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
+      ToolEventHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -66,6 +67,8 @@ object GraphQLApiSpec
       JorlanContainer.configLayer,
       AgentRunnerImpl.live,
       JobManagerImpl.live,
+      NotificationRouter.live,
+      ZLayer.succeed(ConnectorManager.empty),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

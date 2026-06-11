@@ -262,6 +262,34 @@ object JorlanClient {
 
   }
 
+  type ToolEventResult
+  object ToolEventResult {
+
+    final case class ToolEventResultView(
+      sessionId: Long,
+      eventType: String,
+      toolName:  String,
+      payload:   String,
+    )
+
+    type ViewSelection = SelectionBuilder[ToolEventResult, ToolEventResultView]
+
+    def view: ViewSelection =
+      (sessionId ~ eventType ~ toolName ~ payload).map { case (sid, et, tn, p) =>
+        ToolEventResultView(sid, et, tn, p)
+      }
+
+    def sessionId: SelectionBuilder[ToolEventResult, Long] =
+      _root_.caliban.client.SelectionBuilder.Field("sessionId", Scalar())
+    def eventType: SelectionBuilder[ToolEventResult, String] =
+      _root_.caliban.client.SelectionBuilder.Field("eventType", Scalar())
+    def toolName: SelectionBuilder[ToolEventResult, String] =
+      _root_.caliban.client.SelectionBuilder.Field("toolName", Scalar())
+    def payload: SelectionBuilder[ToolEventResult, String] =
+      _root_.caliban.client.SelectionBuilder.Field("payload", Scalar())
+
+  }
+
   type Role
   object Role {
 
@@ -389,6 +417,54 @@ object JorlanClient {
 
   }
 
+  type SkillToolInfo
+  object SkillToolInfo {
+
+    final case class SkillToolView(
+      name:                 String,
+      description:          String,
+      requiredCapabilities: List[String],
+    )
+
+    type ViewSelection = SelectionBuilder[SkillToolInfo, SkillToolView]
+
+    def view: ViewSelection =
+      (name ~ description ~ requiredCapabilities).map { case (n, d, caps) => SkillToolView(n, d, caps) }
+
+    def name: SelectionBuilder[SkillToolInfo, String] =
+      _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+    def description: SelectionBuilder[SkillToolInfo, String] =
+      _root_.caliban.client.SelectionBuilder.Field("description", Scalar())
+    def requiredCapabilities: SelectionBuilder[SkillToolInfo, List[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("requiredCapabilities", ListOf(Scalar()))
+
+  }
+
+  type SkillInfo
+  object SkillInfo {
+
+    final case class SkillInfoView(
+      name:  String,
+      tier:  String,
+      tools: List[SkillToolInfo.SkillToolView],
+    )
+
+    type ViewSelection = SelectionBuilder[SkillInfo, SkillInfoView]
+
+    def view: ViewSelection =
+      (name ~ tier ~ tools(SkillToolInfo.view)).map { case (n, t, tools) => SkillInfoView(n, t, tools) }
+
+    def name: SelectionBuilder[SkillInfo, String] =
+      _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+    def tier: SelectionBuilder[SkillInfo, String] =
+      _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
+    def tools[A](
+      innerSelection: SelectionBuilder[SkillToolInfo, A],
+    ): SelectionBuilder[SkillInfo, List[A]] =
+      _root_.caliban.client.SelectionBuilder.Field("tools", ListOf(Obj(innerSelection)))
+
+  }
+
   type Queries = _root_.caliban.client.Operations.RootQuery
   object Queries {
 
@@ -502,6 +578,11 @@ object JorlanClient {
       innerSelection: SelectionBuilder[ModelInfoGql, A],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
       _root_.caliban.client.SelectionBuilder.Field("availableModels", OptionOf(ListOf(Obj(innerSelection))))
+
+    def skills[A](
+      innerSelection: SelectionBuilder[SkillInfo, A],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field("skills", OptionOf(ListOf(Obj(innerSelection))))
 
   }
 
@@ -786,6 +867,18 @@ object JorlanClient {
     ): SelectionBuilder[_root_.caliban.client.Operations.RootSubscription, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder.Field(
         "agentResponseStream",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(Argument("value", value, "AgentSessionId!")),
+      )
+
+    def toolEvents[A](
+      value: jorlan.domain.AgentSessionId,
+    )(
+      innerSelection:    SelectionBuilder[ToolEventResult, A],
+    )(implicit encoder0: ArgEncoder[jorlan.domain.AgentSessionId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootSubscription, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "toolEvents",
         OptionOf(Obj(innerSelection)),
         arguments = List(Argument("value", value, "AgentSessionId!")),
       )

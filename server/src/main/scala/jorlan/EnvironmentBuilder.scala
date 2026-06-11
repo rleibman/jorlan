@@ -33,7 +33,7 @@ object EnvironmentBuilder {
       .fromZIO(
         ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
           val a = cfg.jorlan.auth
-          OAuthService.live() // TODO if you later want to support oauth
+          OAuthService.live() // Note if you later want to support oauth
         },
       ).flatten
 
@@ -65,7 +65,6 @@ object EnvironmentBuilder {
     ZLayer
       .make[JorlanEnvironment](
         ConfigurationServiceImpl.live,
-        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db)),
         ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.auth)),
         QuillRepositories.live,
         CapabilityEvaluatorImpl.live,
@@ -74,6 +73,7 @@ object EnvironmentBuilder {
         oauthServiceLayer,
         OAuthStateStore.live(),
         SessionHub.live,
+        ToolEventHub.live,
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
         MemoryServiceImpl.live,

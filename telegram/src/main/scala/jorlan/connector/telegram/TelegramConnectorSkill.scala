@@ -175,8 +175,14 @@ class TelegramConnectorSkill(
     pollingFiber.get.flatMap {
       case Some(_) => ZIO.unit
       case None    =>
-        pollLoop(offset = 0L).forkDaemon
-          .flatMap(f => pollingFiber.set(Some(f)))
+        ZIO.when(config.useWebhook)(
+          ZIO.logWarning(
+            "[telegram] useWebhook=true is not yet implemented — falling back to long-polling. " +
+              "Webhook ingress requires a publicly reachable HTTPS route wired into the server.",
+          ),
+        ) *>
+          pollLoop(offset = 0L).forkDaemon
+            .flatMap(f => pollingFiber.set(Some(f)))
     }
   // ZIO 2 fiber scheduling trampolines recursive flatMap chains — this is stack-safe.
   private def pollLoop(offset: Long): UIO[Unit] =

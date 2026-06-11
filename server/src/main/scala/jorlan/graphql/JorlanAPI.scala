@@ -19,6 +19,7 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.service.ToolEvent
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.JsonEncoder
@@ -86,6 +87,27 @@ object JorlanAPI {
     name:  String,
     tier:  String,
     tools: List[SkillToolInfo],
+  )
+
+  /** GQL-safe view of one channel identity for a contact result. */
+  case class ContactIdentityResult(
+    channelType:   String,
+    channelUserId: String,
+  )
+
+  /** GQL-safe contact result from the `contacts` query. */
+  case class ContactResult(
+    userId:      Long,
+    displayName: String,
+    identities:  List[ContactIdentityResult],
+  )
+
+  /** GQL view of a tool invocation event (emitted by the ReAct loop). */
+  case class ToolEventResult(
+    sessionId: Long,
+    eventType: String,
+    toolName:  String,
+    payload:   String,
   )
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
@@ -233,6 +255,12 @@ object JorlanAPI {
     note:      Option[String] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `notifyUser` — send a notification to a user's preferred channel. */
+  case class NotifyUserInput(
+    userId:  UserId,
+    message: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
@@ -260,6 +288,8 @@ object JorlanAPI {
     availableModels: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ModelInfo]],
     /** Returns all registered skills and their tools. */
     skills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillInfo]],
+    /** Case-insensitive substring search on user displayName, with channel identities. Requires `contacts.read`. */
+    contacts: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ContactResult]],
   )
 
   case class Mutations(
@@ -286,12 +316,16 @@ object JorlanAPI {
     deleteJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     decideApproval:    DecideApprovalInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     terminateSession:  AgentSessionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Send a notification to a user's preferred channel. Requires `notify.send` capability. */
+    notifyUser: NotifyUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
   )
 
   case class Subscriptions(
     approvalNotifications: ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
     eventLogTail:          ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
     agentResponseStream:   AgentSessionId => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
+    /** Streams tool invocation events for the given session (SkillInvoked / SkillSucceeded). */
+    toolEvents: AgentSessionId => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ToolEventResult],
   )
 
   // ─── Schema instances ─────────────────────────────────────────────────────────
@@ -334,6 +368,8 @@ object JorlanAPI {
   private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
   private given Schema[Any, SkillToolInfo] = Schema.gen[Any, SkillToolInfo]
   private given Schema[Any, SkillInfo] = Schema.gen[Any, SkillInfo]
+  private given Schema[Any, ContactIdentityResult] = Schema.gen[Any, ContactIdentityResult]
+  private given Schema[Any, ContactResult] = Schema.gen[Any, ContactResult]
 
   private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
   private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
@@ -493,7 +529,7 @@ object JorlanAPI {
           serverPersonality = for {
             actorId <- actorIdFromSession
             _       <- requireCapability("admin.personality.read", actorId)
-            p       <- ZIOServerSettingsRepository.getPersonality
+            p       <- ZIO.serviceWithZIO[ZIORepositories](_.setting.getPersonality)
           } yield p,
           listMemory = input =>
             for {
@@ -549,6 +585,31 @@ object JorlanAPI {
               )
             }
           },
+          contacts = name =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("contacts.read", actorId)
+              users   <- ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.user.search(UserSearch(nameContains = Some(name), active = Some(true))),
+                ).mapError(JorlanError(_))
+              results <- ZIO.foreach(users) { user =>
+                ZIO
+                  .serviceWithZIO[ZIORepositories](_.user.getChannelIdentities(user.id)).mapError(JorlanError(_))
+                  .map { ids =>
+                    ContactResult(
+                      userId = user.id.value,
+                      displayName = user.displayName,
+                      identities = ids.map(ci =>
+                        ContactIdentityResult(
+                          channelType = ci.channelType.toString,
+                          channelUserId = ci.channelUserId,
+                        ),
+                      ),
+                    )
+                  }
+              }
+            } yield results,
         ),
         Mutations(
           createUser = input =>
@@ -642,7 +703,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.personality.update", actorId)
-              _       <- ZIOServerSettingsRepository.setPersonality(input)
+              _       <- ZIO.serviceWithZIO[ZIORepositories](_.setting.setPersonality(input))
             } yield input,
           storeMemory = input =>
             for {
@@ -796,6 +857,17 @@ object JorlanAPI {
               _       <- requireCapability("agent.session.terminate", actorId)
               _       <- ZIO.serviceWithZIO[AgentSessionManager](_.terminateSession(id))
             } yield true,
+          notifyUser = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("notify.send", actorId)
+              ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
+              result <- ZIO.serviceWithZIO[NotificationRouter](_.notifyUser(input.userId, input.message, ctx))
+              succeeded = result match {
+                case zio.json.ast.Json.Str(s) if s.startsWith("Error:") => false
+                case _                                                  => true
+              }
+            } yield succeeded,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,
@@ -810,6 +882,23 @@ object JorlanAPI {
               } yield stream.ensuring(
                 ZIO.logInfo(s"[API] agentResponseStream subscription ended: session=$sessionId conn=$connId"),
               ),
+            ),
+          toolEvents = sessionId =>
+            ZStream.unwrap(
+              ZIO.serviceWithZIO[ToolEventHub](_.subscribe(sessionId)).map { stream =>
+                stream
+                  .map {
+                    case ToolEvent.ToolInvokedEvent(sid, toolName, argsJson) =>
+                      ToolEventResult(sid.value, "SkillInvoked", toolName, argsJson)
+                    case ToolEvent.ToolResultEvent(sid, toolName, resultJson, succeeded) =>
+                      ToolEventResult(
+                        sid.value,
+                        if (succeeded) "SkillSucceeded" else "SkillFailed",
+                        toolName,
+                        resultJson,
+                      )
+                  }.mapError(_ => JorlanError("toolEvents stream error"))
+              },
             ),
         ),
       ),

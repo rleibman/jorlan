@@ -21,7 +21,10 @@ import zio.*
   * All state transitions validate the current job status before writing. `upsertJob` only updates runtime-state fields
   * (status, timestamps, lease, result); configuration fields are immutable after creation.
   */
-class JobManagerImpl(repo: ZIORepositories) extends JobManager {
+class JobManagerImpl(
+  repo:          ZIORepositories,
+  listJobsLimit: Int = 200,
+) extends JobManager {
 
   override def createJob(
     agentId:         AgentId,
@@ -72,7 +75,7 @@ class JobManagerImpl(repo: ZIORepositories) extends JobManager {
     repo.scheduler.searchTriggers(TriggerSearch(jobId = jobId, pageSize = 1000)).mapError(JorlanError(_))
 
   override def listJobs(agentId: Option[AgentId]): UIO[List[SchedulerJob]] =
-    repo.scheduler.listJobs(agentId).orDie
+    repo.scheduler.listJobs(agentId, listJobsLimit).orDie
 
   override def getJob(id: SchedulerJobId): IO[JorlanError, SchedulerJob] =
     repo.scheduler
@@ -125,7 +128,12 @@ class JobManagerImpl(repo: ZIORepositories) extends JobManager {
 
 object JobManagerImpl {
 
-  val live: ZLayer[ZIORepositories, Nothing, JobManagerImpl] =
-    ZLayer.fromFunction(JobManagerImpl(_))
+  val live: URLayer[ZIORepositories & ConfigurationService, JobManagerImpl] =
+    ZLayer.fromZIO {
+      for {
+        repo   <- ZIO.service[ZIORepositories]
+        config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+      } yield JobManagerImpl(repo, config.jorlan.scheduler.listJobsLimit)
+    }
 
 }

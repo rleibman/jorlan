@@ -110,11 +110,11 @@ private[repository] abstract class QuillRepoBase(qc: QuillCtx) {
 
 object QuillRepositories {
 
-  val live: URLayer[DatabaseConfig, ZIORepositories] =
+  val live: ZLayer[ConfigurationService, ConfigurationError, QuillRepositories] =
     ZLayer
       .scoped {
         for {
-          config <- ZIO.service[DatabaseConfig]
+          config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db)
           hds    <- managedDataSource(config)
         } yield QuillCtx(hds)
       }.flatMap { env =>
@@ -763,13 +763,17 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
   override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id))).map(_.headOption))
 
-  override def listJobs(agentId: Option[AgentId]): RepositoryTask[List[SchedulerJob]] = {
-    val cap = 200 // TODO why this cap? if you need a cap at all make it configurable
+  override def listJobs(
+    agentId: Option[AgentId],
+    limit:   Int = 200,
+  ): RepositoryTask[List[SchedulerJob]] = {
     agentId match {
       case Some(aid) =>
-        exec(qc.ctx.run(qSchedulerJobs.filter(_.agentId == lift(aid)).sortBy(_.createdAt)(Ord.desc).take(lift(cap))))
+        exec(
+          qc.ctx.run(qSchedulerJobs.filter(_.agentId == lift(aid)).sortBy(_.createdAt)(Ord.desc).take(lift(limit))),
+        )
       case None =>
-        exec(qc.ctx.run(qSchedulerJobs.sortBy(_.createdAt)(Ord.desc).take(lift(cap))))
+        exec(qc.ctx.run(qSchedulerJobs.sortBy(_.createdAt)(Ord.desc).take(lift(limit))))
     }
   }
 

@@ -59,13 +59,9 @@ object SubscriptionClientIntegrationSpec
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
-  private val databaseConfigLayer: TaskLayer[DatabaseConfig] =
-    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
-
   private val envLayer: TaskLayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       configLayer,
-      databaseConfigLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator,
       ApprovalServiceImpl.live,
@@ -74,6 +70,7 @@ object SubscriptionClientIntegrationSpec
       oauthLayer,
       OAuthStateStore.live(),
       SessionHub.live,
+      ToolEventHub.live,
       FakeModelGateway.layer(List("hello ", "world")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,

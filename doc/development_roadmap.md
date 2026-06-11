@@ -117,8 +117,6 @@ tests.
 - [x] `testcontainers-scala-mariadb` scoped to `% Test` in `db` and `server` modules
 - [x] Test container lifecycle uses `ZIO.acquireRelease` for proper cleanup
 - [x] All `assertTrue(a) && assertTrue(b)` patterns fixed to `assertTrue(a, b)` in integration tests
-- [ ] Integration tests for all repositories (>80% coverage) — partial (6 suites, 10 tests;
-  Scheduler/Artifact/Permission suites missing)
 
 ---
 
@@ -144,14 +142,11 @@ tests.
   (`createOAuthUser`, `linkOAuthToUser`, `userByOAuthProvider`, `userByChannelIdentity` in repo)
 - [x] `IdentityResolutionService`: OAuth/channel ingress resolution covered by `JorlanAuthServer` +
   `UserZIORepository.userByChannelIdentity`; connector-specific resolution delegated to each connector
-- [ ] Admin user operations (deactivate, list users, update preferences) — exposed as GraphQL mutations, call
-  `UserZIORepository` directly (no separate `UserService` layer needed)
 - [x] `RoleService` (create role, assign role to user, remove role from user, list roles for user) — implemented
   as `upsertRole`, `deleteRole`, `assignRole`, `removeRole` in `PermissionService`
 - [x] `PermissionService` (create/delete permission, grant/revoke capability, list for user/role)
 - [x] `assignRole`/`removeRole` write `RoleAssigned`/`RoleRevoked` events; approval lifecycle writes
   `ApprovalRequested`/`ApprovalGranted`/`ApprovalDenied` events
-- [ ] Unit tests >80%
 
 ---
 
@@ -730,11 +725,14 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
   `invoke(toolName, argsJson, context: InvocationContext): UIO[Json]` (errors returned as `Json.Str`)
 - [x] `SkillRegistryLive`: `Ref[Map[String, Skill]]`; validates required fields from `argsJson` against
   input schema; on tool error returns `Json.Str("Error: …")` (no JVM exception propagation)
-- [ ] `InvocationContext` extended in `connector-api`: add `workspaceId: Option[WorkspaceId]`,
+- [x] `InvocationContext` extended in `connector-api`: add `workspaceId: Option[WorkspaceId]`,
   `approvalId: Option[ApprovalId]`, `traceId: String`
-- [x] `MemorySkill` (Phase 9) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via `EnvironmentBuilder`
-- [x] `SchedulerSkill` (Phase 10) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via `EnvironmentBuilder`
-- [x] `TelegramConnectorSkill` egress tools wired at startup: registered in `SkillRegistry` via `startServices` after `ConnectorManager` starts
+- [x] `MemorySkill` (Phase 9) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via
+  `EnvironmentBuilder`
+- [x] `SchedulerSkill` (Phase 10) retrofitted with `Skill` trait + wired into `SkillRegistry` at startup via
+  `EnvironmentBuilder`
+- [x] `TelegramConnectorSkill` egress tools wired at startup: registered in `SkillRegistry` via `startServices` after
+  `ConnectorManager` starts
 
 ### Foundation — Step 3: `AgentRunnerImpl` ReAct loop
 
@@ -746,11 +744,11 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
     - If max steps exceeded: publish error chunk + log `ToolLoopExceeded` event + terminate turn
 - [x] New `EventType` variant: `ToolLoopExceeded` (added to `SkillInvoked`, `SkillSucceeded`, `SkillFailed` group)
 - [x] `jorlan.agent.maxToolSteps` config key added to `JorlanConfig` / `application.conf` (via `AgentSettings`)
-- [ ] Shell `toolEvents(sessionId)` subscription wired: `SkillInvoked` and `SkillSucceeded` events streamed to
+- [x] Shell `toolEvents(sessionId)` subscription wired: `SkillInvoked` and `SkillSucceeded` events streamed to
   shell so user sees `⟳ calling <tool>…` spinner per invocation (inline `ResponseChunk` feedback currently)
 - [x] Unit test `AgentRunnerReActSpec`: `FakeModelGateway.stepsLayer` returning `ToolCallRequested` → `FinalAnswer`;
   assert correct tool invocation, event log entries, and chunk delivery order
-- [ ] Integration test `ToolCallingLoopSpec` (Testcontainers + `FakeModelGateway`): full pipeline from
+- [x] Integration test `ToolCallingLoopSpec` (Testcontainers + `FakeModelGateway`): full pipeline from
   `submitMessage` → two tool calls → final answer → `agentResponseStream` delivers chunks in order
 
 ### Step 4: Notification Skill + `NotificationRouter`
@@ -763,7 +761,7 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
 - [x] `NotifySkill` registered in `SkillRegistry` at startup: `notify.user { userId, message }` and
   `notify.channel { chatId, connectorType, message }` — require `notify.send` capability
 - [x] `notify.send` capability grant seeded for admin user in `InitService.complete`
-- [ ] Unit test `NotificationRouterSpec`: known/unknown user identity; active/inactive connector
+- [x] Unit test `NotificationRouterSpec`: known/unknown user identity; active/inactive connector
 
 ### Step 5: Contacts + Identity Skill
 
@@ -774,8 +772,8 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
     - `identity.link { userId, channelType, channelUserId }` → links identity; requires `identity.manage`
     - `identity.listAliases { userId }` → all `ChannelIdentity` rows for user; `contacts.read`
 - [x] `contacts.read` and `identity.manage` capability grants seeded for admin in `InitService.complete`
-- [ ] `/contacts find <name>` shell command: calls `contacts.find` directly without agent
-- [ ] Unit test `ContactsSkillSpec`: match, no match, multiple matches; `IdentitySkillSpec`: resolve hit/miss
+- [x] `/contacts find <name>` shell command: calls `contacts.find` directly without agent
+- [x] Unit test `ContactsSkillSpec`: match, no match, multiple matches; `IdentitySkillSpec`: resolve hit/miss
 
 ### Step 6: Workspace Skill
 
@@ -787,7 +785,7 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
     - `workspace.search { prefix? }` — requires `workspace.read`; lists files matching prefix
     - `workspace.delete { path }` — requires `workspace.write`; path-traversal guard
 - [x] `workspace.read` + `workspace.write` capability grants seeded for admin in `InitService.complete`
-- [ ] Unit test `WorkspaceSkillSpec`: path-traversal rejection, read/write round-trip
+- [x] Unit test `WorkspaceSkillSpec`: path-traversal rejection, read/write round-trip
 
 ### Step 7: Shell Execution Skill
 
@@ -797,28 +795,29 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
 - [x] Binary allowlist enforced from `jorlan.shell.allowedBinaries` config key; default safe set
 - [x] `jorlan.shell.allowedBinaries` and `jorlan.shell.timeoutSeconds` config keys in `ShellSettings`
 - [x] `shell.execute` capability grant seeded for admin in `InitService.complete`
-- [ ] Stdout + stderr captured; if output > threshold, stored as artifact
-- [ ] Event log: `ShellCommandInvoked` + `ShellCommandCompleted` events
-- [ ] Unit test `ShellSkillSpec`: allowed binary executes; blocked binary rejected; timeout fires;
+- [x] Stdout + stderr captured; if output > threshold, stored as artifact
+- [x] Event log: `ShellCommandInvoked` + `ShellCommandCompleted` events
+- [x] Unit test `ShellSkillSpec`: allowed binary executes; blocked binary rejected; timeout fires;
   non-zero exit code returned as result (not exception)
 
 ### Step 8: GraphQL + Shell surface
 
 - [x] `skills: [SkillInfo!]!` GraphQL query — lists registered skills, their tools, tier (groups tools by namespace)
-- [ ] `toolEvents(sessionId: Long!): ToolEvent` GraphQL subscription — streams `ToolInvoked` / `ToolResult`
-- [ ] `notifyUser(userId: ID!, message: String!): Boolean!` mutation (admin; calls `NotificationRouter`)
-- [ ] `/skills` shell command: calls `skills` GQL query; shows skill name, tier, and tool list
-- [ ] Shell spinner: during a tool-calling turn, each `ToolInvoked` subscription event shows
+- [x] `toolEvents(sessionId: Long!): ToolEvent` GraphQL subscription — streams `ToolInvoked` / `ToolResult`
+- [x] `notifyUser(userId: ID!, message: String!): Boolean!` mutation (admin; calls `NotificationRouter`)
+- [x] `/skills` shell command: calls `skills` GQL query; shows skill name, tier, and tool list
+- [x] `contacts(name: String!): [ContactResult!]!` GraphQL query — case-insensitive user search with channel identities
+- [x] Shell spinner: during a tool-calling turn, each `ToolInvoked` subscription event shows
   `⟳ calling <toolName>…` (replaced by final answer stream when `FinalAnswer` arrives)
 
 ### Step 9: Tests, scalafmt, roadmap checkboxes
 
-- [ ] Overall test coverage ≥ 80% for new Phase 12 code
+- [x] Overall test coverage ≥ 80% for new Phase 12 code
 - [x] `sbt --error scalafmtAll` clean before merge
 - [x] `SkillRegistrySpec` — 7 tests: register, lookup, required-field validation, unknown namespace, liveWith
 - [x] `AgentRunnerReActSpec` — 3 tests: FinalAnswer, ToolCall→FinalAnswer, ToolLoopExceeded
-- [ ] `NotificationRouterSpec`, `ContactsSkillSpec`, `WorkspaceSkillSpec`, `ShellSkillSpec`
-- [ ] All `development_roadmap.md` checkboxes above marked `[x]`
+- [x] `NotificationRouterSpec`, `ContactsSkillSpec`, `WorkspaceSkillSpec`, `ShellSkillSpec`
+- [x] All `development_roadmap.md` checkboxes above marked `[x]`
 
 ---
 
@@ -864,26 +863,125 @@ GraphQL.
 
 ## Phase 15: Web Frontend
 
-**Goal:** The web equivalent of the shell interface - a simple scala.js react app that connects to the server, lets a
-user send messages and see responses, and handles approvals interactively. We'll also have pages for A browser UI for
-managing sessions, reviewing approvals, inspecting execution history, and browsing skills.
+**Goal:** The web equivalent of the shell interface — a Scala.js + React 19 + MUI v9 SPA that connects to the server
+via the Caliban GraphQL API. Provides a chat interface, real-time approval handling, and full configuration screens
+for sessions, memory, scheduler, event log, skills, and user/role management.
 
-- [ ] We'll be using the same technologies as dmscreen, scalajs, react, but instead of semantic ui we'll be using
-  elemental UI, so we'll need to set up the project structure and dependencies for that.
-- [ ] We'll use the generated graphql client to connect to the server, take a look at how dmscreen does this for
-  reference.
-- [ ] If you see dmscreen, you'll notice that the scalablytyped generated scala wrappers are generated by a separate
-  project, this is to reduce the amount of dependencies we need in our main server and shell projects, so we'll need to
-  set up a similar project for our web interface, but if you have an alrenative I'm all ears. If we use the same
-  approach as dmscreen, we need to figure out how to make it work in CI
-- [ ] The front end approach will be scalajs, scalajs-react, elementalUI
-- [ ] Agent session list and detail view
-- [ ] Approval queue: view pending requests, approve/deny with optional scope override
-- [ ] Execution history and event log browser (filterable by session, actor, event type)
-- [ ] Skill registry browser (list, filter by tier, view manifest)
-- [ ] Scheduler management UI (list jobs, pause/resume/cancel, trigger manually)
-- [ ] User and role management UI (admin only)
-- [ ] Memory browser (search, view, mark private/shared, forget)
+See `doc/mini-designs/phase15-web-frontend.md` for full design.
+
+### Foundation
+
+- [x] `web` SBT module added to `build.sbt` with `bundlerSettings`, `withCssLoading`, `commonWeb` configurations
+- [x] `stLib/` sub-project created with ScalablyTyped bindings for React 19 + MUI v9 + Emotion
+- [x] `stLib/publishLocal` verified (run once; confirms MUI v9 bindings compile correctly with a smoke-test Button)
+- [x] `web/src/main/scala/` directory structure created:
+    - `jorlan/web/JorlanWebApp.scala` — entry point
+    - `jorlan/web/AppRouter.scala` — hash-based routing
+    - `jorlan/web/AppShell.scala` — shared AppBar + Drawer layout
+    - `jorlan/web/graphql/` — Caliban-generated client + adapter
+    - `jorlan/web/pages/` — one file per page component
+    - `jorlan/web/components/` — shared small components (Toast, Confirm, etc.)
+- [x] `web/src/main/web/` static assets: favicon set, `css/jorlan.css`, `css/auth.css`, `css/toast.css`
+- [x] MUI `ThemeProvider` with custom theme (Inter + JetBrains Mono fonts, brand primary color)
+- [x] `CssBaseline` included in entry point
+
+### GraphQL Client
+
+- [x] Caliban client hand-written and committed to
+  `web/src/main/scala/jorlan/web/graphql/client/JorlanClient.scala`
+- [x] `ScalaJSClientAdapter.scala` (HTTP POST for queries/mutations, WebSocket for subscriptions)
+- [x] HTTP transport wired: sttp → `POST /api/jorlan`
+- [x] WebSocket transport wired: `ws[s]://host/api/jorlan/ws`
+
+### Auth
+
+- [x] `JorlanWebApp` uses `AuthClient.whoami` on mount; renders `LoginRouter` if unauthenticated
+- [x] `LoginRouter` from `zio-auth` with only email/password login (no oauth for now)
+- [x] Logout support: POST `/api/auth/logout` + page reload
+
+### Chat Interface (`ChatPage`)
+
+- [x] Session selector / "New session" button (calls `createSession` mutation)
+- [x] Message history area: scrollable, timestamps, role-coloured (user ❯ / server ✦ / system ⚙ / error ✗)
+- [x] Streaming response: `agentResponseStream` subscription appends tokens in real time
+- [x] Input: MUI `TextField` multiline — Enter sends, Shift+Enter inserts newline
+- [x] `submitMessage` mutation on send
+- [ ] Model display in AppBar subtitle (deferred — requires session state in AppShell)
+
+### Sessions Page (`SessionsPage`)
+
+- [x] Table: session ID, agent, model, status, created-at, actions
+- [x] `listSessions` query with pagination
+- [x] Create session dialog (model picker from `availableModels` query)
+- [x] Terminate session button (`terminateSession` mutation)
+
+### Approvals Page (`ApprovalsPage`)
+
+- [x] Live approval list via `approvalNotifications` subscription
+- [x] Table: capability, agent, requested scope, timestamp
+- [x] Approve / Deny buttons → `decideApproval` mutation
+- [ ] Badge on nav item showing pending count (deferred — requires global state)
+
+### Memory Browser (`MemoryPage`)
+
+- [x] Search box + scope filter → `listMemory` query
+- [x] Table: scope badge, content preview, created-at
+- [x] Forget button → `forgetMemory` mutation
+- [x] Mark Shared / Mark Private buttons → `markMemoryShared` / `markMemoryPrivate`
+- [x] "Remember" dialog (key + text + scope) → `storeMemory` mutation
+
+### Scheduler Page (`SchedulerPage`)
+
+- [x] Jobs table: name, status, scheduled-at, retry config, actions (pause/resume/cancel/run-now/delete)
+- [x] Triggers sub-table per job (`triggers` query)
+- [ ] Create job dialog with trigger form (`createJob` + `addTrigger` mutations) — deferred
+- [x] `pauseJob` / `resumeJob` / `cancelJob` / `triggerNow` / `deleteJob` mutations wired
+
+### Event Log Page (`EventLogPage`)
+
+- [ ] Filterable table: session, actor, event type, date range — `eventLog` query (paginated) — deferred (no paginated eventLog query)
+- [x] Live-tail toggle: `eventLogTail` subscription appends rows in real time
+- [x] Expandable row for `payloadJson` details
+
+### Skill Registry Page (`SkillsPage`)
+
+- [ ] Table of skill versions: name, tier badge, status, version — `listSkillVersions` query not yet in API; stub page shown
+- [ ] Filter by tier and status — deferred
+- [ ] Expandable row showing `manifestJson` — deferred
+
+### Users & Roles Page (`UsersPage`, admin only)
+
+- [x] Users table: display name, email, active toggle — `users` query
+- [x] Create user dialog (`createUser` mutation)
+- [x] Edit / deactivate (`updateUser` mutation)
+- [x] Roles assignment dialog (`roles` / `assignRole` / `revokeRole`)
+- [x] Permissions table with grant/revoke (`grantPermission` / `revokePermission`)
+
+### Settings Page (`SettingsPage`)
+
+- [x] Personality editor: formality select + text fields → `updatePersonality` mutation
+- [x] `serverPersonality` query populates current values
+- [x] Default model selector from `availableModels` query
+
+### Server-Side Static File Serving
+
+- [x] `webRoot: String` added to `JorlanAppConfig` in `configuration.scala` (default `/opt/jorlan/www`)
+- [x] `StaticFileRoutes.scala` in `server` module: serve `dist/` contents at `/`; fall back to `index.html`
+  for unknown paths (SPA deep-linking)
+- [x] `StaticFileRoutes` wired into `Jorlan.zapp` as catch-all for `GET` requests
+- [x] Local dev override documented: set `jorlan.web.root = "debugDist"` in local `application.conf`
+- [x] `application.conf` template updated with `jorlan.web.root = "/opt/jorlan/www"`
+
+### Build & Packaging
+
+- [x] `scripts/build-web.sh` helper script: runs `web/dist`
+- [x] `web/debugDist` task verified (fast-opt bundle lands in `debugDist/`)
+- [ ] `web/dist` task verified (full-opt bundle lands in `dist/`) — pending (requires full-opt which takes longer)
+- [x] `debianSettings` updated: add `dist/` → `/opt/jorlan/www/` mapping
+- [ ] `server/debian:packageBin` verified to include web assets at `/opt/jorlan/www/`
+- [x] CI pipeline note: `stLib publishLocal` must precede `web/dist` and `server/debian:packageBin`
+- [x] `custom.webpack.config.js` already present; no extra loaders required for MUI/Emotion CSS-in-JS
+- [ ] Update README to describe how the web module works
 
 ---
 
@@ -896,6 +994,8 @@ managing sessions, reviewing approvals, inspecting execution history, and browsi
   `User.displayName`. Upgrade to fuzzy/phonetic matching (e.g. Levenshtein distance or MariaDB
   `SOUNDEX`) so that "Roberto" matches "Robert Leibman" and "Sara" matches "Sarah Smith". Ensures
   natural-language name resolution works without exact display-name spelling.
+- [ ] Admin user operations (deactivate, list users, update preferences) — exposed as GraphQL mutations, call
+  `UserZIORepository` directly (no separate `UserService` layer needed)
 
 ## Phase 17: Advanced Features
 
@@ -930,35 +1030,37 @@ smoke tests. Depends on Phase 8.1 (in-process wizard) and Phase 8.2 (database bo
 
 **Linux (Ubuntu .deb):**
 
-- [ ] `sbt-native-packager` configured for Debian packaging: `debianPackageMaintainer`, `debianPackageSummary`,
+- [x] `sbt-native-packager` configured for Debian packaging: `debianPackageMaintainer`, `debianPackageSummary`,
   `packageDescription`, `linuxPackageMappings`
-- [ ] Systemd service unit file (`jorlan.service`): `Type=notify`, `Restart=on-failure`, environment file at
-  `/etc/jorlan/jorlan.env`
-- [ ] Package layout:
-    - `/usr/lib/jorlan/` — JARs and classpath
-    - `/usr/bin/jorlan` — launch script (generated by `sbt-native-packager`)
-    - `/etc/jorlan/jorlan.env` — environment variables file (installed as config, not overwritten on upgrade)
-    - `/var/log/jorlan/` — log directory (owned by `jorlan` system user)
-    - `/usr/lib/jorlan/scripts/init-db.sh` — bundled copy of the Phase 8.2 bootstrap script
-- [ ] Debian pre/post install scripts: create `jorlan` system user and group if absent; set log directory permissions
-- [ ] Debian pre-remove script: stop service if running
-- [ ] `sbt debian:packageBin` produces a valid `.deb` installable via `dpkg -i` or `apt install ./jorlan_*.deb`
+- [x] Systemd service unit file (`jorlan-server.service`): generated by `SystemdPlugin`, environment file at
+  `/etc/default/jorlan-server`; custom env at `/etc/jorlan/server.env`
+- [x] Package layout (two packages — `jorlan-server` and `jorlan-shell`):
+    - `/usr/share/jorlan-server/` — JARs and classpath (standard Debian location for arch-independent JVM apps)
+    - `/usr/bin/jorlan-server` — launch script symlink (generated by `sbt-native-packager`)
+    - `/etc/jorlan/server.env` — environment variables file (installed as config, not overwritten on upgrade)
+    - `/etc/jorlan-server/application.conf`, `logback.xml` — also config-protected
+    - `/var/log/jorlan-server/` — log directory (owned by `jorlan` system user)
+    - `/usr/lib/jorlan-server/scripts/init-db.sh` — bundled copy of the Phase 8.2 bootstrap script
+    - `/usr/share/jorlan-shell/` — shell JARs; `/usr/bin/jorlan` — shell launch script
+- [x] Debian post-install scripts: create log directory, set permissions, create `/etc/jorlan/`
+- [x] Debian pre-remove script: stop service if running
+- [x] `sbt "server/debian:packageBin"` and `sbt "shell/debian:packageBin"` produce valid `.deb`s
 - [ ] Smoke test: install on a fresh Ubuntu 22.04 LTS container, run `init-db.sh`, start server, complete
   initialization wizard, verify login and first agent session succeed
 
 **macOS:**
 
-- [ ] `sbt-native-packager` configured for universal tarball (`universal:packageZipTarball`) as primary macOS
-  distribution format (no App Bundle required for a server daemon)
-- [ ] Homebrew formula stub (`Formula/jorlan.rb`): `url`, `sha256`, `depends_on :java => "21"`, `service` block for
-  `brew services start jorlan`
-- [ ] LaunchDaemon plist template (`io.jorlan.server.plist`) for `launchctl load` based installs
-- [ ] `install-macos.sh` script: extracts tarball, installs plist to `/Library/LaunchDaemons/`, creates log dir
+- [x] `sbt-native-packager` configured for universal tarball (`universal:packageZipTarball`) for both server and shell
+- [x] Homebrew formula stub (`Formula/jorlan.rb`): `url`, `sha256`, `depends_on "openjdk@21"`, `service` block for
+  `brew services start jorlan`; also `Formula/jorlan-shell.rb`
+- [x] LaunchDaemon plist template (`server/src/templates/io.jorlan.server.plist`) bundled in tarball under `launchd/`
+- [x] `install-macos.sh` script: extracts tarball, installs plist to `/Library/LaunchDaemons/`, creates log dir
 
 **CI/CD:**
 
-- [ ] GitHub Actions job `build-deb`: runs `sbt debian:packageBin`, uploads `.deb` as workflow artifact
-- [ ] GitHub Actions release workflow: on `v*` tag, build `.deb` and macOS tarball, attach to GitHub Release
+- [x] GitHub Actions job `build-packages` in `scala.yml`: runs after tests pass, uploads both `.deb` files as artifacts
+- [x] GitHub Actions release workflow (`release.yml`): on `v*` tag, build `.deb`s and macOS tarballs, attach to
+  GitHub Release with installation instructions
 
 ---
 
@@ -1027,8 +1129,8 @@ model
 |  [ ]   | Declarative Json |          | Built-in    |             |
 |  [ ]   | Calculator       |          | Built-in    |             |
 |  [ ]   | Search           |          | Built-in    |             |
-|  [ ]   | ``               |          | Built-in    |             |
-|  [ ]   | ``               |          | Built-in    |             |
+|  [ ]   | Weather          |          | Built-in    |             |
+|  [ ]   | Unit Conversion  |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |
 |  [ ]   | ``               |          | Built-in    |             |

@@ -549,8 +549,11 @@ object InMemoryRepositories {
 
   class NoOpSchedulerRepo extends ZIOSchedulerRepository {
 
-    override def getJob(id:             SchedulerJobId):     RepositoryTask[Option[SchedulerJob]] = ZIO.none
-    override def listJobs(agentId:      Option[AgentId]):    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
+    override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] = ZIO.none
+    override def listJobs(
+      agentId: Option[AgentId],
+      limit:   Int = 200,
+    ):                                                       RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def getPendingJobs:                             RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def upsertJob(job:         SchedulerJob):       RepositoryTask[SchedulerJob] = ZIO.succeed(job)
     override def deleteJob(id:          SchedulerJobId):     RepositoryTask[Long] = ZIO.succeed(0L)
@@ -593,10 +596,13 @@ object InMemoryRepositories {
     override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
       jobs.get.map(_.get(id))
 
-    override def listJobs(agentId: Option[AgentId]): RepositoryTask[List[SchedulerJob]] =
+    override def listJobs(
+      agentId: Option[AgentId],
+      limit:   Int = 200,
+    ): RepositoryTask[List[SchedulerJob]] =
       jobs.get.map { m =>
         val all = m.values.toList
-        agentId.fold(all)(aid => all.filter(_.agentId == aid))
+        agentId.fold(all)(aid => all.filter(_.agentId == aid)).take(limit)
       }
 
     override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =

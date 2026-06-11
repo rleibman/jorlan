@@ -143,6 +143,9 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       new SubscriptionClient {
         override def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
           ZStream.empty
+        override def toolEventsStream(sessionId: AgentSessionId)
+          : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+          ZStream.empty
       }
     }
 
@@ -420,7 +423,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
           fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
           state      <- ShellState.make
-          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber, fiber))
           tokens = List(
             Right(Some(ResponseChunk(sid, "hello", finished = false))),
             Right(Some(ResponseChunk(sid, " world", finished = false))),
@@ -449,7 +452,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
           fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
           state      <- ShellState.make
-          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber, fiber))
           tokens = List(Left("connection lost"))
           _ <- CommandHandler
             .handle(ShellCommand.Message("hello"), exit).provide(
@@ -474,7 +477,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](16)
           fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
           state      <- ShellState.make
-          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber, fiber))
           _          <- CommandHandler
             .handle(ShellCommand.Message("hello"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
@@ -1140,7 +1143,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1)
           fiber      <- ZIO.never.fork.asInstanceOf[UIO[Fiber[Nothing, Unit]]]
           state      <- ShellState.make
-          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber))
+          _          <- state.setLiveSession(LiveSession(sid, tokenQueue, fiber, fiber))
           gqlLayer   <- fakeGQLRunSequence(
             Some(List(sessionView)),
             Some(List(modelView)),

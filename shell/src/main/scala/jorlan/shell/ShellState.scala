@@ -11,6 +11,7 @@
 package jorlan.shell
 
 import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.graphql.client.JorlanClient.ToolEventResult
 import jorlan.shell.client.SubscriptionClient
 import zio.*
 
@@ -29,6 +30,7 @@ case class LiveSession(
   sessionId:         AgentSessionId,
   tokenQueue:        Queue[Either[String, Option[ResponseChunk]]],
   subscriptionFiber: Fiber[Nothing, Unit],
+  toolEventFiber:    Fiber[Nothing, Unit],
 )
 
 /** Holds ephemeral shell session state. Tracks which agent session is active and owns the long-lived WebSocket
@@ -78,13 +80,16 @@ object LiveSession {
   /** Creates a token queue, forks the long-lived subscription fiber, and registers the resulting [[LiveSession]] in
     * [[ShellState]]. Call this before submitting any message — tokens published before subscription are buffered.
     *
-    * The caller is responsible for UI updates (status bar, system message) after this completes.
+    * @param onToolEvent
+    *   Called for each tool event received from the server (spinner feedback).
     */
-  def start(sessionId: AgentSessionId): ZIO[ShellState & SubscriptionClient, Nothing, LiveSession] =
+  def start(
+    sessionId:   AgentSessionId,
+    onToolEvent: ToolEventResult.ToolEventResultView => UIO[Unit] = _ => ZIO.unit,
+  ): ZIO[ShellState & SubscriptionClient, Nothing, LiveSession] =
     for {
       tokenQueue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1024)
-      // Fork before setLiveSession is safe: the queue is already in scope so early tokens are buffered.
-      fiber <- ZIO
+      fiber      <- ZIO
         .scoped(
           SubscriptionClient
             .agentResponseStream(sessionId)
@@ -107,7 +112,17 @@ object LiveSession {
         )
         .ensuring(ZIO.serviceWithZIO[ShellState](_.clearLiveSession))
         .fork
-      ls = LiveSession(sessionId, tokenQueue, fiber)
+      toolFiber <- ZIO
+        .scoped(
+          SubscriptionClient
+            .toolEventsStream(sessionId)
+            .foreach(onToolEvent)
+            .foldZIO(
+              err => ZIO.logDebug(s"[Shell] toolEvents stream ended for session=${sessionId.value}: $err"),
+              _ => ZIO.logDebug(s"[Shell] toolEvents stream completed for session=${sessionId.value}"),
+            ),
+        ).fork
+      ls = LiveSession(sessionId, tokenQueue, fiber, toolFiber)
       _ <- ZIO.serviceWithZIO[ShellState](_.setLiveSession(ls))
     } yield ls
 

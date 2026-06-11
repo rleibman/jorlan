@@ -46,6 +46,14 @@ case class AgentSettings(
   maxToolSteps: Int = 10,
 )
 
+/** Durable scheduler configuration. */
+case class SchedulerSettings(
+  pollIntervalSeconds: Int = 10,
+  leaseTtlSeconds:     Int = 300,
+  jobTimeoutSeconds:   Int = 300,
+  listJobsLimit:       Int = 200,
+)
+
 /** How workspace paths are scoped per invocation. */
 enum WorkspaceScope {
 
@@ -82,6 +90,7 @@ case class JorlanConfig(
   http:      HttpConfig = HttpConfig(),
   ai:        LangChainConfig = LangChainConfig(),
   agent:     AgentSettings = AgentSettings(),
+  scheduler: SchedulerSettings = SchedulerSettings(),
   workspace: WorkspaceSettings = WorkspaceSettings(),
   shell:     ShellSettings = ShellSettings(),
 )

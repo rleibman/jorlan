@@ -287,21 +287,21 @@ object InitServiceSpec extends ZIOSpecDefault {
           gotten <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("testKey"))
         } yield assertTrue(gotten.contains(Json.Str("hello")))
       }.provide(InMemoryRepositories.live() >>> uninitializedSettings),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns true when flag is true") {
+      test("isServerInitialized returns true when flag is true") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(result)
       }.provide(
         InMemoryRepositories.live() >>> alreadyInitializedSettings,
       ),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns false when key absent") {
+      test("isServerInitialized returns false when key absent") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(!result)
       }.provide(InMemoryRepositories.live() >>> ZLayer.fromZIO(withSettings(Map.empty))),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns false for non-Bool value") {
+      test("isServerInitialized returns false for non-Bool value") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(!result)
       }.provide(
         InMemoryRepositories.live() >>> ZLayer.fromZIO(

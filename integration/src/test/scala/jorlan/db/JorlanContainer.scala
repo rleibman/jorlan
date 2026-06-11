@@ -84,6 +84,6 @@ object JorlanContainer {
     configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
 
   val repositoryLayer: TaskLayer[ZIORepositories] =
-    databaseConfigLayer >>> QuillRepositories.live
+    configLayer >>> QuillRepositories.live
 
 }

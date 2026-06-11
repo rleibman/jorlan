@@ -45,6 +45,8 @@ enum ShellCommand {
     text:  String,
     scope: Option[String] = None,
   )
+  case Skills
+  case ContactsFind(name: String)
   case Capabilities
   case AgentsList
   case AgentsStop(sessionId: AgentSessionId)
@@ -92,6 +94,9 @@ object ShellCommand {
           MemoryRemember(key, rest.mkString(" "), Some(scope))
         case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil       => Unknown(s"/memory remember")
         case "memory" :: "remember" :: key :: rest if rest.nonEmpty           => MemoryRemember(key, rest.mkString(" "))
+        case "skills" :: _                                                    => Skills
+        case "contacts" :: "find" :: rest if rest.nonEmpty                    => ContactsFind(rest.mkString(" "))
+        case "contacts" :: _                                                  => Unknown("/contacts")
         case "capabilities" :: _                                              => Capabilities
         case "agents" :: "list" :: _                                          => AgentsList
         case "agents" :: "stop" :: idStr :: _ if idStr.toLongOption.isDefined =>

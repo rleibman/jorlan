@@ -21,6 +21,15 @@ import jorlan.domain.SchedulerJob.*
 import jorlan.service.{AgentRunner, AgentSessionManager}
 import zio.*
 
+/** Daemon that drives the durable scheduler; polls for pending jobs, claims them, executes them via [[AgentRunner]],
+  * and advances trigger schedules.
+  */
+trait TriggerEngine {
+
+  def start: UIO[Unit]
+
+}
+
 import java.net.InetAddress
 import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
 
@@ -47,19 +56,15 @@ import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
   *
   * Note: graceful-shutdown support (releasing active leases on SIGTERM) is deferred to a future phase. On process exit,
   * claimed jobs remain `Running` until the next startup's `expireLeases` call reclaims them.
-  *
-  * TODO Phase 11: extract a `TriggerEngine` trait and rename this class to `TriggerEngineImpl` for consistency with the
-  * rest of the service layer. TODO Phase 11: source `pollInterval`, `leaseTtl`, and `jobTimeout` from `AppConfig`
-  * (`SchedulerConfig`).
   */
-class TriggerEngine(
+class TriggerEngineImpl(
   repo:           ZIORepositories,
   sessionManager: AgentSessionManager,
   agentRunner:    AgentRunner,
   pollInterval:   Duration = Duration.ofSeconds(10),
   leaseTtl:       Int = 300,
   jobTimeout:     Duration = Duration.ofSeconds(300),
-) {
+) extends TriggerEngine {
 
   private val workerIdIO: UIO[String] =
     ZIO
@@ -313,7 +318,7 @@ class TriggerEngine(
     * This method runs until interrupted. Callers should `forkDaemon` the returned effect and retain the fiber for
     * potential cancellation.
     */
-  val start: UIO[Unit] =
+  override def start: UIO[Unit] =
     for {
       workerId  <- workerIdIO
       cronCache <- Ref.make(Map.empty[SchedulerTriggerId, CronExpr])
@@ -327,8 +332,23 @@ class TriggerEngine(
 object TriggerEngine {
 
   val live: URLayer[
-    ZIORepositories & AgentSessionManager & AgentRunner,
+    ZIORepositories & AgentSessionManager & AgentRunner & ConfigurationService,
     TriggerEngine,
-  ] = ZLayer.fromFunction(TriggerEngine(_, _, _))
+  ] = ZLayer.fromZIO {
+    for {
+      repo   <- ZIO.service[ZIORepositories]
+      sm     <- ZIO.service[AgentSessionManager]
+      runner <- ZIO.service[AgentRunner]
+      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+      s = config.jorlan.scheduler
+    } yield TriggerEngineImpl(
+      repo,
+      sm,
+      runner,
+      Duration.ofSeconds(s.pollIntervalSeconds.toLong),
+      s.leaseTtlSeconds,
+      Duration.ofSeconds(s.jobTimeoutSeconds.toLong),
+    )
+  }
 
 }

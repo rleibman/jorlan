@@ -35,6 +35,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
     ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
       FakeModelGateway.layer(chunks, delay),
       SessionHub.live,
+      ToolEventHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.live,
       FakeConfigurationService.layer,
@@ -45,6 +46,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
     ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
       FakeModelGateway.failingLayer(ModelUnavailable("offline")),
       SessionHub.live,
+      ToolEventHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.live,
       FakeConfigurationService.layer,
@@ -214,6 +216,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
         FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         SessionHub.live,
+        ToolEventHub.live,
       ),
       // P12-027: ensureSeeded calls seedHistory when prior conversation messages exist
       test("ensureSeeded calls seedHistory when prior conversation history is non-empty") {
@@ -233,6 +236,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
               AgentRunnerImpl.live,
               FakeModelGateway.seedTrackingLayer(List("ok"), seedCalled),
               SessionHub.live,
+              ToolEventHub.live,
               NoOpMemoryService.layer,
               SkillRegistry.live,
               FakeConfigurationService.layer,
@@ -255,6 +259,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
               AgentRunnerImpl.live,
               FakeModelGateway.layer(List("ok")),
               SessionHub.live,
+              ToolEventHub.live,
               NoOpMemoryService.layer,
               SkillRegistry.live,
               FakeConfigurationService.layer,
@@ -297,6 +302,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
           } yield prompts).provideSome[ZIORepositories](
             FakeModelGateway.capturingLayer(List("ok"), capturedPrompts),
             SessionHub.live,
+            ToolEventHub.live,
             SkillRegistry.live,
             FakeConfigurationService.layer,
             AgentRunnerImpl.live,

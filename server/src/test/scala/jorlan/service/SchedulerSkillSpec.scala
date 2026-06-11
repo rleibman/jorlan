@@ -15,7 +15,7 @@ import jorlan.connector.InvocationContext
 import jorlan.domain.*
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SchedulerSkill
-import jorlan.testing.InMemoryRepositories
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -28,6 +28,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
   override val bootstrap: ULayer[JobManager] =
     ZLayer.make[JobManager](
       InMemoryRepositories.live(),
+      FakeConfigurationService.layer,
       JobManagerImpl.live,
     )
 

@@ -59,6 +59,7 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
     ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
       FakeModelGateway.stepsLayer(steps),
       SessionHub.live,
+      ToolEventHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.liveWith(echoSkill),
       FakeConfigurationService.layer,
