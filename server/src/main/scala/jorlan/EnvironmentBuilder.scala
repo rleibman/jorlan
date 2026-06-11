@@ -10,31 +10,23 @@
 
 package jorlan
 
-import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
-import _root_.auth.{AuthConfig, AuthServer, SecretKey}
+import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import _root_.auth.{AuthConfig, AuthServer}
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.connector.telegram.*
-import jorlan.db.FlywayMigration
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
+import jorlan.service.skills.SkillRegistry
 import zio.http.Client
-import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
+import zio.{ULayer, URLayer, ZIO, ZLayer}
 
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
-
-  private def toProviderConfig(s: OAuthProviderSettings): OAuthProviderConfig =
-    OAuthProviderConfig(
-      clientId = s.clientId,
-      clientSecret = s.clientSecret,
-      authorizationUri = s.authorizationUri,
-      tokenUri = s.tokenUri,
-      userInfoUri = s.userInfoUri,
-      redirectUri = s.redirectUri,
-      scopes = s.scopes,
-    )
 
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
     ZLayer
@@ -74,9 +66,7 @@ object EnvironmentBuilder {
       .make[JorlanEnvironment](
         ConfigurationServiceImpl.live,
         ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db)),
-        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.flyway)),
         ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.auth)),
-        FlywayMigration.live,
         QuillRepositories.live,
         CapabilityEvaluatorImpl.live,
         ApprovalServiceImpl.live,
@@ -86,11 +76,7 @@ object EnvironmentBuilder {
         SessionHub.live,
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
-        MemoryClassifierImpl.live,
-        MemoryAccessPolicyImpl.live,
         MemoryServiceImpl.live,
-        CheckpointSummarizerImpl.live,
-        ZLayer.succeed(CheckpointPolicy.onSessionEnd),
         NotificationRouter.live,
         SkillRegistry.liveSecure,
         AgentRunnerImpl.live,

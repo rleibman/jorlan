@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.domain.MemoryScope
+import jorlan.service.memory.MemoryClassifierImpl
 import zio.test.*
 
 object MemoryClassifierSpec extends ZIOSpecDefault {

@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.schedule
 
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
+import jorlan.service.JobManager
 import zio.*
 
 /** Service-layer implementation of [[JobManager]] backed by [[ZIOSchedulerRepository]].

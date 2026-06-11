@@ -14,6 +14,7 @@ import cron4s.expr.CronExpr
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
 import jorlan.domain.*
+import jorlan.service.schedule.TriggerEngine
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.stream.ZStream

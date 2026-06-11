@@ -16,8 +16,8 @@ import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-
 import jorlan.WorkspaceSettings
+import jorlan.service.skills.WorkspaceSkill
 
 import java.nio.file.{Files, Paths}
 

@@ -13,6 +13,8 @@ package jorlan.service
 import jorlan.*
 import jorlan.domain.*
 import jorlan.service.ModelUnavailable
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.CheckpointSummarizerImpl
 import zio.*
 import zio.test.*
 
@@ -32,7 +34,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
   override val bootstrap: ULayer[CheckpointSummarizer] =
     ZLayer.make[CheckpointSummarizer](
       FakeModelGateway.layer(List("- User prefers Python\n", "- Project is Jorlan\n")),
-      CheckpointSummarizerImpl.live,
+      ZLayer.fromFunction(CheckpointSummarizerImpl(_)),
     )
 
   override def spec: Spec[CheckpointSummarizer & TestEnvironment & Scope, Any] =
@@ -72,7 +74,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
       ).provide(
         ZLayer.make[CheckpointSummarizer](
           FakeModelGateway.layer(List("Here is a summary without any bullets.")),
-          CheckpointSummarizerImpl.live,
+          ZLayer.fromFunction(CheckpointSummarizerImpl(_)),
         ),
       ) +
       suite("LLM stream failure")(
@@ -85,7 +87,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
       ).provide(
         ZLayer.make[CheckpointSummarizer](
           FakeModelGateway.failingLayer(ModelUnavailable("simulated failure")),
-          CheckpointSummarizerImpl.live,
+          ZLayer.fromFunction(CheckpointSummarizerImpl(_)),
         ),
       )
 

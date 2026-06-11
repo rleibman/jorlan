@@ -18,6 +18,8 @@ import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.service.*
+import jorlan.service.schedule.TriggerEngine
+import jorlan.service.skills.*
 import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
@@ -27,13 +29,14 @@ import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
-// TODO THis is insane, builting the environment shouldn't take these many things.
-// Things should be grouped together, and in particular, skills shouldn't be in the environment as they should
-// be discoverable.
-type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
-  OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
-  SessionHub & ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine &
-  ConnectorManager & NotificationRouter & Client
+type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService &
+  OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub &
+  ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine & ConnectorManager &
+  NotificationRouter & Client
+
+/** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
+type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
+  JobManager & ApprovalService & ModelGateway & SkillRegistry
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -128,7 +131,7 @@ object Jorlan extends ZIOApp {
   override def run: ZIO[JorlanEnvironment & ZIOAppArgs & Scope, Any, Any] =
     for {
       config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      _           <- FlywayMigration.runMigrations
+      _           <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db)
       startTime   <- Clock.currentTime(TimeUnit.MILLISECONDS)
       repo        <- ZIO.service[ZIORepositories]
       initialized <- repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {

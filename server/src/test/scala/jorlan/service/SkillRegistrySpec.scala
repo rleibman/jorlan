@@ -13,6 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.domain.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

@@ -18,6 +18,10 @@ import jorlan.db.repository.QuillRepositories
 import jorlan.domain.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.http.Client
 import zio.test.*
@@ -34,11 +38,10 @@ import scala.language.unsafeNulls
   */
 object JorlanEndToEndSpec
     extends ZIOSpec[
-      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any],
     ] {
 
-  private type FullEnv = JorlanEnvironment & JorlanSession &
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type FullEnv = JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   private val configLayer = JorlanContainer.configLayer
 
@@ -60,15 +63,10 @@ object JorlanEndToEndSpec
   private val databaseConfigLayer: TaskLayer[DatabaseConfig] =
     configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
 
-  private val flywayConfigLayer: TaskLayer[FlywayConfig] =
-    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.flyway))
-
   private val envLayer: TaskLayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       configLayer,
       databaseConfigLayer,
-      flywayConfigLayer,
-      jorlan.db.FlywayMigration.live,
       QuillRepositories.live,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
       ApprovalServiceImpl.live,
@@ -79,10 +77,6 @@ object JorlanEndToEndSpec
       SessionHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
-      MemoryClassifierImpl.live,
-      MemoryAccessPolicyImpl.live,
-      CheckpointSummarizerImpl.live,
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
       SkillRegistry.live,
       AgentRunnerImpl.live,
@@ -93,7 +87,7 @@ object JorlanEndToEndSpec
       Client.default,
     )
 
-  private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   override val bootstrap: ZLayer[Any, Any, FullEnv] =
     ZLayer.make[FullEnv](

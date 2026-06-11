@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
 import jorlan.domain.*
+import jorlan.service.{CapabilityEvaluator, ToolSpec}
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -141,9 +142,10 @@ class SkillRegistryLive(
     toolSpecsCache.get.flatMap {
       case Some(cached) => ZIO.succeed(cached)
       case None         =>
-        allTools.map(_.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString))).flatMap { specs =>
-          toolSpecsCache.set(Some(specs)).as(specs)
-        }
+        allTools
+          .map(_.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString))).tap(specs =>
+            toolSpecsCache.set(Some(specs)),
+          )
     }
 
   def getSkill[S <: Skill](name: String): UIO[Option[S]] =

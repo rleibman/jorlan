@@ -128,8 +128,7 @@ object ConfigurationServiceImpl {
     val missing = requiredEnvVars.filter { case (key, _) =>
       Option(System.getenv(key)).forall(_.nn.isBlank)
     }
-    if (missing.isEmpty) ZIO.unit
-    else {
+    {
       val lines = missing.map { case (k, desc) => s"  $k — $desc" }.mkString("\n")
       ZIO.fail(
         ConfigLoadError(
@@ -144,7 +143,7 @@ object ConfigurationServiceImpl {
               |""".stripMargin,
         ),
       )
-    }
+    }.unless(missing.isEmpty).unit
   }
 
   val live: ZLayer[Any, Nothing, ConfigurationService] = ZLayer.succeed(new ConfigurationService {

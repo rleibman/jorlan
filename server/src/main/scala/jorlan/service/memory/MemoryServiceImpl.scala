@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.memory
 
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
+import jorlan.service.*
 import zio.*
 
 class MemoryServiceImpl(
@@ -55,7 +56,7 @@ class MemoryServiceImpl(
         case Some(r) =>
           ZIO.unless(r.userId.contains(requestingUserId))(
             ZIO.fail(JorlanError(s"Access denied: cannot delete another user's memory record")),
-          ) *> repo.memory.delete(id).mapError(JorlanError(_)).map(_ > 0L)
+          ) *> repo.memory.delete(id).mapBoth(JorlanError(_), _ > 0L)
       }
 
   override def markShared(
@@ -83,7 +84,7 @@ class MemoryServiceImpl(
         ZIO.unless(r.userId.contains(requestingUserId))(
           ZIO.fail(JorlanError(s"Access denied: cannot modify another user's memory record")),
         ) *>
-          repo.memory.updateScope(id, newScope).mapError(JorlanError(_)).as(r.copy(scope = newScope))
+          repo.memory.updateScope(id, newScope).mapBoth(JorlanError(_), _ => r.copy(scope = newScope))
       }
 
   override def checkpoint(
@@ -111,10 +112,19 @@ class MemoryServiceImpl(
 
 object MemoryServiceImpl {
 
-  val live: URLayer[
-    ZIORepositories & MemoryAccessPolicy & CheckpointSummarizer & MemoryClassifier & CheckpointPolicy,
-    MemoryService,
-  ] =
-    ZLayer.fromFunction(MemoryServiceImpl(_, _, _, _, _))
+  val live: URLayer[ZIORepositories & ModelGateway, MemoryService] =
+    ZLayer.fromFunction {
+      (
+        repo:    ZIORepositories,
+        gateway: ModelGateway,
+      ) =>
+        MemoryServiceImpl(
+          repo,
+          MemoryAccessPolicyImpl(),
+          CheckpointSummarizerImpl(gateway),
+          MemoryClassifierImpl(),
+          CheckpointPolicy.onSessionEnd,
+        )
+    }
 
 }

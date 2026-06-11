@@ -13,6 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.ConnectorSkill
 import jorlan.domain.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 
 /** Minimal connector lifecycle manager — Phase 11 predecessor to the full [[SkillRegistry]] (Phase 12).

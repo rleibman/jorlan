@@ -12,6 +12,8 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -21,24 +23,10 @@ import java.time.Instant
 
 object MemoryServiceSpec extends ZIOSpec[MemoryService] {
 
-  private class NoOpCheckpointSummarizer extends CheckpointSummarizer {
-
-    override def summarize(
-      messages: List[Message],
-      userId:   UserId,
-      agentId:  AgentId,
-    ): IO[JorlanError, List[MemoryRecord]] =
-      ZIO.succeed(Nil)
-
-  }
-
   override val bootstrap: ULayer[MemoryService] =
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
-      ZLayer.succeed(MemoryAccessPolicyImpl():   MemoryAccessPolicy),
-      ZLayer.succeed(NoOpCheckpointSummarizer(): CheckpointSummarizer),
-      ZLayer.succeed(MemoryClassifierImpl():     MemoryClassifier),
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      FakeModelGateway.layer(List()),
       MemoryServiceImpl.live,
     )
 
@@ -248,11 +236,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
         }.provide(
           ZLayer.make[MemoryService](
             InMemoryRepositories.live(),
-            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
             FakeModelGateway.layer(List("- User prefers Scala\n")),
-            CheckpointSummarizerImpl.live,
             MemoryServiceImpl.live,
           ),
         ),
@@ -269,58 +253,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
         }.provide(
           ZLayer.make[MemoryService](
             InMemoryRepositories.live(),
-            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
             FakeModelGateway.layer(List("- my password is hunter2\n")),
-            CheckpointSummarizerImpl.live,
-            MemoryServiceImpl.live,
-          ),
-        ),
-        test("checkpoint with plain-string record value uses toString fallback") {
-          for {
-            svc    <- ZIO.service[MemoryService]
-            before <- svc.query(MemoryScope.User, userId, agentId)
-            _      <- svc.checkpoint(
-              AgentSessionId(3L),
-              List(
-                Message(MessageId.empty, ConversationId.empty, MessageRole.User, "hi", None, java.time.Instant.now()),
-              ),
-              userId,
-              agentId,
-              CheckpointTrigger.SessionEnd,
-            )
-            after <- svc.query(MemoryScope.User, userId, agentId)
-          } yield assertTrue(after.size >= before.size)
-        }.provide(
-          ZLayer.make[MemoryService](
-            InMemoryRepositories.live(),
-            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-            ZLayer.succeed(MemoryClassifierImpl():   MemoryClassifier),
-            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-            ZLayer.succeed(new CheckpointSummarizer {
-              override def summarize(
-                messages: List[Message],
-                userId:   UserId,
-                agentId:  AgentId,
-              ): IO[JorlanError, List[MemoryRecord]] =
-                ZIO.succeed(
-                  List(
-                    MemoryRecord(
-                      id = MemoryRecordId.empty,
-                      scope = MemoryScope.User,
-                      userId = Some(userId),
-                      workspaceId = None,
-                      agentId = Some(agentId),
-                      recordKey = "plain.key",
-                      value = Json.Str("plain text content"),
-                      ttl = None,
-                      createdAt = java.time.Instant.now(),
-                      updatedAt = java.time.Instant.now(),
-                    ),
-                  ),
-                )
-            }: CheckpointSummarizer),
             MemoryServiceImpl.live,
           ),
         ),

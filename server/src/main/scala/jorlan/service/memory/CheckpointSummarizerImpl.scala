@@ -8,15 +8,13 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.memory
 
 import jorlan.*
 import jorlan.domain.*
+import jorlan.service.{CheckpointSummarizer, ModelGateway}
 import zio.*
 import zio.json.ast.Json
-import zio.stream.ZStream
-
-import java.time.Instant
 
 /** [[CheckpointSummarizer]] backed by [[ModelGateway]].
   *
@@ -88,12 +86,5 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
         }
     }
   }
-
-}
-
-object CheckpointSummarizerImpl {
-
-  val live: URLayer[ModelGateway, CheckpointSummarizer] =
-    ZLayer.fromFunction(CheckpointSummarizerImpl(_))
 
 }

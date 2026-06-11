@@ -14,6 +14,8 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.skills.SkillRegistry
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.json.ast.Json

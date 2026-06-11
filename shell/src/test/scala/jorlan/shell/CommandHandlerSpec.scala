@@ -166,16 +166,6 @@ object CommandHandlerSpec extends ZIOSpecDefault {
 
   val defaultCfg: ULayer[ShellConfig] = ZLayer.succeed(ShellConfig())
 
-  type TestEnv = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient & InitClient
-
-  def testLayer(
-    whoAmIResult: Either[String, String] = Right("alice@test.com"),
-    gqlResult:    Either[String, Json] = Right(Json.Obj()),
-  ): ULayer[TestEnv] =
-    FakeScreen.layer ++ fakeAuth(whoAmIResult) ++ fakeGQL(
-      gqlResult,
-    ) ++ defaultCfg ++ ShellState.live ++ fakeSubscriptionClient ++ fakeInitClient
-
   def runCmd(cmd: ShellCommand): ZIO[Any, Nothing, (FakeScreen, Unit)] =
     for {
       fs   <- FakeScreen.make

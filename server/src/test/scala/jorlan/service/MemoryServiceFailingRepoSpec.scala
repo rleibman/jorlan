@@ -13,6 +13,8 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -75,18 +77,7 @@ object MemoryServiceFailingRepoSpec extends ZIOSpecDefault {
   private def serviceLayer(memRepo: ZIOMemoryRepository): ULayer[MemoryService] =
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(memoryRepoOpt = Some(memRepo)),
-      ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-      ZLayer.succeed(
-        new CheckpointSummarizer {
-          override def summarize(
-            messages: List[Message],
-            userId:   UserId,
-            agentId:  AgentId,
-          ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List(makeRecord("checkpoint.key")))
-        }: CheckpointSummarizer,
-      ),
-      ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      FakeModelGateway.layer(List("- checkpoint key\n")),
       MemoryServiceImpl.live,
     )
 

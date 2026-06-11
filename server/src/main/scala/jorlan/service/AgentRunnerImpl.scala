@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.*
 import zio.stream.ZStream

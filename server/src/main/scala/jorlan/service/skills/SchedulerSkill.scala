@@ -8,15 +8,14 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.domain.*
+import jorlan.service.JobManager
 import zio.*
 import zio.json.ast.Json
-
-import java.time.Instant
 
 /** Tier 0 scheduler skill — agent-directed job management.
   *

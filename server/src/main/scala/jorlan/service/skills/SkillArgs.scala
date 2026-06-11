@@ -8,7 +8,7 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.domain.ChannelType
 import zio.json.ast.Json

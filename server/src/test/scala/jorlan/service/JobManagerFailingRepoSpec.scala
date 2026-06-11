@@ -13,6 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.service.schedule.JobManagerImpl
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*

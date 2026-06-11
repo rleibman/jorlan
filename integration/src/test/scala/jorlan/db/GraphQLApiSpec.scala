@@ -15,6 +15,10 @@ import jorlan.*
 import jorlan.domain.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.JobManagerImpl
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.test.*
 
@@ -26,11 +30,11 @@ import zio.test.*
   */
 object GraphQLApiSpec
     extends ZIOSpec[
-      JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+      JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any],
     ] {
 
   private type GraphQLEnv =
-    JorlanAPI.JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+    JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed(new CapabilityEvaluator {
@@ -57,10 +61,6 @@ object GraphQLApiSpec
       SessionHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
-      MemoryClassifierImpl.live,
-      MemoryAccessPolicyImpl.live,
-      CheckpointSummarizerImpl.live,
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
       SkillRegistry.live,
       JorlanContainer.configLayer,
@@ -85,7 +85,7 @@ object GraphQLApiSpec
       },
       test("users query includes the seeded server user") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           result <- interp.execute("""{ users { id displayName } }""")
         } yield assertTrue(
           result.errors.isEmpty,
@@ -94,7 +94,7 @@ object GraphQLApiSpec
       },
       test("createUser mutation creates a user") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           result <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser1", email: "gql1@test.com") { id displayName email } }""",
           )
@@ -106,7 +106,7 @@ object GraphQLApiSpec
       },
       test("user(id) query returns a specific user") {
         for {
-          interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp       <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser2", email: "gql2@test.com") { id displayName } }""",
           )
@@ -120,7 +120,7 @@ object GraphQLApiSpec
       },
       test("user(id) returns null for non-existent id") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           result <- interp.execute("""{ user(value: 999999) { id displayName } }""")
         } yield assertTrue(
           result.errors.isEmpty,
@@ -129,7 +129,7 @@ object GraphQLApiSpec
       },
       test("updateUser mutation updates a user and preserves createdAt") {
         for {
-          interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp       <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute(
             """mutation { createUser(displayName: "UpdateMe", email: "update@test.com") { id displayName createdAt } }""",
           )
@@ -148,7 +148,7 @@ object GraphQLApiSpec
       },
       test("createRole mutation creates a role") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           result <- interp.execute(
             """mutation { createRole(name: "gql-admin", description: "GQL test admin") { id name description } }""",
           )
@@ -160,7 +160,7 @@ object GraphQLApiSpec
       },
       test("role(id) returns null for non-existent id") {
         for {
-          interp <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           result <- interp.execute("""{ role(value: 999999) { id name } }""")
         } yield assertTrue(
           result.errors.isEmpty,
@@ -169,7 +169,7 @@ object GraphQLApiSpec
       },
       test("assignRole and roles(userId) round-trip") {
         for {
-          interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp     <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           userResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser3", email: "gql3@test.com") { id } }""",
           )
@@ -187,7 +187,7 @@ object GraphQLApiSpec
       },
       test("revokeRole removes a role from a user") {
         for {
-          interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp     <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           userResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser6", email: "gql6@test.com") { id } }""",
           )
@@ -209,7 +209,7 @@ object GraphQLApiSpec
       },
       test("role(id) returns a specific role by id") {
         for {
-          interp       <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp       <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           createResult <- interp.execute("""mutation { createRole(name: "gql-specific") { id name } }""")
           roleId = extractLongField(createResult.data.toString, "id")
           queryResult <- interp.execute(s"""{ role(value: $roleId) { id name } }""")
@@ -221,7 +221,7 @@ object GraphQLApiSpec
       },
       test("grantPermission with userId and permissions(userId) round-trip") {
         for {
-          interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp     <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           userResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser4", email: "gql4@test.com") { id } }""",
           )
@@ -240,7 +240,7 @@ object GraphQLApiSpec
       },
       test("grantPermission with roleId targets the role") {
         for {
-          interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp     <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           roleResult <- interp.execute("""mutation { createRole(name: "gql-perm-role") { id } }""")
           roleId = extractLongField(roleResult.data.toString, "id")
           grantResult <- interp.execute(
@@ -255,7 +255,7 @@ object GraphQLApiSpec
       },
       test("revokePermission removes a permission and returns count") {
         for {
-          interp     <- ZIO.service[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp     <- ZIO.service[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           userResult <- interp.execute(
             """mutation { createUser(displayName: "GraphQLUser5", email: "gql5@test.com") { id } }""",
           )

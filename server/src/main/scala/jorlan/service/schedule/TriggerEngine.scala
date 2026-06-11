@@ -8,7 +8,7 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.schedule
 
 import cron4s.Cron
 import cron4s.expr.CronExpr
@@ -18,6 +18,7 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.domain.SchedulerJob.*
+import jorlan.service.{AgentRunner, AgentSessionManager}
 import zio.*
 
 import java.net.InetAddress

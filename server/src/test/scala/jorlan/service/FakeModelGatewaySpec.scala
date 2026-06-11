@@ -11,6 +11,7 @@
 package jorlan.service
 
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
 import zio.*
 import zio.test.*
 import zio.test.TestAspect.*

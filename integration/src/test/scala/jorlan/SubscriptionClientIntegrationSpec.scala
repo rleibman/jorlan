@@ -18,6 +18,10 @@ import jorlan.db.repository.QuillRepositories
 import jorlan.domain.*
 import jorlan.graphql.{JorlanAPI, JorlanRoutes}
 import jorlan.service.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
+import jorlan.service.skills.SkillRegistry
 import jorlan.shell.ShellConfig
 import jorlan.shell.client.{AuthClient, SubscriptionClient}
 import zio.*
@@ -31,11 +35,10 @@ import scala.language.unsafeNulls
   */
 object SubscriptionClientIntegrationSpec
     extends ZIOSpec[
-      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+      JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any],
     ] {
 
-  private type FullEnv = JorlanEnvironment & JorlanSession &
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type FullEnv = JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   // ─── Copy JorlanEndToEndSpec's proven environment setup ─────────────────────
 
@@ -59,15 +62,10 @@ object SubscriptionClientIntegrationSpec
   private val databaseConfigLayer: TaskLayer[DatabaseConfig] =
     configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
 
-  private val flywayConfigLayer: TaskLayer[FlywayConfig] =
-    configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.flyway))
-
   private val envLayer: TaskLayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       configLayer,
       databaseConfigLayer,
-      flywayConfigLayer,
-      jorlan.db.FlywayMigration.live,
       QuillRepositories.live,
       stubCapabilityEvaluator,
       ApprovalServiceImpl.live,
@@ -78,10 +76,6 @@ object SubscriptionClientIntegrationSpec
       SessionHub.live,
       FakeModelGateway.layer(List("hello ", "world")),
       AgentSessionManagerImpl.live,
-      MemoryClassifierImpl.live,
-      MemoryAccessPolicyImpl.live,
-      CheckpointSummarizerImpl.live,
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
       SkillRegistry.live,
       AgentRunnerImpl.live,
@@ -135,9 +129,9 @@ object SubscriptionClientIntegrationSpec
       test("agentResponseStream delivers response chunks over a live WebSocket connection") {
         for {
           env <- ZIO.environment[
-            JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any],
+            JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any],
           ]
-          interp = env.get[GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]]
+          interp = env.get[GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]]
           // Create an agent session via the GraphQL interpreter
           createResult <- interp.execute("""mutation { createSession { id } }""")
           sessionId = {

@@ -8,9 +8,10 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.memory
 
 import jorlan.domain.*
+import jorlan.service.MemoryAccessPolicy
 import zio.*
 
 /** Default [[MemoryAccessPolicy]].

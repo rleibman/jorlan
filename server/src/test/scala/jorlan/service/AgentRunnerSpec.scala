@@ -13,6 +13,9 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOMemoryRepository, ZIORepositories, ZIOServerSettingsRepository}
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.skills.SkillRegistry
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.stream.ZStream
@@ -292,21 +295,11 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             _       <- fiber.join
             prompts <- capturedPrompts.get
           } yield prompts).provideSome[ZIORepositories](
-            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
             FakeModelGateway.capturingLayer(List("ok"), capturedPrompts),
             SessionHub.live,
             SkillRegistry.live,
             FakeConfigurationService.layer,
             AgentRunnerImpl.live,
-            ZLayer.succeed(new CheckpointSummarizer {
-              override def summarize(
-                msgs: List[Message],
-                uid:  UserId,
-                aid:  AgentId,
-              ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-            }),
-            ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
-            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
             MemoryServiceImpl.live,
           )
         } yield assertTrue(result.exists(_.contains("User prefers Scala")))

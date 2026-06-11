@@ -13,6 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.domain.*
+import jorlan.service.skills.NotifySkill
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

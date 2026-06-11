@@ -13,6 +13,9 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.skills.MemorySkill
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -26,18 +29,7 @@ object MemorySkillSpec extends ZIOSpec[MemoryService] {
   override val bootstrap: ULayer[MemoryService] =
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
-      ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
-      ZLayer.succeed(
-        new CheckpointSummarizer {
-          override def summarize(
-            messages: List[Message],
-            userId:   UserId,
-            agentId:  AgentId,
-          ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-        }: CheckpointSummarizer,
-      ),
-      ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
-      ZLayer.succeed(CheckpointPolicy.onSessionEnd),
+      FakeModelGateway.layer(List()),
       MemoryServiceImpl.live,
     )
 

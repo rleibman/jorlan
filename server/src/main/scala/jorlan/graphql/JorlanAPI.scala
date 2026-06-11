@@ -19,6 +19,7 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.JsonEncoder
 import zio.json.ast.Json
@@ -72,9 +73,6 @@ object JorlanAPI {
           } *>
             process(request)
     }
-
-  type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-    JobManager & ApprovalService & ModelGateway & SkillRegistry
 
   /** GQL-safe view of a single tool exposed by a registered skill. */
   case class SkillToolInfo(

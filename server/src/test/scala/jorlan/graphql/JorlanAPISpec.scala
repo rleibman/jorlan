@@ -16,6 +16,10 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.JobManagerImpl
+import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.test.*
@@ -51,32 +55,14 @@ object JorlanAPISpec extends ZIOSpecDefault {
 
   // ─── Full service stack: services + interpreter together (passthrough >+>) ───
 
-  private type FullEnv = JorlanAPI.JorlanApiEnv & JorlanSession &
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type FullEnv = JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
-  private def realMemoryServiceLayer: ULayer[MemoryService] = {
-    val repoLayer = InMemoryRepositories.live()
-    val policy = ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-    val summarizer = ZLayer.succeed(
-      new CheckpointSummarizer {
-        override def summarize(
-          messages: List[Message],
-          userId:   UserId,
-          agentId:  AgentId,
-        ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-      },
+  private def realMemoryServiceLayer: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.live(),
+      FakeModelGateway.layer(List()),
+      MemoryServiceImpl.live,
     )
-    val classifier = ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier)
-    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-
-    ZLayer.make[CheckpointSummarizer & MemoryClassifier & CheckpointPolicy & MemoryAccessPolicy & ZIORepositories](
-      policy,
-      summarizer,
-      classifier,
-      cpPolicy,
-      repoLayer,
-    ) >>> MemoryServiceImpl.live
-  }
 
   private def makeAppLayer(
     capEval:     ULayer[CapabilityEvaluator] = allowAll,
@@ -147,7 +133,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       )
   }
 
-  private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("JorlanAPI unit tests")(

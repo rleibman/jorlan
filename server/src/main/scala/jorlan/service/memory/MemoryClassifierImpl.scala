@@ -8,9 +8,10 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.memory
 
 import jorlan.domain.*
+import jorlan.service.MemoryClassifier
 import zio.*
 
 /** Heuristic [[MemoryClassifier]].
@@ -37,10 +38,12 @@ class MemoryClassifierImpl extends MemoryClassifier {
 object MemoryClassifierImpl {
 
   /** Keywords that indicate personally-identifiable or sensitive information → classified as `Private`. */
-  val piiKeywords: Set[String] = Set("password", "secret", "token", "ssn", "credit card", "bank account", "private key")
+  private val piiKeywords: Set[String] =
+    Set("password", "secret", "token", "ssn", "credit card", "bank account", "private key")
 
   /** Keywords that indicate intent to share broadly → classified as `Shared`. */
-  val sharedKeywords: Set[String] = Set("everyone", "team", "share with all", "public", "shared", "for the team")
+  private val sharedKeywords: Set[String] =
+    Set("everyone", "team", "share with all", "public", "shared", "for the team")
 
   val live: ULayer[MemoryClassifier] = ZLayer.succeed(MemoryClassifierImpl())
 

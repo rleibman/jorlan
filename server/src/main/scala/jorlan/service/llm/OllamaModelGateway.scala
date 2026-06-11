@@ -8,7 +8,7 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.llm
 
 // $COVERAGE-OFF$
 
@@ -27,6 +27,7 @@ import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
+import jorlan.service.*
 import zio.*
 import zio.json.JsonDecoder
 import zio.stream.ZStream

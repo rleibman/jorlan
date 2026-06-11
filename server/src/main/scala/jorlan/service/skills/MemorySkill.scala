@@ -8,11 +8,13 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.domain.*
+import jorlan.service.MemoryService
+import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import zio.*
 import zio.json.*
 import zio.json.ast.Json

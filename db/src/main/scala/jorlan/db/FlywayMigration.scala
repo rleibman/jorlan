@@ -12,43 +12,53 @@ package jorlan.db
 
 import jorlan.{DatabaseConfig, FlywayConfig}
 import org.flywaydb.core.Flyway
-import zio.{Task, URLayer, ZIO, ZLayer}
+import zio.{Task, ZIO}
 
 import scala.language.unsafeNulls
 
-/** ZIO service that manages Flyway database schema migrations.
+/** Runs Flyway database schema migrations as plain effects — no ZIO service required.
   *
-  * Consumers should use [[FlywayMigration.runMigrations]] rather than obtaining the service directly — that accessor is
-  * a one-liner suitable for the application startup sequence.
+  * Call [[FlywayMigration.migrate]] once during application startup, passing the resolved config values.
   */
-trait FlywayMigration {
-
-  /** Apply all pending Flyway migrations. Fails with a `Throwable` if Flyway reports an error, aborting startup. */
-  def migrate: Task[Unit]
-
-  /** Validate that applied migrations match the classpath — useful in staging after a deployment. Fails on mismatch. */
-  def validate: Task[Unit]
-
-  /** Log the full migration history (state, version, description) at INFO level. */
-  def info: Task[Unit]
-
-}
-
 object FlywayMigration {
 
-  val live: URLayer[FlywayConfig & DatabaseConfig, FlywayMigration] =
-    ZLayer.fromZIO {
-      for {
-        flywayConfig <- ZIO.service[FlywayConfig]
-        dbConfig     <- ZIO.service[DatabaseConfig]
-      } yield FlywayMigrationLive(createFlyway(flywayConfig, dbConfig), flywayConfig)
+  def migrate(
+    flywayConfig: FlywayConfig,
+    dbConfig:     DatabaseConfig,
+  ): Task[Unit] =
+    if (!flywayConfig.enabled) {
+      ZIO.logInfo("Flyway migrations disabled — skipping")
+    } else {
+// $COVERAGE-OFF$
+      ZIO.logInfo("Starting Flyway database migrations...") *>
+        ZIO
+          .attempt(createFlyway(flywayConfig, dbConfig).migrate())
+          .flatMap { result =>
+            ZIO.logInfo(
+              s"Flyway migrations complete: ${result.migrationsExecuted} executed, " +
+                s"target schema version ${result.targetSchemaVersion}",
+            )
+          }
+// $COVERAGE-ON$
     }
 
-  /** Convenience accessor: runs `migrate` from the ZIO environment. Intended for the startup sequence:
-    * `_ <- FlywayMigration.runMigrations`.
-    */
-  val runMigrations: ZIO[FlywayMigration, Throwable, Unit] =
-    ZIO.serviceWithZIO[FlywayMigration](_.migrate)
+  def validate(
+    flywayConfig: FlywayConfig,
+    dbConfig:     DatabaseConfig,
+  ): Task[Unit] =
+    ZIO.attempt(createFlyway(flywayConfig, dbConfig).validate()) *> ZIO.logInfo("Flyway validation passed")
+
+  def info(
+    flywayConfig: FlywayConfig,
+    dbConfig:     DatabaseConfig,
+  ): Task[Unit] =
+    ZIO
+      .attempt(createFlyway(flywayConfig, dbConfig).info().all().toList)
+      .flatMap { migrations =>
+        ZIO.foreachDiscard(migrations) { m =>
+          ZIO.logInfo(s"  [${m.getState}] V${m.getVersion} — ${m.getDescription}")
+        }
+      }
 
   private def createFlyway(
     flywayConfig: FlywayConfig,
@@ -69,41 +79,5 @@ object FlywayMigration {
 
     withTarget.load()
   }
-
-}
-
-private case class FlywayMigrationLive(
-  flyway:       Flyway,
-  flywayConfig: FlywayConfig,
-) extends FlywayMigration {
-
-  override val migrate: Task[Unit] =
-    if (!flywayConfig.enabled) {
-      ZIO.logInfo("Flyway migrations disabled — skipping")
-    } else {
-// $COVERAGE-OFF$
-      ZIO.logInfo("Starting Flyway database migrations...") *>
-        ZIO
-          .attempt(flyway.migrate())
-          .flatMap { result =>
-            ZIO.logInfo(
-              s"Flyway migrations complete: ${result.migrationsExecuted} executed, " +
-                s"target schema version ${result.targetSchemaVersion}",
-            )
-          }
-// $COVERAGE-ON$
-    }
-
-  override val validate: Task[Unit] =
-    ZIO.attempt(flyway.validate()) *> ZIO.logInfo("Flyway validation passed")
-
-  override val info: Task[Unit] =
-    ZIO
-      .attempt(flyway.info().all().toList)
-      .flatMap { migrations =>
-        ZIO.foreachDiscard(migrations) { m =>
-          ZIO.logInfo(s"  [${m.getState}] V${m.getVersion} — ${m.getDescription}")
-        }
-      }
 
 }
