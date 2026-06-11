@@ -126,6 +126,21 @@ object ShellCommandSpec extends ZIOSpecDefault {
       test("/memory remember without text becomes Unknown") {
         assertTrue(ShellCommand.parse("/memory remember key") == ShellCommand.Unknown("/memory"))
       },
+      test("/skills") {
+        assertTrue(ShellCommand.parse("/skills") == ShellCommand.Skills)
+      },
+      test("/skills with extra args") {
+        assertTrue(ShellCommand.parse("/skills extra") == ShellCommand.Skills)
+      },
+      test("/contacts find with name") {
+        assertTrue(ShellCommand.parse("/contacts find Alice") == ShellCommand.ContactsFind("Alice"))
+      },
+      test("/contacts find with multi-word name") {
+        assertTrue(ShellCommand.parse("/contacts find Alice Smith") == ShellCommand.ContactsFind("Alice Smith"))
+      },
+      test("/contacts without find becomes Unknown") {
+        assertTrue(ShellCommand.parse("/contacts") == ShellCommand.Unknown("/contacts"))
+      },
     )
 
 }

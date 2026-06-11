@@ -19,20 +19,9 @@ import zio.test.*
 
 import java.time.Instant
 
-object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator & ApprovalService] {
-
-  override val bootstrap: ULayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
-    ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
-      InMemoryRepositories.live(),
-      CapabilityEvaluatorImpl.live,
-      ApprovalServiceImpl.live,
-    )
+object ApprovalServiceSpec extends ZIOSpecDefault {
 
   private val T0: Instant = Instant.parse("2026-01-15T12:00:00Z")
-
-  // ─── Layer helpers ────────────────────────────────────────────────────────────
-
-  // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
   private val sessionId1: AgentSessionId = AgentSessionId(42L)
 
@@ -73,13 +62,19 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       resourceConstraints = None,
     )
 
-  // ─── Tests ───────────────────────────────────────────────────────────────────
+  private val testLayers: ULayer[ZIORepositories & CapabilityEvaluator & ApprovalService] =
+    ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
+      InMemoryRepositories.live(),
+      CapabilityEvaluatorImpl.live,
+      ApprovalServiceImpl.live,
+    )
 
-  override def spec: Spec[ZIORepositories & CapabilityEvaluator & ApprovalService & TestEnvironment & Scope, Any] =
+  override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ApprovalService")(
       recordDecisionSuite,
       sessionBranchSuite,
       serviceMethodsSuite,
+      pendingApprovalSuite,
     )
 
   private val recordDecisionSuite = suite("recordDecision")(
@@ -87,8 +82,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
         svc      <- ZIO.service[ApprovalService]
-        // Create a pending approval request to decide on
-        req <- permRepo.createApprovalRequest(
+        req      <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("shell.execute"),
@@ -116,7 +110,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
         saved.decision == ApprovalStatus.Approved,
         saved.decidedBy == UserId(99L),
       )
-    },
+    }.provide(testLayers),
     test("recordDecision with Rejected status is delegated correctly") {
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
@@ -147,7 +141,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       } yield assertTrue(
         saved.decision == ApprovalStatus.Rejected,
       )
-    },
+    }.provide(testLayers),
   )
 
   private val sessionBranchSuite = suite("authorize with sessionId branch")(
@@ -155,12 +149,9 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
         svc      <- ZIO.service[ApprovalService]
-        // Add a Session-mode grant for the user
-        _ <- permRepo.upsertCapabilityGrant(sessionGrant)
-        // First call: no existing approval, should return PendingApproval
-        result1 <- svc.authorize(capReq("shell.execute", sessionId = Some(sessionId1)))
-        // Manually create an approved request for the same session
-        req <- permRepo.createApprovalRequest(
+        _        <- permRepo.upsertCapabilityGrant(sessionGrant)
+        result1  <- svc.authorize(capReq("shell.execute", sessionId = Some(sessionId1)))
+        req      <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("shell.execute"),
@@ -182,23 +173,144 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
           scopeOverride = None,
           decidedAt = T0,
         )
-        _ <- permRepo.recordApprovalDecision(decision)
-        // Second call: existing approval for this session, should return Allowed
+        _       <- permRepo.recordApprovalDecision(decision)
         result2 <- svc.authorize(capReq("shell.execute", sessionId = Some(sessionId1)))
       } yield assertTrue(
         result1.isInstanceOf[AuthorizationResult.PendingApproval],
         result2 == AuthorizationResult.Allowed,
       )
-    },
+    }.provide(testLayers),
     test("Session grant with no sessionId in request returns PendingApproval (no DB round-trip)") {
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
         svc      <- ZIO.service[ApprovalService]
         _        <- permRepo.upsertCapabilityGrant(sessionGrant)
-        // Request with no sessionId: loadExistingApprovals falls through to the _ case
-        result <- svc.authorize(capReq("shell.execute", sessionId = None))
+        result   <- svc.authorize(capReq("shell.execute", sessionId = None))
       } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
-    },
+    }.provide(testLayers),
+  )
+
+  private val pendingApprovalSuite = suite("authorize PendingApproval paths")(
+    test("PerInvocation grant triggers requestApproval and returns PendingApproval") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        _    <- perm.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("invocation.op"),
+            scopeJson = None,
+            granteeId = UserId(1L),
+            grantorId = None,
+            approvalMode = ApprovalMode.PerInvocation,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
+          ),
+        )
+        result <- svc.authorize(capReq("invocation.op"))
+      } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
+    }.provide(testLayers),
+    test("Once grant with no existing approval returns PendingApproval (covers loadExistingApprovals Once path)") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        _    <- perm.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("once.op"),
+            scopeJson = None,
+            granteeId = UserId(1L),
+            grantorId = None,
+            approvalMode = ApprovalMode.Once,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
+          ),
+        )
+        result <- svc.authorize(capReq("once.op"))
+      } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
+    }.provide(testLayers),
+    test("Session grant with sessionId and no prior approval returns PendingApproval (covers loadExistingApprovals Session path)") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        _    <- perm.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("session.op"),
+            scopeJson = None,
+            granteeId = UserId(1L),
+            grantorId = None,
+            approvalMode = ApprovalMode.Session,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
+          ),
+        )
+        result <- svc.authorize(capReq("session.op", sessionId = Some(AgentSessionId(99L))))
+      } yield assertTrue(result.isInstanceOf[AuthorizationResult.PendingApproval])
+    }.provide(testLayers),
+    test("recordDecision with Pending status fails with invariant error") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        req  <- perm.createApprovalRequest(
+          ApprovalRequest(
+            id = ApprovalRequestId.empty,
+            capability = CapabilityName("inv.op"),
+            scopeJson = None,
+            agentId = None,
+            requestorUserId = UserId(1L),
+            sessionId = None,
+            riskClass = RiskClass.ReadOnly,
+            status = ApprovalStatus.Pending,
+            createdAt = T0,
+            expiresAt = None,
+          ),
+        )
+        result <- svc
+          .recordDecision(
+            ApprovalDecision(
+              id = ApprovalDecisionId.empty,
+              approvalRequestId = req.id,
+              decidedBy = UserId(1L),
+              decision = ApprovalStatus.Pending,
+              scopeOverride = None,
+              decidedAt = T0,
+            ),
+          )
+          .either
+      } yield assertTrue(result.isLeft)
+    }.provide(testLayers),
+    test("authorize returns Allowed for Persistent grant (covers Allowed branch in authorize)") {
+      for {
+        perm   <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc    <- ZIO.service[ApprovalService]
+        _      <- perm.upsertCapabilityGrant(persistentGrant)
+        result <- svc.authorize(capReq("memory.read"))
+      } yield assertTrue(result == AuthorizationResult.Allowed)
+    }.provide(testLayers),
+    test("authorize returns Denied for ApprovalMode.Denied grant (covers Denied branch in authorize)") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        _    <- perm.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("denied.op"),
+            scopeJson = None,
+            granteeId = UserId(1L),
+            grantorId = None,
+            approvalMode = ApprovalMode.Denied,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
+          ),
+        )
+        result <- svc.authorize(capReq("denied.op"))
+      } yield assertTrue(result.isInstanceOf[AuthorizationResult.Denied])
+    }.provide(testLayers),
   )
 
   private val serviceMethodsSuite = suite("ApprovalService methods")(
@@ -206,9 +318,8 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)
         svc      <- ZIO.service[ApprovalService]
-        // Seed a persistent grant so authorize returns Allowed for the final assertion
-        _   <- permRepo.upsertCapabilityGrant(persistentGrant)
-        req <- permRepo.createApprovalRequest(
+        _        <- permRepo.upsertCapabilityGrant(persistentGrant)
+        req      <- permRepo.createApprovalRequest(
           ApprovalRequest(
             id = ApprovalRequestId.empty,
             capability = CapabilityName("memory.read"),
@@ -237,7 +348,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories & CapabilityEvaluator
         saved.decision == ApprovalStatus.Approved,
         result == AuthorizationResult.Allowed,
       )
-    },
+    }.provide(testLayers),
   )
 
 }

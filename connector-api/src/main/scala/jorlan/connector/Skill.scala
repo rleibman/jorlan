@@ -62,6 +62,12 @@ trait ConnectorSkill extends Skill {
   /** Stop ingress and release resources. */
   def stop: IO[JorlanError, Unit]
 
+  /** Fully qualified tool name used to send a message through this connector (e.g. `"telegram.send_message"`).
+    *
+    * Returns `None` for connectors that are receive-only (no egress send capability).
+    */
+  def sendMessageToolName: Option[String]
+
 }
 
 /** Static description of a [[Skill]]: its namespace name, trust tier, and the tools it exposes.
@@ -106,9 +112,18 @@ case class ToolDescriptor(
   *   The agent session that triggered the invocation, if any.
   * @param sessionId
   *   The active agent session, if any.
+  * @param workspaceId
+  *   Workspace scope for this invocation; used by WorkspaceSkill to isolate per-session or per-user paths.
+  * @param approvalId
+  *   If a destructive operation has been pre-approved, the corresponding ApprovalRequestId is passed here.
+  * @param traceId
+  *   Opaque identifier for distributed tracing across the ReAct loop.
   */
 case class InvocationContext(
-  actorId:   UserId,
-  agentId:   Option[AgentId],
-  sessionId: Option[AgentSessionId],
+  actorId:     UserId,
+  agentId:     Option[AgentId],
+  sessionId:   Option[AgentSessionId],
+  workspaceId: Option[WorkspaceId] = None,
+  approvalId:  Option[ApprovalRequestId] = None,
+  traceId:     String = "",
 )

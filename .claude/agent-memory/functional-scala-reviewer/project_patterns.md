@@ -169,6 +169,21 @@ type: project
 - `CheckpointSummarizerImpl.summarize` does not call `modelGateway.invalidateSession(tempSessionId)` after use. The `OllamaModelGateway` will retain a `sessions` entry for `AgentSessionId(0L)` indefinitely (accumulating summarization history across checkpoints). This is a resource leak.
 - `AgentRunnerImpl.buildMemoryContext` catches all errors from `memoryService.query` via `.catchAll(_ => ZIO.succeed(""))` — silently swallows memory fetch errors in a way that is invisible to the caller. A `ZIO.logWarning` before the fallback would preserve observability.
 
+## Phase 12 Built-in Skills Patterns (reviewed 2026-06-10)
+
+- `ContactsSkill.identityLink` (line 183) calls `Instant.now()` directly inside ZIO pipeline — bare clock side effect, should be `Clock.instant`.
+- `AgentRunnerImpl.runCheckpoint` (line 368) calls `java.time.Instant.now()` directly inside a `UIO` fold — same bare clock issue, should be `Clock.instant` or a `for`-comprehension with the outer `Clock.instant` threaded in.
+- `WorkspaceSkill.safePath` (line 114) uses `throw new SecurityException(...)` inside `ZIO.attempt` — the throw is caught by `ZIO.attempt` so this is functionally equivalent to `Left`, but the pattern of deliberately throwing inside `ZIO.attempt` is stylistically suboptimal. Prefer `ZIO.fail` directly via a guard.
+- `WorkspaceSkill.workspaceSearch` (line 159) calls `Files.isDirectory(p)` inside `.map { p => ... }` on a ZIO effect chain — this is a blocking I/O call outside any `ZIO.attempt`/`ZIO.attemptBlocking` wrapper. It sits between a safe `safePath` call and the next `ZIO.attempt` block, so an OS-level error here becomes an unmanaged exception.
+- All four `WorkspaceSkill` I/O operations use `ZIO.attempt` not `ZIO.attemptBlocking` — `Files.readAllBytes`, `Files.write`, `Files.walk`, and `Files.deleteIfExists` are potentially blocking POSIX calls; should use `ZIO.attemptBlocking` to avoid pinning a ZIO fiber thread.
+- `AgentRunnerImpl.logSkillEvent` (line 192): the `payload: String` parameter is accepted but never used in the `EventLog`; `payloadJson` stores only `{"tool": toolName}`, silently discarding the invocation args and result.
+- `ContactsSkill` has a dead `private def contactFind` delegated via a one-liner `private def contactsFind` — `contactFind` should simply be renamed `contactsFind`, removing the indirection.
+- `AgentRunnerImpl.ensureSeeded` now correctly uses `Ref.modify` to make the seeded-check-and-add atomic — improvement over the TOCTOU pattern seen in Phase 9 review.
+- `AgentRunnerImpl.getOrCreateConversation` now correctly uses `Ref.modify` with `Left(())/Right(id)` sentinel — clean atomic check-and-reserve pattern.
+- `SkillRegistryLive.validateRequiredFields` correctly encodes the schema validation in a pure `Either`-for-comprehension then lifts via `ZIO.succeed` — idiomatic separation of pure logic from effect layer.
+- `AgentRunnerReActSpec` correctly uses `ZIOSpec[ZIORepositories]` + `bootstrap` + `ZLayer.makeSome` via `provideSome` — consistent with the test patterns documented in Phase 9.
+- `NotificationRouter.notifyChannel` uses non-exhaustive pattern on `ChannelType` (only Telegram/Slack/Email covered; Shell/WhatsApp/Sms/GraphQL/Google/GitHub/Discord fall through to `None`) — sealed enum wildcard `_` silently handles future variants. This is intentional design (unknown channels return an error string) but the match structure in `channelTypeToConnectorType` should be documented.
+
 ## Phase 15 Web Frontend Patterns (reviewed 2026-06-10)
 
 - Adapter construction (`ScalaJSClientAdapter(Uri.parse(...).fold(_ => throw new Exception("bad uri"), identity), ...)`) is copy-pasted verbatim in 8 page files and in `AppShell` — the `throw` path inside `fold` is the primary purity violation; should be extracted once into a helper returning `Either` or `AsyncCallback`.

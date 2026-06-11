@@ -34,8 +34,8 @@ import java.io.ByteArrayOutputStream
   * @param unrecognizedPolicy
   *   What to do when the sender does not resolve to a known Jorlan user.
   * @param useWebhook
-  *   Reserved for future use — long-polling is always used in Phase 11. Setting this to `true` has no effect. // TODO
-  *   Phase 12: implement webhook ingress path when useWebhook = true
+  *   When `true`, the connector logs a startup warning and falls back to long-polling. Webhook ingress requires a
+  *   publicly reachable HTTPS endpoint wired into the server's route table, which is not yet implemented.
   */
 case class TelegramConfig(
   botToken:           String,

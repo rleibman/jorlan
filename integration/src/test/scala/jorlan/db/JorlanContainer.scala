@@ -10,6 +10,7 @@
 
 package jorlan.db
 
+import _root_.auth.{AuthConfig, SecretKey}
 import com.dimafeng.testcontainers.MariaDBContainer
 import jorlan.db.repository.*
 import jorlan.*
@@ -61,7 +62,7 @@ object JorlanContainer {
         ),
         flyway = FlywayConfig(enabled = false),
         http = HttpConfig(),
-        auth = AuthSettings(secretKey = "test-secret-key-for-integration-tests"),
+        auth = AuthConfig(secretKey = SecretKey("test-secret-key-for-integration-tests")),
       ),
     )
 
@@ -83,6 +84,6 @@ object JorlanContainer {
     configLayer >>> ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.db))
 
   val repositoryLayer: TaskLayer[ZIORepositories] =
-    databaseConfigLayer >>> QuillRepositories.live
+    configLayer >>> QuillRepositories.live
 
 }

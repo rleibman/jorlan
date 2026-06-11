@@ -12,7 +12,6 @@ package jorlan.graphql
 
 import caliban.*
 import jorlan.*
-import jorlan.graphql.JorlanAPI.JorlanApiEnv
 import zio.*
 import zio.http.*
 

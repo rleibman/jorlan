@@ -164,9 +164,17 @@ object JorlanShell extends ZIOApp {
       msg:       String,
     ): ZIO[ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
       for {
-        ls <- LiveSession.start(sessionId)
-        _  <- screen.setModeStatus(s" [session: ${ls.sessionId.value}]  [model: default]")
-        _  <- screen.addMessage(MessageKind.System, msg)
+        ls <- LiveSession.start(
+          sessionId,
+          onToolEvent = ev =>
+            if (ev.eventType == "SkillInvoked")
+              screen.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}…")
+            else if (ev.eventType == "SkillSucceeded")
+              screen.addMessage(MessageKind.System, s"✓ ${ev.toolName} done")
+            else ZIO.unit,
+        )
+        _ <- screen.setModeStatus(s" [session: ${ls.sessionId.value}]  [model: default]")
+        _ <- screen.addMessage(MessageKind.System, msg)
       } yield ()
 
     def createNew: ZIO[GraphQLClient & ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
@@ -210,7 +218,9 @@ object JorlanShell extends ZIOApp {
       // ws.receive() which doesn't respond to ZIO interruption synchronously.  The WS
       // handler's .ensuring(ws.close()) will fire asynchronously; the SubscriptionClient
       // backend scope finalizer closes any remaining connections when the app scope closes.
-      _ <- ZIO.foreachDiscard(liveSession)(_.subscriptionFiber.interruptFork)
+      _ <- ZIO.foreachDiscard(liveSession) { ls =>
+        ls.subscriptionFiber.interruptFork *> ls.toolEventFiber.interruptFork
+      }
       _ <- loopFiber.interrupt.fork
       _ <- heartbeatFiber.interrupt.fork
       _ <- screen.addMessage(MessageKind.Raw, "")
@@ -325,20 +335,17 @@ object JorlanShell extends ZIOApp {
     val check = AuthClient.whoAmI
       .foldZIO(
         _ =>
-          ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.Error, "Lost connection to server.")) *>
-            ZIO.serviceWithZIO[JorlanScreen](_.setModeStatus(s" [reconnecting…]  [no session]")) *>
-            // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
-            // heartbeat fiber; the main shell process continues until the user quits.
-            connectWithRetry(email, password, serverUrl).orDie.flatMap { r =>
-              // TODO: can this be replaced with a for comprehension?
-              ZIO.serviceWithZIO[JorlanScreen](
-                _.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]"),
-              ) *>
-                ZIO.serviceWithZIO[JorlanScreen](
-                  _.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]"),
-                ) *>
-                ZIO.serviceWithZIO[JorlanScreen](_.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}."))
-            },
+          // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
+          // heartbeat fiber; the main shell process continues until the user quits.
+          for {
+            screen <- ZIO.service[JorlanScreen]
+            _      <- screen.addMessage(MessageKind.Error, "Lost connection to server.")
+            _      <- screen.setModeStatus(s" [reconnecting…]  [no session]")
+            r      <- connectWithRetry(email, password, serverUrl).orDie
+            _      <- screen.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]")
+            _      <- screen.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]")
+            _      <- screen.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}.")
+          } yield (),
         _ => ZIO.unit,
       )
 

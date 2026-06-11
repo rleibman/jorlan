@@ -183,6 +183,7 @@ class InitServiceImpl(
     CapabilityName("agent.session.create"),
     CapabilityName("agent.session.list"),
     CapabilityName("agent.message"),
+    CapabilityName("agent.session.terminate"),
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
     CapabilityName("user.create"),
@@ -192,8 +193,17 @@ class InitServiceImpl(
     CapabilityName("role.revoke"),
     CapabilityName("permission.grant"),
     CapabilityName("permission.revoke"),
+    CapabilityName("approval.decide"),
     CapabilityName("memory.read"),
     CapabilityName("memory.write"),
+    CapabilityName("agent.skill.invoke"),
+    CapabilityName("notify.send"),
+    CapabilityName("contacts.read"),
+    CapabilityName("identity.manage"),
+    CapabilityName("workspace.read"),
+    CapabilityName("workspace.write"),
+    CapabilityName("shell.execute"),
+    CapabilityName("scheduler.manage"),
   )
 
   private def seedAdminGrants(

@@ -408,6 +408,113 @@ See dedicated section below.
 - /approvals approve GQL failure path: NOT TESTED
 - /approvals deny GQL failure path: NOT TESTED
 
+## Phase 12 Built-in Skills — Coverage Gaps (2026-06-10)
+
+### SkillRegistry — WELL COVERED, minor gaps remain
+- register + allTools: COVERED
+- allToolSpecs: COVERED
+- invoke routes to correct skill: COVERED
+- invoke unknown namespace: COVERED
+- invoke missing required fields: COVERED
+- invoke with all required fields present: COVERED
+- liveWith pre-populates: COVERED
+- malformed JSON args: COVERED
+- args is not a JSON object: COVERED
+- skill fails with JorlanError: COVERED
+- MISSING: validateRequiredFields — `inputSchema` is not a `Json.Obj` → falls to `Right(Nil)` (no required fields assumed); never tested
+- MISSING: validateRequiredFields — `required` key absent from schema fields → `orElse(Some(Nil))` → empty required list; never tested
+- MISSING: invoke unknown tool name within a known namespace (tool not in descriptor.tools); validateRequiredFields returns `Left("unknown tool '...'")` without calling skill.invoke; not tested
+- MISSING: re-registering the same namespace replaces the previous skill (Map semantics)
+
+### NotificationRouter — WELL COVERED, two gaps
+- notifyUser via Telegram: COVERED
+- notifyUser no channel identities: COVERED
+- notifyUser Telegram-preferred over Slack: COVERED
+- notifyChannel no connector registered: COVERED
+- notifyChannel unmapped ChannelType (Shell): COVERED
+- notifyChannel invokes send_message: COVERED
+- MISSING: notifyUser fallback to first available channel when no Telegram identity exists (orElse(identities.headOption)); only the no-identity path and the Telegram path are tested; the "non-Telegram first-in-list fallback" branch is not
+- MISSING: notifyChannel — connector.invoke fails with JorlanError → catchAll returns Json.Str("Error: ..."); no test injects a connector that throws
+- MISSING: channelTypeToConnectorType coverage for WhatsApp, Sms, Discord, Google, GitHub, GraphQL — all map to None; only Shell is tested
+- MISSING: notifyUser — getChannelIdentities repo call fails → catchAll returns Json.Str("Error: ..."); no test makes the repo throw
+
+### NotifySkill — WELL COVERED, one gap
+- notify.user happy path: COVERED
+- notify.user missing userId, missing message, non-numeric userId: COVERED
+- notify.channel happy path: COVERED
+- notify.channel missing channelUserId/channelType/message: COVERED
+- notify.channel unknown channelType: COVERED
+- notify.channel case-insensitive channelType: COVERED
+- invoke unknown tool: COVERED
+- descriptor shape: COVERED
+- MISSING: notify.user with args that are not a Json.Obj (non-object args → getStr returns None for all keys → userId missing path); the test file only passes mkArgs (Json.Obj) and Json.Obj() as args; no test passes Json.Arr or Json.Str as the top-level args value
+
+### ContactsSkill — WELL COVERED, minor gaps
+- contacts.find substring match, no match, missing name, with identities: COVERED
+- identity.resolve found/not-found/unknown-channelType/missing fields: COVERED
+- identity.link create, non-numeric userId, missing fields, unknown channelType: COVERED
+- identity.listAliases with identities, empty, missing userId, non-numeric userId: COVERED
+- invoke unknown tool: COVERED
+- MISSING: contacts.find — args that are not a Json.Obj; getStr returns None → "name is required" error path, but only Json.Obj() is tested, not a non-object root
+- MISSING: identity.link — channelType is missing separately from channelUserId (test combines both missing but not individual channelType-only missing); actually `identity.link fails when required fields are missing` sends only userId → covers the channelType=None branch; channelUserId=None branch is covered too — this is fine
+- MISSING: identityLink — Instant.now() called inline at line 183; no test verifies the createdAt field is a recent timestamp on the returned ChannelIdentity
+- MISSING: repo.user.upsertChannelIdentity failure → mapError propagation; no test injects a repo that throws during link
+
+### WorkspaceSkill — WELL COVERED
+- read/write round-trip: COVERED
+- write creates intermediate dirs: COVERED
+- path traversal rejection (read/write/absolute path): COVERED
+- read missing file: COVERED
+- search list files, empty workspace: COVERED
+- search with non-empty prefix: COVERED
+- search with non-existent prefix dir: COVERED
+- delete removes file, idempotent: COVERED
+- missing required fields for all tools: COVERED
+- unknown tool: COVERED
+- non-object args to read/write: COVERED
+- WorkspaceSkill.live factory: COVERED
+- MISSING: workspaceSearch — prefix resolves to a path that is NOT a directory (and has a parent dir within workspace); the `!Files.isDirectory(p)` branch returns `Option(p.getParent).getOrElse(workspaceRoot)` → not covered by any test
+- MISSING: workspaceSearch — prefix that resolves to a path with no parent (getParent returns null) → getOrElse(workspaceRoot); edge case, not tested
+- MISSING: workspaceWrite — Files.createDirectories or Files.write throws a non-security IOException (e.g. permission denied); only SecurityException (traversal) is tested for write errors
+
+### ShellSkill — WELL COVERED
+- allowed binary executes, stdout captured: COVERED
+- blocked binary: COVERED
+- blocked absolute-path binary: COVERED
+- allowed absolute-path binary (full path in allowlist): COVERED
+- missing binary field: COVERED
+- unknown tool: COVERED
+- timeout: COVERED
+- cwd override: COVERED
+- result shape (exitCode/stdout/stderr): COVERED
+- custom timeoutSeconds field: COVERED
+- MISSING: getStrList — args with a `args` key that contains non-string array elements (Json.Num inside the array); currently collect { case Json.Str(s) => s } silently drops them; no test verifies mixed-type array behavior
+- MISSING: getInt — args with `timeoutSeconds` key but value is a Json.Str (not Json.Num); falls to None → uses default; not tested
+- MISSING: isAllowed — binary path with multiple segments (e.g. `/usr/bin/echo`); getFileName = "echo"; if allowlist has "echo" it should match; not explicitly tested (only `/bin/echo` ↔ `/bin/echo` full-path match is tested)
+- MISSING: Command fails to launch (binary doesn't exist despite being in allowlist); mapError catches it as JorlanError; no test exercises this (would need a nonexistent-but-allowed binary on PATH)
+
+### AgentRunnerImpl — PARTIALLY COVERED (most coverage via AgentRunnerSpec + AgentRunnerReActSpec)
+- ReAct FinalAnswer publishes tokens then sentinel: COVERED
+- ReAct ToolCallRequested → invokes skill → FinalAnswer: COVERED
+- ToolLoopExceeded (stepsLeft <= 0): COVERED
+- processMessage publishes all chunks + sentinel: COVERED
+- UserMessageReceived + AgentResponseCompleted event log: COVERED
+- ModelGateway failure → isError sentinel: COVERED
+- actorId=None: COVERED
+- seeded session cache hit (second processMessage reuses seeded session): COVERED
+- personality from settings: COVERED
+- memory injection (buildMemoryContext with real MemoryService): COVERED
+- MISSING: resolveAgentId cache hit path — second message on same session returns cached agentId; structurally exercised by "second processMessage" test but agentId identity is never asserted
+- MISSING: resolveAgentId — session exists in repo → session.agentId cached; only AgentId.empty (no session) path is exercised in tests (InMemoryRepositories starts empty)
+- MISSING: loadConversationHistory — session found, messages loaded → modelGateway.seedHistory called; ensureSeeded only seeds when !alreadySeeded; the "already seeded" guard is tested (second message test) but the actual history-loading path (Ref.not seeded + non-empty messages) is NOT tested
+- MISSING: getOrCreateConversation — active conversation found in DB (not in cache) → reuses it; only "cache hit" and "create new" are tested; the "cache miss + found in DB" branch (c :: _ case at line 326) is not tested
+- MISSING: persistMessages — errMsg.isDefined && assistantText.isBlank → skip persist (`.unless`); error path with blank response is not directly verified (only isError sentinel is checked, not DB state)
+- MISSING: runCheckpoint — actorId=None → ZIO.unit (no checkpoint); no test asserts that memoryService.checkpoint is NOT called when actorId is None
+- MISSING: buildMemoryContext error path — memoryService.query failing → catchAll returns ""; no test wires in a failing MemoryService; NoOpMemoryService always succeeds
+- MISSING: buildInitialMessages — systemPrompt is empty string → no SystemMsg prepended (Nil list); no test verifies a scenario where personality.buildSystemPrompt returns ""
+- MISSING: logSkillEvent — SkillInvoked and SkillSucceeded event types written to event log during ReAct tool call; AgentRunnerReActSpec does not assert on event log contents
+- MISSING: finaliseResponse — isError=true sentinel content contains the error message from errorRef; AgentRunnerSpec asserts `isError` flag but not the error text in the sentinel
+
 ## Phase 8 Agent Session Runtime Coverage Gaps (2026-05-29) — partially superseded by Phase 8.5
 
 ### OllamaModelGateway

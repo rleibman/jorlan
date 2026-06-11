@@ -11,13 +11,17 @@
 package jorlan
 
 import _root_.ai.LangChainConfig
-import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
+import _root_.auth.{AuthConfig, SecretKey}
+import com.typesafe.config.{ConfigFactory, Config as TypesafeConfig}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
-import zio.{IO, UIO, ZIO, ZLayer}
+import zio.{Duration, IO, UIO, ZIO, ZLayer}
 
 import java.io.File
 import scala.language.unsafeNulls
+
+given DeriveConfig[SecretKey] = DeriveConfig[String].map(SecretKey(_))
+given DeriveConfig[Duration] = DeriveConfig[Long].map(Duration.fromMillis)
 
 case class HttpConfig(
   host: String = "0.0.0.0",
@@ -37,14 +41,45 @@ case class OAuthProviderSettings(
   scopes:           List[String],
 )
 
-/** Authentication and session configuration. */
-case class AuthSettings(
-  secretKey:        String,
-  accessTtlMinutes: Int = 60,
-  refreshTtlDays:   Int = 30,
-  google:           Option[OAuthProviderSettings] = None,
-  github:           Option[OAuthProviderSettings] = None,
-  discord:          Option[OAuthProviderSettings] = None,
+/** Agent runtime configuration. */
+case class AgentSettings(
+  maxToolSteps: Int = 10,
+)
+
+/** Durable scheduler configuration. */
+case class SchedulerSettings(
+  pollIntervalSeconds: Int = 10,
+  leaseTtlSeconds:     Int = 300,
+  jobTimeoutSeconds:   Int = 300,
+  listJobsLimit:       Int = 200,
+)
+
+/** How workspace paths are scoped per invocation. */
+enum WorkspaceScope {
+
+  case Flat, Session, User
+
+}
+
+/** Workspace filesystem configuration. */
+case class WorkspaceSettings(
+  root:         String = "/var/lib/jorlan/workspaces",
+  defaultScope: WorkspaceScope = WorkspaceScope.Session,
+)
+
+/** Shell execution configuration.
+  *
+  * @param allowedBinaries
+  *   Comma-separated list of absolute paths or bare binary names permitted for `shell.run`. Empty = all denied.
+  * @param timeoutSeconds
+  *   Maximum wall-clock time for a shell command before it is killed.
+  * @param captureThreshold
+  *   Stdout byte length above which the output is stored as an Artifact instead of inlined in the tool result.
+  */
+case class ShellSettings(
+  allowedBinaries:  List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
+  timeoutSeconds:   Int = 30,
+  captureThreshold: Int = 65536,
 )
 
 case class WebConfig(
@@ -53,12 +88,16 @@ case class WebConfig(
 
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:     DatabaseConfig,
-  flyway: FlywayConfig = FlywayConfig(),
-  http:   HttpConfig = HttpConfig(),
-  auth:   AuthSettings,
-  ai:     LangChainConfig = LangChainConfig(),
-  web:    WebConfig = WebConfig(),
+  db:        DatabaseConfig,
+  auth:      AuthConfig,
+  flyway:    FlywayConfig = FlywayConfig(),
+  http:      HttpConfig = HttpConfig(),
+  ai:        LangChainConfig = LangChainConfig(),
+  agent:     AgentSettings = AgentSettings(),
+  scheduler: SchedulerSettings = SchedulerSettings(),
+  workspace: WorkspaceSettings = WorkspaceSettings(),
+  shell:     ShellSettings = ShellSettings(),
+  web:       WebConfig = WebConfig(),
 )
 
 /** Root application configuration. */
@@ -103,8 +142,7 @@ object ConfigurationServiceImpl {
     val missing = requiredEnvVars.filter { case (key, _) =>
       Option(System.getenv(key)).forall(_.nn.isBlank)
     }
-    if (missing.isEmpty) ZIO.unit
-    else {
+    {
       val lines = missing.map { case (k, desc) => s"  $k — $desc" }.mkString("\n")
       ZIO.fail(
         ConfigLoadError(
@@ -119,7 +157,7 @@ object ConfigurationServiceImpl {
               |""".stripMargin,
         ),
       )
-    }
+    }.unless(missing.isEmpty).unit
   }
 
   val live: ZLayer[Any, Nothing, ConfigurationService] = ZLayer.succeed(new ConfigurationService {

@@ -15,9 +15,13 @@ import caliban.GraphQLInterpreter
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.domain.ChannelType
 import jorlan.service.*
-import jorlan.testing.InMemoryRepositories.*
-import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.JobManagerImpl
+import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.test.*
 
@@ -52,32 +56,14 @@ object JorlanAPISpec extends ZIOSpecDefault {
 
   // ─── Full service stack: services + interpreter together (passthrough >+>) ───
 
-  private type FullEnv = JorlanAPI.JorlanApiEnv & JorlanSession &
-    GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type FullEnv = JorlanApiEnv & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
-  private def realMemoryServiceLayer: ULayer[MemoryService] = {
-    val repoLayer = InMemoryRepositories.live()
-    val policy = ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy)
-    val summarizer = ZLayer.succeed(
-      new CheckpointSummarizer {
-        override def summarize(
-          messages: List[Message],
-          userId:   UserId,
-          agentId:  AgentId,
-        ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-      },
+  private def realMemoryServiceLayer: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
+      InMemoryRepositories.live(),
+      FakeModelGateway.layer(List()),
+      MemoryServiceImpl.live,
     )
-    val classifier = ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier)
-    val cpPolicy = ZLayer.succeed(CheckpointPolicy.onSessionEnd)
-
-    ZLayer.make[CheckpointSummarizer & MemoryClassifier & CheckpointPolicy & MemoryAccessPolicy & ZIORepositories](
-      policy,
-      summarizer,
-      classifier,
-      cpPolicy,
-      repoLayer,
-    ) >>> MemoryServiceImpl.live
-  }
 
   private def makeAppLayer(
     capEval:     ULayer[CapabilityEvaluator] = allowAll,
@@ -114,18 +100,39 @@ object JorlanAPISpec extends ZIOSpecDefault {
         override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
       }: ApprovalService,
     )
+    val noOpNotificationRouter: ULayer[NotificationRouter] = ZLayer.succeed(
+      new NotificationRouter {
+        override def notifyUser(
+          userId:  UserId,
+          message: String,
+          ctx:     jorlan.connector.InvocationContext,
+        ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
+        override def notifyChannel(
+          channelUserId: String,
+          channelType:   ChannelType,
+          message:       String,
+          ctx:           jorlan.connector.InvocationContext,
+        ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
+      },
+    )
     ZLayer.make[FullEnv](
       agentRepoLayer,
       hubLayer,
+      ToolEventHub.live,
       capEval,
       session,
       FakeModelGateway.layer(List("ok")),
       AgentSessionManagerImpl.live,
-      memSvcLayer,
+      memSvcLayer, {
+        ZLayer.fromZIO {
+          ZIO.serviceWith[MemoryService](svc => SkillRegistry.liveWith(new MemorySkill(svc)))
+        }.flatten
+      },
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
-      memSvcLayer >>> MemorySkill.live,
       JobManagerImpl.live,
       approvalSvcLayer,
+      noOpNotificationRouter,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
   }
@@ -144,7 +151,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       )
   }
 
-  private type Interp = GraphQLInterpreter[JorlanAPI.JorlanApiEnv & JorlanSession, Any]
+  private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("JorlanAPI unit tests")(

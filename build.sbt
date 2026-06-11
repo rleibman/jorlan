@@ -212,10 +212,10 @@ lazy val telegramConnector = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-telegram",
     libraryDependencies ++= Seq(
-      "dev.zio"                 %% "zio"               % zioVersion withSources (),
-      "dev.zio"                 %% "zio-json"          % zioJsonVersion withSources (),
-      "dev.zio"                 %% "zio-http"          % zioHttpVersion withSources (),
-      "io.github.apimorphism"   %% "telegramium-core"  % telegramiumVersion withSources (),
+      "dev.zio"               %% "zio"              % zioVersion withSources (),
+      "dev.zio"               %% "zio-json"         % zioJsonVersion withSources (),
+      "dev.zio"               %% "zio-http"         % zioHttpVersion withSources (),
+      "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
@@ -256,39 +256,6 @@ lazy val analytics = project
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Server
-lazy val db = project
-  .enablePlugins(AutomateHeaderPlugin)
-  .settings(commonSettings)
-  .dependsOn(model)
-  .settings(
-    scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "jorlan-db",
-    libraryDependencies ++= Seq(
-      // DB
-      "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
-      "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
-      "org.flywaydb"     % "flyway-core"         % flywayVersion withSources (),
-      "org.flywaydb"     % "flyway-mysql"        % flywayVersion withSources (),
-      // Log
-      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
-      // ZIO
-      "dev.zio" %% "zio"                   % zioVersion withSources (),
-      "dev.zio" %% "zio-nio"               % zioNioVersion withSources (),
-      "dev.zio" %% "zio-cache"             % zioCacheVersion withSources (),
-      "dev.zio" %% "zio-config"            % zioConfigVersion withSources (),
-      "dev.zio" %% "zio-config-derivation" % zioConfigVersion withSources (),
-      "dev.zio" %% "zio-config-magnolia"   % zioConfigVersion withSources (),
-      "dev.zio" %% "zio-config-typesafe"   % zioConfigVersion withSources (),
-      "dev.zio" %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
-      "dev.zio" %% "izumi-reflect"         % izumiReflectVersion withSources (),
-      "dev.zio" %% "zio-json"              % zioJsonVersion withSources (),
-      // Testing
-      "com.dimafeng" %% "testcontainers-scala-mariadb" % testContainerVersion % "test" withSources (),
-      "dev.zio"      %% "zio-test"                     % zioVersion           % "test" withSources (),
-      "dev.zio"      %% "zio-test-sbt"                 % zioVersion           % "test" withSources (),
-    ),
-  )
-
 lazy val server = project
   .enablePlugins(
     AutomateHeaderPlugin,
@@ -302,7 +269,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(model, db, ai, analytics, connectorApi, telegramConnector)
+  .dependsOn(model, ai, analytics, connectorApi, telegramConnector)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -310,6 +277,8 @@ lazy val server = project
       // DB
       "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion withSources (),
       "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
+      "org.flywaydb"     % "flyway-core"         % flywayVersion withSources (),
+      "org.flywaydb"     % "flyway-mysql"        % flywayVersion withSources (),
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
       // ZIO
@@ -342,8 +311,8 @@ lazy val server = project
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
-    Test / fork                      := true,
-    coverageExcludedFiles            := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
+    Test / fork           := true,
+    coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
     Compile / doc / sources          := Seq.empty,
   )
@@ -356,7 +325,7 @@ lazy val integration = project
     com.github.sbt.git.GitVersioning,
   )
   .settings(commonSettings)
-  .dependsOn(model, db, server, shell, connectorApi, telegramConnector)
+  .dependsOn(model, server, shell, connectorApi, telegramConnector)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-integration",
@@ -439,9 +408,6 @@ lazy val shell = project
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Utility
-lazy val util = project
-  .settings(commonSettings, scalacOptions ++= scala3Opts :+ "-Werror")
-
 lazy val debianSettings =
   Seq(
     Compile / mainClass                   := Some("jorlan.Jorlan"),
@@ -702,13 +668,11 @@ lazy val root = project
     model,
     connectorApi,
     telegramConnector,
-    db,
     ai,
     server,
     shell,
     analytics,
     integration,
-    util,
     web,
   )
   .settings(

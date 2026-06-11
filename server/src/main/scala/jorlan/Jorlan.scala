@@ -19,18 +19,25 @@ import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.web.StaticFileRoutes
 import jorlan.service.*
+import jorlan.service.schedule.TriggerEngine
+import jorlan.service.skills.*
 import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
 
 import java.io.*
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
-type JorlanEnvironment = ConfigurationService & FlywayMigration & AuthServer[User, UserId, ConnectionId] & AuthConfig &
-  OAuthService & OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner &
-  SessionHub & ModelGateway & ZIORepositories & MemoryService & MemorySkill & JobManager & TriggerEngine &
-  ConnectorManager & Client
+type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService &
+  OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub &
+  ToolEventHub & ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine &
+  ConnectorManager & NotificationRouter & Client
+
+/** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
+type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
+  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -96,10 +103,30 @@ object Jorlan extends ZIOApp {
         }
     }
 
-  private def startServices: ZIO[TriggerEngine & ConnectorManager & Scope, JorlanError, Unit] =
+  private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
+    for {
+      registry    <- ZIO.service[SkillRegistry]
+      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      memService  <- ZIO.service[MemoryService]
+      jobManager  <- ZIO.service[JobManager]
+      repos       <- ZIO.service[ZIORepositories]
+      notifRouter <- ZIO.service[NotificationRouter]
+      workRoot    <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
+      _           <- registry.register(new MemorySkill(memService))
+      _           <- registry.register(new SchedulerSkill(jobManager))
+      _           <- registry.register(new ContactsSkill(repos))
+      _           <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _           <- registry.register(new ShellSkill(config.jorlan.shell, repos))
+      _           <- registry.register(new NotifySkill(notifRouter))
+    } yield ()
+
+  private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _                <- registerBuiltInSkills.orDie
       connectorManager <- ZIO.service[ConnectorManager]
+      registry         <- ZIO.service[SkillRegistry]
+      _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)
       _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
@@ -107,7 +134,7 @@ object Jorlan extends ZIOApp {
   override def run: ZIO[JorlanEnvironment & ZIOAppArgs & Scope, Any, Any] =
     for {
       config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      _           <- FlywayMigration.runMigrations
+      _           <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db)
       startTime   <- Clock.currentTime(TimeUnit.MILLISECONDS)
       repo        <- ZIO.service[ZIORepositories]
       initialized <- repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {

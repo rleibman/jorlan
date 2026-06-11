@@ -12,6 +12,7 @@ package jorlan.shell.client
 
 import jorlan.domain.{AgentSessionId, ResponseChunk}
 import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClient.ToolEventResult
 import jorlan.shell.ShellConfig
 import jorlan.shell.client.JorlanClientDecoders.*
 import sttp.client4.*
@@ -36,15 +37,11 @@ import scala.language.unsafeNulls
   */
 trait SubscriptionClient {
 
-  /** Returns a stream of [[ResponseChunk]] tokens for the given session.
-    *
-    * The stream completes when the server sends a `finished=true` chunk or a graphql-ws `complete` frame, and fails
-    * with a descriptive string on protocol or network error.
-    *
-    * @param sessionId
-    *   The session to subscribe to.
-    */
+  /** Returns a stream of [[ResponseChunk]] tokens for the given session. */
   def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk]
+
+  /** Returns a stream of [[ToolEventResult]] events for the given session (SkillInvoked / SkillSucceeded). */
+  def toolEventsStream(sessionId: AgentSessionId): ZStream[Scope, String, ToolEventResult.ToolEventResultView]
 
 }
 
@@ -52,6 +49,11 @@ object SubscriptionClient {
 
   def agentResponseStream(sessionId: AgentSessionId): ZStream[SubscriptionClient & Scope, String, ResponseChunk] =
     ZStream.serviceWithStream[SubscriptionClient](_.agentResponseStream(sessionId))
+
+  def toolEventsStream(
+    sessionId: AgentSessionId,
+  ): ZStream[SubscriptionClient & Scope, String, ToolEventResult.ToolEventResultView] =
+    ZStream.serviceWithStream[SubscriptionClient](_.toolEventsStream(sessionId))
 
   val live: ZLayer[ShellConfig & AuthClient, Throwable, SubscriptionClient] = ZLayer.scoped {
     for {
@@ -76,8 +78,18 @@ private case class ChunkData(
   isError:   Boolean = false,
 ) derives JsonDecoder
 
+private case class ToolEventData(
+  sessionId: Long,
+  eventType: String,
+  toolName:  String,
+  payload:   String,
+) derives JsonDecoder
+
 private case class AgentResponseData(agentResponseStream: ChunkData) derives JsonDecoder
 private case class DataPayload(data: AgentResponseData) derives JsonDecoder
+
+private case class ToolEventsData(toolEvents: ToolEventData) derives JsonDecoder
+private case class ToolEventsPayload(data: ToolEventsData) derives JsonDecoder
 
 private class SubscriptionClientImpl(
   cfg:     ShellConfig,
@@ -87,18 +99,15 @@ private class SubscriptionClientImpl(
 
   private val subscriptionId = "1"
 
-  override def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk] = {
-    val wsUrl = cfg.serverUrl
-      .replaceFirst("^https://", "wss://")
-      .replaceFirst("^http://", "ws://") + "/api/jorlan/ws"
+  private val wsUrl: String = cfg.serverUrl
+    .replaceFirst("^https://", "wss://")
+    .replaceFirst("^http://", "ws://") + "/api/jorlan/ws"
 
-    // Use SelectionBuilder to generate the subscription query — avoids manual string construction.
-    val gqlQuery = JorlanClient.Subscriptions
-      .agentResponseStream(sessionId)(JorlanClient.ResponseChunk.view)
-      .toGraphQL(useVariables = false)
-      .query
-
-    // subscriptions-transport-ws protocol uses "start" (not the newer "subscribe").
+  /** Common WebSocket subscription setup. Calls `parseData` for each "data" frame to produce a queue offer. */
+  private def wsStream[A](
+    gqlQuery:  String,
+    parseData: Json => Task[Option[Either[String, A]]],
+  ): ZStream[Scope, String, A] = {
     val startMsg = WsMsg(
       `type` = "start",
       id = Some(subscriptionId),
@@ -109,7 +118,7 @@ private class SubscriptionClientImpl(
       for {
         token <- auth.currentToken
         _     <- ZIO.logDebug(s"[WS] connecting to $wsUrl (auth=${token.isDefined})")
-        queue <- Queue.bounded[Option[Either[String, ResponseChunk]]](1024)
+        queue <- Queue.bounded[Option[Either[String, A]]](1024)
         fiber <- basicRequest
           .get(uri"$wsUrl")
           .headers(token.map(t => Map("Authorization" -> s"Bearer $t")).getOrElse(Map.empty))
@@ -117,17 +126,11 @@ private class SubscriptionClientImpl(
             asWebSocketAlways[Task, Unit] { ws =>
               val sendInit = ws.sendText(WsMsg(`type` = "connection_init").toJson) *>
                 ZIO.logInfo("[WS] sent connection_init")
-              // Send a WebSocket-level Ping every 15 s so Netty auto-replies with Pong.
-              // This keeps NAT table entries alive and detects half-open TCP connections
-              // (if ws.send throws, the error propagates and the subscription is torn down).
               val pingLoop = ws
                 .send(WebSocketFrame.ping).delay(15.seconds)
                 .repeat(Schedule.forever)
                 .unit
               for {
-                // Java HttpClient may deliver fragmented WebSocket messages as multiple
-                // Text frames with finalFragment=false.  We accumulate them here and
-                // only parse once we receive the final fragment.
                 fragmentBuf <- Ref.make("")
                 frameLoop = ZStream
                   .repeatZIO(ws.receive())
@@ -154,26 +157,11 @@ private class SubscriptionClientImpl(
                                      ZIO.logInfo("[WS] connection_ack → sending start") *>
                                        ws.sendText(startMsg) *>
                                        ZIO.logDebug(s"[WS] start sent: $startMsg")
-                                   // subscriptions-transport-ws uses "data" (not the newer "next").
                                    case WsMsg("data", _, Some(p)) =>
-                                     ZIO
-                                       .fromEither(p.toJson.fromJson[DataPayload])
-                                       .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
-                                       .mapError(RuntimeException(_))
-                                       .flatMap { dp =>
-                                         val cd = dp.data.agentResponseStream
-                                         ZIO.logDebug(
-                                           s"[WS] chunk: session=${cd.sessionId.value} finished=${cd.finished} isError=${cd.isError}",
-                                         ) *>
-                                           queue
-                                             .offer(
-                                               Some(
-                                                 Right(
-                                                   ResponseChunk(cd.sessionId, cd.content, cd.finished, cd.isError),
-                                                 ),
-                                               ),
-                                             ).unit
-                                       }
+                                     parseData(p).flatMap {
+                                       case Some(item) => queue.offer(Some(item)).unit
+                                       case None       => ZIO.unit
+                                     }
                                    case WsMsg("complete", Some(`subscriptionId`), _) =>
                                      ZIO.logInfo("[WS] server sent complete — subscription stream ended") *>
                                        queue.offer(None).unit
@@ -195,10 +183,6 @@ private class SubscriptionClientImpl(
                   }
                   .runDrain
                 _ <- (sendInit *> frameLoop.race(pingLoop))
-                  // Explicitly close the WebSocket when this handler is interrupted so that
-                  // the pending ws.receive() unblocks and the fiber can exit cleanly.
-                  // Without this, subscriptionFiber.interrupt() in shutdownCleanly hangs
-                  // forever because Java's HttpClient does not propagate ZIO interruption.
                   .ensuring(ws.close().ignore)
               } yield ()
             },
@@ -220,9 +204,51 @@ private class SubscriptionClientImpl(
         .repeatZIO(queue.take)
         .collectWhile { case Some(v) => v }
         .flatMap {
-          case Left(err)    => ZStream.fail(err)
-          case Right(chunk) => ZStream.succeed(chunk)
+          case Left(err) => ZStream.fail(err)
+          case Right(v)  => ZStream.succeed(v)
         },
+    )
+  }
+
+  override def agentResponseStream(sessionId: AgentSessionId): ZStream[Scope, String, ResponseChunk] = {
+    val gqlQuery = JorlanClient.Subscriptions
+      .agentResponseStream(sessionId)(JorlanClient.ResponseChunk.view)
+      .toGraphQL(useVariables = false)
+      .query
+
+    wsStream[ResponseChunk](
+      gqlQuery,
+      p =>
+        ZIO
+          .fromEither(p.toJson.fromJson[DataPayload])
+          .tapError(e => ZIO.logWarning(s"[WS] DataPayload decode failed: $e"))
+          .mapError(RuntimeException(_))
+          .map { dp =>
+            val cd = dp.data.agentResponseStream
+            Some(Right(ResponseChunk(cd.sessionId, cd.content, cd.finished, cd.isError)))
+          },
+    )
+  }
+
+  override def toolEventsStream(
+    sessionId: AgentSessionId,
+  ): ZStream[Scope, String, ToolEventResult.ToolEventResultView] = {
+    val gqlQuery = JorlanClient.Subscriptions
+      .toolEvents(sessionId)(JorlanClient.ToolEventResult.view)
+      .toGraphQL(useVariables = false)
+      .query
+
+    wsStream[ToolEventResult.ToolEventResultView](
+      gqlQuery,
+      p =>
+        ZIO
+          .fromEither(p.toJson.fromJson[ToolEventsPayload])
+          .tapError(e => ZIO.logWarning(s"[WS] ToolEventsPayload decode failed: $e"))
+          .mapError(RuntimeException(_))
+          .map { dp =>
+            val td = dp.data.toolEvents
+            Some(Right(ToolEventResult.ToolEventResultView(td.sessionId, td.eventType, td.toolName, td.payload)))
+          },
     )
   }
 

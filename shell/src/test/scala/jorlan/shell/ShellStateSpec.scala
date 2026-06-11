@@ -23,9 +23,10 @@ object ShellStateSpec extends ZIOSpecDefault {
 
   private def makeLiveSession(sid: AgentSessionId): UIO[LiveSession] =
     for {
-      queue <- Queue.bounded[Either[String, Option[ResponseChunk]]](1)
-      fiber <- ZIO.never.fork.map(identity[Fiber[Nothing, Unit]])
-    } yield LiveSession(sid, queue, fiber)
+      queue          <- Queue.bounded[Either[String, Option[ResponseChunk]]](1)
+      fiber          <- ZIO.never.fork.map(identity[Fiber[Nothing, Unit]])
+      toolEventFiber <- ZIO.never.fork.map(identity[Fiber[Nothing, Unit]])
+    } yield LiveSession(sid, queue, fiber, toolEventFiber)
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ShellState")(
@@ -83,6 +84,9 @@ object ShellStateSpec extends ZIOSpecDefault {
             ZLayer.succeed(new SubscriptionClient {
               override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
                 ZStream.empty
+              override def toolEventsStream(sid: AgentSessionId)
+                : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+                ZStream.empty
             }),
         ),
         test("LiveSession.start exposes a token queue") {
@@ -96,6 +100,9 @@ object ShellStateSpec extends ZIOSpecDefault {
           ShellState.live ++
             ZLayer.succeed(new SubscriptionClient {
               override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
+                ZStream.empty
+              override def toolEventsStream(sid: AgentSessionId)
+                : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
                 ZStream.empty
             }),
         ),
@@ -112,6 +119,9 @@ object ShellStateSpec extends ZIOSpecDefault {
             ZLayer.succeed(new SubscriptionClient {
               override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
                 ZStream.succeed(ResponseChunk(sessionId = sid, content = "hello", isError = false, finished = false))
+              override def toolEventsStream(sid: AgentSessionId)
+                : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+                ZStream.empty
             }),
         ) @@ TestAspect.withLiveClock,
         test("LiveSession.start delivers finish marker when chunk.finished=true") {
@@ -126,6 +136,9 @@ object ShellStateSpec extends ZIOSpecDefault {
             ZLayer.succeed(new SubscriptionClient {
               override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
                 ZStream.succeed(ResponseChunk(sessionId = sid, content = "", isError = false, finished = true))
+              override def toolEventsStream(sid: AgentSessionId)
+                : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+                ZStream.empty
             }),
         ) @@ TestAspect.withLiveClock,
         test("LiveSession.start puts Left error in queue when subscription fails") {
@@ -140,6 +153,9 @@ object ShellStateSpec extends ZIOSpecDefault {
             ZLayer.succeed(new SubscriptionClient {
               override def agentResponseStream(sid: AgentSessionId): ZStream[Scope, String, ResponseChunk] =
                 ZStream.fail("simulated subscription error")
+              override def toolEventsStream(sid: AgentSessionId)
+                : ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
+                ZStream.empty
             }),
         ) @@ TestAspect.withLiveClock,
         test("ShellState.interruptDrain does nothing when no drain is registered") {

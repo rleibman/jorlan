@@ -13,6 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories}
 import jorlan.domain.*
+import jorlan.service.llm.FakeModelGateway
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*

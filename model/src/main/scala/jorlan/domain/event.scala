@@ -29,7 +29,10 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case ModelCallStarted, ModelCallCompleted, ModelCallFailed
 
   // ─── Skill invocations ───────────────────────────────────────────────────────
-  case SkillInvoked, SkillSucceeded, SkillFailed
+  case SkillInvoked, SkillSucceeded, SkillFailed, ToolLoopExceeded
+
+  // ─── Shell command lifecycle ─────────────────────────────────────────────────
+  case ShellCommandInvoked, ShellCommandCompleted
 
   // ─── Approval lifecycle ──────────────────────────────────────────────────────
   case ApprovalRequested, ApprovalGranted, ApprovalDenied

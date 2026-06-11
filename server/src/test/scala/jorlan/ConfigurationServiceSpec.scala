@@ -10,6 +10,7 @@
 
 package jorlan
 
+import _root_.auth.SecretKey
 import com.typesafe.config.ConfigFactory
 import zio.*
 import zio.test.*
@@ -31,8 +32,6 @@ object ConfigurationServiceSpec extends ZIOSpecDefault {
       |  }
       |  auth {
       |    secretKey = "test-secret-key-for-unit-tests-only"
-      |    accessTtlMinutes = 60
-      |    refreshTtlDays = 30
       |  }
       |}
       |""".stripMargin,
@@ -45,8 +44,7 @@ object ConfigurationServiceSpec extends ZIOSpecDefault {
           cfg <- AppConfig.read(minimalConfig)
         } yield assertTrue(
           cfg.jorlan.db.dataSource.url == "jdbc:mariadb://localhost:3306/test",
-          cfg.jorlan.auth.secretKey == "test-secret-key-for-unit-tests-only",
-          cfg.jorlan.auth.accessTtlMinutes == 60,
+          cfg.jorlan.auth.secretKey == SecretKey("test-secret-key-for-unit-tests-only"),
           cfg.jorlan.http.port == 8080,
         )
       },
@@ -71,7 +69,7 @@ object ConfigurationServiceSpec extends ZIOSpecDefault {
           result <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).provideLayer(layer).either
         } yield {
           result match {
-            case Right(cfg) => assertTrue(cfg.jorlan.auth.secretKey.nonEmpty)
+            case Right(cfg) => assertTrue(cfg.jorlan.auth.secretKey != SecretKey(""))
             case Left(_)    => assertCompletes // missing env var — error path exercised
           }
         }

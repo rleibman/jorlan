@@ -181,12 +181,13 @@ object InitServiceSpec extends ZIOSpecDefault {
         ZLayer.fromZIO(InitTokenStore.make(false)),
         initServiceLayer,
       ),
-      // P85-033 / Phase 9: all 14 admin capability grants are seeded after successful init
-      test("successful init seeds all 14 admin capability grants") {
+      // P85-033 / Phase 9 + Phase 12: all admin capability grants are seeded after successful init
+      test("successful init seeds all admin capability grants") {
         val expectedCapabilities = Set(
           "agent.session.create",
           "agent.session.list",
           "agent.message",
+          "agent.session.terminate",
           "admin.personality.read",
           "admin.personality.update",
           "user.create",
@@ -196,8 +197,17 @@ object InitServiceSpec extends ZIOSpecDefault {
           "role.revoke",
           "permission.grant",
           "permission.revoke",
+          "approval.decide",
           "memory.read",
           "memory.write",
+          "agent.skill.invoke",
+          "notify.send",
+          "contacts.read",
+          "identity.manage",
+          "workspace.read",
+          "workspace.write",
+          "shell.execute",
+          "scheduler.manage",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]
@@ -277,21 +287,21 @@ object InitServiceSpec extends ZIOSpecDefault {
           gotten <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("testKey"))
         } yield assertTrue(gotten.contains(Json.Str("hello")))
       }.provide(InMemoryRepositories.live() >>> uninitializedSettings),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns true when flag is true") {
+      test("isServerInitialized returns true when flag is true") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(result)
       }.provide(
         InMemoryRepositories.live() >>> alreadyInitializedSettings,
       ),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns false when key absent") {
+      test("isServerInitialized returns false when key absent") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(!result)
       }.provide(InMemoryRepositories.live() >>> ZLayer.fromZIO(withSettings(Map.empty))),
-      test("ZIOServerSettingsRepository companion: isServerInitialized returns false for non-Bool value") {
+      test("isServerInitialized returns false for non-Bool value") {
         for {
-          result <- ZIOServerSettingsRepository.isServerInitialized
+          result <- ZIO.serviceWithZIO[ZIORepositories](_.setting.isServerInitialized)
         } yield assertTrue(!result)
       }.provide(
         InMemoryRepositories.live() >>> ZLayer.fromZIO(

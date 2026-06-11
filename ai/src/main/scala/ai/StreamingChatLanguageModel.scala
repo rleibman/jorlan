@@ -28,6 +28,18 @@ object StreamingChatLanguageModel {
         messages: util.List[ChatMessage],
         handler:  StreamingChatResponseHandler,
       ): Unit = j.chat(messages, handler)
+
+      override def chat(
+        messages:           util.List[ChatMessage],
+        toolSpecifications: util.List[ToolSpecification],
+        handler:            StreamingChatResponseHandler,
+      ): Unit = {
+        import dev.langchain4j.model.chat.request.ChatRequest
+        j.chat(
+          ChatRequest.builder().messages(messages).toolSpecifications(toolSpecifications).build(),
+          handler,
+        )
+      }
     }
 
 }

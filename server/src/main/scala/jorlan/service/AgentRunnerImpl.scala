@@ -11,45 +11,67 @@
 package jorlan.service
 
 import jorlan.*
+import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
 import jorlan.domain.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
-import java.time.Instant
+/** Immutable environment threaded through the [[AgentRunnerImpl.reactLoop]] without changing across recursive calls. */
+private case class ReactLoopEnv(
+  sessionId: AgentSessionId,
+  tools:     List[ToolSpec],
+  actorId:   Option[UserId],
+  agentId:   AgentId,
+  ctx:       InvocationContext,
+  errorRef:  Ref[Option[String]],
+  chunksRef: Ref[Vector[String]],
+)
 
-/** [[AgentRunner]] implementation. On each [[processMessage]] call it:
-  *   1. Seeds the [[ModelGateway]] with persisted conversation history if this is the first call for the session.
-  *   2. Reads the current personality from [[ServerSettingsRepository]].
-  *   3. Injects relevant [[MemoryRecord]]s from [[MemoryService]] into the system prompt.
-  *   4. Streams the model response token-by-token through [[SessionHub]].
-  *   5. Persists the user message and assistant response to [[ZIOConversationRepository]].
-  *   6. Evaluates [[CheckpointPolicy]] and runs the checkpoint pipeline when triggered.
+/** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, and cached
+  * personality.
   */
 private class AgentRunnerState(
-  val seeded:         Ref[Set[AgentSessionId]],
-  val activeConvs:    Ref[Map[AgentSessionId, ConversationId]],
-  val cachedAgentIds: Ref[Map[AgentSessionId, AgentId]],
+  val seeded:            Ref[Set[AgentSessionId]],
+  val activeConvs:       Ref[Map[AgentSessionId, ConversationId]],
+  val cachedAgentIds:    Ref[Map[AgentSessionId, AgentId]],
+  val cachedPersonality: Ref[Option[Personality]],
 )
 
 private object AgentRunnerState {
 
   val make: UIO[AgentRunnerState] =
     for {
-      seeded         <- Ref.make(Set.empty[AgentSessionId])
-      activeConvs    <- Ref.make(Map.empty[AgentSessionId, ConversationId])
-      cachedAgentIds <- Ref.make(Map.empty[AgentSessionId, AgentId])
-    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds)
+      seeded            <- Ref.make(Set.empty[AgentSessionId])
+      activeConvs       <- Ref.make(Map.empty[AgentSessionId, ConversationId])
+      cachedAgentIds    <- Ref.make(Map.empty[AgentSessionId, AgentId])
+      cachedPersonality <- Ref.make(Option.empty[Personality])
+    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds, cachedPersonality)
 
 }
 
+/** [[AgentRunner]] implementation. On each [[processMessage]] call it:
+  *   1. Seeds the [[ModelGateway]] with persisted conversation history if this is the first call for the session.
+  *   2. Reads the current personality from [[ServerSettingsRepository]].
+  *   3. Injects relevant [[MemoryRecord]]s from [[MemoryService]] into the system prompt.
+  *   4. Runs the ReAct (Reason+Act) tool-calling loop via [[ModelGateway.chatStep]]:
+  *      - Streams model output token-by-token through [[SessionHub]].
+  *      - Invokes registered [[SkillRegistry]] tools when the model requests them.
+  *      - Loops until the model emits a final text answer or `maxToolSteps` is exceeded.
+  *   5. Persists the user message and assistant response to [[ZIOConversationRepository]].
+  *   6. Evaluates [[CheckpointPolicy]] and runs the checkpoint pipeline when triggered.
+  */
 class AgentRunnerImpl(
   modelGateway:  ModelGateway,
   sessionHub:    SessionHub,
+  toolEventHub:  ToolEventHub,
   repo:          ZIORepositories,
   memoryService: MemoryService,
+  skillRegistry: SkillRegistry,
   runnerState:   AgentRunnerState,
+  maxToolSteps:  Int,
 ) extends AgentRunner {
 
   private val seeded = runnerState.seeded
@@ -74,27 +96,102 @@ class AgentRunnerImpl(
           _      <- ConversationLogger.logUserMessage(sessionId, actorId, content)
           memCtx <- buildMemoryContext(sessionId, actorId, agentId, content)
           systemPrompt = Personality.buildSystemPrompt(personality) + memCtx
-          _ <- logSessionEvent(sessionId, EventType.UserMessageReceived, actorId)
-          _ <- ZIO.scoped {
-            modelGateway
-              .streamedResponse(sessionId, content, systemPrompt)
-              .mapError(e => JorlanError(e.msg, Some(e)))
-              .tapError(e => errorRef.set(Some(e.getMessage)))
-              .foreach { chunk =>
-                chunksRef.update(_ :+ chunk) *>
-                  sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
-              }
-          }
+          _     <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
+          tools <- skillRegistry.allToolSpecs
+          initialMessages = buildInitialMessages(systemPrompt, content)
+          ctx = InvocationContext(
+            actorId = actorId.getOrElse(UserId.empty),
+            agentId = Option.when(agentId != AgentId.empty)(agentId),
+            sessionId = Some(sessionId),
+          )
+          env = ReactLoopEnv(sessionId, tools, actorId, agentId, ctx, errorRef, chunksRef)
+          _ <- reactLoop(env, initialMessages, stepsLeft = maxToolSteps)
         } yield ()
       _ <- work
         .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
         .ensuring(finaliseResponse(convId, sessionId, content, actorId, agentId, personality, errorRef, chunksRef))
     } yield ()
 
-  private def logSessionEvent(
-    sessionId: AgentSessionId,
-    eventType: EventType,
-    actorId:   Option[UserId],
+  private def buildInitialMessages(
+    systemPrompt: String,
+    userContent:  String,
+  ): List[AgentMessage] = {
+    val systemMsgs: List[AgentMessage] =
+      if (systemPrompt.nonEmpty) List(SystemMsg(systemPrompt)) else Nil
+    systemMsgs :+ UserMsg(userContent)
+  }
+
+  private def reactLoop(
+    env:       ReactLoopEnv,
+    messages:  List[AgentMessage],
+    stepsLeft: Int,
+  ): IO[JorlanError, Unit] = {
+    import env.*
+    if (stepsLeft <= 0) {
+      val errMsg = "\n[Tool call limit reached — stopping]\n"
+      logEvent(sessionId, EventType.ToolLoopExceeded, actorId, agentId) *>
+        sessionHub.publish(ResponseChunk(sessionId, errMsg, finished = false)).unit
+    } else {
+      modelGateway
+        .chatStep(sessionId, messages, tools)
+        .mapError(e => JorlanError(e.msg, Some(e)))
+        .flatMap {
+          case FinalAnswer(stream) =>
+            ZIO.scoped {
+              stream
+                .mapError(e => JorlanError(e.msg, Some(e)))
+                .tapError(e => errorRef.set(Some(e.getMessage)))
+                .foreach { chunk =>
+                  chunksRef.update(_ :+ chunk) *>
+                    sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
+                }
+            }
+
+          case ToolCallRequested(id, name, argsJson) =>
+            val toolFeedback = s"⟳ calling $name…\n"
+            for {
+              _ <- sessionHub.publish(ResponseChunk(sessionId, toolFeedback, finished = false))
+              _ <- toolEventHub.publish(ToolEvent.ToolInvokedEvent(sessionId, name, argsJson))
+              _ <- logEvent(
+                sessionId,
+                EventType.SkillInvoked,
+                actorId,
+                agentId,
+                Some(
+                  zio.json.ast.Json
+                    .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(argsJson)),
+                ),
+              )
+              resultJson <- skillRegistry.invoke(name, argsJson, ctx)
+              _          <- toolEventHub.publish(
+                ToolEvent.ToolResultEvent(sessionId, name, resultJson.toString, succeeded = true),
+              )
+              _ <- logEvent(
+                sessionId,
+                EventType.SkillSucceeded,
+                actorId,
+                agentId,
+                Some(
+                  zio.json.ast.Json
+                    .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(resultJson.toString)),
+                ),
+              )
+              newMessages = messages ++ List(
+                ToolCallMsg(id, name, argsJson),
+                ToolResultMsg(id, name, resultJson.toString),
+              )
+              _ <- reactLoop(env, newMessages, stepsLeft - 1)
+            } yield ()
+        }
+    }
+  }
+
+  private def logEvent(
+    sessionId:   AgentSessionId,
+    eventType:   EventType,
+    actorId:     Option[UserId],
+    agentId:     AgentId = AgentId.empty,
+    payloadJson: Option[zio.json.ast.Json] = None,
   ): UIO[Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
@@ -103,10 +200,10 @@ class AgentRunnerImpl(
             id = EventLogId.empty,
             eventType = eventType,
             actorId = actorId,
-            agentId = None,
+            agentId = Option.when(agentId != AgentId.empty)(agentId),
             sessionId = Some(sessionId),
             resource = Some(sessionId),
-            payloadJson = None,
+            payloadJson = payloadJson,
             occurredAt = now,
           ),
         )
@@ -123,23 +220,23 @@ class AgentRunnerImpl(
     errorRef:    Ref[Option[String]],
     chunksRef:   Ref[Vector[String]],
   ): UIO[Unit] =
-    errorRef.get.flatMap { errMsg =>
-      chunksRef.get.flatMap { chunks =>
-        val fullResponse = chunks.mkString
-        val sentinel = errMsg match {
-          case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
-          case None      => ResponseChunk(sessionId, "", finished = true)
-        }
-        ZIO.logDebug(
-          s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
-        ) *>
-          sessionHub.publish(sentinel) *>
-          ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined) *>
-          persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg) *>
-          runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg) *>
-          logSessionEvent(sessionId, EventType.AgentResponseCompleted, actorId)
+    for {
+      errMsg <- errorRef.get
+      chunks <- chunksRef.get
+      fullResponse = chunks.mkString
+      sentinel = errMsg match {
+        case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
+        case None      => ResponseChunk(sessionId, "", finished = true)
       }
-    }
+      _ <- ZIO.logDebug(
+        s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
+      )
+      _ <- sessionHub.publish(sentinel)
+      _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined)
+      _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg)
+      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg)
+      _ <- logEvent(sessionId, EventType.AgentResponseCompleted, actorId)
+    } yield ()
 
   override def subscribeToSession(
     sessionId:    AgentSessionId,
@@ -269,16 +366,16 @@ class AgentRunnerImpl(
     errMsg:        Option[String],
   ): UIO[Unit] =
     actorId.fold(ZIO.unit) { userId =>
-      {
-        val now = java.time.Instant.now()
-        val userMsg = Message(MessageId.empty, ConversationId.empty, MessageRole.User, userText, None, now)
-        val asstMsg =
-          Message(MessageId.empty, ConversationId.empty, MessageRole.Assistant, assistantText, None, now)
-        memoryService
-          .checkpoint(sessionId, List(userMsg, asstMsg), userId, agentId, CheckpointTrigger.SessionEnd)
-          .tapError(err => ZIO.logWarning(s"[session:$sessionId] Checkpoint failed: $err"))
-          .ignore
-      }.unless(errMsg.isDefined && assistantText.isBlank).unit
+      Clock.instant
+        .flatMap { now =>
+          val userMsg = Message(MessageId.empty, ConversationId.empty, MessageRole.User, userText, None, now)
+          val asstMsg =
+            Message(MessageId.empty, ConversationId.empty, MessageRole.Assistant, assistantText, None, now)
+          memoryService
+            .checkpoint(sessionId, List(userMsg, asstMsg), userId, agentId, CheckpointTrigger.SessionEnd)
+            .tapError(err => ZIO.logWarning(s"[session:$sessionId] Checkpoint failed: $err"))
+            .ignore
+        }.unless(errMsg.isDefined && assistantText.isBlank).unit
     }
 
   private def buildMemoryContext(
@@ -310,35 +407,50 @@ class AgentRunnerImpl(
     }
 
   private val loadPersonality: ZIO[Any, RepositoryError, Personality] =
-    repo.setting.get(ZIOServerSettingsRepository.PersonalityKey).flatMap {
-      case Some(json) =>
-        json.as[Personality] match {
-          case Right(p)  => ZIO.succeed(p)
-          case Left(err) =>
-            ZIO.logWarning(s"Corrupt personality in server_settings: $err. Using default.") *>
-              ZIO.succeed(Personality.default)
+    runnerState.cachedPersonality.get.flatMap {
+      case Some(p) => ZIO.succeed(p)
+      case None    =>
+        repo.setting.get(ZIOServerSettingsRepository.PersonalityKey).flatMap {
+          case Some(json) =>
+            json.as[Personality] match {
+              case Right(p)  => runnerState.cachedPersonality.set(Some(p)).as(p)
+              case Left(err) =>
+                ZIO.logWarning(s"Corrupt personality in server_settings: $err. Using default.") *>
+                  ZIO.succeed(Personality.default)
+            }
+          case None => ZIO.succeed(Personality.default)
         }
-      case None => ZIO.succeed(Personality.default)
     }
 
 }
 
 object AgentRunnerImpl {
 
-  val live: URLayer[ModelGateway & SessionHub & ZIORepositories & MemoryService, AgentRunner] =
+  val defaultMaxToolSteps: Int = 10
+
+  val live: URLayer[
+    ModelGateway & SessionHub & ToolEventHub & ZIORepositories & MemoryService & SkillRegistry & ConfigurationService,
+    AgentRunner,
+  ] =
     ZLayer.fromZIO(
       for {
         modelGateway  <- ZIO.service[ModelGateway]
         sessionHub    <- ZIO.service[SessionHub]
+        toolEventHub  <- ZIO.service[ToolEventHub]
         repo          <- ZIO.service[ZIORepositories]
         memoryService <- ZIO.service[MemoryService]
+        skillRegistry <- ZIO.service[SkillRegistry]
+        settings      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent).orDie
         runnerState   <- AgentRunnerState.make
       } yield AgentRunnerImpl(
         modelGateway = modelGateway,
         sessionHub = sessionHub,
+        toolEventHub = toolEventHub,
         repo = repo,
         memoryService = memoryService,
+        skillRegistry = skillRegistry,
         runnerState = runnerState,
+        maxToolSteps = settings.maxToolSteps,
       ),
     )
 

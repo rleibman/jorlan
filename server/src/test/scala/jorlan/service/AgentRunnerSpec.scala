@@ -13,7 +13,10 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOMemoryRepository, ZIORepositories, ZIOServerSettingsRepository}
 import jorlan.domain.*
-import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
+import jorlan.service.llm.FakeModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.skills.SkillRegistry
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.stream.ZStream
 import zio.test.*
@@ -32,7 +35,10 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
     ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
       FakeModelGateway.layer(chunks, delay),
       SessionHub.live,
+      ToolEventHub.live,
       NoOpMemoryService.layer,
+      SkillRegistry.live,
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
     )
 
@@ -40,7 +46,10 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
     ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
       FakeModelGateway.failingLayer(ModelUnavailable("offline")),
       SessionHub.live,
+      ToolEventHub.live,
       NoOpMemoryService.layer,
+      SkillRegistry.live,
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
     )
   }
@@ -203,9 +212,65 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
         InMemoryRepositories.live(),
         FakeModelGateway.layer(List("ok")),
         NoOpMemoryService.layer,
+        SkillRegistry.live,
+        FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         SessionHub.live,
+        ToolEventHub.live,
       ),
+      // P12-027: ensureSeeded calls seedHistory when prior conversation messages exist
+      test("ensureSeeded calls seedHistory when prior conversation history is non-empty") {
+        import java.time.Instant
+        for {
+          seedCalled <- Ref.make(false)
+          convRepo   <- InMemoryRepositories.InMemoryConversationRepo.make
+          // Pre-populate: create a conversation + message for this session
+          now = Instant.now()
+          conv <- convRepo.create(Conversation(ConversationId.empty, sessionId, now)).orDie
+          _    <- convRepo
+            .addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "prior message", None, now)).orDie
+          repos = InMemoryRepositories.live(conversationRepoOpt = Some(convRepo))
+          _ <- ZIO
+            .serviceWithZIO[AgentRunner](_.processMessage(sessionId, "new message", Some(userId)))
+            .provide(
+              AgentRunnerImpl.live,
+              FakeModelGateway.seedTrackingLayer(List("ok"), seedCalled),
+              SessionHub.live,
+              ToolEventHub.live,
+              NoOpMemoryService.layer,
+              SkillRegistry.live,
+              FakeConfigurationService.layer,
+              repos,
+            )
+          wasCalled <- seedCalled.get
+        } yield assertTrue(wasCalled)
+      },
+      // P12-028: getOrCreateConversation reuses an existing DB conversation (cache-miss path)
+      test("getOrCreateConversation reuses existing DB conversation on cache-miss") {
+        import java.time.Instant
+        for {
+          convRepo <- InMemoryRepositories.InMemoryConversationRepo.make
+          now = Instant.now()
+          existing <- convRepo.create(Conversation(ConversationId.empty, sessionId, now)).orDie
+          repos = InMemoryRepositories.live(conversationRepoOpt = Some(convRepo))
+          _ <- ZIO
+            .serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
+            .provide(
+              AgentRunnerImpl.live,
+              FakeModelGateway.layer(List("ok")),
+              SessionHub.live,
+              ToolEventHub.live,
+              NoOpMemoryService.layer,
+              SkillRegistry.live,
+              FakeConfigurationService.layer,
+              repos,
+            )
+          allConvs <- convRepo.search(ConversationSearch(sessionId = sessionId, pageSize = 10)).orDie
+        } yield assertTrue(
+          allConvs.exists(_.id == existing.id),
+          allConvs.length == 1, // No new conversation was created
+        )
+      },
       test("processMessage injects pre-stored memory records into system prompt") {
         import jorlan.service.*
         import jorlan.testing.InMemoryRepositories
@@ -235,19 +300,12 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             _       <- fiber.join
             prompts <- capturedPrompts.get
           } yield prompts).provideSome[ZIORepositories](
-            ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
             FakeModelGateway.capturingLayer(List("ok"), capturedPrompts),
             SessionHub.live,
+            ToolEventHub.live,
+            SkillRegistry.live,
+            FakeConfigurationService.layer,
             AgentRunnerImpl.live,
-            ZLayer.succeed(new CheckpointSummarizer {
-              override def summarize(
-                msgs: List[Message],
-                uid:  UserId,
-                aid:  AgentId,
-              ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
-            }),
-            ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
-            ZLayer.succeed(CheckpointPolicy.onSessionEnd),
             MemoryServiceImpl.live,
           )
         } yield assertTrue(result.exists(_.contains("User prefers Scala")))

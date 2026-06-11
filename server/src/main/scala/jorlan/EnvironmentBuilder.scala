@@ -10,64 +10,30 @@
 
 package jorlan
 
-import _root_.ai.LangChainConfig
-import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
-import _root_.auth.{AuthConfig, AuthServer, SecretKey}
+import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import _root_.auth.{AuthConfig, AuthServer}
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.connector.telegram.*
-import jorlan.db.FlywayMigration
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.domain.*
 import jorlan.service.*
+import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
+import jorlan.service.skills.SkillRegistry
 import zio.http.Client
-import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
+import zio.{ULayer, URLayer, ZIO, ZLayer}
 
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
-
-  private val databaseConfigLayer: ZLayer[ConfigurationService, ConfigurationError, DatabaseConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db))
-
-  private val flywayConfigLayer: ZLayer[ConfigurationService, ConfigurationError, FlywayConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.flyway))
-
-  private val langChainConfigLayer: ZLayer[ConfigurationService, ConfigurationError, LangChainConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai))
-
-  private val authConfigLayer: ZLayer[ConfigurationService, ConfigurationError, AuthConfig] =
-    ZLayer.fromZIO(
-      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
-        val a = cfg.jorlan.auth
-        AuthConfig(
-          secretKey = SecretKey(a.secretKey),
-          accessTTL = a.accessTtlMinutes.minutes,
-          refreshTTL = a.refreshTtlDays.days,
-        )
-      },
-    )
-
-  private def toProviderConfig(s: OAuthProviderSettings): OAuthProviderConfig =
-    OAuthProviderConfig(
-      clientId = s.clientId,
-      clientSecret = s.clientSecret,
-      authorizationUri = s.authorizationUri,
-      tokenUri = s.tokenUri,
-      userInfoUri = s.userInfoUri,
-      redirectUri = s.redirectUri,
-      scopes = s.scopes,
-    )
 
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
     ZLayer
       .fromZIO(
         ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
           val a = cfg.jorlan.auth
-          OAuthService.live(
-            googleConfig = a.google.map(toProviderConfig),
-            githubConfig = a.github.map(toProviderConfig),
-            discordConfig = a.discord.map(toProviderConfig),
-          )
+          OAuthService.live() // Note if you later want to support oauth
         },
       ).flatten
 
@@ -99,33 +65,26 @@ object EnvironmentBuilder {
     ZLayer
       .make[JorlanEnvironment](
         ConfigurationServiceImpl.live,
-        databaseConfigLayer,
-        flywayConfigLayer,
-        langChainConfigLayer,
-        FlywayMigration.live,
+        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.auth)),
         QuillRepositories.live,
         CapabilityEvaluatorImpl.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
-        authConfigLayer,
         oauthServiceLayer,
         OAuthStateStore.live(),
         SessionHub.live,
+        ToolEventHub.live,
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
-        MemoryClassifierImpl.live,
-        MemoryAccessPolicyImpl.live,
-        CheckpointSummarizerImpl.live,
-        ZLayer.succeed(CheckpointPolicy.onSessionEnd),
         MemoryServiceImpl.live,
-        MemorySkill.live,
+        NotificationRouter.live,
+        SkillRegistry.liveSecure,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,
         MessageIngressImpl.live,
         liveConnectorManagerLayer,
         Client.default,
-        // TODO Phase 12: wire SchedulerSkill.live once SkillRegistry is available
       ).orDie
 
 }
