@@ -99,18 +99,23 @@
 .toast .success .countdown {
   background-color: rgba(0, 0, 0, 0.1);
   bottom: 0px;
-  height: 0px;
+  height: 4px;
   left: 0px;
-  opacity: 0;
+  opacity: 1;
   position: absolute;
   width: 100%;
-  animation: animation-hnule4-shrink 5000ms linear 0s 1 normal none running;
+  transform-origin: left;
+  animation: animation-hnule4-shrink 5000ms linear 0s 1 normal forwards;
+}
+
+@keyframes animation-hnule4-shrink {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
 }
 
 /* ============================================================
  * Warning — Brushed Brass accent
  * ============================================================ */
-
 .toast .warning {
   background-color: #2A1F0A;
   color: #F5F3EE;
