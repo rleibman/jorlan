@@ -12,7 +12,8 @@ lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time o
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Global stuff
 ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
-ThisBuild / resolvers += "GitHub Packages rleibman" at "https://maven.pkg.github.com/rleibman/zio-auth"
+ThisBuild / resolvers += "GitHub Packages rleibman/zio-auth" at "https://maven.pkg.github.com/rleibman/zio-auth"
+ThisBuild / resolvers += "GitHub Packages rleibman/jorlan" at "https://maven.pkg.github.com/rleibman/jorlan"
 ThisBuild / credentials += Credentials(
   "GitHub Package Registry",
   "maven.pkg.github.com",

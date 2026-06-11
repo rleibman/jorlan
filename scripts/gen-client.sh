@@ -20,7 +20,8 @@ if [ ! -f "$SCHEMA" ]; then
 fi
 
 echo "Generating client from $SCHEMA ..."
-mkdir -p "$(dirname "$OUTPUT")"
+mkdir -p "$(dirname "$OUTPUT1")"
+mkdir -p "$(dirname "$OUTPUT2")"
 cd "$PROJECT_ROOT"
 SCALAR_MAPPINGS="\
 UserId:jorlan.domain.UserId,\
