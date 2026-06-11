@@ -101,7 +101,7 @@ The result is a platform that supports both autonomous AI-driven execution and h
 
 ## Technology Stack
 
-- **Language**: Scala 3.8.3 with `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
+- **Language**: Scala 3.8.4 with `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
 - **Effects**: ZIO 2.x throughout
 - **Database**: MariaDB via Quill (`quill-jdbc-zio`) + Flyway migrations
 - **API**: Caliban (GraphQL) as the primary external API
@@ -111,6 +111,7 @@ The result is a platform that supports both autonomous AI-driven execution and h
 - **Scheduling**: cron4s for cron expression parsing
 - **Testing**: zio-test + Testcontainers (MariaDB)
 - **Connection pool**: HikariCP
+- **Web frontend**: Scala.js + React 19 + MUI v9 (via ScalablyTyped bindings in `stLib`)
 
 ---
 
@@ -123,6 +124,8 @@ jorlan/
 ├── ai/           LLM client integrations (LangChain4j + Ollama)
 ├── server/       Caliban GraphQL API, HTTP server, agent runtime, scheduler, memory system
 ├── shell/        Interactive TUI shell — connects to the server over GraphQL + WebSocket
+├── web/          Scala.js SPA — React 19 + MUI v9 web frontend (served directly by the server)
+├── stLib/        ScalablyTyped bindings sub-project for React 19 + MUI v9 + Emotion
 ├── analytics/    Analytics subsystem (future)
 ├── integration/  Integration tests (Testcontainers)
 └── util/         Shared utilities
@@ -214,6 +217,7 @@ The server returns **503** for all non-status/init endpoints until setup complet
 | `GET  /api/jorlan/ws` | GraphQL over WebSocket (subscriptions) |
 | `GET  /api/jorlan/graphiql` | GraphiQL IDE (browser) |
 | `GET  /health` | Liveness probe |
+| `GET  /` | Web frontend SPA (served from `jorlan.web.root`, defaults to `/opt/jorlan/www`) |
 
 ---
 
@@ -282,13 +286,51 @@ Key bindings: **Enter** submit · **Backspace** delete · **PgUp/PgDn** scroll �
 
 ---
 
+## Web Frontend
+
+The `web` module is a Scala.js single-page application that connects to the Jorlan server via the same Caliban GraphQL API used by the shell. It is served directly by the server — no nginx or separate web server required.
+
+### Pages
+
+| Page | Description |
+|---|---|
+| **Chat** | Start sessions, send messages, stream responses in real time |
+| **Sessions** | Browse active/past sessions, create or terminate |
+| **Approvals** | Review and decide pending capability approval requests (live badge in nav) |
+| **Memory** | Search, remember, forget, and classify memory records |
+| **Scheduler** | Browse jobs and triggers, pause/resume/cancel/run-now/delete |
+| **Event Log** | Live-tail the event log via WebSocket subscription |
+| **Skills** | Skill registry browser (stub — awaiting `listSkillVersions` GraphQL query) |
+| **Users** | User, role, and permission management (admin) |
+| **Settings** | Server personality editor, model selector |
+
+### Building the web frontend
+
+```bash
+# Build the optimised bundle (outputs to dist/)
+bash scripts/build-web.sh
+
+# Build a fast (development) bundle (outputs to debugDist/)
+sbtn "web/debugDist"
+```
+
+The `stLib` ScalablyTyped sub-project must be published once before the web module can compile. Run this manually from the repo root when `stLib/` sources change:
+
+```bash
+cd stLib && sbt publishLocal
+```
+
+For local development, set `jorlan.web.root = "debugDist"` in `server/src/main/resources/application.conf` so the server serves the fast-opt bundle without needing a full production build.
+
+---
+
 ## Build & Test
 
 ```bash
 # Compile all modules
 sbt --error compile
 
-# Run all tests (unit + server + shell)
+# Run all tests (unit + server + shell + web)
 sbt --error test
 
 # Run integration tests (requires Docker for Testcontainers)
@@ -297,6 +339,9 @@ sbt --error integration/test
 # Format all sources
 sbt scalafmtAll
 
+# Build the web frontend
+bash scripts/build-web.sh
+
 # Regenerate GraphQL schema (after API changes)
 bash scripts/capture-schema.sh
 
@@ -304,7 +349,7 @@ bash scripts/capture-schema.sh
 bash scripts/gen-client.sh
 ```
 
-Test counts (as of Phase 10): **685 tests** across `ai`, `server`, `shell`, and `integration` modules — all passing without a running server or Ollama.
+Test counts (as of Phase 15): **843 tests** across `ai`, `server`, `shell`, `web`, and `integration` modules — all passing without a running server or Ollama.
 
 ---
 
@@ -389,11 +434,11 @@ All persistence goes through typed repository traits in `model`. The `db` module
 | **9** | **Memory system — checkpointing, summarization, access policy, context injection** | **✅ Complete** |
 | **10** | **Durable scheduler — cron/interval triggers, DB locking, retry/backoff** | **✅ Complete** |
 | **11** | **Telegram connector** | **✅ Complete** |
+| **12** | **Built-in skills — ReAct loop, SkillRegistry, 8 skills** | **✅ Complete** |
 | **18** | **Installer and distribution (.deb, macOS Homebrew)** | **✅ Complete** |
-| 12 | Built-in skills — workspace, shell, notification, identity | Planned |
 | 13 | Email and Calendar skills | Planned |
 | 14 | Orchestrator integration | Planned |
-| 15 | Web frontend (Scala.js) | Planned |
+| **15** | **Web frontend (Scala.js + React 19 + MUI v9)** | **✅ Complete** |
 | 16 | Additional features (shell autocomplete, etc.) | Planned |
 | 17 | Advanced features — declarative skills, MCP adapter, vector memory | Planned |
 | 18 | Installer and distribution (.deb, macOS Homebrew) | ✅ Complete |

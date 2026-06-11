@@ -1,6 +1,6 @@
 ---
 name: Jorlan Codebase Patterns
-description: Recurring idioms, duplication hotspots, and conventions confirmed across Phases 0-11 code review
+description: Recurring idioms, conventions, and duplication hotspots confirmed across Phases 0-15 code review
 type: project
 ---
 
@@ -20,11 +20,22 @@ type: project
 3. **Quill repo methods** — Every method wraps with `.provideLayer(ds).mapError(RepositoryError(_))`. A private helper method `run[A](q: => Task[A])` in a base class could eliminate this repetition.
 4. **`onConflictUpdate` formatting** — multi-line tuple style is forced by Quill's inline macro; not a style choice.
 
+## Phase 15 Web Frontend Duplication Hotspots (2026-06-10)
+1. **`makeAdapter()` pattern** — Identical 6-line `ScalaJSClientAdapter(Uri.parse(...).fold(...), connectionId)` block copy-pasted in 7 files (SessionsPage, ApprovalsPage, MemoryPage, EventLogPage, UsersPage, SettingsPage, AppShell, ChatPage). Each repeats the protocol sniffing logic inline. A single `def makeAdapter(): ScalaJSClientAdapter` in a shared location (e.g., `JorlanWebApp` or a new `WebUtil` object) would eliminate ~42 lines.
+2. **`useEffectOnMountBy` adapter instantiation** — 6 pages construct the adapter inside `Callback { val adapter = ... }` in `useEffectOnMountBy`, AND also instantiate another adapter inside event handlers in the render function (e.g., ApprovalsPage `decide`, MemoryPage `forget`, SettingsPage `update`). This means 2 adapters are created per page interaction — redundant.
+3. **`ArgEncoder` all follow `(id: T) => ArgEncoder.long.encode(id.value)`** — 8 long-backed IDs have identical encoder bodies. Flagged in Phase 7; still present in Phase 15.
+4. **`debugDist` and `dist` tasks in build.sbt** — Near-identical 25-line bodies differing only in `fastOptJS`/`fullOptJS` and `debugFolder`/`distFolder`. Should be extracted into a private `def makeDist(...)` function.
+
 ## Bugs / Design Notes Found
 - `ChannelIdentity.id` is typed as `UserId` but is the PK of the channel_identity table — should logically be its own opaque ID type (flagged as design question in review)
 - `Permission.id` is typed as `RoleId` — same concern
 - `EventLogRepository.search` applies `from`/`to` filters in-memory after SQL `take(limit)` — this means date filtering happens on an already-truncated result set; the limit applies before the date filter (potential correctness bug)
 - `ConfigurationServiceImpl.appConfig` is a `lazy val` on a `new ConfigurationService { ... }` — calling `.appConfig` twice returns the same cached `IO`, which is fine since `orDie` makes it a `UIO` internally but the declared type is `IO[ConfigurationError, AppConfig]`
+- **Phase 15**: `SessionsPage` Terminate button (line 97) calls `Callback.empty` — no action is wired. Mutation `terminateSession` exists in `JorlanClient.Mutations` but is not called.
+- **Phase 15**: `ApprovalsPage` filters by `ApprovalStatus.Pending` in the render function (line 114) but the initial load via `listApprovals` presumably already returns only pending ones (or all). The filter is redundant if the query already filters, or missing from the query if it doesn't. Needs clarification.
+- **Phase 15**: `ClientConfiguration` is defined but never used — the adapter construction inline in each page uses `org.scalajs.dom.window.location.host` directly, bypassing `ClientConfiguration.live.host`. The class is dead code.
+- **Phase 15**: `ScalaJSClientAdapter.makeWebSocketClient` has `var socket` (mutable) and `var connectionState` (mutable `ConnectionState`) — breaks referential transparency. State mutations happen imperatively in callbacks. This is a pragmatic JS interop choice but worth flagging.
+- **Phase 15**: `EventLogPage` creates the WebSocket subscription in `useEffectOnMountBy` but never stores the returned `WebSocketHandler` — there is no cleanup/close call on unmount. The subscription leaks when the user navigates away.
 
 ## Phase 3 GraphQL API Branch Observations (2026-05-27)
 - `QuillRepositories.scala` (~1500 lines): the dominant complexity driver is the `search` method duplication — each of the 9 repos has a sort-dispatch match block that repeats the full filtered query per case. The base query (filters + pagination) is identical within each repo; only the `.sortBy` call differs. This is the single highest-impact refactoring opportunity.

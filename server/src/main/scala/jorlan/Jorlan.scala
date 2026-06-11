@@ -17,6 +17,7 @@ import jorlan.db.repository.*
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
+import jorlan.web.StaticFileRoutes
 import jorlan.service.*
 import zio.*
 import zio.http.*
@@ -73,16 +74,18 @@ object Jorlan extends ZIOApp {
     */
   def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
     for {
+      config     <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
       authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
       repo       <- ZIO.service[ZIORepositories]
       authR      <- authServer.authRoutes
       unauthR    <- authServer.unauthRoutes
       graphqlR   <- JorlanRoutes.routes
       statusR = StatusRoutes.routes(startTime, repo)
+      staticR = StaticFileRoutes.routes(config.jorlan.web.root)
     } yield {
       ((healthRoutes ++ statusR ++ authR ++ graphqlR).handleErrorCauseZIO(
         mapError,
-      ) @@ authServer.bearerSessionProvider ++ unauthR)
+      ) @@ authServer.bearerSessionProvider ++ unauthR ++ staticR)
         .handleErrorCause { cause =>
           cause.squash match {
             case ExpiredToken(msg, _) => Response.unauthorized(msg)

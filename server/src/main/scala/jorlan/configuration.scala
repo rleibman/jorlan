@@ -47,6 +47,10 @@ case class AuthSettings(
   discord:          Option[OAuthProviderSettings] = None,
 )
 
+case class WebConfig(
+  root: String = "/opt/jorlan/www",
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
   db:     DatabaseConfig,
@@ -54,6 +58,7 @@ case class JorlanConfig(
   http:   HttpConfig = HttpConfig(),
   auth:   AuthSettings,
   ai:     LangChainConfig = LangChainConfig(),
+  web:    WebConfig = WebConfig(),
 )
 
 /** Root application configuration. */
