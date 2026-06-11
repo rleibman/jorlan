@@ -36,6 +36,28 @@ lazy val start = TaskKey[Unit]("start")
 lazy val dist = TaskKey[File]("dist")
 lazy val debugDist = TaskKey[File]("debugDist")
 
+def webDistImpl(
+  assets:            File,
+  webpackArtifacts:  Seq[Attributed[File]],
+  artifactFolder:    File,
+  outputFolder:      File,
+  includeSourceMaps: Boolean,
+): File = {
+  outputFolder.mkdirs()
+  FileUtils.copyDirectory(assets, outputFolder, true)
+  if (artifactFolder.exists()) {
+    println(s"Copying webpack output from: $artifactFolder")
+    val bundles = (artifactFolder * "*.js").get ++
+      (if (includeSourceMaps) (artifactFolder * "*.js.map").get else Seq.empty)
+    bundles.foreach { bundleFile =>
+      Files.copy(bundleFile.toPath, (outputFolder / bundleFile.name).toPath, REPLACE_EXISTING)
+    }
+  } else {
+    println(s"Webpack output directory does not exist: $artifactFolder")
+  }
+  outputFolder
+}
+
 lazy val scala3Opts = Seq(
   "-Wconf:msg=Implicit parameters should be provided with a `using` clause:s",
   "-deprecation", // Emit warning and location for usages of deprecated APIs.
@@ -608,57 +630,20 @@ lazy val web: Project = project
       "dev.zio" %%% "zio"      % zioVersion withSources (),
       "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),
     ),
-    debugDist := {
-
-      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
-
-      val artifacts = (Compile / fastOptJS / webpack).value
-      val artifactFolder = (Compile / fastOptJS / crossTarget).value
-      val debugFolder = (ThisBuild / baseDirectory).value / "debugDist"
-
-      debugFolder.mkdirs()
-      FileUtils.copyDirectory(assets, debugFolder, true)
-
-      // Copy all JS and map files from webpack output directory (including chunks)
-      val webpackOutputDir = artifactFolder
-      if (webpackOutputDir.exists()) {
-        println(s"Copying webpack output from: $webpackOutputDir")
-        val allBundles = (webpackOutputDir * "*.js").get ++ (webpackOutputDir * "*.js.map").get
-        allBundles.foreach { bundleFile =>
-          val targetFile = debugFolder / bundleFile.name
-          Files.copy(bundleFile.toPath, targetFile.toPath, REPLACE_EXISTING)
-        }
-      } else {
-        println(s"Webpack output directory does not exist: $webpackOutputDir")
-      }
-
-      debugFolder
-    },
-    dist := {
-      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
-
-      val artifacts = (Compile / fullOptJS / webpack).value
-      val artifactFolder = (Compile / fullOptJS / crossTarget).value
-      val distFolder = (ThisBuild / baseDirectory).value / "dist"
-
-      distFolder.mkdirs()
-      FileUtils.copyDirectory(assets, distFolder, true)
-
-      // Copy all JS and map files from webpack output directory (including chunks)
-      val webpackOutputDir = artifactFolder
-      if (webpackOutputDir.exists()) {
-        println(s"Copying webpack output from: $webpackOutputDir")
-        val allBundles = (webpackOutputDir * "*.js").get ++ (webpackOutputDir * "*.js.map").get
-        allBundles.foreach { bundleFile =>
-          val targetFile = distFolder / bundleFile.name
-          Files.copy(bundleFile.toPath, targetFile.toPath, REPLACE_EXISTING)
-        }
-      } else {
-        println(s"Webpack output directory does not exist: $webpackOutputDir")
-      }
-
-      distFolder
-    },
+    debugDist := webDistImpl(
+      assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
+      webpackArtifacts = (Compile / fastOptJS / webpack).value,
+      artifactFolder = (Compile / fastOptJS / crossTarget).value,
+      outputFolder = (ThisBuild / baseDirectory).value / "debugDist",
+      includeSourceMaps = true,
+    ),
+    dist := webDistImpl(
+      assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
+      webpackArtifacts = (Compile / fullOptJS / webpack).value,
+      artifactFolder = (Compile / fullOptJS / crossTarget).value,
+      outputFolder = (ThisBuild / baseDirectory).value / "dist",
+      includeSourceMaps = false,
+    ),
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

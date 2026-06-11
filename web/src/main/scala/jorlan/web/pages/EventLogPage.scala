@@ -15,63 +15,90 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.ScalaJSClientAdapter
+import jorlan.web.graphql.WebSocketHandler
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import scala.scalajs.js.timers
 
 /** Live event log tail via WebSocket subscription. */
 object EventLogPage {
 
   case class State(
-    events:   List[JorlanClient.EventLogJson.EventLogJsonView],
-    running:  Boolean,
-    expanded: Set[EventLogId],
+    events:    List[JorlanClient.EventLogJson.EventLogJsonView],
+    running:   Boolean,
+    expanded:  Set[EventLogId],
+    wsHandler: Option[WebSocketHandler],
+    error:     Option[String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, running = false, Set.empty))
+      .useState(State(Nil, running = false, Set.empty, None, error = None))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           Callback {
-            val adapter = ScalaJSClientAdapter(
-              Uri
-                .parse(
-                  s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                )
-                .fold(_ => throw new Exception("bad uri"), identity),
-              JorlanWebApp.connectionId,
-            )
-            adapter.makeWebSocketClient(
-              webSocket = None,
-              query = JorlanClient.Subscriptions.eventLogTail(JorlanClient.EventLogJson.view),
-              operationId = "event-log-tail",
-              socketConnectionId = "event-log",
-              onData = {
-                (
-                  _,
-                  dataOpt,
-                ) =>
-                  dataOpt.flatten.fold(Callback.empty) { event =>
-                    state.setState(
-                      state.value.copy(
-                        events = (event :: state.value.events).take(200),
-                        running = true,
-                      ),
-                    )
-                  }
-              },
-            )
-            state.setState(state.value.copy(running = true)).runNow()
+            // Buffer incoming events and flush in a single setState every 100 ms to avoid per-message re-renders
+            var pendingBatch:   List[JorlanClient.EventLogJson.EventLogJsonView] = Nil
+            var flushScheduled: Boolean = false
+
+            def scheduledFlush(): Unit = {
+              val batch = pendingBatch
+              pendingBatch = Nil
+              flushScheduled = false
+              if (batch.nonEmpty) {
+                state
+                  .setState(
+                    state.value.copy(events = (batch.reverse ::: state.value.events).take(200)),
+                  ).runNow()
+              }
+            }
+
+            val handler = JorlanWebApp
+              .makeAdapter().makeWebSocketClient(
+                webSocket = None,
+                query = JorlanClient.Subscriptions.eventLogTail(JorlanClient.EventLogJson.view),
+                operationId = "event-log-tail",
+                socketConnectionId = "event-log",
+                onData = {
+                  (
+                    _,
+                    dataOpt,
+                  ) =>
+                    dataOpt.flatten.fold(Callback.empty) { event =>
+                      Callback {
+                        pendingBatch = event :: pendingBatch
+                        if (!flushScheduled) {
+                          flushScheduled = true
+                          timers.setTimeout(100)(scheduledFlush())
+                        }
+                      }
+                    }
+                },
+                // Set running only when the WebSocket connection is acknowledged
+                onConnected = {
+                  (
+                    _,
+                    _,
+                  ) => state.setState(state.value.copy(running = true, error = None))
+                },
+                onDisconnected = {
+                  (
+                    _,
+                    _,
+                  ) => state.setState(state.value.copy(running = false))
+                },
+                onClientError = { ex => state.setState(state.value.copy(error = Some(ex.getMessage), running = false)) },
+              )
+            // Store the handler so it can be closed on navigate-away
+            state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
           }
       }
       .render {
@@ -86,7 +113,20 @@ object EventLogPage {
                 Chip.set("label", "Live").set("color", "success").set("size", "small")()
               else
                 Chip.set("label", "Disconnected").set("color", "default").set("size", "small")(),
+              state.value.wsHandler.fold[VdomNode](EmptyVdom) { handler =>
+                MuiButton
+                  .size("small")
+                  .variant("outlined")
+                  .set("color", "warning")
+                  .onClick { () =>
+                    handler
+                      .close()
+                      .flatMap(_ => state.setState(state.value.copy(running = false, wsHandler = None)))
+                      .runNow()
+                  }("Disconnect")
+              },
             ),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.events.isEmpty)
               Alert.set("severity", "info")("Waiting for events…")
             else

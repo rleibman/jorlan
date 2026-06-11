@@ -15,11 +15,10 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.ScalaJSClientAdapter
+import jorlan.web.graphql.WebSocketHandler
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -29,33 +28,60 @@ object ApprovalsPage {
   case class State(
     approvals: List[JorlanClient.ApprovalRequest.ApprovalRequestView],
     loading:   Boolean,
+    wsHandler: Option[WebSocketHandler],
+    error:     Option[String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true))
+      .useState(State(Nil, loading = true, wsHandler = None, error = None))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           Callback {
-            val adapter = ScalaJSClientAdapter(
-              Uri
-                .parse(
-                  s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                )
-                .fold(_ => throw new Exception("bad uri"), identity),
-              JorlanWebApp.connectionId,
-            )
-            adapter
+            // Initial load of pending approvals
+            JorlanWebApp
+              .makeAdapter()
               .asyncCalibanCallWithAuth(
                 JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view),
               )
-              .flatMap(approvals => state.setState(State(approvals.getOrElse(Nil), loading = false)).asAsyncCallback)
-              .completeWith(_ => Callback.empty)
+              .flatMap { approvals =>
+                state
+                  .setState(state.value.copy(approvals = approvals.getOrElse(Nil), loading = false))
+                  .asAsyncCallback
+              }
+              .completeWith {
+                case scala.util.Failure(ex) =>
+                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                case _ => Callback.empty
+              }
               .runNow()
+
+            // Subscribe to real-time approval notifications
+            val handler = JorlanWebApp
+              .makeAdapter().makeWebSocketClient(
+                webSocket = None,
+                query = JorlanClient.Subscriptions.approvalNotifications(JorlanClient.ApprovalRequest.view),
+                operationId = "approvals-subscription",
+                socketConnectionId = "approvals",
+                onData = {
+                  (
+                    _,
+                    dataOpt,
+                  ) =>
+                    dataOpt.flatten.fold(Callback.empty) { newApproval =>
+                      // Append new pending approval if not already present
+                      val existing = state.value.approvals
+                      if (existing.exists(_.id == newApproval.id)) Callback.empty
+                      else
+                        state.setState(state.value.copy(approvals = existing :+ newApproval))
+                    }
+                },
+              )
+            state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
           }
       }
       .render {
@@ -68,31 +94,33 @@ object ApprovalsPage {
             approve: Boolean,
           ): Callback =
             Callback {
-              val adapter = ScalaJSClientAdapter(
-                Uri
-                  .parse(
-                    s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                  )
-                  .fold(_ => throw new Exception("bad uri"), identity),
-                JorlanWebApp.connectionId,
-              )
-              adapter
+              JorlanWebApp
+                .makeAdapter()
                 .asyncCalibanCallWithAuth(
                   JorlanClient.Mutations.decideApproval(id, approve, None),
                 )
-                .flatMap { _ =>
-                  state
-                    .setState(
-                      state.value.copy(approvals = state.value.approvals.filterNot(_.id == id)),
-                    )
-                    .asAsyncCallback
+                .flatMap { result =>
+                  // Only remove from local state if the server confirmed success
+                  if (result.getOrElse(false))
+                    state
+                      .setState(
+                        state.value.copy(approvals = state.value.approvals.filterNot(_.id == id)),
+                      )
+                      .asAsyncCallback
+                  else
+                    AsyncCallback.unit
                 }
-                .completeWith(_ => Callback.empty)
+                .completeWith {
+                  case scala.util.Failure(ex) =>
+                    state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _ => Callback.empty
+                }
                 .runNow()
             }
 
           <.div(
             Typography.set("variant", "h5").set("sx", js.Dynamic.literal(mb = 2))("Pending Approvals"),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.approvals.isEmpty)
@@ -124,9 +152,9 @@ object ApprovalsPage {
                               .set(
                                 "color",
                                 approval.riskClass match {
-                                  case RiskClass.ReadOnly | RiskClass.WorkspaceWrite => "success"
-                                  case RiskClass.Destructive                         => "warning"
-                                  case _                                             => "error"
+                                  case RiskClass.ReadOnly | RiskClass.WorkspaceWrite      => "success"
+                                  case RiskClass.Destructive | RiskClass.ExternalEffect   => "warning"
+                                  case RiskClass.Privileged | RiskClass.SecuritySensitive => "error"
                                 },
                               )
                               .set("size", "small")(),

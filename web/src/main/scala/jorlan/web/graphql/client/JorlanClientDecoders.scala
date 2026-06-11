@@ -34,6 +34,8 @@ object JorlanClientDecoders {
     case other => Left(DecodingError(s"Expected number for $name, got: $other"))
   }
 
+  private def longEncoder[A](unwrap: A => Long): ArgEncoder[A] = (a: A) => ArgEncoder.long.encode(unwrap(a))
+
   implicit val userIdDecoder:         ScalarDecoder[UserId] = longDecoder(UserId(_), "UserId")
   implicit val roleIdDecoder:         ScalarDecoder[RoleId] = longDecoder(RoleId(_), "RoleId")
   implicit val permissionIdDecoder:   ScalarDecoder[PermissionId] = longDecoder(PermissionId(_), "PermissionId")
@@ -41,34 +43,33 @@ object JorlanClientDecoders {
   implicit val agentSessionIdDecoder: ScalarDecoder[AgentSessionId] = longDecoder(AgentSessionId(_), "AgentSessionId")
   implicit val approvalRequestIdDecoder: ScalarDecoder[ApprovalRequestId] =
     longDecoder(ApprovalRequestId(_), "ApprovalRequestId")
-  implicit val eventLogIdDecoder:  ScalarDecoder[EventLogId] = longDecoder(EventLogId(_), "EventLogId")
-  implicit val workspaceIdDecoder: ScalarDecoder[WorkspaceId] = longDecoder(WorkspaceId(_), "WorkspaceId")
+  implicit val eventLogIdDecoder:     ScalarDecoder[EventLogId] = longDecoder(EventLogId(_), "EventLogId")
+  implicit val workspaceIdDecoder:    ScalarDecoder[WorkspaceId] = longDecoder(WorkspaceId(_), "WorkspaceId")
+  implicit val memoryRecordIdDecoder: ScalarDecoder[MemoryRecordId] = longDecoder(MemoryRecordId(_), "MemoryRecordId")
+  implicit val capabilityGrantIdDecoder: ScalarDecoder[CapabilityGrantId] =
+    longDecoder(CapabilityGrantId(_), "CapabilityGrantId")
+  implicit val schedulerJobIdDecoder: ScalarDecoder[SchedulerJobId] = longDecoder(SchedulerJobId(_), "SchedulerJobId")
+  implicit val schedulerTriggerIdDecoder: ScalarDecoder[SchedulerTriggerId] =
+    longDecoder(SchedulerTriggerId(_), "SchedulerTriggerId")
 
   implicit val modelIdDecoder: ScalarDecoder[ModelId] = {
     case __StringValue(v) => Right(ModelId(v))
     case other            => Left(DecodingError(s"Expected string for ModelId, got: $other"))
   }
 
-  implicit val userIdEncoder:         ArgEncoder[UserId] = (id: UserId) => ArgEncoder.long.encode(id.value)
-  implicit val roleIdEncoder:         ArgEncoder[RoleId] = (id: RoleId) => ArgEncoder.long.encode(id.value)
-  implicit val permissionIdEncoder:   ArgEncoder[PermissionId] = (id: PermissionId) => ArgEncoder.long.encode(id.value)
-  implicit val agentIdEncoder:        ArgEncoder[AgentId] = (id: AgentId) => ArgEncoder.long.encode(id.value)
-  implicit val agentSessionIdEncoder: ArgEncoder[AgentSessionId] = (id: AgentSessionId) =>
-    ArgEncoder.long.encode(id.value)
-  implicit val approvalRequestIdEncoder: ArgEncoder[ApprovalRequestId] = (id: ApprovalRequestId) =>
-    ArgEncoder.long.encode(id.value)
-  implicit val eventLogIdEncoder:  ArgEncoder[EventLogId] = (id: EventLogId) => ArgEncoder.long.encode(id.value)
-  implicit val workspaceIdEncoder: ArgEncoder[WorkspaceId] = (id: WorkspaceId) => ArgEncoder.long.encode(id.value)
-  implicit val modelIdEncoder:     ArgEncoder[ModelId] = (id: ModelId) => ArgEncoder.string.encode(id.value)
-
-  implicit val memoryRecordIdDecoder: ScalarDecoder[MemoryRecordId] = longDecoder(MemoryRecordId(_), "MemoryRecordId")
-  implicit val memoryRecordIdEncoder: ArgEncoder[MemoryRecordId] = (id: MemoryRecordId) =>
-    ArgEncoder.long.encode(id.value)
-
-  implicit val capabilityGrantIdDecoder: ScalarDecoder[CapabilityGrantId] =
-    longDecoder(CapabilityGrantId(_), "CapabilityGrantId")
-  implicit val capabilityGrantIdEncoder: ArgEncoder[CapabilityGrantId] = (id: CapabilityGrantId) =>
-    ArgEncoder.long.encode(id.value)
+  implicit val userIdEncoder:             ArgEncoder[UserId] = longEncoder(_.value)
+  implicit val roleIdEncoder:             ArgEncoder[RoleId] = longEncoder(_.value)
+  implicit val permissionIdEncoder:       ArgEncoder[PermissionId] = longEncoder(_.value)
+  implicit val agentIdEncoder:            ArgEncoder[AgentId] = longEncoder(_.value)
+  implicit val agentSessionIdEncoder:     ArgEncoder[AgentSessionId] = longEncoder(_.value)
+  implicit val approvalRequestIdEncoder:  ArgEncoder[ApprovalRequestId] = longEncoder(_.value)
+  implicit val eventLogIdEncoder:         ArgEncoder[EventLogId] = longEncoder(_.value)
+  implicit val workspaceIdEncoder:        ArgEncoder[WorkspaceId] = longEncoder(_.value)
+  implicit val memoryRecordIdEncoder:     ArgEncoder[MemoryRecordId] = longEncoder(_.value)
+  implicit val capabilityGrantIdEncoder:  ArgEncoder[CapabilityGrantId] = longEncoder(_.value)
+  implicit val schedulerJobIdEncoder:     ArgEncoder[SchedulerJobId] = longEncoder(_.value)
+  implicit val schedulerTriggerIdEncoder: ArgEncoder[SchedulerTriggerId] = longEncoder(_.value)
+  implicit val modelIdEncoder:            ArgEncoder[ModelId] = (id: ModelId) => ArgEncoder.string.encode(id.value)
 
   implicit val capabilityNameDecoder: ScalarDecoder[CapabilityName] = {
     case __StringValue(v) => Right(CapabilityName(v))
@@ -95,6 +96,7 @@ object JorlanClientDecoders {
   implicit val approvalStatusDecoder: ScalarDecoder[ApprovalStatus] =
     enumDecoder(ApprovalStatus.valueOf, "ApprovalStatus")
   implicit val approvalModeDecoder: ScalarDecoder[ApprovalMode] = enumDecoder(ApprovalMode.valueOf, "ApprovalMode")
+  implicit val formalityDecoder:    ScalarDecoder[Formality] = enumDecoder(Formality.valueOf, "Formality")
   implicit val channelTypeDecoder:  ScalarDecoder[ChannelType] = enumDecoder(ChannelType.valueOf, "ChannelType")
   implicit val riskClassDecoder:    ScalarDecoder[RiskClass] = enumDecoder(RiskClass.valueOf, "RiskClass")
 
@@ -102,18 +104,9 @@ object JorlanClientDecoders {
   implicit val sessionStatusEncoder:  ArgEncoder[SessionStatus] = enumEncoder(_.toString)
   implicit val approvalStatusEncoder: ArgEncoder[ApprovalStatus] = enumEncoder(_.toString)
   implicit val approvalModeEncoder:   ArgEncoder[ApprovalMode] = enumEncoder(_.toString)
+  implicit val formalityEncoder:      ArgEncoder[Formality] = enumEncoder(_.toString)
   implicit val channelTypeEncoder:    ArgEncoder[ChannelType] = enumEncoder(_.toString)
   implicit val riskClassEncoder:      ArgEncoder[RiskClass] = enumEncoder(_.toString)
-
-  implicit val schedulerJobIdDecoder: ScalarDecoder[SchedulerJobId] =
-    longDecoder(SchedulerJobId(_), "SchedulerJobId")
-  implicit val schedulerJobIdEncoder: ArgEncoder[SchedulerJobId] = (id: SchedulerJobId) =>
-    ArgEncoder.long.encode(id.value)
-
-  implicit val schedulerTriggerIdDecoder: ScalarDecoder[SchedulerTriggerId] =
-    longDecoder(SchedulerTriggerId(_), "SchedulerTriggerId")
-  implicit val schedulerTriggerIdEncoder: ArgEncoder[SchedulerTriggerId] = (id: SchedulerTriggerId) =>
-    ArgEncoder.long.encode(id.value)
 
   implicit val jobStatusDecoder:          ScalarDecoder[JobStatus] = enumDecoder(JobStatus.valueOf, "JobStatus")
   implicit val triggerTypeDecoder:        ScalarDecoder[TriggerType] = enumDecoder(TriggerType.valueOf, "TriggerType")

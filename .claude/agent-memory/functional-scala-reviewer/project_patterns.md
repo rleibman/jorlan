@@ -169,6 +169,22 @@ type: project
 - `CheckpointSummarizerImpl.summarize` does not call `modelGateway.invalidateSession(tempSessionId)` after use. The `OllamaModelGateway` will retain a `sessions` entry for `AgentSessionId(0L)` indefinitely (accumulating summarization history across checkpoints). This is a resource leak.
 - `AgentRunnerImpl.buildMemoryContext` catches all errors from `memoryService.query` via `.catchAll(_ => ZIO.succeed(""))` — silently swallows memory fetch errors in a way that is invisible to the caller. A `ZIO.logWarning` before the fallback would preserve observability.
 
+## Phase 15 Web Frontend Patterns (reviewed 2026-06-10)
+
+- Adapter construction (`ScalaJSClientAdapter(Uri.parse(...).fold(_ => throw new Exception("bad uri"), identity), ...)`) is copy-pasted verbatim in 8 page files and in `AppShell` — the `throw` path inside `fold` is the primary purity violation; should be extracted once into a helper returning `Either` or `AsyncCallback`.
+- `var socket` and `var connectionState` in `ScalaJSClientAdapter.makeWebSocketClient` anonymous class are mutable fields — intentional for JS WebSocket interop where mutation is necessary; but `connectionState` is a case class mutated via `connectionState = connectionState.copy(...)` which means concurrent JS callbacks can race on it (single-threaded JS so technically safe, but not structurally obvious).
+- `return` statement in `attemptReconnect()` (ScalaJSClientAdapter.scala line 179) — style violation under the project's no-explicit-return rule.
+- `Instant.now()` called directly in `ScalaJSClientAdapter` (lines 182, 245, 261) — bare side-effectful clock calls, not wrapped in any effect type.
+- `println` used in ScalaJSClientAdapter lines 149, 179, 186, 193 — raw side effects, not `Callback.log` or any controlled channel.
+- `ClientConfiguration.live` is an object-level `val` initialised eagerly via `window.location` DOM access — side effect at class load time.
+- `JorlanWebApp.connectionId` is a top-level object-level `val` calling `ConnectionId.unsafeRandom` — side effect at object initialisation time (acceptable for JS singleton entry-point, documented as known pattern).
+- `AppShell.useEffectOnMountBy` wraps the entire async chain in a `Callback { ... .runNow() }` pattern — the `Callback` wrapper hides the async operation from React's lifecycle; the `.runNow()` fires-and-forgets, and errors from `completeWith(_ => Callback.empty)` are silently discarded. This recurs in every page's `useEffectOnMount`. Error feedback to the user is absent in most pages.
+- `SessionsPage` / `ApprovalsPage` / `MemoryPage` / `UsersPage` Terminate/action buttons call `Callback.empty.runNow()` as a stub — these are no-ops masquerading as UI actions; no error or placeholder feedback.
+- `ChatPage.streamBuffer` state field is managed but never populated from the WebSocket subscription — `streaming` flag is set but the subscription is not wired up, so streamed responses are silently dropped.
+- `EventLogPage.makeWebSocketClient` result (the `WebSocketHandler`) is not stored anywhere; `close()` is never called, so the WebSocket leaks on component unmount.
+- `AppRouter.useEffect(Callback.empty)` on line 51 is a no-op placeholder with a comment "hash change listener placeholder" — browser `popstate`/`hashchange` events are not wired, so navigating back/forward with the browser does not update the page state.
+- `JorlanClientDecoders` uses `implicit val` throughout rather than `given` — intentional for Caliban's `import _` pattern (documented). Not a new deviation.
+
 ## Known Issues Found (first review, 2026-05-25)
 
 - `ChannelIdentity.id` typed as `UserId` (a PK reuse), which is confusing and weakens type safety; no dedicated `ChannelIdentityId` type.

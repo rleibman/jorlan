@@ -363,3 +363,109 @@ path, or one group-chat message if a registered group chat ID is stored.
 - Context window size is not reported by `/models` (Ollama's tag endpoint does not include it; requires a per-model `showInformation` call).
 - Personality changes that reset conversation history are not surfaced to the user — the model silently starts fresh.
 - The Telegram connector receives inbound messages and routes them through the agent pipeline, but outbound tool-calling (agent sending a Telegram message in response to a prompt) is not yet wired — `AgentRunnerImpl` has no tool-calling loop and the `SkillRegistry` is deferred. See Section G for the detailed gap analysis.
+
+---
+
+## Section H — Phase 15: Web Frontend
+
+> Last updated: 2026-06-11
+
+### Prerequisites
+
+- `JORLAN_WEB_ROOT` set to the output of `sbt debugDist` (default: `debugDist/` in the project root)
+- Browser with developer tools open (Network tab, Console tab)
+- An existing user account in the database (see Section A)
+
+### H1. Authentication gate
+
+1. Navigate to `http://localhost:8080/` in the browser.
+2. Confirm the Login page appears (not the main app).
+3. Enter invalid credentials — confirm an error message appears.
+4. Enter valid credentials — confirm redirect to the Chat page.
+5. Refresh the page — confirm you remain on the Chat page (JWT persisted in localStorage).
+6. Click the **Logout** button — confirm redirect back to the Login page.
+
+### H2. Chat page — create session and stream
+
+1. On the Chat page, click **New Session**.
+2. Confirm a session is created and the "Session: …" label appears in the header.
+3. Type a short message and press **Enter**.
+4. Confirm the user message appears immediately in the message log.
+5. Confirm the AI response streams in token by token (the blinking cursor `▊` should be visible during streaming).
+6. After streaming completes, confirm the full response appears as an "assistant" message.
+7. Open the Network tab — confirm a WebSocket connection to `/api/jorlan/ws` is open.
+
+### H3. Sessions page
+
+1. Navigate to **Sessions** in the sidebar.
+2. Confirm the session created in H2 appears in the list.
+3. Click **+ New Session** — confirm a dialog opens with a model picker.
+4. Select a model (or leave default) and click **Create** — confirm a new session row appears.
+5. Click **Terminate** on an Active session — confirm the row disappears (or status changes to Cancelled).
+
+### H4. Approvals page
+
+1. Trigger a capability request from the shell that requires approval (e.g. a destructive skill).
+2. Navigate to **Approvals** in the sidebar.
+3. Confirm the pending approval appears in the table.
+4. Click **Approve** — confirm the row disappears.
+5. Trigger another request; without refreshing, confirm it appears in real time (subscription check).
+6. Click **Deny** — confirm the row disappears and the capability is not granted.
+
+### H5. Memory page
+
+1. Navigate to **Memory**.
+2. Click **+ Remember**; fill in Key, Text, and optionally Scope. Click **Remember**.
+3. Confirm the new record appears in the table.
+4. Type a search term in the search box — confirm the list is filtered (server-side query).
+5. Click **Share** on a private memory — confirm the scope chip changes to "shared".
+6. Click **Privatize** on a shared memory — confirm the scope chip reverts.
+7. Click **Forget** — confirm the row disappears.
+
+### H6. Scheduler page
+
+1. Navigate to **Scheduler**.
+2. Confirm any existing jobs appear in the table.
+3. Click **▼** on a job — confirm the triggers sub-table expands.
+4. Test **Pause**, **Resume**, **Run Now**, **Cancel**, and **Delete** actions on a job.
+5. Click **Refresh** — confirm the list updates.
+
+### H7. Event Log page
+
+1. Navigate to **Event Log**.
+2. Confirm the "Live" chip is green and a WebSocket connection is open.
+3. Perform an action (send a message, approve a request) — confirm the corresponding event appears.
+4. Click the expand **▼** on an event with a payload — confirm the JSON payload renders.
+5. Click **Disconnect** — confirm the chip changes to "Disconnected" and no further events arrive.
+
+### H8. Users page
+
+1. Navigate to **Users**.
+2. Confirm the list of users is displayed with correct columns.
+
+### H9. Settings page
+
+1. Navigate to **Settings**.
+2. Change the Formality dropdown to **Professional**.
+3. Edit the System Prompt field.
+4. Click **Save** — confirm "Saved!" appears.
+5. Change a field — confirm "Saved!" disappears.
+
+### H10. GraphiQL (developer tool)
+
+1. Navigate to `http://localhost:8080/api/graphiql`.
+2. Confirm GraphiQL 3.x loads without console errors.
+3. Run an introspection query (`{ __schema { queryType { name } } }`) — confirm it returns data.
+4. Confirm the JWT from localStorage is sent in the Authorization header.
+
+### H11. Path traversal guard
+
+1. In the browser address bar, try `http://localhost:8080/../../etc/passwd`.
+2. Confirm the response is `index.html` (SPA fallback), not a system file.
+
+### H12. Cache-Control headers
+
+1. With browser dev tools open (Network tab), load any `.js` asset.
+2. Confirm the response has `Cache-Control: max-age=31536000`.
+3. Load `index.html` directly — confirm the response has `Cache-Control: no-cache`.
+

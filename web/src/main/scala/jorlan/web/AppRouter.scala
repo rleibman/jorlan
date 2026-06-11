@@ -14,24 +14,36 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.User
 import jorlan.web.pages.*
+import org.scalajs.dom
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
+/** A page in the single-page application identified by its URL hash fragment.
+  *
+  * @param hash
+  *   The `window.location.hash` value that activates this page (e.g. `"#/sessions"`). The empty/root hash `"#/"` maps
+  *   to [[Chat]].
+  * @param label
+  *   Human-readable name shown in the navigation drawer and app-bar title.
+  * @param icon
+  *   Material Icons ligature string rendered as `<span class="material-icons">icon</span>` in the nav drawer.
+  */
 enum AppPage(
   val hash:  String,
   val label: String,
+  val icon:  String,
 ) {
 
-  case Chat extends AppPage("#/", "Chat")
-  case Sessions extends AppPage("#/sessions", "Sessions")
-  case Approvals extends AppPage("#/approvals", "Approvals")
-  case Memory extends AppPage("#/memory", "Memory")
-  case Scheduler extends AppPage("#/scheduler", "Scheduler")
-  case EventLog extends AppPage("#/events", "Event Log")
-  case Skills extends AppPage("#/skills", "Skills")
-  case Users extends AppPage("#/users", "Users")
-  case Settings extends AppPage("#/settings", "Settings")
+  case Chat extends AppPage("#/", "Chat", "chat")
+  case Sessions extends AppPage("#/sessions", "Sessions", "list")
+  case Approvals extends AppPage("#/approvals", "Approvals", "approval")
+  case Memory extends AppPage("#/memory", "Memory", "memory")
+  case Scheduler extends AppPage("#/scheduler", "Scheduler", "schedule")
+  case EventLog extends AppPage("#/events", "Event Log", "event_note")
+  case Skills extends AppPage("#/skills", "Skills", "extension")
+  case Users extends AppPage("#/users", "Users", "group")
+  case Settings extends AppPage("#/settings", "Settings", "settings")
 
 }
 
@@ -48,7 +60,18 @@ object AppRouter {
     ScalaFnComponent
       .withHooks[User]
       .useState(State(currentPage))
-      .useEffect(Callback.empty) // hash change listener placeholder
+      .useEffectOnMountBy {
+        (
+          _,
+          state,
+        ) =>
+          Callback {
+            // Sync React state when the user navigates via browser back/forward or direct URL entry
+            val listener: js.Function1[dom.HashChangeEvent, Unit] =
+              (_: dom.HashChangeEvent) => state.setState(State(currentPage)).runNow()
+            dom.window.addEventListener("hashchange", listener)
+          }
+      }
       .render {
         (
           user,

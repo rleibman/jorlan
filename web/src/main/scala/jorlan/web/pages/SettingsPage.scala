@@ -15,11 +15,9 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField}
-import jorlan.web.graphql.ScalaJSClientAdapter
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -30,34 +28,32 @@ object SettingsPage {
     personality: Option[JorlanClient.Personality.PersonalityView],
     loading:     Boolean,
     saved:       Boolean,
+    error:       Option[String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(None, loading = true, saved = false))
+      .useState(State(None, loading = true, saved = false, error = None))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           Callback {
-            val adapter = ScalaJSClientAdapter(
-              Uri
-                .parse(
-                  s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                )
-                .fold(_ => throw new Exception("bad uri"), identity),
-              JorlanWebApp.connectionId,
-            )
-            adapter
+            JorlanWebApp
+              .makeAdapter()
               .asyncCalibanCallWithAuth(
                 JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view),
               )
               .flatMap { personality =>
-                state.setState(State(personality, loading = false, saved = false)).asAsyncCallback
+                state.setState(State(personality, loading = false, saved = false, error = None)).asAsyncCallback
               }
-              .completeWith(_ => Callback.empty)
+              .completeWith {
+                case scala.util.Failure(ex) =>
+                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                case _ => Callback.empty
+              }
               .runNow()
           }
       }
@@ -69,15 +65,8 @@ object SettingsPage {
           def update(): Callback =
             Callback {
               state.value.personality.foreach { p =>
-                val adapter = ScalaJSClientAdapter(
-                  Uri
-                    .parse(
-                      s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                    )
-                    .fold(_ => throw new Exception("bad uri"), identity),
-                  JorlanWebApp.connectionId,
-                )
-                adapter
+                JorlanWebApp
+                  .makeAdapter()
                   .asyncCalibanCallWithAuth(
                     JorlanClient.Mutations.updatePersonality(
                       p.name,
@@ -88,15 +77,19 @@ object SettingsPage {
                     )(JorlanClient.Personality.view),
                   )
                   .flatMap { saved =>
-                    state.setState(state.value.copy(personality = saved, saved = true)).asAsyncCallback
+                    state.setState(state.value.copy(personality = saved, saved = true, error = None)).asAsyncCallback
                   }
-                  .completeWith(_ => Callback.empty)
+                  .completeWith {
+                    case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                    case _                      => Callback.empty
+                  }
                   .runNow()
               }
             }
 
           <.div(
             Typography.set("variant", "h5").set("sx", js.Dynamic.literal(mb = 3))("Settings"),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.loading) CircularProgress()
             else
               state.value.personality.fold(<.div("No personality configured")) { p =>
@@ -107,19 +100,23 @@ object SettingsPage {
                     FormControl.set("fullWidth", true)(
                       <.label("Formality"),
                       MuiSelect
-                        .value(p.formality)
+                        .value(p.formality.toString)
                         .label("Formality")
                         .onChange(e =>
                           state
                             .setState(
-                              state.value
-                                .copy(personality = Some(p.copy(formality = e.target.value.asInstanceOf[String]))),
+                              state.value.copy(
+                                personality = Some(
+                                  p.copy(formality = Formality.valueOf(e.target.value.asInstanceOf[String])),
+                                ),
+                                saved = false,
+                              ),
                             )
                             .runNow(),
                         )(
-                          MuiMenuItem.value("formal")("Formal"),
-                          MuiMenuItem.value("neutral")("Neutral"),
-                          MuiMenuItem.value("casual")("Casual"),
+                          Formality.values.toList.map { f =>
+                            MuiMenuItem.value(f.toString)(f.toString)
+                          }*,
                         ),
                     ),
                     MuiTextField
@@ -134,6 +131,7 @@ object SettingsPage {
                           .setState(
                             state.value.copy(
                               personality = Some(p.copy(prompt = e.target.value.asInstanceOf[String])),
+                              saved = false,
                             ),
                           )
                           .runNow(),

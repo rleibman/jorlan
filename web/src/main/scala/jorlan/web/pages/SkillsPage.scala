@@ -28,33 +28,23 @@ import scala.scalajs.js
   */
 object SkillsPage {
 
-  // TODO: replace stub state with real data once listSkillVersions query exists
-  case class State(
-    loading: Boolean,
-  )
-
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(loading = false))
-      .render {
-        (
-          _,
-          _,
-        ) =>
-          <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Skill Registry"),
-            ),
-            Alert.set("severity", "info")(
-              // TODO: remove this alert and render the table below once listSkillVersions is added to the API
-              "Skill registry is not yet queryable via GraphQL. Add `listSkillVersions` to Queries in JorlanAPI.scala, regenerate JorlanClient, then implement this page.",
-            ),
-            // TODO: render table once listSkillVersions query is available:
-            //   TableContainer > Table > TableHead (Name | Tier | Status | Version | "") +
-            //   TableBody rows from JorlanClient.Queries.listSkillVersions(...)
-            //   Each row: name, Chip(tier), Chip(status), version, expand button for manifestJson
-          )
+      .render { _ =>
+        <.div(
+          Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
+            Typography.set("variant", "h5")("Skill Registry"),
+          ),
+          Alert.set("severity", "info")(
+            // TODO: remove this alert and render the table below once listSkillVersions is added to the API
+            "Skill registry is not yet queryable via GraphQL. Add `listSkillVersions` to Queries in JorlanAPI.scala, regenerate JorlanClient, then implement this page.",
+          ),
+          // TODO: render table once listSkillVersions query is available:
+          //   TableContainer > Table > TableHead (Name | Tier | Status | Version | "") +
+          //   TableBody rows from JorlanClient.Queries.listSkillVersions(...)
+          //   Each row: name, Chip(tier), Chip(status), version, expand button for manifestJson
+        )
       }
 
   def apply(user: User): VdomElement = component(user)

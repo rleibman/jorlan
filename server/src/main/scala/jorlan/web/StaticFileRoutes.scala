@@ -31,18 +31,35 @@ object StaticFileRoutes {
           path: Path,
           req:  Request,
         ) =>
-          val segments = path.segments
-          val requestedFile =
-            if (segments.isEmpty || segments == Chunk(""))
-              new File(root, "index.html")
-            else
-              new File(root, segments.mkString("/"))
+          ZIO
+            .attemptBlocking {
+              val segments = path.segments
+              val candidate =
+                if (segments.isEmpty || segments == Chunk(""))
+                  new File(root, "index.html")
+                else
+                  new File(root, segments.mkString("/"))
 
-          val fileToServe =
-            if (requestedFile.exists() && requestedFile.isFile) requestedFile
-            else new File(root, "index.html")
-
-          ZIO.scoped(Handler.fromFile(fileToServe).orDie.apply(req))
+              // Reject path traversal: canonical path must stay under webRoot
+              val rootCanon = root.getCanonicalPath
+              val candidateCanon = candidate.getCanonicalPath
+              if (!candidateCanon.startsWith(rootCanon))
+                None // traversal attempt — fall through to index.html
+              else if (candidate.exists() && candidate.isFile)
+                Some(candidate)
+              else
+                Some(new File(root, "index.html"))
+            }.orDie.flatMap { fileOpt =>
+              val fileToServe = fileOpt.getOrElse(new File(root, "index.html"))
+              ZIO.scoped(Handler.fromFile(fileToServe).orDie.apply(req)).map { resp =>
+                // index.html must revalidate; hashed assets can be cached for a year
+                val isIndex = fileToServe.getName == "index.html"
+                if (isIndex)
+                  resp.addHeader(Header.CacheControl.NoCache)
+                else
+                  resp.addHeader(Header.CacheControl.MaxAge(31536000))
+              }
+            }
       },
     )
   }

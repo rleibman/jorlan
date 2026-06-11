@@ -30,6 +30,13 @@ import java.time.Instant
 import scala.concurrent.duration.*
 import scala.language.unsafeNulls
 
+/** Handle returned by [[ScalaJSClientAdapter.makeWebSocketClient]] for managing a live GraphQL-over-WebSocket
+  * subscription.
+  *
+  * All callbacks supplied to `makeWebSocketClient` fire on the JavaScript event loop (single-threaded) so they are safe
+  * to call without synchronisation. `close()` may be called from any React callback or lifecycle hook; if the socket is
+  * still connecting it schedules a retry in 1 s. After `close()` completes no further callbacks will fire.
+  */
 trait WebSocketHandler {
 
   def id: String
@@ -87,6 +94,53 @@ case class ScalaJSClientAdapter(
 
   }
 
+  /** Opens a GraphQL-over-WebSocket subscription using the `graphql-ws` protocol.
+    *
+    * The returned [[WebSocketHandler]] holds the live socket reference. Callers must call `handler.close()` when the
+    * subscribing component unmounts to prevent connection leaks.
+    *
+    * Lifecycle: onConnecting → (socket opens) → onConnected → onData* → onDisconnected. If the socket drops
+    * unexpectedly and `reconnect = true`, the sequence retries with exponential backoff up to `reconnectionAttempts`
+    * times within the first hour.
+    *
+    * @param webSocket
+    *   Inject an existing `WebSocket` (useful in tests); `None` opens a new one.
+    * @param query
+    *   The Caliban subscription `SelectionBuilder` to execute.
+    * @param operationId
+    *   GQL `id` field sent in `start`/`stop` messages — must be unique per open subscription.
+    * @param socketConnectionId
+    *   Logical label for this subscription; echoed in the `WebSocketHandler.id` result.
+    * @param onData
+    *   Fired for each `GQL_DATA` frame; second arg is `None` if the payload could not be decoded.
+    * @param connectionParams
+    *   Optional `payload` sent in the `connection_init` message (e.g. auth metadata).
+    * @param timeout
+    *   How long after the last keep-alive ping before a stale connection triggers a reconnect.
+    * @param reconnect
+    *   Whether to attempt reconnection on unexpected close or error.
+    * @param reconnectionAttempts
+    *   Maximum number of reconnect attempts before calling `onClientError`.
+    * @param onConnected
+    *   Fired on the first successful `connection_ack`.
+    * @param onReconnected
+    *   Fired on each subsequent `connection_ack` after a reconnect.
+    * @param onReconnecting
+    *   Fired just before each reconnect attempt.
+    * @param onConnecting
+    *   Fired when the underlying `WebSocket.onopen` event fires.
+    * @param onDisconnected
+    *   Fired when the server sends `GQL_COMPLETE` or the socket closes cleanly.
+    * @param onKeepAlive
+    *   Fired for each `ka` (keep-alive) frame.
+    * @param onServerError
+    *   Fired for `connection_error` or `error` frames from the server.
+    * @param onClientError
+    *   Fired for decoding errors, network errors, or reconnect-budget exhaustion.
+    * @param now
+    *   Clock supplier injected for testability; defaults to `Instant.now()`. All reconnect timing reads this instead of
+    *   calling `Instant.now()` directly so that tests can substitute a deterministic clock.
+    */
   def makeWebSocketClient[A](
     webSocket:            Option[WebSocket],
     query:                SelectionBuilder[RootSubscription, A],
@@ -125,6 +179,7 @@ case class ScalaJSClientAdapter(
       ) => Callback.empty
     },
     onClientError: Throwable => Callback = { _ => Callback.empty },
+    now:           () => Instant = () => Instant.now(),
   ): WebSocketHandler =
     new WebSocketHandler {
 
@@ -145,11 +200,12 @@ case class ScalaJSClientAdapter(
 
       private def newSocket(): WebSocket = {
         val protocol = if (org.scalajs.dom.window.location.protocol == "https:") "wss" else "ws"
-        val uri = new URI(s"$protocol://${ClientConfiguration.live.host}/api/jorlan/ws")
-        println("Connecting to WebSocket at " + uri.toString)
+        val uri = new URI(s"$protocol://${ClientConfiguration.host}/api/jorlan/ws")
+        Callback.log("Connecting to WebSocket at " + uri.toString).runNow()
         org.scalajs.dom.WebSocket(uri.toString, "graphql-ws")
       }
 
+      // JS is single-threaded: var is safe here; there are no concurrent writers.
       var socket: WebSocket = webSocket.getOrElse(newSocket())
 
       case class ConnectionState(
@@ -173,42 +229,39 @@ case class ScalaJSClientAdapter(
         scala.math.min(exponentialDelay, MAX_RECONNECT_DELAY_MS)
       }
 
-      private def attemptReconnect(): Unit = {
+      private def attemptReconnect(): Unit =
         if (connectionState.closed) {
-          println("Not reconnecting - connection was explicitly closed")
-          return
+          Callback.log("Not reconnecting - connection was explicitly closed").runNow()
+        } else {
+          val currentTime = now()
+          val firstReconnect = connectionState.firstReconnectTime.getOrElse(currentTime)
+          val totalReconnectTime = java.time.Duration.between(firstReconnect, currentTime).toMillis
+
+          if (totalReconnectTime > MAX_TOTAL_RECONNECT_TIME_MS) {
+            Callback.log(s"Giving up reconnection after ${totalReconnectTime / 1000 / 60} minutes").runNow()
+            onClientError(Exception("Failed to reconnect after 60 minutes")).runNow()
+          } else {
+            val delay = calculateBackoffDelay(connectionState.reconnectCount)
+            Callback.log(s"Attempting reconnection #${connectionState.reconnectCount + 1} in ${delay}ms").runNow()
+
+            connectionState = connectionState.copy(
+              firstReconnectTime = Some(firstReconnect),
+              reconnectCount = connectionState.reconnectCount + 1,
+            )
+
+            val timeoutId = org.scalajs.dom.window.setTimeout(
+              { () =>
+                onReconnecting(operationId).runNow()
+                val ws = newSocket()
+                socket = ws
+                setupSocketHandlers(ws)
+              },
+              delay,
+            )
+
+            connectionState = connectionState.copy(reconnectTimeoutId = Some(timeoutId))
+          }
         }
-
-        val now = Instant.now()
-        val firstReconnect = connectionState.firstReconnectTime.getOrElse(now)
-        val totalReconnectTime = java.time.Duration.between(firstReconnect, now).toMillis
-
-        if (totalReconnectTime > MAX_TOTAL_RECONNECT_TIME_MS) {
-          println(s"Giving up reconnection after ${totalReconnectTime / 1000 / 60} minutes")
-          onClientError(Exception("Failed to reconnect after 60 minutes")).runNow()
-          return
-        }
-
-        val delay = calculateBackoffDelay(connectionState.reconnectCount)
-        println(s"Attempting reconnection #${connectionState.reconnectCount + 1} in ${delay}ms")
-
-        connectionState = connectionState.copy(
-          firstReconnectTime = Some(firstReconnect),
-          reconnectCount = connectionState.reconnectCount + 1,
-        )
-
-        val timeoutId = org.scalajs.dom.window.setTimeout(
-          { () =>
-            onReconnecting(operationId).runNow()
-            val ws = newSocket()
-            socket = ws
-            setupSocketHandlers(ws)
-          },
-          delay,
-        )
-
-        connectionState = connectionState.copy(reconnectTimeoutId = Some(timeoutId))
-      }
 
       def doConnect(): Unit = {
         if (!connectionState.closed) {
@@ -258,7 +311,7 @@ case class ScalaJSClientAdapter(
                   ),
                 )
               }
-              connectionState = connectionState.copy(lastKAOpt = Option(Instant.now()))
+              connectionState = connectionState.copy(lastKAOpt = Option(now()))
               onKeepAlive(payload).runNow()
             case Right(GQLOperationMessage(GQL_DATA, id, payloadOpt)) =>
               if (!connectionState.closed) {
@@ -297,7 +350,7 @@ case class ScalaJSClientAdapter(
         }
 
         ws.onclose = { (e: org.scalajs.dom.CloseEvent) =>
-          println(s"WebSocket closed: ${e.reason}")
+          Callback.log(s"WebSocket closed: ${e.reason}").runNow()
           if (!connectionState.closed) attemptReconnect()
         }
       }

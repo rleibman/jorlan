@@ -18,8 +18,6 @@ import jorlan.web.graphql.client.JorlanClientDecoders._
 
 object JorlanClient {
 
-  type Formality = String
-
   type AgentSession
   object AgentSession {
 
@@ -210,7 +208,7 @@ object JorlanClient {
 
     final case class PersonalityView(
       name:      String,
-      formality: Formality,
+      formality: jorlan.domain.Formality,
       languages: List[String],
       expertise: List[String],
       prompt:    String,
@@ -224,7 +222,7 @@ object JorlanClient {
       }
 
     def name: SelectionBuilder[Personality, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
-    def formality: SelectionBuilder[Personality, Formality] =
+    def formality: SelectionBuilder[Personality, jorlan.domain.Formality] =
       _root_.caliban.client.SelectionBuilder.Field("formality", Scalar())
     def languages: SelectionBuilder[Personality, List[String]] =
       _root_.caliban.client.SelectionBuilder.Field("languages", ListOf(Scalar()))
@@ -359,7 +357,7 @@ object JorlanClient {
       capability:   jorlan.domain.CapabilityName,
       scopeJson:    scala.Option[String],
       granteeId:    jorlan.domain.UserId,
-      approvalMode: String, // String or Enum?
+      approvalMode: jorlan.domain.ApprovalMode,
       expiresAt:    scala.Option[java.time.Instant],
       createdAt:    java.time.Instant,
     )
@@ -380,7 +378,7 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field("scopeJson", OptionOf(Scalar()))
     def granteeId: SelectionBuilder[CapabilityGrant, jorlan.domain.UserId] =
       _root_.caliban.client.SelectionBuilder.Field("granteeId", Scalar())
-    def approvalMode: SelectionBuilder[CapabilityGrant, String] =
+    def approvalMode: SelectionBuilder[CapabilityGrant, jorlan.domain.ApprovalMode] =
       _root_.caliban.client.SelectionBuilder.Field("approvalMode", Scalar())
     def expiresAt: SelectionBuilder[CapabilityGrant, scala.Option[java.time.Instant]] =
       _root_.caliban.client.SelectionBuilder.Field("expiresAt", OptionOf(Scalar()))
@@ -742,7 +740,7 @@ object JorlanClient {
 
     def updatePersonality[A](
       name:      String,
-      formality: Formality,
+      formality: jorlan.domain.Formality,
       languages: List[String] = Nil,
       expertise: List[String] = Nil,
       prompt:    String,
@@ -751,6 +749,7 @@ object JorlanClient {
     )(implicit
       encoder0: ArgEncoder[String],
       encoder1: ArgEncoder[List[String]],
+      encoder2: ArgEncoder[jorlan.domain.Formality],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder.Field(
         "updatePersonality",

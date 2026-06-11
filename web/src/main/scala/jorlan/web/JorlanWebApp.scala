@@ -14,10 +14,12 @@ import auth.{AuthClient, LoginRouter}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.{ConnectionId, User, UserId}
+import jorlan.web.graphql.ScalaJSClientAdapter
 import net.leibman.jorlan.muiMaterial.components.{CssBaseline, ThemeProvider}
 import net.leibman.jorlan.muiMaterial.stylesMod
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeMod.ThemeOptions
 import org.scalajs.dom
+import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -26,6 +28,20 @@ import scala.scalajs.js.annotation.JSExport
 object JorlanWebApp {
 
   val connectionId: ConnectionId = ConnectionId.unsafeRandom
+
+  /** Parsed URI for the Jorlan GraphQL API endpoint. Computed once at startup from `window.location`. */
+  val serverUri: Uri = {
+    val protocol = if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"
+    val host = org.scalajs.dom.window.location.host
+    Uri
+      .parse(s"$protocol://$host/api/jorlan").fold(
+        err => throw new IllegalStateException(s"Cannot parse server URI: $err"),
+        identity,
+      )
+  }
+
+  /** Creates a new GraphQL client adapter for the current page load. */
+  def makeAdapter(): ScalaJSClientAdapter = ScalaJSClientAdapter(serverUri, connectionId)
 
   private val theme = stylesMod.createTheme(
     js.Dynamic

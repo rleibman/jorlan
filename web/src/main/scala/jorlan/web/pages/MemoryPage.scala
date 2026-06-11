@@ -15,47 +15,53 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
-import jorlan.web.graphql.ScalaJSClientAdapter
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
 object MemoryPage {
 
+  case class StoreForm(
+    key:   String,
+    text:  String,
+    scope: String,
+  )
+
   case class State(
-    memories: List[JorlanClient.MemoryRecord.MemoryRecordView],
-    search:   String,
-    loading:  Boolean,
+    memories:  List[JorlanClient.MemoryRecord.MemoryRecordView],
+    search:    String,
+    loading:   Boolean,
+    error:     Option[String],
+    showStore: Boolean,
+    storeForm: StoreForm,
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, "", loading = true))
+      .useState(State(Nil, "", loading = true, error = None, showStore = false, StoreForm("", "", "")))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           Callback {
-            val adapter = ScalaJSClientAdapter(
-              Uri
-                .parse(
-                  s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                )
-                .fold(_ => throw new Exception("bad uri"), identity),
-              JorlanWebApp.connectionId,
-            )
-            adapter
+            JorlanWebApp
+              .makeAdapter()
               .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.listMemory()(JorlanClient.MemoryRecord.view),
+                JorlanClient.Queries.listMemory(None)(JorlanClient.MemoryRecord.view),
               )
-              .flatMap(memories => state.setState(State(memories.getOrElse(Nil), "", loading = false)).asAsyncCallback)
-              .completeWith(_ => Callback.empty)
+              .flatMap { memories =>
+                state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
+              }
+              .completeWith {
+                case scala.util.Failure(ex) =>
+                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                case _ => Callback.empty
+              }
               .runNow()
           }
       }
@@ -64,39 +70,129 @@ object MemoryPage {
           _,
           state,
         ) =>
+          def runSearch(q: String): Callback =
+            Callback {
+              val search = if (q.trim.isEmpty) None else Some(q.trim)
+              JorlanWebApp
+                .makeAdapter()
+                .asyncCalibanCallWithAuth(
+                  JorlanClient.Queries.listMemory(search)(JorlanClient.MemoryRecord.view),
+                )
+                .flatMap { memories =>
+                  state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
+                }
+                .completeWith {
+                  case scala.util.Failure(ex) =>
+                    state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  case _ => Callback.empty
+                }
+                .runNow()
+            }
+
           def forget(id: MemoryRecordId): Callback =
             Callback {
-              val adapter = ScalaJSClientAdapter(
-                Uri
-                  .parse(
-                    s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                  )
-                  .fold(_ => throw new Exception("bad uri"), identity),
-                JorlanWebApp.connectionId,
-              )
-              adapter
+              JorlanWebApp
+                .makeAdapter()
                 .asyncCalibanCallWithAuth(JorlanClient.Mutations.forgetMemory(id))
                 .flatMap(_ =>
                   state.setState(state.value.copy(memories = state.value.memories.filter(_.id != id))).asAsyncCallback,
                 )
-                .completeWith(_ => Callback.empty)
+                .completeWith {
+                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _                      => Callback.empty
+                }
                 .runNow()
             }
 
-          val filtered = state.value.memories.filter { m =>
-            val q = state.value.search.toLowerCase
-            q.isEmpty || m.value.toLowerCase.contains(q) || m.recordKey.toLowerCase.contains(q)
+          def markShared(id: MemoryRecordId): Callback =
+            Callback {
+              JorlanWebApp
+                .makeAdapter()
+                .asyncCalibanCallWithAuth(JorlanClient.Mutations.markMemoryShared(id)(JorlanClient.MemoryRecord.view))
+                .flatMap { updated =>
+                  updated.fold(AsyncCallback.unit) { mem =>
+                    state
+                      .setState(state.value.copy(memories = state.value.memories.map(m => if (m.id == id) mem else m)))
+                      .asAsyncCallback
+                  }
+                }
+                .completeWith {
+                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _                      => Callback.empty
+                }
+                .runNow()
+            }
+
+          def markPrivate(id: MemoryRecordId): Callback =
+            Callback {
+              JorlanWebApp
+                .makeAdapter()
+                .asyncCalibanCallWithAuth(
+                  JorlanClient.Mutations.markMemoryPrivate(id)(JorlanClient.MemoryRecord.view),
+                )
+                .flatMap { updated =>
+                  updated.fold(AsyncCallback.unit) { mem =>
+                    state
+                      .setState(state.value.copy(memories = state.value.memories.map(m => if (m.id == id) mem else m)))
+                      .asAsyncCallback
+                  }
+                }
+                .completeWith {
+                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _                      => Callback.empty
+                }
+                .runNow()
+            }
+
+          def storeMemory(): Callback = {
+            val f = state.value.storeForm
+            Callback {
+              JorlanWebApp
+                .makeAdapter()
+                .asyncCalibanCallWithAuth(
+                  JorlanClient.Mutations.storeMemory(f.key, f.text, if (f.scope.isEmpty) None else Some(f.scope))(
+                    JorlanClient.MemoryRecord.view,
+                  ),
+                )
+                .flatMap { stored =>
+                  val updated = stored.fold(state.value.memories)(m => state.value.memories :+ m)
+                  state
+                    .setState(
+                      state.value.copy(
+                        memories = updated,
+                        showStore = false,
+                        storeForm = StoreForm("", "", ""),
+                      ),
+                    )
+                    .asAsyncCallback
+                }
+                .completeWith {
+                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _                      => Callback.empty
+                }
+                .runNow()
+            }
           }
 
           <.div(
-            Typography.set("variant", "h5").set("sx", js.Dynamic.literal(mb = 2))("Memory"),
+            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
+              Typography.set("variant", "h5")("Memory"),
+              MuiButton
+                .variant("contained")
+                .size("small")
+                .onClick(() => state.setState(state.value.copy(showStore = true)).runNow())("+ Remember"),
+            ),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             MuiTextField
               .label("Search")
               .value(state.value.search)
               .variant("outlined")
               .size("small")
               .sx(js.Dynamic.literal(mb = 2, width = 300))
-              .onChange(e => state.setState(state.value.copy(search = e.target.value.asInstanceOf[String])).runNow()),
+              .onChange(e => {
+                val q = e.target.value.asInstanceOf[String]
+                (state.setState(state.value.copy(search = q, loading = true)) >> runSearch(q)).runNow()
+              }),
             if (state.value.loading) CircularProgress()
             else
               TableContainer()(
@@ -111,7 +207,7 @@ object MemoryPage {
                     ),
                   ),
                   TableBody()(
-                    filtered.map { mem =>
+                    state.value.memories.map { mem =>
                       TableRow.withKey(mem.id.value.toString)(
                         TableCell()(mem.recordKey),
                         TableCell()(
@@ -124,17 +220,88 @@ object MemoryPage {
                         ),
                         TableCell()(mem.createdAt.toString.take(19)),
                         TableCell()(
-                          MuiButton
-                            .variant("outlined")
-                            .color("error")
-                            .size("small")
-                            .onClick(() => forget(mem.id).runNow())("Forget"),
+                          Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
+                            if (mem.scope != "shared")
+                              MuiButton
+                                .variant("outlined")
+                                .size("small")
+                                .onClick(() => markShared(mem.id).runNow())("Share")
+                            else
+                              MuiButton
+                                .variant("outlined")
+                                .size("small")
+                                .onClick(() => markPrivate(mem.id).runNow())("Privatize"),
+                            MuiButton
+                              .variant("outlined")
+                              .color("error")
+                              .size("small")
+                              .onClick(() => forget(mem.id).runNow())("Forget"),
+                          ),
                         ),
                       )
                     }*,
                   ),
                 ),
               ),
+            // Store Memory dialog
+            Dialog(state.value.showStore)(
+              DialogTitle()("Remember"),
+              DialogContent()(
+                MuiTextField
+                  .label("Key")
+                  .value(state.value.storeForm.key)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .size("small")
+                  .sx(js.Dynamic.literal(mt = 1, mb = 2))
+                  .onChange(e =>
+                    state
+                      .setState(
+                        state.value
+                          .copy(storeForm = state.value.storeForm.copy(key = e.target.value.asInstanceOf[String])),
+                      )
+                      .runNow(),
+                  ),
+                MuiTextField
+                  .label("Text")
+                  .value(state.value.storeForm.text)
+                  .fullWidth(true)
+                  .multiline(true)
+                  .rows(4)
+                  .variant("outlined")
+                  .size("small")
+                  .sx(js.Dynamic.literal(mb = 2))
+                  .onChange(e =>
+                    state
+                      .setState(
+                        state.value
+                          .copy(storeForm = state.value.storeForm.copy(text = e.target.value.asInstanceOf[String])),
+                      )
+                      .runNow(),
+                  ),
+                MuiTextField
+                  .label("Scope (optional)")
+                  .value(state.value.storeForm.scope)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .size("small")
+                  .onChange(e =>
+                    state
+                      .setState(
+                        state.value
+                          .copy(storeForm = state.value.storeForm.copy(scope = e.target.value.asInstanceOf[String])),
+                      )
+                      .runNow(),
+                  ),
+              ),
+              DialogActions()(
+                MuiButton.onClick(() => state.setState(state.value.copy(showStore = false)).runNow())("Cancel"),
+                MuiButton
+                  .variant("contained")
+                  .disabled(state.value.storeForm.key.trim.isEmpty || state.value.storeForm.text.trim.isEmpty)
+                  .onClick(() => storeMemory().runNow())("Remember"),
+              ),
+            ),
           )
       }
 

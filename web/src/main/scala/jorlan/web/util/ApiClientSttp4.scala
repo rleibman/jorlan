@@ -52,6 +52,17 @@ object ApiClientSttp4 {
   def deserializeJson[B: {JsonDecoder, IsOption}]: String => Either[Exception, B] =
     JsonInput.sanitize[B].andThen(_.fromJson[B].left.map(ZioJsonException(_)))
 
+  /** Executes a Caliban GraphQL request with JWT Bearer authentication.
+    *
+    * Reads the JWT from `localStorage["jwtToken"]`. If the token is expired the client attempts a silent refresh via
+    * `GET /api/auth/refresh`; the new token replaces the stored one and the original request is retried. If the server
+    * returns 401 (definitively invalid) the stored token is removed so the next render redirects to login. Transient
+    * non-2xx responses (500, 503, 429 …) do **not** clear the token — the session is preserved and the error is
+    * surfaced to the caller.
+    *
+    * @param onAuthError
+    *   called when there is no token or a refresh fails; the default reloads the page so `LoginRouter` re-gates.
+    */
   def withAuth[A](
     request:      Request[Either[CalibanClientError, A]],
     connectionId: ConnectionId,
@@ -109,11 +120,15 @@ object ApiClientSttp4 {
         case None =>
           val msg = "No token set, please log in"
           onAuthError(msg) >> AsyncCallback.pure(Left(CalibanClientError.CommunicationError(msg)))
-        case Some(other) if !other.code.isSuccess =>
+        case Some(other) if other.code == StatusCode.Unauthorized =>
+          // Token is definitively invalid — clear it so the user is redirected to login
           AsyncCallback.pure {
             window.localStorage.removeItem("jwtToken")
           } >>
             AsyncCallback.pure(other.body)
+        case Some(other) if !other.code.isSuccess =>
+          // Transient server error — do NOT clear the token; return the error body
+          AsyncCallback.pure(other.body)
         case Some(other) =>
           AsyncCallback.pure(other.body)
       }

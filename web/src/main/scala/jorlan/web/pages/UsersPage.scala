@@ -14,11 +14,9 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
-import jorlan.web.graphql.ScalaJSClientAdapter
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -28,32 +26,32 @@ object UsersPage {
   case class State(
     users:   List[JorlanClient.User.UserView],
     loading: Boolean,
+    error:   Option[String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true))
+      .useState(State(Nil, loading = true, error = None))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           Callback {
-            val adapter = ScalaJSClientAdapter(
-              Uri
-                .parse(
-                  s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-                )
-                .fold(_ => throw new Exception("bad uri"), identity),
-              JorlanWebApp.connectionId,
-            )
-            adapter
+            JorlanWebApp
+              .makeAdapter()
               .asyncCalibanCallWithAuth(
                 JorlanClient.Queries.users()(JorlanClient.User.view),
               )
-              .flatMap(users => state.setState(State(users.getOrElse(Nil), loading = false)).asAsyncCallback)
-              .completeWith(_ => Callback.empty)
+              .flatMap(users =>
+                state.setState(State(users.getOrElse(Nil), loading = false, error = None)).asAsyncCallback,
+              )
+              .completeWith {
+                case scala.util.Failure(ex) =>
+                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                case _ => Callback.empty
+              }
               .runNow()
           }
       }
@@ -66,6 +64,7 @@ object UsersPage {
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
               Typography.set("variant", "h5")("Users"),
             ),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.loading) CircularProgress()
             else
               TableContainer()(

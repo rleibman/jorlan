@@ -14,7 +14,11 @@ import org.scalajs.dom.window
 
 import scala.language.unsafeNulls
 
-case class ClientConfiguration() {
+/** Runtime configuration derived from the browser's `window.location`.
+  *
+  * Port 80 is omitted from the `host` value because it is the HTTP default; all other explicit ports are appended.
+  */
+object ClientConfiguration {
 
   val host: String =
     s"${window.location.hostname}${
@@ -22,11 +26,5 @@ case class ClientConfiguration() {
           s":${window.location.port}"
         else ""
       }"
-
-}
-
-object ClientConfiguration {
-
-  val live: ClientConfiguration = ClientConfiguration()
 
 }

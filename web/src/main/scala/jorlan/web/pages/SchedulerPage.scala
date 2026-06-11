@@ -16,11 +16,9 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.ScalaJSClientAdapter
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -37,16 +35,6 @@ object SchedulerPage {
     loading:  Boolean,
     error:    Option[String],
   )
-
-  private def makeAdapter(): ScalaJSClientAdapter =
-    ScalaJSClientAdapter(
-      Uri
-        .parse(
-          s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-        )
-        .fold(_ => throw new Exception("bad uri"), identity),
-      JorlanWebApp.connectionId,
-    )
 
   private def statusColor(s: JobStatus): String =
     s match {
@@ -68,7 +56,8 @@ object SchedulerPage {
           state,
         ) =>
           Callback {
-            makeAdapter()
+            JorlanWebApp
+              .makeAdapter()
               .asyncCalibanCallWithAuth(
                 JorlanClient.Queries.jobs(None)(JorlanClient.SchedulerJob.view),
               )
@@ -94,7 +83,7 @@ object SchedulerPage {
           _,
           state,
         ) =>
-          val adapter = makeAdapter()
+          val adapter = JorlanWebApp.makeAdapter()
 
           def loadTriggers(jobId: SchedulerJobId): Callback =
             if (state.value.triggers.contains(jobId)) Callback.empty
@@ -122,22 +111,18 @@ object SchedulerPage {
               state.setState(state.value.copy(expanded = state.value.expanded + jobId)) >> loadTriggers(jobId)
 
           def jobAction(
-            mut: SelectionBuilder[caliban.client.Operations.RootMutation, Option[Boolean]],
+            mut:         SelectionBuilder[caliban.client.Operations.RootMutation, Option[Boolean]],
+            updateState: State => State,
           ): Callback =
             Callback {
               adapter
                 .asyncCalibanCallWithAuth(mut)
-                .flatMap { _ =>
-                  adapter
-                    .asyncCalibanCallWithAuth(
-                      JorlanClient.Queries.jobs(None)(JorlanClient.SchedulerJob.view),
-                    )
-                    .flatMap {
-                      case Some(jobs) => state.setState(state.value.copy(jobs = jobs)).asAsyncCallback
-                      case None       => AsyncCallback.unit
-                    }
+                .flatMap(_ => state.setState(updateState(state.value)).asAsyncCallback)
+                .completeWith {
+                  case scala.util.Failure(ex) =>
+                    state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _ => Callback.empty
                 }
-                .completeWith(_ => Callback.empty)
                 .runNow()
             }
 
@@ -203,16 +188,30 @@ object SchedulerPage {
                                     MuiButton
                                       .size("small")
                                       .variant("outlined")
-                                      .onClick(() => jobAction(JorlanClient.Mutations.resumeJob(job.id)).runNow())(
-                                        "Resume",
-                                      )
+                                      .onClick(() =>
+                                        jobAction(
+                                          JorlanClient.Mutations.resumeJob(job.id),
+                                          s =>
+                                            s.copy(jobs =
+                                              s.jobs
+                                                .map(j => if (j.id == job.id) j.copy(status = JobStatus.Pending) else j),
+                                            ),
+                                        ).runNow(),
+                                      )("Resume")
                                   case JobStatus.Running | JobStatus.Pending =>
                                     MuiButton
                                       .size("small")
                                       .variant("outlined")
-                                      .onClick(() => jobAction(JorlanClient.Mutations.pauseJob(job.id)).runNow())(
-                                        "Pause",
-                                      )
+                                      .onClick(() =>
+                                        jobAction(
+                                          JorlanClient.Mutations.pauseJob(job.id),
+                                          s =>
+                                            s.copy(jobs =
+                                              s.jobs
+                                                .map(j => if (j.id == job.id) j.copy(status = JobStatus.Paused) else j),
+                                            ),
+                                        ).runNow(),
+                                      )("Pause")
                                   case _ => EmptyVdom
                                 },
                                 if (job.status != JobStatus.Cancelled && job.status != JobStatus.Succeeded)
@@ -220,23 +219,44 @@ object SchedulerPage {
                                     .size("small")
                                     .variant("outlined")
                                     .set("color", "error")
-                                    .onClick(() => jobAction(JorlanClient.Mutations.cancelJob(job.id)).runNow())(
-                                      "Cancel",
-                                    )
+                                    .onClick(() =>
+                                      jobAction(
+                                        JorlanClient.Mutations.cancelJob(job.id),
+                                        s =>
+                                          s.copy(jobs =
+                                            s.jobs
+                                              .map(j => if (j.id == job.id) j.copy(status = JobStatus.Cancelled) else j),
+                                          ),
+                                      ).runNow(),
+                                    )("Cancel")
                                 else EmptyVdom,
                                 MuiButton
                                   .size("small")
                                   .variant("outlined")
-                                  .onClick(() => jobAction(JorlanClient.Mutations.triggerNow(job.id)).runNow())(
-                                    "Run Now",
-                                  ),
+                                  .onClick(() =>
+                                    jobAction(
+                                      JorlanClient.Mutations.triggerNow(job.id),
+                                      s =>
+                                        s.copy(jobs =
+                                          s.jobs.map(j => if (j.id == job.id) j.copy(status = JobStatus.Running) else j),
+                                        ),
+                                    ).runNow(),
+                                  )("Run Now"),
                                 MuiButton
                                   .size("small")
                                   .variant("outlined")
                                   .set("color", "error")
-                                  .onClick(() => jobAction(JorlanClient.Mutations.deleteJob(job.id)).runNow())(
-                                    "Delete",
-                                  ),
+                                  .onClick(() =>
+                                    jobAction(
+                                      JorlanClient.Mutations.deleteJob(job.id),
+                                      s =>
+                                        s.copy(
+                                          jobs = s.jobs.filterNot(_.id == job.id),
+                                          triggers = s.triggers - job.id,
+                                          expanded = s.expanded - job.id,
+                                        ),
+                                    ).runNow(),
+                                  )("Delete"),
                               ),
                             ),
                             TableCell()(

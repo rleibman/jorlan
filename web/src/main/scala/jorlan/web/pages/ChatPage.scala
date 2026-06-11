@@ -15,11 +15,10 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
-import jorlan.web.graphql.ScalaJSClientAdapter
+import jorlan.web.graphql.WebSocketHandler
 import jorlan.web.graphql.client.JorlanClient
 import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
-import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -38,33 +37,67 @@ object ChatPage {
     messages:     List[ChatMessage],
     streaming:    Boolean,
     streamBuffer: String,
+    wsHandler:    Option[WebSocketHandler],
+    error:        Option[String],
   )
-
-  private def makeAdapter(connectionId: ConnectionId): ScalaJSClientAdapter = {
-    ScalaJSClientAdapter(
-      Uri
-        .parse(
-          s"${if (org.scalajs.dom.window.location.protocol == "https:") "https" else "http"}://${org.scalajs.dom.window.location.host}/api/jorlan",
-        )
-        .fold(_ => throw new Exception("bad uri"), identity),
-      connectionId,
-    )
-  }
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(None, "", Nil, streaming = false, ""))
+      .useState(State(None, "", Nil, streaming = false, "", None, error = None))
       .render {
         (
           _,
           state,
         ) =>
-          val adapter = makeAdapter(JorlanWebApp.connectionId)
+          def openStreamSubscription(sessionId: AgentSessionId): Callback =
+            Callback {
+              // Close any existing stream subscription before opening a new one
+              state.value.wsHandler.foreach(_.close().runNow())
+              val handler = JorlanWebApp
+                .makeAdapter().makeWebSocketClient(
+                  webSocket = None,
+                  query = JorlanClient.Subscriptions
+                    .agentResponseStream(sessionId)(JorlanClient.ResponseChunk.view),
+                  operationId = s"chat-stream-${sessionId.value}",
+                  socketConnectionId = s"chat-${sessionId.value}",
+                  onData = {
+                    (
+                      _,
+                      dataOpt,
+                    ) =>
+                      dataOpt.flatten.fold(Callback.empty) { chunk =>
+                        if (chunk.finished) {
+                          // Flush the completed response into the messages list
+                          val completedMsg = ChatMessage(
+                            if (chunk.isError) "error" else "assistant",
+                            state.value.streamBuffer + chunk.content,
+                            new js.Date().toISOString(),
+                          )
+                          state.setState(
+                            state.value.copy(
+                              messages = state.value.messages :+ completedMsg,
+                              streaming = false,
+                              streamBuffer = "",
+                            ),
+                          )
+                        } else {
+                          state.setState(
+                            state.value.copy(
+                              streaming = true,
+                              streamBuffer = state.value.streamBuffer + chunk.content,
+                            ),
+                          )
+                        }
+                      }
+                  },
+                )
+              state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            }
 
           def sendMessage(): Callback = {
             val text = state.value.input.trim
-            if (text.isEmpty) Callback.empty
+            if (text.isEmpty || state.value.sessionId.isEmpty) Callback.empty
             else {
               state.setState(
                 state.value.copy(
@@ -75,14 +108,16 @@ object ChatPage {
               ) >>
                 state.value.sessionId.fold(Callback.empty) { sessionId =>
                   Callback {
-                    adapter
+                    JorlanWebApp
+                      .makeAdapter()
                       .asyncCalibanCallWithAuth(
                         JorlanClient.Mutations.submitMessage(sessionId, text),
                       )
-                      .flatMap { _ =>
-                        state.setState(state.value.copy(streaming = false)).asAsyncCallback
+                      .completeWith {
+                        case scala.util.Failure(ex) =>
+                          state.setState(state.value.copy(streaming = false, error = Some(ex.getMessage)))
+                        case _ => Callback.empty
                       }
-                      .completeWith(_ => Callback.empty)
                       .runNow()
                   }
                 }
@@ -92,7 +127,7 @@ object ChatPage {
           def handleKeyDown(e: js.Dynamic): Unit = {
             val key = e.key.asInstanceOf[String]
             val shift = e.shiftKey.asInstanceOf[Boolean]
-            if (key == "Enter" && !shift) {
+            if (key == "Enter" && !shift && state.value.sessionId.isDefined) {
               e.preventDefault()
               sendMessage().runNow()
             }
@@ -100,20 +135,20 @@ object ChatPage {
 
           def createSession(): Callback =
             Callback {
-              adapter
+              JorlanWebApp
+                .makeAdapter()
                 .asyncCalibanCallWithAuth(
                   JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view),
                 )
                 .flatMap {
                   case Some(session) =>
-                    state
+                    (state
                       .setState(
                         state.value.copy(
                           sessionId = Some(session.id),
                           messages = scala.List(ChatMessage("system", "Session started", new js.Date().toISOString())),
                         ),
-                      )
-                      .asAsyncCallback
+                      ) >> openStreamSubscription(session.id)).asAsyncCallback
                   case None =>
                     state
                       .setState(
@@ -127,60 +162,67 @@ object ChatPage {
                       )
                       .asAsyncCallback
                 }
-                .completeWith(_ => Callback.empty)
+                .completeWith {
+                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case _                      => Callback.empty
+                }
                 .runNow()
             }
 
           <.div(
             ^.style := js.Dynamic.literal(height = "calc(100vh - 128px)", display = "flex", flexDirection = "column"),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 1, gap = 1))(
               Typography.set("variant", "h5")("Chat"),
               state.value.sessionId.fold[VdomNode](
                 MuiButton.variant("contained").onClick(() => createSession().runNow())("New Session"),
               )(id => <.span(s"Session: ${id.value}")),
             ),
-            Box.set(
-              "sx",
-              js.Dynamic.literal(
-                flex = 1,
-                overflow = "auto",
-                border = "1px solid",
-                borderColor = "divider",
-                borderRadius = 1,
-                p = 1,
-                mb = 1,
-                fontFamily = "monospace",
-                fontSize = "0.85rem",
-              ),
-            )(
-              React.Fragment(
-                state.value.messages.zipWithIndex.map { case (msg, i) =>
-                  val (prefix, color) = msg.role match {
-                    case "user"   => ("❯", "#2563eb")
-                    case "system" => ("⚙", "#6b7280")
-                    case "error"  => ("✗", "#ef4444")
-                    case _        => ("✦", "#7c3aed")
-                  }
+            Box
+              .set(
+                "sx",
+                js.Dynamic.literal(
+                  flex = 1,
+                  overflow = "auto",
+                  border = "1px solid",
+                  borderColor = "divider",
+                  borderRadius = 1,
+                  p = 1,
+                  mb = 1,
+                  fontFamily = "monospace",
+                  fontSize = "0.85rem",
+                ),
+              )
+              .set("aria-live", "polite")
+              .set("aria-atomic", "false")(
+                React.Fragment(
+                  state.value.messages.zipWithIndex.map { case (msg, i) =>
+                    val (prefix, color) = msg.role match {
+                      case "user"   => ("❯", "#2563eb")
+                      case "system" => ("⚙", "#6b7280")
+                      case "error"  => ("✗", "#ef4444")
+                      case _        => ("✦", "#7c3aed")
+                    }
+                    <.div(
+                      ^.key   := i.toString,
+                      ^.style := js.Dynamic.literal(marginBottom = "4px"),
+                      <.span(^.style := js.Dynamic.literal(color = "#9ca3af", fontSize = "0.75rem"))(msg.ts.take(19)),
+                      " ",
+                      <.span(^.style := js.Dynamic.literal(color = color))(prefix),
+                      " ",
+                      msg.content,
+                    )
+                  }*,
+                ),
+                if (state.value.streaming && state.value.streamBuffer.nonEmpty)
                   <.div(
-                    ^.key   := i.toString,
-                    ^.style := js.Dynamic.literal(marginBottom = "4px"),
-                    <.span(^.style := js.Dynamic.literal(color = "#9ca3af", fontSize = "0.75rem"))(msg.ts.take(19)),
+                    <.span(^.style := js.Dynamic.literal(color = "#7c3aed"))("✦"),
                     " ",
-                    <.span(^.style := js.Dynamic.literal(color = color))(prefix),
-                    " ",
-                    msg.content,
+                    state.value.streamBuffer,
+                    <.span("▊"),
                   )
-                }*,
+                else EmptyVdom,
               ),
-              if (state.value.streaming && state.value.streamBuffer.nonEmpty)
-                <.div(
-                  <.span(^.style := js.Dynamic.literal(color = "#7c3aed"))("✦"),
-                  " ",
-                  state.value.streamBuffer,
-                  <.span("▊"),
-                )
-              else EmptyVdom,
-            ),
             Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
               MuiTextField
                 .value(state.value.input)
