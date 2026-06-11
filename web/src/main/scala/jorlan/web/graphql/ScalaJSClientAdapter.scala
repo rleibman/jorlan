@@ -295,7 +295,7 @@ case class ScalaJSClientAdapter(
                       () => {
                         connectionState.lastKAOpt.map { lastKA =>
                           val timeFromLastKA =
-                            java.time.Duration.between(lastKA, Instant.now).nn.toMillis.milliseconds
+                            java.time.Duration.between(lastKA, now()).toMillis.milliseconds
                           if (timeFromLastKA > timeout) {
                             if (reconnect && connectionState.reconnectCount <= reconnectionAttempts) {
                               connectionState =
