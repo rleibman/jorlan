@@ -397,11 +397,13 @@ lazy val shell = project
     AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
     JavaAppPackaging,
+    LinuxPlugin,
+    DebianPlugin,
   )
+  .settings(shellDebianSettings, commonSettings)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-shell",
-    commonSettings,
     Compile / mainClass := Some("jorlan.shell.JorlanShell"),
     libraryDependencies ++= Seq(
       "dev.zio"                       %% "zio"                 % zioVersion withSources (),
@@ -442,81 +444,120 @@ lazy val util = project
 
 lazy val debianSettings =
   Seq(
-    Compile / mainClass         := Some("jorlan.Jorlan"),
-    Debian / name               := "jorlan",
-    Debian / packageDescription := "Jorlan Secure Agent Runtime",
-    Debian / packageSummary     := "Jorlan Secure Agent Runtime",
-    Debian / debianChangelog    := Some(file("debian/changelog")),
-    Linux / maintainer          := "Roberto Leibman <roberto@leibman.net>",
-    Linux / daemonUser          := "jorlan",
-    Linux / daemonGroup         := "jorlan",
-    Debian / serverLoading      := Some(ServerLoader.Systemd),
-    // Configure JVM to use logback.xml from /etc/jorlan-server
+    Compile / mainClass                   := Some("jorlan.Jorlan"),
+    Debian / name                         := "jorlan-server",
+    // Debian versions must start with a digit; sbt-git uses git hash in dev
+    Debian / version                      := {
+      val v = version.value
+      if (v.headOption.exists(_.isDigit)) v else "0.1.0-SNAPSHOT"
+    },
+    Debian / packageDescription           := "Jorlan Secure Agent Runtime",
+    Debian / packageSummary               := "Jorlan Secure Agent Runtime",
+    Debian / debianChangelog              := Some(file("debian/changelog")),
+    Debian / debianPackageDependencies    += "default-jre-headless (>= 2:1.21)",
+    Linux / maintainer                    := "Roberto Leibman <roberto@leibman.net>",
+    Linux / daemonUser                    := "jorlan",
+    Linux / daemonGroup                   := "jorlan",
+    Linux / defaultLinuxInstallLocation   := "/usr/lib",
+    Debian / serverLoading                := Some(ServerLoader.Systemd),
+    // JVM flags picked up by the generated launch script
     Universal / javaOptions ++= Seq(
       "-Dlogback.configurationFile=/etc/jorlan-server/logback.xml",
+      s"-Dconfig.file=/etc/jorlan-server/application.conf",
     ),
-    // Map application.conf template
+    // Map templates into the universal (tarball) layout
     Universal / mappings += {
       val src = sourceDirectory.value
-      val conf = src / "templates" / "application.conf"
-      conf -> "conf/application.conf"
+      (src / "templates" / "application.conf") -> "conf/application.conf"
     },
-    // Map logback.xml template
     Universal / mappings += {
       val src = sourceDirectory.value
-      val logback = src / "templates" / "logback.xml"
-      logback -> "conf/logback.xml"
+      (src / "templates" / "logback.xml") -> "conf/logback.xml"
     },
-    // Map the entire dist directory to www/ in the universal package
-    Universal / mappings ++= {
-      val distDir = (ThisBuild / baseDirectory).value / "dist"
-      if (distDir.exists()) {
-        (distDir.allPaths --- distDir) pair Path.rebase(distDir, "www/")
-      } else {
-        Seq.empty
-      }
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      (src / "templates" / "server.env") -> "conf/server.env"
     },
-    // Install www content to /opt/jorlan/www (served directly by Jorlan, no nginx needed)
-    Linux / defaultLinuxInstallLocation := "/opt",
-    // Additional package mapping for web assets
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      (src / "templates" / "io.jorlan.server.plist") -> "launchd/io.jorlan.server.plist"
+    },
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      (src / "main" / "scripts" / "init-db.sh") -> "scripts/init-db.sh"
+    },
+    Universal / mappings += {
+      val src = sourceDirectory.value
+      (src / "main" / "scripts" / "install-macos.sh") -> "scripts/install-macos.sh"
+    },
+    // Install config files to /etc/jorlan-server/ — marked .withConfig() so dpkg does not
+    // overwrite them on upgrade if the admin has modified them.
+    Debian / linuxPackageMappings += {
+      val src = sourceDirectory.value
+      packageMapping(
+        (src / "templates" / "application.conf") -> "/etc/jorlan-server/application.conf",
+        (src / "templates" / "logback.xml")      -> "/etc/jorlan-server/logback.xml",
+      ).withUser("jorlan").withGroup("jorlan").withPerms("0644").withConfig()
+    },
+    // Install env template to /etc/jorlan/server.env — also .withConfig()
+    Debian / linuxPackageMappings += {
+      val src = sourceDirectory.value
+      packageMapping(
+        (src / "templates" / "server.env") -> "/etc/jorlan/server.env",
+      ).withUser("jorlan").withGroup("jorlan").withPerms("0600").withConfig()
+    },
+    // Install init-db.sh so admins can run it directly
+    Debian / linuxPackageMappings += {
+      val src = sourceDirectory.value
+      packageMapping(
+        (src / "main" / "scripts" / "init-db.sh") -> "/usr/lib/jorlan-server/scripts/init-db.sh",
+      ).withUser("root").withGroup("root").withPerms("0755")
+    },
+    // Install web frontend assets so the server can serve them directly
     Debian / linuxPackageMappings += {
       val distDir = (ThisBuild / baseDirectory).value / "dist"
       packageMapping(
         (distDir.allPaths --- distDir).get.map { f =>
-          f -> s"/opt/jorlan/www/${Path.relativeTo(distDir)(f).get}"
+          f -> s"/usr/lib/jorlan-server/www/${Path.relativeTo(distDir)(f).get}"
         }: _*,
       ).withUser("jorlan").withGroup("jorlan")
     },
-    // Install configuration files to /etc/jorlan-server/ for easy editing
-    Debian / linuxPackageMappings += {
-      val src = sourceDirectory.value
-      val confFile = src / "templates" / "application.conf"
-      val logbackFile = src / "templates" / "logback.xml"
-      packageMapping(
-        confFile    -> "/etc/jorlan-server/application.conf",
-        logbackFile -> "/etc/jorlan-server/logback.xml",
-      ).withUser("jorlan").withGroup("jorlan").withPerms("0644").withConfig()
-    },
-    // Add custom maintainer scripts to create log directory
+    // postinst: create log directory and set permissions
     Debian / maintainerScripts := {
       val scripts:  Map[String, Seq[String]] = (Debian / maintainerScripts).value
       val postinst: Seq[String] = scripts.getOrElse("postinst", Seq.empty)
-
-      // Add log directory creation before chown commands
-      val updatedPostinst: Seq[String] = postinst.map { line =>
-        if (line.contains("chown jorlan:jorlan '/var/log/jorlan-server'")) {
-          Seq(
-            "mkdir -p '/var/log/jorlan-server'",
-            "chown -R jorlan:jorlan '/var/log/jorlan-server'",
-            "chmod 755 '/var/log/jorlan-server'",
-          ).mkString("\n")
-        } else {
-          line
-        }
-      }
-
-      scripts + ("postinst" -> updatedPostinst)
+      val logSetup = Seq(
+        "mkdir -p /var/log/jorlan-server/conversations",
+        "chown -R jorlan:jorlan /var/log/jorlan-server",
+        "chmod 750 /var/log/jorlan-server",
+        "mkdir -p /etc/jorlan",
+        "chown root:jorlan /etc/jorlan",
+        "chmod 750 /etc/jorlan",
+      )
+      val prerm: Seq[String] = scripts.getOrElse("prerm", Seq.empty)
+      val stopService = Seq(
+        "if command -v systemctl > /dev/null && systemctl is-active --quiet jorlan-server; then",
+        "  systemctl stop jorlan-server || true",
+        "fi",
+      )
+      scripts + ("postinst" -> (logSetup ++ postinst)) + ("prerm" -> (stopService ++ prerm))
     },
+  )
+
+lazy val shellDebianSettings =
+  Seq(
+    Debian / name                       := "jorlan-shell",
+    Debian / version                    := {
+      val v = version.value
+      if (v.headOption.exists(_.isDigit)) v else "0.1.0-SNAPSHOT"
+    },
+    Debian / packageDescription         := "Jorlan Shell — CLI client for the Jorlan server",
+    Debian / packageSummary             := "Jorlan Shell CLI client",
+    Debian / debianChangelog            := Some(file("debian/changelog")),
+    Debian / debianPackageDependencies  += "default-jre-headless (>= 2:1.21)",
+    Linux / maintainer                  := "Roberto Leibman <roberto@leibman.net>",
+    Linux / defaultLinuxInstallLocation := "/usr/lib",
+    executableScriptName                := "jorlan",
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -628,11 +669,11 @@ lazy val web: Project = project
   )
   .settings(
     scalacOptions ++= scala3Opts,
-    name             := "jorlan-web",
+    name            := "jorlan-web",
     // The entire web module compiles to JavaScript (Scala.js) and requires a
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
     // doesn't instrument Scala.js bytecode or report 0% coverage.
-    coverageEnabled  := false,
+    coverageEnabled := false,
     libraryDependencies ++= Seq(
       "dev.zio" %%% "zio"      % zioVersion withSources (),
       "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),
@@ -668,7 +709,7 @@ lazy val root = project
     analytics,
     integration,
     util,
-    web
+    web,
   )
   .settings(
     name           := "jorlan",
