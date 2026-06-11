@@ -18,13 +18,13 @@ import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
-object MemorySkillSpec extends ZIOSpec[MemorySkill] {
+object MemorySkillSpec extends ZIOSpec[MemoryService] {
 
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
 
-  override val bootstrap: ULayer[MemorySkill] =
-    ZLayer.make[MemorySkill](
+  override val bootstrap: ULayer[MemoryService] =
+    ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
       ZLayer.succeed(MemoryAccessPolicyImpl(): MemoryAccessPolicy),
       ZLayer.succeed(
@@ -39,21 +39,23 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       ZLayer.succeed(MemoryClassifierImpl(): MemoryClassifier),
       ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
-      MemorySkill.live,
     )
 
-  override def spec: Spec[MemorySkill & TestEnvironment & Scope, Any] =
+  private def makeSkill: URIO[MemoryService, MemorySkill] =
+    ZIO.serviceWith[MemoryService](new MemorySkill(_))
+
+  override def spec: Spec[MemoryService & TestEnvironment & Scope, Any] =
     suite("MemorySkill")(
       test("remember stores and is retrievable via search") {
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("user.lang", "prefers Scala", MemoryScope.User, userId, agentId)
           results <- skill.search("prefers Scala", MemoryScope.User, userId, agentId)
         } yield assertTrue(results.exists(_.recordKey == "user.lang"))
       },
       test("forget removes a record") {
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           _      <- skill.remember("remove.me", "temporary", MemoryScope.User, userId, agentId)
           before <- skill.search("temporary", MemoryScope.User, userId, agentId)
           id = before.find(_.recordKey == "remove.me").map(_.id).getOrElse(MemoryRecordId.empty)
@@ -66,7 +68,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       },
       test("markShared changes scope from User to Shared") {
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("to.share", "shared fact", MemoryScope.User, userId, agentId)
           records <- skill.search("shared fact", MemoryScope.User, userId, agentId)
           id = records.find(_.recordKey == "to.share").map(_.id).getOrElse(MemoryRecordId.empty)
@@ -75,7 +77,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       },
       test("markPrivate changes scope from User to Private") {
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("to.private", "private fact", MemoryScope.User, userId, agentId)
           records <- skill.search("private fact", MemoryScope.User, userId, agentId)
           id = records.find(_.recordKey == "to.private").map(_.id).getOrElse(MemoryRecordId.empty)
@@ -84,7 +86,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       },
       test("search returns empty list when no matching records") {
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           results <- skill.search("nonexistent_xyz_string", MemoryScope.User, userId, agentId)
         } yield assertTrue(results.isEmpty)
       },
@@ -92,7 +94,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.remember stores a record and returns JSON") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(
             ctx,
             "memory.remember",
@@ -108,7 +110,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.search returns JSON array") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill <- ZIO.service[MemorySkill]
+          skill <- makeSkill
           _     <- skill
             .invoke(ctx, "memory.remember", Json.Obj("key" -> Json.Str("s.key"), "text" -> Json.Str("searchable")))
           result <- skill.invoke(
@@ -124,7 +126,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.forget removes a record") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("forget.via.invoke", "gone", MemoryScope.User, userId, agentId)
           records <- skill.search("gone", MemoryScope.User, userId, agentId)
           id = records.find(_.recordKey == "forget.via.invoke").map(_.id.value.toString).getOrElse("0")
@@ -137,7 +139,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.mark_shared changes scope") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("mark.shared.invoke", "fact", MemoryScope.User, userId, agentId)
           records <- skill.search("fact", MemoryScope.User, userId, agentId)
           id = records.find(_.recordKey == "mark.shared.invoke").map(_.id.value.toString).getOrElse("0")
@@ -152,7 +154,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.mark_private changes scope") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill   <- ZIO.service[MemorySkill]
+          skill   <- makeSkill
           _       <- skill.remember("mark.private.invoke", "priv", MemoryScope.Shared, userId, agentId)
           records <- skill.search("priv", MemoryScope.Shared, userId, agentId)
           id = records.find(_.recordKey == "mark.private.invoke").map(_.id.value.toString).getOrElse("0")
@@ -167,14 +169,14 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke unknown tool returns failure") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.nonexistent", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
       test("invoke returns failure when required field is missing") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.remember", Json.Obj("text" -> Json.Str("no key"))).either
         } yield assertTrue(result.isLeft)
       },
@@ -182,7 +184,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.remember with scope=user stores in user scope, search returns result") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill <- ZIO.service[MemorySkill]
+          skill <- makeSkill
           _     <- skill.invoke(
             ctx,
             "memory.remember",
@@ -206,21 +208,21 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.forget with non-numeric id fails") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.forget", Json.Obj("id" -> Json.Str("not-a-number"))).either
         } yield assertTrue(result.isLeft)
       },
       test("invoke memory.mark_shared with non-numeric id fails") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.mark_shared", Json.Obj("id" -> Json.Str("bad"))).either
         } yield assertTrue(result.isLeft)
       },
       test("invoke memory.mark_private with non-numeric id fails") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.mark_private", Json.Obj("id" -> Json.Str("bad"))).either
         } yield assertTrue(result.isLeft)
       },
@@ -228,7 +230,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke memory.remember with scope=shared stores in shared scope") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill <- ZIO.service[MemorySkill]
+          skill <- makeSkill
           _     <- skill.invoke(
             ctx,
             "memory.remember",
@@ -248,7 +250,7 @@ object MemorySkillSpec extends ZIOSpec[MemorySkill] {
       test("invoke with non-object args fails (covers non-Obj branch in field helper)") {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
-          skill  <- ZIO.service[MemorySkill]
+          skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.remember", Json.Arr(Json.Str("bad"))).either
         } yield assertTrue(result.isLeft)
       },

@@ -216,8 +216,4 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
 
 }
 
-object SchedulerSkill {
-
-  val live: URLayer[JobManager, SchedulerSkill] = ZLayer.fromFunction(SchedulerSkill(_))
-
-}
+object SchedulerSkill

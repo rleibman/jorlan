@@ -217,9 +217,4 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
 
 }
 
-object ContactsSkill {
-
-  val live: URLayer[ZIORepositories, ContactsSkill] =
-    ZLayer.fromFunction(new ContactsSkill(_))
-
-}
+object ContactsSkill

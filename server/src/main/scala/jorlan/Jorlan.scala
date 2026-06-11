@@ -23,6 +23,7 @@ import zio.http.*
 import zio.logging.backend.SLF4J
 
 import java.io.*
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
 /** ZIO environment type required by the main application. */
@@ -96,9 +97,27 @@ object Jorlan extends ZIOApp {
         }
     }
 
-  private def startServices: URIO[Scope & SkillRegistry & ConnectorManager & TriggerEngine, Unit] =
+  private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
+    for {
+      registry    <- ZIO.service[SkillRegistry]
+      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      memService  <- ZIO.service[MemoryService]
+      jobManager  <- ZIO.service[JobManager]
+      repos       <- ZIO.service[ZIORepositories]
+      notifRouter <- ZIO.service[NotificationRouter]
+      workRoot    <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
+      _           <- registry.register(new MemorySkill(memService))
+      _           <- registry.register(new SchedulerSkill(jobManager))
+      _           <- registry.register(new ContactsSkill(repos))
+      _           <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _           <- registry.register(new ShellSkill(config.jorlan.shell, repos))
+      _           <- registry.register(new NotifySkill(notifRouter))
+    } yield ()
+
+  private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _                <- registerBuiltInSkills.orDie
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]
       _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)

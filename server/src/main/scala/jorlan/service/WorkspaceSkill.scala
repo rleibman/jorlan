@@ -258,16 +258,4 @@ class WorkspaceSkill(
 
 }
 
-object WorkspaceSkill {
-
-  val live: ZLayer[WorkspaceSettings, Nothing, WorkspaceSkill] =
-    ZLayer.fromZIO(
-      ZIO.serviceWithZIO[WorkspaceSettings](s =>
-        ZIO
-          .attempt(Paths.get(s.root).toAbsolutePath.normalize())
-          .orDie
-          .map(new WorkspaceSkill(_, s)),
-      ),
-    )
-
-}
+object WorkspaceSkill

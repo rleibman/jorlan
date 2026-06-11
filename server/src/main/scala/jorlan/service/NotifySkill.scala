@@ -102,9 +102,4 @@ class NotifySkill(router: NotificationRouter) extends Skill {
 
 }
 
-object NotifySkill {
-
-  val live: URLayer[NotificationRouter, NotifySkill] =
-    ZLayer.fromFunction(new NotifySkill(_))
-
-}
+object NotifySkill

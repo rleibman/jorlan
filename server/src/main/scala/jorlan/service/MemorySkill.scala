@@ -227,7 +227,5 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
 object MemorySkill {
 
   final val skillName = "memory"
-  val live: URLayer[MemoryService, MemorySkill] =
-    ZLayer.fromFunction(MemorySkill(_))
 
 }

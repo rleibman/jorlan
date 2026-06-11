@@ -122,13 +122,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
       AgentSessionManagerImpl.live,
       memSvcLayer, {
         ZLayer.fromZIO {
-          for {
-            memorySkill <- ZIO.service[MemorySkill]
-          } yield SkillRegistry.liveWith(memorySkill)
+          ZIO.serviceWith[MemoryService](svc => SkillRegistry.liveWith(new MemorySkill(svc)))
         }.flatten
       },
       ZLayer.succeed(AgentSettings()),
-      MemorySkill.live,
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       approvalSvcLayer,

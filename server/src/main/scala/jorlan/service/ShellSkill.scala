@@ -182,9 +182,4 @@ class ShellSkill(
 
 }
 
-object ShellSkill {
-
-  val live: ZLayer[ShellSettings & ZIORepositories, Nothing, ShellSkill] =
-    ZLayer.fromFunction(new ShellSkill(_, _))
-
-}
+object ShellSkill

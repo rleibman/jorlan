@@ -243,34 +243,6 @@ object WorkspaceSkillSpec extends ZIOSpecDefault {
           }
         }
       },
-      // ─── WorkspaceSkill.live factory (covers lines 196-197) ───────────────────
-      test("WorkspaceSkill.live builds a functional skill from WorkspaceSettings") {
-        ZIO
-          .acquireRelease(
-            ZIO.succeed(Files.createTempDirectory("workspace-live-test")),
-          )(dir =>
-            ZIO
-              .attempt(
-                if (Files.exists(dir)) {
-                  val stream = Files.walk(dir)
-                  try stream.sorted(java.util.Comparator.reverseOrder()).forEach(Files.deleteIfExists(_))
-                  finally stream.close()
-                },
-              )
-              .orDie,
-          ).flatMap { root =>
-            ZIO
-              .serviceWithZIO[WorkspaceSkill] { skill =>
-                skill
-                  .invoke(ctx, "workspace.write", mkArgs("path" -> "live.txt", "content" -> "hello"))
-                  .map(r => assertTrue(r == Json.Str("ok")))
-              }
-              .provide(
-                WorkspaceSkill.live,
-                ZLayer.succeed(WorkspaceSettings(root = root.toString)),
-              )
-          }
-      },
     )
 
 }

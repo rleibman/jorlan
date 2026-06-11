@@ -98,29 +98,6 @@ object EnvironmentBuilder {
   private val agentSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, AgentSettings] =
     ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent))
 
-  private val workspaceSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, WorkspaceSettings] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.workspace))
-
-  private val shellSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, ShellSettings] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.shell))
-
-  // TODO, move this to something that happens AFTER the system is built.
-  private val liveSkillRegistryLayer: ZLayer[
-    CapabilityEvaluator & MemorySkill & SchedulerSkill & ShellSkill & WorkspaceSkill & ContactsSkill, // & NotifySkill,
-    Nothing,
-    SkillRegistry,
-  ] =
-    ZLayer.fromZIO {
-      for {
-//          notifySkill    <- ZIO.service[NotifySkill] //TODO... missing this skill!! but we get a circular dependency
-        contactsSkill  <- ZIO.service[ContactsSkill]
-        workspaceSkill <- ZIO.service[WorkspaceSkill]
-        shellSkill     <- ZIO.service[ShellSkill]
-        memorySkill    <- ZIO.service[MemorySkill]
-        schedulerSkill <- ZIO.service[SchedulerSkill]
-      } yield SkillRegistry.liveSecureWith(contactsSkill, workspaceSkill, shellSkill, memorySkill, schedulerSkill) // notifySkill,
-    }.flatten
-
   // TODO THis is insane, building the environment shouldn't take these many layers.
   // Things should be grouped together, and in particular, skills shouldn't be in the environment as they should
   // be discoverable.
@@ -131,12 +108,13 @@ object EnvironmentBuilder {
         databaseConfigLayer,
         flywayConfigLayer,
         langChainConfigLayer,
+        authConfigLayer,
+        agentSettingsLayer,
         FlywayMigration.live,
         QuillRepositories.live,
         CapabilityEvaluatorImpl.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
-        authConfigLayer,
         oauthServiceLayer,
         OAuthStateStore.live(),
         SessionHub.live,
@@ -148,26 +126,12 @@ object EnvironmentBuilder {
         CheckpointSummarizerImpl.live,
         ZLayer.succeed(CheckpointPolicy.onSessionEnd),
         NotificationRouter.live,
-        ////////////////////////////////////
-        // Built in skills
-        MemorySkill.live,
-        SchedulerSkill.live,
-//        NotifySkill.live, //TODO... missing this skill!! but we get a circular dependency
-        ContactsSkill.live,
-        WorkspaceSkill.live,
-        ShellSkill.live,
-        ////////////////////////////////////
-        liveSkillRegistryLayer,
+        SkillRegistry.liveSecure,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,
         MessageIngressImpl.live,
         liveConnectorManagerLayer,
-
-        agentSettingsLayer,
-        shellSettingsLayer,
-        workspaceSettingsLayer,
-
         Client.default,
       ).orDie
 
