@@ -3,19 +3,16 @@
  * Precision Pattern Engineering
  */
 
-body {
+/* Auth styles are scoped to the login container so they don't affect the main app. */
+.auth {
   background-color: #0F1A2B;
   color: #F5F3EE;
   font-family: 'Inter', 'Source Sans 3', system-ui, sans-serif;
-}
-
-.auth {
   display: flex;
   justify-content: center;
   align-items: center;
   flex-direction: column;
   min-height: 100vh;
-  font-family: 'Inter', 'Source Sans 3', system-ui, sans-serif;
   padding: 48px 32px;
 }
 
