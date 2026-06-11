@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  release:
+    name: Build and publish release artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: 'sbt'
+
+    - name: Setup sbt
+      uses: sbt/setup-sbt@v1
+
+    - name: Cache Ollama models
+      id: cache-ollama
+      uses: actions/cache@v4
+      with:
+        path: ~/.ollama
+        key: ${{ runner.os }}-ollama-llama3.2-1b
+
+    - name: Install Ollama
+      uses: ai-action/setup-ollama@v2
+
+    - name: Pull model (cache miss only)
+      if: steps.cache-ollama.outputs.cache-hit != 'true'
+      run: ollama pull llama3.2:1b
+
+    - name: Run tests
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        JORLAN_AI_OLLAMA_MODEL: llama3.2:1b
+        JORLAN_AUTH_SECRET_KEY: ci-test-secret-key-not-for-production
+        JORLAN_DB_URL: jdbc:mariadb://localhost:3306/jorlan
+        JORLAN_DB_USER: jorlan
+        JORLAN_DB_PASSWORD: jorlan
+      run: sbt --error test
+
+    - name: Build Debian packages
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      run: sbt --error "server/debian:packageBin; shell/debian:packageBin"
+
+    - name: Build macOS tarballs
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      run: sbt --error "server/universal:packageZipTarball; shell/universal:packageZipTarball"
+
+    - name: Collect release artifacts
+      run: |
+        mkdir -p release-artifacts
+        find server/target -name '*.deb' -exec cp {} release-artifacts/ \;
+        find shell/target -name '*.deb' -exec cp {} release-artifacts/ \;
+        find server/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
+        find shell/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
+        ls -la release-artifacts/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: release-artifacts/*
+        generate_release_notes: true
+        body: |
+          ## Installation
+
+          ### Linux (Ubuntu / Debian)
+          ```bash
+          sudo dpkg -i jorlan-server_*_all.deb
+          sudo dpkg -i jorlan-shell_*_all.deb
+          ```
+          See [README](https://github.com/rleibman/jorlan#installation) for full setup instructions.
+
+          ### macOS (Homebrew)
+          ```bash
+          brew tap rleibman/jorlan
+          brew install jorlan
+          brew services start jorlan
+          ```
+
+          ### macOS (manual)
+          Download `jorlan-server-*.tgz` and follow the instructions in [README](https://github.com/rleibman/jorlan#installation).
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

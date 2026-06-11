@@ -1,44 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%level] %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-
   <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <file>/var/log/jorlan-server/jorlan.log</file>
+    <file>/var/log/jorlan-server/server.log</file>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-      <fileNamePattern>/var/log/jorlan-server/jorlan.%d{yyyy-MM-dd}.log</fileNamePattern>
+      <fileNamePattern>/var/log/jorlan-server/server.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
       <maxHistory>30</maxHistory>
-      <totalSizeCap>1GB</totalSizeCap>
     </rollingPolicy>
     <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%level] %logger{36} - %msg%n</pattern>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
 
-  <!--
-    Conversation log: one file per AgentSessionId under /var/log/jorlan-server/conversations/.
-    The SiftingAppender uses the 'sessionId' MDC key set by ConversationLogger.
-    To disable, set level="OFF" on the jorlan.conversation logger below.
-  -->
   <appender name="CONVERSATION" class="ch.qos.logback.classic.sift.SiftingAppender">
     <discriminator>
       <key>sessionId</key>
       <defaultValue>unknown</defaultValue>
     </discriminator>
     <sift>
-      <appender name="CONV-${sessionId}" class="ch.qos.logback.core.rolling.RollingFileAppender">
+      <appender name="CONV-${sessionId}" class="ch.qos.logback.core.FileAppender">
         <file>/var/log/jorlan-server/conversations/session-${sessionId}.log</file>
         <append>true</append>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-          <fileNamePattern>/var/log/jorlan-server/conversations/session-${sessionId}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
-          <maxFileSize>10MB</maxFileSize>
-          <maxHistory>90</maxHistory>
-          <totalSizeCap>5GB</totalSizeCap>
-        </rollingPolicy>
         <encoder>
           <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %msg%n</pattern>
         </encoder>
@@ -46,7 +28,6 @@
     </sift>
   </appender>
 
-  <!-- Suppress noisy third-party loggers -->
   <logger name="com.zaxxer.hikari" level="WARN"/>
   <logger name="org.mariadb" level="WARN"/>
   <logger name="org.flywaydb" level="INFO"/>
@@ -56,13 +37,11 @@
 
   <logger name="jorlan" level="INFO"/>
 
-  <!-- Conversation log goes only to its own appender, not to CONSOLE/FILE -->
-  <logger name="jorlan.conversation" level="INFO" additivity="false">
+  <logger name="jorlan.conversation" level="DEBUG" additivity="false">
     <appender-ref ref="CONVERSATION"/>
   </logger>
 
   <root level="INFO">
-    <appender-ref ref="CONSOLE"/>
     <appender-ref ref="FILE"/>
   </root>
 
