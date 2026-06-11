@@ -10,7 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCHEMA="$PROJECT_ROOT/server/src/main/graphql/jorlan.gql"
-OUTPUT="$PROJECT_ROOT/shell/src/main/scala/jorlan/graphql/client/JorlanClient.scala"
+OUTPUT1="$PROJECT_ROOT/shell/src/main/scala/jorlan/graphql/client/JorlanClient.scala"
+OUTPUT2="$PROJECT_ROOT/web/src/main/scala/jorlan/graphql/client/JorlanClient.scala"
 
 if [ ! -f "$SCHEMA" ]; then
   echo "Schema file not found: $SCHEMA"
@@ -48,5 +49,6 @@ jorlan.shell.client.JorlanClientDecoders._"
 
 sbt --error \
   "project server" \
-  "calibanGenClient $SCHEMA $OUTPUT --genView true --packageName jorlan.graphql.client --enableFmt false --scalarMappings $SCALAR_MAPPINGS --imports $IMPORTS"
-echo "Done. Client written to $OUTPUT"
+  "calibanGenClient $SCHEMA $OUTPUT1 --genView true --packageName jorlan.graphql.client --enableFmt false --scalarMappings $SCALAR_MAPPINGS --imports $IMPORTS" \
+  "calibanGenClient $SCHEMA $OUTPUT2 --genView true --packageName jorlan.graphql.client --enableFmt false --scalarMappings $SCALAR_MAPPINGS --imports $IMPORTS"
+echo "Done. Client written to $OUTPUT1 and $OUTPUT2"

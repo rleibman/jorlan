@@ -1,6 +1,12 @@
 ////////////////////////////////////////////////////////////////////////////////////
 // Common Stuff
 
+import org.apache.commons.io.FileUtils
+
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import scala.concurrent.duration.*
+
 lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time of build").withRank(KeyRanks.Invisible)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -19,7 +25,6 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 scalaVersion                  := SCALA
 Global / scalaVersion         := SCALA
 
-import scala.concurrent.duration.*
 Global / watchAntiEntropy := 1.second
 
 ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always
@@ -57,23 +62,23 @@ enablePlugins(
   com.github.sbt.git.GitVersioning,
 )
 
-val telegramiumVersion = "10.906.0"
+val telegramiumVersion = "10.1000.0"
 val calibanClientVersion = "3.1.2"
 val calibanVersion = "3.1.2"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val cron4sVersion = "0.8.2"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "12.7.0"
+val flywayVersion = "12.8.1"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
 val jsoniterVersion = "2.38.9"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.15.1"
-val langchainCoreVersion = "1.15.1"
-val langchainLibrariesVersion = "1.15.1-beta25"
+val langchain4jOllamaVersion = "1.16.2"
+val langchainCoreVersion = "1.16.2"
+val langchainLibrariesVersion = "1.16.2-beta26"
 val lanternaVersion = "3.1.5"
 val logbackVersion = "1.5.34"
 val mariadbVersion = "3.5.8"
@@ -83,9 +88,13 @@ val quillVersion = "4.8.6"
 val scalablytypedRuntimeVersion = "2.4.2"
 val scalacssVersion = "1.0.0"
 val scalaJavaTimeVersion = "2.6.0"
+val scalajsDomVersion = "2.8.1"
+val scalajsReactVersion = "4.0.0"
+val scalatagsVersion = "0.13.1"
+val stlibVersion = "1.0.0"
 val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
-val zioAuth = "3.1.5"
+val zioAuth = "3.1.6"
 val zioCacheVersion = "0.2.8"
 val zioConfigVersion = "4.0.7"
 val zioHttpVersion = "3.11.2"
@@ -116,7 +125,6 @@ lazy val commonSettings = Seq(
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Model
-
 lazy val model = project
   .enablePlugins(
     AutomateHeaderPlugin,
@@ -434,7 +442,7 @@ lazy val debianSettings =
       val logback = src / "templates" / "logback.xml"
       logback -> "conf/logback.xml"
     },
-    // Map the entire dist directory to /data/www/app.jorlan.com/html
+    // Map the entire dist directory to www/ in the universal package
     Universal / mappings ++= {
       val distDir = (ThisBuild / baseDirectory).value / "dist"
       if (distDir.exists()) {
@@ -443,14 +451,14 @@ lazy val debianSettings =
         Seq.empty
       }
     },
-    // Install www content to the web directory
+    // Install www content to /opt/jorlan/www (served directly by Jorlan, no nginx needed)
     Linux / defaultLinuxInstallLocation := "/opt",
-    // Additional package mapping for www content
+    // Additional package mapping for web assets
     Debian / linuxPackageMappings += {
       val distDir = (ThisBuild / baseDirectory).value / "dist"
       packageMapping(
         (distDir.allPaths --- distDir).get.map { f =>
-          f -> s"/data/www/app.jorlan.com/html/${Path.relativeTo(distDir)(f).get}"
+          f -> s"/opt/jorlan/www/${Path.relativeTo(distDir)(f).get}"
         }: _*,
       ).withUser("jorlan").withGroup("jorlan")
     },
@@ -516,6 +524,143 @@ lazy val ai = project
     Test / fork := true,
   )
 
+////////////////////////////////////////////////////////////////////////////////////
+// Web
+lazy val bundlerSettings: Project => Project =
+  _.enablePlugins(ScalaJSBundlerPlugin)
+    .settings(
+      webpack / version := "5.96.1",
+      Compile / fastOptJS / artifactPath := ((Compile / fastOptJS / crossTarget).value /
+        ((fastOptJS / moduleName).value + "-opt.js")),
+      Compile / fullOptJS / artifactPath := ((Compile / fullOptJS / crossTarget).value /
+        ((fullOptJS / moduleName).value + "-opt.js")),
+      useYarn                                   := true,
+      run / fork                                := true,
+      Global / scalaJSStage                     := FastOptStage,
+      Compile / scalaJSUseMainModuleInitializer := true,
+      Test / scalaJSUseMainModuleInitializer    := false,
+      Compile / npmDependencies ++= Seq(
+      ),
+    )
+
+lazy val withCssLoading: Project => Project =
+  _.settings(
+    /* custom webpack file to include css */
+    webpackConfigFile := Some((ThisBuild / baseDirectory).value / "custom.webpack.config.js"),
+    Compile / npmDevDependencies ++= Seq(
+      "webpack-merge" -> "^6.0.1",
+      "css-loader"    -> "^7.1.4",
+      "style-loader"  -> "^4.0.0",
+      "file-loader"   -> "^6.2.0",
+      "url-loader"    -> "^4.1.1",
+    ),
+  )
+
+lazy val commonWeb: Project => Project =
+  _.settings(
+    libraryDependencies ++= Seq(
+      "net.leibman" %%% "jorlan-stlib"          % stlibVersion withSources (),
+      "net.leibman" % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %%% isn't working.
+      "com.github.ghostdogpr" %%% "caliban-client"    % calibanClientVersion withSources (),
+      "dev.zio" %%% "zio"                             % zioVersion withSources (),
+      "com.softwaremill.sttp.client4" %%% "core"      % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %%% "zio-json"  % sttpClient4Version withSources (),
+      "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
+      "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
+      "org.scala-js" %%% "scalajs-dom"                % scalajsDomVersion withSources (),
+      "com.olvind" %%% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
+      "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
+      "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
+      "com.lihaoyi" %%% "scalatags"                   % scalatagsVersion withSources (),
+      "com.github.japgolly.scalacss" %%% "core"       % scalacssVersion withSources (),
+      "com.github.japgolly.scalacss" %%% "ext-react"  % scalacssVersion withSources (),
+      // Testing
+      "dev.zio" %%% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %%% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    dependencyOverrides ++= Seq(
+      "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion,
+      "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion,
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    organizationName                     := "Roberto Leibman",
+    startYear                            := Some(2024),
+    Compile / unmanagedSourceDirectories := Seq((Compile / scalaSource).value),
+    Test / unmanagedSourceDirectories    := Seq((Test / scalaSource).value),
+    //    webpackDevServerPort                 := 8009
+  )
+
+lazy val web: Project = project
+  .dependsOn(model)
+  .configure(bundlerSettings)
+  .configure(withCssLoading)
+  .configure(commonWeb)
+  .settings(commonSettings)
+  .enablePlugins(
+    // AutomateHeaderPlugin,
+    com.github.sbt.git.GitVersioning,
+    ScalaJSPlugin,
+  )
+  .settings(
+    scalacOptions ++= scala3Opts,
+    name := "jorlan-web",
+    libraryDependencies ++= Seq(
+      "dev.zio" %%% "zio"      % zioVersion withSources (),
+      "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),
+    ),
+    debugDist := {
+
+      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
+
+      val artifacts = (Compile / fastOptJS / webpack).value
+      val artifactFolder = (Compile / fastOptJS / crossTarget).value
+      val debugFolder = (ThisBuild / baseDirectory).value / "debugDist"
+
+      debugFolder.mkdirs()
+      FileUtils.copyDirectory(assets, debugFolder, true)
+
+      // Copy all JS and map files from webpack output directory (including chunks)
+      val webpackOutputDir = artifactFolder
+      if (webpackOutputDir.exists()) {
+        println(s"Copying webpack output from: $webpackOutputDir")
+        val allBundles = (webpackOutputDir * "*.js").get ++ (webpackOutputDir * "*.js.map").get
+        allBundles.foreach { bundleFile =>
+          val targetFile = debugFolder / bundleFile.name
+          Files.copy(bundleFile.toPath, targetFile.toPath, REPLACE_EXISTING)
+        }
+      } else {
+        println(s"Webpack output directory does not exist: $webpackOutputDir")
+      }
+
+      debugFolder
+    },
+    dist := {
+      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
+
+      val artifacts = (Compile / fullOptJS / webpack).value
+      val artifactFolder = (Compile / fullOptJS / crossTarget).value
+      val distFolder = (ThisBuild / baseDirectory).value / "dist"
+
+      distFolder.mkdirs()
+      FileUtils.copyDirectory(assets, distFolder, true)
+
+      // Copy all JS and map files from webpack output directory (including chunks)
+      val webpackOutputDir = artifactFolder
+      if (webpackOutputDir.exists()) {
+        println(s"Copying webpack output from: $webpackOutputDir")
+        val allBundles = (webpackOutputDir * "*.js").get ++ (webpackOutputDir * "*.js.map").get
+        allBundles.foreach { bundleFile =>
+          val targetFile = distFolder / bundleFile.name
+          Files.copy(bundleFile.toPath, targetFile.toPath, REPLACE_EXISTING)
+        }
+      } else {
+        println(s"Webpack output directory does not exist: $webpackOutputDir")
+      }
+
+      distFolder
+    },
+  )
+
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Root project
 lazy val root = project
@@ -531,6 +676,7 @@ lazy val root = project
     analytics,
     integration,
     util,
+    web
   )
   .settings(
     name           := "jorlan",

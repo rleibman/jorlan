@@ -100,6 +100,12 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 4. Exact MariaDB vector schema and embedding model strategy
 5. How to promote agent-authored skills after repeated successful use
 
+## stLib Sub-Project
+
+**NEVER run `stLib/publishLocal` or `cd stLib && sbt publishLocal` yourself.**
+This generates ScalablyTyped bindings and takes many minutes. The user does it manually once per stLib change.
+If the web module fails to compile due to missing stLib artifacts, tell the user to run `cd stLib && sbt publishLocal` themselves.
+
 ## Phase Execution Strategy
 
 Each phase follows this sequence, commanded and supervised manually by the user:

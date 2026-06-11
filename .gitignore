@@ -58,7 +58,7 @@ dist
 /project/.bloop/
 
 /tree.txt
-/bespokedraft-stLib
+/jorlan-stLib
 /temp
 /fileStore
 *.deb

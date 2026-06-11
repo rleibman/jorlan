@@ -1,0 +1,168 @@
+/*
+ * Jorlan — Toast Notification Styles
+ * Brand-aligned: Navy / Cream / Brass palette
+ */
+
+.toast {
+  z-index: 1400;
+}
+
+/* ============================================================
+ * Base toast structure
+ * ============================================================ */
+
+.toast .warning,
+.toast .info,
+.toast .error,
+.toast .success {
+  display: flex;
+  margin-bottom: 8px;
+  width: 360px;
+  border-radius: 2px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  transform: translate3d(0px, 0px, 0px);
+  transition: transform 200ms ease 0s;
+  box-shadow: 0 2px 8px rgba(15, 26, 43, 0.3);
+}
+
+.toast .warning .iconRegion,
+.toast .info .iconRegion,
+.toast .error .iconRegion,
+.toast .success .iconRegion {
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+  flex-shrink: 0;
+  padding-bottom: 8px;
+  padding-top: 8px;
+  position: relative;
+  text-align: center;
+  width: 32px;
+  overflow: hidden;
+}
+
+.toast .warning .icon,
+.toast .info .icon,
+.toast .error .icon,
+.toast .success .icon {
+  display: contents;
+  vertical-align: text-top;
+  fill: currentcolor;
+  position: relative;
+}
+
+.toast .warning .textRegion,
+.toast .info .textRegion,
+.toast .error .textRegion,
+.toast .success .textRegion {
+  flex-grow: 1;
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.toast .warning .closeButtonRegion,
+.toast .info .closeButtonRegion,
+.toast .error .closeButtonRegion,
+.toast .success .closeButtonRegion {
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.5;
+  padding: 8px 12px;
+  transition: opacity 150ms ease 0s;
+}
+
+.toast .warning .closeButtonRegion:hover,
+.toast .info .closeButtonRegion:hover,
+.toast .error .closeButtonRegion:hover,
+.toast .success .closeButtonRegion:hover {
+  opacity: 1;
+}
+
+.toast .warning .closeSpan,
+.toast .info .closeSpan,
+.toast .error .closeSpan,
+.toast .success .closeSpan {
+  clip: rect(1px, 1px, 1px, 1px);
+  height: 1px;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+  border: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.toast .warning .countdown,
+.toast .info .countdown,
+.toast .error .countdown,
+.toast .success .countdown {
+  background-color: rgba(0, 0, 0, 0.1);
+  bottom: 0px;
+  height: 0px;
+  left: 0px;
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+  animation: animation-hnule4-shrink 5000ms linear 0s 1 normal none running;
+}
+
+/* ============================================================
+ * Warning — Brushed Brass accent
+ * ============================================================ */
+
+.toast .warning {
+  background-color: #2A1F0A;
+  color: #F5F3EE;
+  border: 1px solid #B08A3E;
+}
+
+.toast .warning .iconRegion {
+  background-color: #B08A3E;
+  color: #0F1A2B;
+}
+
+/* ============================================================
+ * Info — Steel Blue accent
+ * ============================================================ */
+
+.toast .info {
+  background-color: #0F2030;
+  color: #F5F3EE;
+  border: 1px solid #2F4F6F;
+}
+
+.toast .info .iconRegion {
+  background-color: #2F4F6F;
+  color: #F5F3EE;
+}
+
+/* ============================================================
+ * Error — muted red
+ * ============================================================ */
+
+.toast .error {
+  background-color: #1A0808;
+  color: #F5F3EE;
+  border: 1px solid rgba(139, 32, 32, 0.6);
+}
+
+.toast .error .iconRegion {
+  background-color: rgba(139, 32, 32, 0.8);
+  color: #F5F3EE;
+}
+
+/* ============================================================
+ * Success — muted green-grey
+ * ============================================================ */
+
+.toast .success {
+  background-color: #071A10;
+  color: #F5F3EE;
+  border: 1px solid rgba(34, 100, 60, 0.6);
+}
+
+.toast .success .iconRegion {
+  background-color: rgba(34, 100, 60, 0.8);
+  color: #F5F3EE;
+}
