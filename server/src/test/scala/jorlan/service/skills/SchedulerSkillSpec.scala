@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.domain.*
+import jorlan.service.JobManager
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SchedulerSkill
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories}

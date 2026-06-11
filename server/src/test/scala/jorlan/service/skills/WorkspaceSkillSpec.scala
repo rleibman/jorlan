@@ -8,16 +8,15 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.domain.*
+import jorlan.service.skills.WorkspaceSkill
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
-import jorlan.WorkspaceSettings
-import jorlan.service.skills.WorkspaceSkill
 
 import java.nio.file.{Files, Paths}
 

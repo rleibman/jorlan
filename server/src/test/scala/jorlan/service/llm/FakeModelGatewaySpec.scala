@@ -8,10 +8,11 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.llm
 
 import jorlan.domain.*
 import jorlan.service.llm.FakeModelGateway
+import jorlan.service.{ChatStep, FinalAnswer, ModelGateway, ModelUnavailable}
 import zio.*
 import zio.test.*
 import zio.test.TestAspect.*

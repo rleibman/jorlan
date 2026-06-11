@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.domain.*
+import jorlan.service.NotificationRouter
 import jorlan.service.skills.NotifySkill
 import zio.*
 import zio.json.ast.Json

@@ -8,13 +8,13 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.memory
 
 import jorlan.*
 import jorlan.domain.*
-import jorlan.service.ModelUnavailable
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.CheckpointSummarizerImpl
+import jorlan.service.{CheckpointSummarizer, ModelUnavailable}
 import zio.*
 import zio.test.*
 

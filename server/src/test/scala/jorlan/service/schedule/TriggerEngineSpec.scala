@@ -8,13 +8,14 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service
+package jorlan.service.schedule
 
 import cron4s.expr.CronExpr
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
 import jorlan.domain.*
 import jorlan.service.schedule.{TriggerEngine, TriggerEngineImpl}
+import jorlan.service.{AgentRunner, AgentSessionManager, SessionHub}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.stream.ZStream
