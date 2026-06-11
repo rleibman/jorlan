@@ -13,7 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOMemoryRepository, ZIORepositories, ZIOServerSettingsRepository}
 import jorlan.domain.*
-import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.stream.ZStream
 import zio.test.*
@@ -34,7 +34,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       SessionHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.live,
-      ZLayer.succeed(AgentSettings()),
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
     )
 
@@ -44,7 +44,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       SessionHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.live,
-      ZLayer.succeed(AgentSettings()),
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
     )
   }
@@ -208,7 +208,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
         FakeModelGateway.layer(List("ok")),
         NoOpMemoryService.layer,
         SkillRegistry.live,
-        ZLayer.succeed(AgentSettings()),
+        FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         SessionHub.live,
       ),
@@ -232,7 +232,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
               SessionHub.live,
               NoOpMemoryService.layer,
               SkillRegistry.live,
-              ZLayer.succeed(AgentSettings()),
+              FakeConfigurationService.layer,
               repos,
             )
           wasCalled <- seedCalled.get
@@ -254,7 +254,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
               SessionHub.live,
               NoOpMemoryService.layer,
               SkillRegistry.live,
-              ZLayer.succeed(AgentSettings()),
+              FakeConfigurationService.layer,
               repos,
             )
           allConvs <- convRepo.search(ConversationSearch(sessionId = sessionId, pageSize = 10)).orDie
@@ -296,7 +296,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             FakeModelGateway.capturingLayer(List("ok"), capturedPrompts),
             SessionHub.live,
             SkillRegistry.live,
-            ZLayer.succeed(AgentSettings()),
+            FakeConfigurationService.layer,
             AgentRunnerImpl.live,
             ZLayer.succeed(new CheckpointSummarizer {
               override def summarize(

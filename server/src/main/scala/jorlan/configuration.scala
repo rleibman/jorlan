@@ -11,13 +11,17 @@
 package jorlan
 
 import _root_.ai.LangChainConfig
+import _root_.auth.{AuthConfig, SecretKey}
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
-import zio.{IO, UIO, ZIO, ZLayer}
+import zio.{Duration, IO, UIO, ZIO, ZLayer}
 
 import java.io.File
 import scala.language.unsafeNulls
+
+given DeriveConfig[SecretKey] = DeriveConfig[String].map(SecretKey(_))
+given DeriveConfig[Duration] = DeriveConfig[Long].map(Duration.fromMillis)
 
 case class HttpConfig(
   host: String = "0.0.0.0",
@@ -35,16 +39,6 @@ case class OAuthProviderSettings(
   userInfoUri:      String,
   redirectUri:      String,
   scopes:           List[String],
-)
-
-/** Authentication and session configuration. */
-case class AuthSettings(
-  secretKey:        String,
-  accessTtlMinutes: Int = 60,
-  refreshTtlDays:   Int = 30,
-  google:           Option[OAuthProviderSettings] = None,
-  github:           Option[OAuthProviderSettings] = None,
-  discord:          Option[OAuthProviderSettings] = None,
 )
 
 /** Agent runtime configuration. */
@@ -83,9 +77,9 @@ case class ShellSettings(
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
   db:        DatabaseConfig,
+  auth:      AuthConfig,
   flyway:    FlywayConfig = FlywayConfig(),
   http:      HttpConfig = HttpConfig(),
-  auth:      AuthSettings,
   ai:        LangChainConfig = LangChainConfig(),
   agent:     AgentSettings = AgentSettings(),
   workspace: WorkspaceSettings = WorkspaceSettings(),

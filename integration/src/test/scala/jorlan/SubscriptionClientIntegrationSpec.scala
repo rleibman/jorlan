@@ -11,7 +11,7 @@
 package jorlan
 
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
-import _root_.auth.{AuthConfig, AuthServer, SecretKey}
+import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.QuillRepositories
@@ -42,16 +42,7 @@ object SubscriptionClientIntegrationSpec
   private val configLayer = JorlanContainer.configLayer
 
   private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
-    ZLayer.fromZIO(
-      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map { cfg =>
-        val a = cfg.jorlan.auth
-        AuthConfig(
-          secretKey = SecretKey(a.secretKey),
-          accessTTL = a.accessTtlMinutes.minutes,
-          refreshTTL = a.refreshTtlDays.days,
-        )
-      },
-    )
+    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie.map(_.jorlan.auth))
 
   private val oauthLayer: ZLayer[ConfigurationService, Nothing, OAuthService] =
     ZLayer
@@ -93,7 +84,6 @@ object SubscriptionClientIntegrationSpec
       ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
       SkillRegistry.live,
-      ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       TriggerEngine.live,

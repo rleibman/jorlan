@@ -10,7 +10,6 @@
 
 package jorlan
 
-import _root_.ai.LangChainConfig
 import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, SecretKey}
 import jorlan.auth.JorlanAuthServer
@@ -25,27 +24,6 @@ import zio.{ULayer, URLayer, ZIO, ZLayer, durationInt}
 
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
-
-  private val databaseConfigLayer: ZLayer[ConfigurationService, ConfigurationError, DatabaseConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db))
-
-  private val flywayConfigLayer: ZLayer[ConfigurationService, ConfigurationError, FlywayConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.flyway))
-
-  private val langChainConfigLayer: ZLayer[ConfigurationService, ConfigurationError, LangChainConfig] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai))
-
-  private val authConfigLayer: ZLayer[ConfigurationService, ConfigurationError, AuthConfig] =
-    ZLayer.fromZIO(
-      ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
-        val a = cfg.jorlan.auth
-        AuthConfig(
-          secretKey = SecretKey(a.secretKey),
-          accessTTL = a.accessTtlMinutes.minutes,
-          refreshTTL = a.refreshTtlDays.days,
-        )
-      },
-    )
 
   private def toProviderConfig(s: OAuthProviderSettings): OAuthProviderConfig =
     OAuthProviderConfig(
@@ -63,11 +41,7 @@ object EnvironmentBuilder {
       .fromZIO(
         ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
           val a = cfg.jorlan.auth
-          OAuthService.live(
-            googleConfig = a.google.map(toProviderConfig),
-            githubConfig = a.github.map(toProviderConfig),
-            discordConfig = a.discord.map(toProviderConfig),
-          )
+          OAuthService.live() // TODO if you later want to support oauth
         },
       ).flatten
 
@@ -95,21 +69,13 @@ object EnvironmentBuilder {
       } yield ConnectorManager.fromSkills(telegramSkills.flatten)
     }
 
-  private val agentSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, AgentSettings] =
-    ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent))
-
-  // TODO THis is insane, building the environment shouldn't take these many layers.
-  // Things should be grouped together, and in particular, skills shouldn't be in the environment as they should
-  // be discoverable.
   val live: ULayer[JorlanEnvironment] =
     ZLayer
       .make[JorlanEnvironment](
         ConfigurationServiceImpl.live,
-        databaseConfigLayer,
-        flywayConfigLayer,
-        langChainConfigLayer,
-        authConfigLayer,
-        agentSettingsLayer,
+        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.db)),
+        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.flyway)),
+        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.auth)),
         FlywayMigration.live,
         QuillRepositories.live,
         CapabilityEvaluatorImpl.live,

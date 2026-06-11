@@ -14,7 +14,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
-import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -59,7 +59,7 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
       SessionHub.live,
       NoOpMemoryService.layer,
       SkillRegistry.liveWith(echoSkill),
-      ZLayer.succeed(AgentSettings()),
+      FakeConfigurationService.layer,
       AgentRunnerImpl.live,
     )
 

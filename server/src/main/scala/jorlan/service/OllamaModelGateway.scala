@@ -308,10 +308,10 @@ private class OllamaModelGateway(
 
 object OllamaModelGateway {
 
-  val live: URLayer[LangChainConfig & ZIORepositories, ModelGateway] =
+  val live: URLayer[ConfigurationService & ZIORepositories, ModelGateway] =
     ZLayer.fromZIO(
       for {
-        config       <- ZIO.service[LangChainConfig]
+        config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai).orDie
         eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
         model        <- ZIO.attempt {
           StreamingChatLanguageModel.fromJava(

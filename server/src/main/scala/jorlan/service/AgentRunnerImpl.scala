@@ -423,7 +423,7 @@ object AgentRunnerImpl {
   val defaultMaxToolSteps: Int = 10
 
   val live: URLayer[
-    ModelGateway & SessionHub & ZIORepositories & MemoryService & SkillRegistry & AgentSettings,
+    ModelGateway & SessionHub & ZIORepositories & MemoryService & SkillRegistry & ConfigurationService,
     AgentRunner,
   ] =
     ZLayer.fromZIO(
@@ -433,7 +433,7 @@ object AgentRunnerImpl {
         repo          <- ZIO.service[ZIORepositories]
         memoryService <- ZIO.service[MemoryService]
         skillRegistry <- ZIO.service[SkillRegistry]
-        settings      <- ZIO.service[AgentSettings]
+        settings      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent).orDie
         runnerState   <- AgentRunnerState.make
       } yield AgentRunnerImpl(
         modelGateway = modelGateway,
