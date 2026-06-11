@@ -21,14 +21,17 @@
         const token = localStorage.getItem('jwtToken');
         return fetch('/api/jorlan', {
             method: 'post',
-            headers: {
+            const headers = {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'Authorization': token ? 'Bearer ' + token : '',
-            },
-            credentials: 'include',
-            body: JSON.stringify(graphQLParams),
-        }).then(function(response) {
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+            };
+            return fetch('/api/jorlan', {
+                method: 'post',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify(graphQLParams),
+            }).then(function(response) {
             return response.text();
         }).then(function(responseBody) {
             try {
