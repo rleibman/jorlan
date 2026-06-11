@@ -41,9 +41,9 @@ object StaticFileRoutes {
                   new File(root, segments.mkString("/"))
 
               // Reject path traversal: canonical path must stay under webRoot
-              val rootCanon = root.getCanonicalPath
-              val candidateCanon = candidate.getCanonicalPath
-              if (!candidateCanon.startsWith(rootCanon))
+              val rootPath      = root.getCanonicalFile.toPath
+              val candidatePath = candidate.getCanonicalFile.toPath
+              if (!candidatePath.startsWith(rootPath))
                 None // traversal attempt — fall through to index.html
               else if (candidate.exists() && candidate.isFile)
                 Some(candidate)
