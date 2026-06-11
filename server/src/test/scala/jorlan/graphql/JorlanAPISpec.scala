@@ -163,6 +163,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       personalitySuite,
       memorySuite,
       schedulerSuite,
+      modelSuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -810,6 +811,36 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ),
       ),
     ),
+  )
+
+  // ─── availableModels query and terminateSession mutation (Phase 15) ──────────
+
+  private val modelSuite = suite("Models and Session Lifecycle")(
+    test("availableModels query returns the fake model list") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ availableModels { id provider contextWindow supportsStreaming } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("fake-model"),
+        result.data.toString.contains("fake"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("terminateSession transitions session to Completed status") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute("""mutation { createSession(modelId: null) { id status } }""")
+        sessionId = extractLong(createResult.data.toString, "id")
+        termResult <- interp.execute(s"""mutation { terminateSession(value: $sessionId) }""")
+        listResult <- interp.execute("""{ listSessions { id status } }""")
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        termResult.errors.isEmpty,
+        termResult.data.toString.contains("true"),
+        listResult.errors.isEmpty,
+        listResult.data.toString.contains("Completed"),
+      )
+    }.provideLayer(makeAppLayer()),
   )
 
 }

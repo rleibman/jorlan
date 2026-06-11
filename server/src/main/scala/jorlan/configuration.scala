@@ -12,7 +12,7 @@ package jorlan
 
 import _root_.ai.LangChainConfig
 import _root_.auth.{AuthConfig, SecretKey}
-import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
+import com.typesafe.config.{ConfigFactory, Config as TypesafeConfig}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
 import zio.{Duration, IO, UIO, ZIO, ZLayer}
@@ -82,6 +82,10 @@ case class ShellSettings(
   captureThreshold: Int = 65536,
 )
 
+case class WebConfig(
+  root: String = "/opt/jorlan/www",
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
   db:        DatabaseConfig,
@@ -93,6 +97,7 @@ case class JorlanConfig(
   scheduler: SchedulerSettings = SchedulerSettings(),
   workspace: WorkspaceSettings = WorkspaceSettings(),
   shell:     ShellSettings = ShellSettings(),
+  web:       WebConfig = WebConfig(),
 )
 
 /** Root application configuration. */

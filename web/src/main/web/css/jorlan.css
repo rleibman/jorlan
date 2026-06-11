@@ -1,0 +1,627 @@
+/*
+ * Jorlan — Main Brand Stylesheet
+ * Precision Pattern Engineering
+ *
+ * Color System:
+ *   Midnight Navy:   #0F1A2B  — Primary background, headers, nav
+ *   Architect Cream: #F5F3EE  — Content background, drafting canvas
+ *   Brushed Brass:   #B08A3E  — Accent (buttons, highlights, key lines)
+ *   Graphite:        #2E2E2E  — Primary text
+ *   Steel Blue:      #2F4F6F  — Secondary accents, hover states
+ *   Draft Grid Gray: #D8D6D0  — Separators, borders, subtle grid
+ */
+
+/* ============================================================
+ * CSS Custom Properties (Brand Tokens)
+ * ============================================================ */
+
+:root {
+  /* Primary Palette */
+  --bd-navy:   #0F1A2B;
+  --bd-cream:  #F5F3EE;
+  --bd-brass:  #B08A3E;
+  --bd-graphite: #2E2E2E;
+
+  /* Secondary Palette */
+  --bd-steel:  #2F4F6F;
+  --bd-grid:   #D8D6D0;
+
+  /* Dark Mode */
+  --bd-dark-bg:   #0C1422;
+  --bd-dark-text: #E6E4DE;
+
+  /* Typography */
+  --font-serif:     'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+  --font-sans:      'Inter', 'Source Sans 3', system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', 'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Spacing (8pt grid) */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-6: 48px;
+  --space-8: 64px;
+
+  /* Motion */
+  --transition-subtle: 150ms ease;
+  --transition-standard: 200ms ease;
+}
+
+/* ============================================================
+ * Base Reset & Body
+ * ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  font-size: 16px;
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bd-cream);
+  color: var(--bd-graphite);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#content {
+  height: 100%;
+}
+
+/* ============================================================
+ * Typography
+ * ============================================================ */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--bd-navy);
+  letter-spacing: 0.01em;
+  margin-top: 0;
+  margin-bottom: var(--space-2);
+}
+
+h1 { font-size: 2rem; }
+h2 { font-size: 1.625rem; }
+h3 { font-size: 1.375rem; }
+h4 { font-size: 1.125rem; }
+
+/* Section headers: uppercase, spaced */
+h5, h6,
+.section-header {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bd-steel);
+  margin-bottom: var(--space-1);
+}
+
+p {
+  font-family: var(--font-sans);
+  color: var(--bd-graphite);
+  margin: 0 0 var(--space-2) 0;
+}
+
+/* Measurement / technical data */
+.measurement,
+.measurement-value,
+[data-measurement],
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--bd-graphite);
+}
+
+a {
+  color: var(--bd-brass);
+  text-decoration: none;
+  transition: color var(--transition-subtle);
+}
+
+a:hover {
+  color: var(--bd-steel);
+}
+
+/* ============================================================
+ * App Layout — Sidebar + Content
+ * ============================================================ */
+
+.sidebar-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-sidebar {
+  width: 220px;
+  min-width: 220px;
+  background-color: var(--bd-navy);
+  border-right: 1px solid var(--bd-steel);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  overflow-y: auto;
+  transition: transform var(--transition-standard);
+}
+
+/* Sidebar brand header */
+.app-sidebar::before {
+  content: 'JORLAN';
+  display: block;
+  padding: var(--space-3) var(--space-2);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--bd-cream);
+  border-bottom: 1px solid var(--bd-steel);
+  margin-bottom: var(--space-1);
+}
+
+.app-content {
+  flex: 1;
+  margin-left: 220px;
+  background-color: var(--bd-cream);
+  min-height: 100vh;
+  padding: var(--space-4);
+}
+
+/* ============================================================
+ * Navigation Menu Items (MUI ListItemButton overrides)
+ * ============================================================ */
+
+.mainMenu {
+  padding: var(--space-1) 0;
+}
+
+/* MUI ListItemButton inside sidebar */
+.app-sidebar .MuiListItemButton-root,
+.mainMenu .MuiListItemButton-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  font-weight: 400 !important;
+  color: var(--bd-grid) !important;
+  padding: var(--space-1) var(--space-2) !important;
+  border-radius: 0 !important;
+  letter-spacing: 0.02em;
+  transition: background-color var(--transition-subtle), color var(--transition-subtle) !important;
+}
+
+.app-sidebar .MuiListItemButton-root:hover,
+.mainMenu .MuiListItemButton-root:hover {
+  background-color: rgba(176, 138, 62, 0.12) !important;
+  color: var(--bd-brass) !important;
+}
+
+.app-sidebar .MuiListItemButton-root.Mui-selected,
+.mainMenu .MuiListItemButton-root.Mui-selected {
+  background-color: rgba(176, 138, 62, 0.18) !important;
+  color: var(--bd-brass) !important;
+  border-left: 2px solid var(--bd-brass);
+}
+
+.app-sidebar .MuiListItemButton-root.Mui-selected:hover,
+.mainMenu .MuiListItemButton-root.Mui-selected:hover {
+  background-color: rgba(176, 138, 62, 0.24) !important;
+}
+
+/* Hamburger button */
+.hamburger-button {
+  display: none;
+}
+
+/* Overlay */
+.sidebar-overlay {
+  display: none;
+}
+
+/* ============================================================
+ * MUI Component Overrides — Global Theme
+ * ============================================================ */
+
+/* --- Typography --- */
+.MuiTypography-root {
+  font-family: var(--font-sans) !important;
+  color: var(--bd-graphite);
+}
+
+.MuiTypography-h1,
+.MuiTypography-h2,
+.MuiTypography-h3,
+.MuiTypography-h4 {
+  font-family: var(--font-serif) !important;
+  color: var(--bd-navy) !important;
+}
+
+.MuiTypography-h5,
+.MuiTypography-h6,
+.MuiTypography-subtitle2 {
+  font-family: var(--font-sans) !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bd-steel) !important;
+}
+
+.MuiTypography-subtitle1 {
+  font-family: var(--font-mono) !important;
+  font-size: 0.875rem !important;
+  color: var(--bd-brass) !important;
+}
+
+.MuiTypography-body1,
+.MuiTypography-body2 {
+  font-family: var(--font-sans) !important;
+  color: var(--bd-graphite) !important;
+}
+
+.MuiTypography-caption {
+  font-family: var(--font-sans) !important;
+  font-size: 0.75rem !important;
+  color: var(--bd-steel) !important;
+  letter-spacing: 0.04em;
+}
+
+/* --- Buttons --- */
+.MuiButton-root {
+  font-family: var(--font-sans) !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  font-size: 0.8125rem !important;
+  border-radius: 2px !important;
+  transition: background-color var(--transition-subtle), color var(--transition-subtle), border-color var(--transition-subtle) !important;
+  box-shadow: none !important;
+}
+
+.MuiButton-root:hover {
+  box-shadow: none !important;
+}
+
+/* Primary contained */
+.MuiButton-contained,
+.MuiButton-containedPrimary {
+  background-color: var(--bd-navy) !important;
+  color: var(--bd-cream) !important;
+  border: 1px solid var(--bd-navy) !important;
+}
+
+.MuiButton-contained:hover,
+.MuiButton-containedPrimary:hover {
+  background-color: var(--bd-steel) !important;
+  border-color: var(--bd-steel) !important;
+}
+
+/* Secondary / outlined */
+.MuiButton-outlined,
+.MuiButton-outlinedPrimary {
+  background-color: transparent !important;
+  color: var(--bd-navy) !important;
+  border: 1px solid var(--bd-navy) !important;
+}
+
+.MuiButton-outlined:hover,
+.MuiButton-outlinedPrimary:hover {
+  background-color: rgba(15, 26, 43, 0.06) !important;
+}
+
+/* Brass-accent variant (color="success" repurposed) */
+.MuiButton-containedSuccess {
+  background-color: var(--bd-brass) !important;
+  color: var(--bd-cream) !important;
+  border: 1px solid var(--bd-brass) !important;
+}
+
+.MuiButton-containedSuccess:hover {
+  background-color: #967530 !important;
+}
+
+/* Warning variant → used for Unpublish */
+.MuiButton-outlinedWarning {
+  color: var(--bd-brass) !important;
+  border-color: var(--bd-brass) !important;
+}
+
+.MuiButton-outlinedWarning:hover {
+  background-color: rgba(176, 138, 62, 0.08) !important;
+}
+
+/* --- Inputs --- */
+.MuiInput-root,
+.MuiOutlinedInput-root,
+.MuiFilledInput-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.9375rem !important;
+  color: var(--bd-graphite) !important;
+}
+
+.MuiInputLabel-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  color: var(--bd-steel) !important;
+  letter-spacing: 0.04em;
+}
+
+.MuiInput-underline:before {
+  border-bottom-color: var(--bd-grid) !important;
+}
+
+.MuiInput-underline:hover:not(.Mui-disabled):before {
+  border-bottom-color: var(--bd-steel) !important;
+}
+
+.MuiInput-underline:after {
+  border-bottom-color: var(--bd-brass) !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+  border-color: var(--bd-grid) !important;
+  border-radius: 2px !important;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: var(--bd-steel) !important;
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--bd-brass) !important;
+  border-width: 1px !important;
+}
+
+/* --- Cards --- */
+.MuiCard-root {
+  background-color: var(--bd-cream) !important;
+  border: 1px solid var(--bd-grid) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  transition: border-color var(--transition-subtle) !important;
+}
+
+.MuiCard-root:hover {
+  border-color: var(--bd-steel) !important;
+}
+
+.MuiCardContent-root {
+  padding: var(--space-2) !important;
+}
+
+.MuiCardActions-root {
+  padding: var(--space-1) var(--space-2) var(--space-2) !important;
+  border-top: 1px solid var(--bd-grid);
+}
+
+/* --- Tables --- */
+.MuiTableContainer-root {
+  border: 1px solid var(--bd-grid);
+  border-radius: 2px;
+}
+
+.MuiTableHead-root .MuiTableRow-root {
+  background-color: var(--bd-navy);
+}
+
+.MuiTableHead-root .MuiTableCell-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: var(--bd-cream) !important;
+  border-bottom: none !important;
+  padding: var(--space-1) var(--space-2) !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root {
+  border-bottom: 1px solid var(--bd-grid);
+  transition: background-color var(--transition-subtle);
+}
+
+.MuiTableBody-root .MuiTableRow-root:last-child {
+  border-bottom: none;
+}
+
+.MuiTableBody-root .MuiTableRow-root:hover {
+  background-color: rgba(176, 138, 62, 0.04) !important;
+}
+
+.MuiTableCell-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  color: var(--bd-graphite) !important;
+  padding: var(--space-1) var(--space-2) !important;
+  border-bottom: 1px solid var(--bd-grid) !important;
+}
+
+/* --- Chips (status badges) --- */
+.MuiChip-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  height: 22px !important;
+  border-radius: 2px !important;
+}
+
+.MuiChip-colorDefault {
+  background-color: var(--bd-grid) !important;
+  color: var(--bd-graphite) !important;
+}
+
+.MuiChip-colorSuccess {
+  background-color: rgba(47, 79, 111, 0.15) !important;
+  color: var(--bd-steel) !important;
+  border: 1px solid var(--bd-steel) !important;
+}
+
+.MuiChip-colorWarning {
+  background-color: rgba(176, 138, 62, 0.15) !important;
+  color: var(--bd-brass) !important;
+  border: 1px solid var(--bd-brass) !important;
+}
+
+/* --- Alerts --- */
+.MuiAlert-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  border-radius: 2px !important;
+  border: 1px solid currentColor;
+}
+
+.MuiAlert-standardError {
+  background-color: rgba(180, 60, 60, 0.08) !important;
+  color: #8B2020 !important;
+}
+
+.MuiAlert-standardSuccess {
+  background-color: rgba(47, 79, 111, 0.08) !important;
+  color: var(--bd-steel) !important;
+}
+
+/* --- CircularProgress --- */
+.MuiCircularProgress-root {
+  color: var(--bd-brass) !important;
+}
+
+/* --- FormControl / FormLabel --- */
+.MuiFormLabel-root {
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  color: var(--bd-steel) !important;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+ * Page Layout Helpers
+ * ============================================================ */
+
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--bd-grid);
+}
+
+/* Separators */
+hr,
+.divider {
+  border: none;
+  border-top: 1px solid var(--bd-grid);
+  margin: var(--space-3) 0;
+}
+
+/* Pattern canvas drafting feel */
+.drafting-canvas {
+  background-color: var(--bd-cream);
+  background-image:
+    linear-gradient(rgba(216, 214, 208, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(216, 214, 208, 0.4) 1px, transparent 1px);
+  background-size: 32px 32px;
+  border: 1px solid var(--bd-grid);
+  border-radius: 2px;
+  padding: var(--space-4);
+}
+
+/* ============================================================
+ * Select / native HTML form elements
+ * ============================================================ */
+
+select,
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="password"],
+textarea {
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  color: var(--bd-graphite);
+  background-color: var(--bd-cream);
+  border: 1px solid var(--bd-grid);
+  border-radius: 2px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--transition-subtle);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+select:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+textarea:focus {
+  border-color: var(--bd-brass);
+}
+
+select:hover,
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="number"]:hover,
+input[type="password"]:hover,
+textarea:hover {
+  border-color: var(--bd-steel);
+}
+
+/* Custom select arrow */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%232F4F6F' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+}
+
+/* ============================================================
+ * Dark Mode
+ * ============================================================ */
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: var(--bd-dark-bg);
+    color: var(--bd-dark-text);
+  }
+
+  h1, h2, h3, h4 {
+    color: var(--bd-dark-text);
+  }
+
+  .MuiCard-root {
+    background-color: rgba(255,255,255,0.04) !important;
+  }
+}
+
+/* ============================================================
+ * Utility Classes
+ * ============================================================ */
+
+.text-navy   { color: var(--bd-navy); }
+.text-brass  { color: var(--bd-brass); }
+.text-steel  { color: var(--bd-steel); }
+.text-muted  { color: var(--bd-grid); }
+.text-mono   { font-family: var(--font-mono); }
+.text-serif  { font-family: var(--font-serif); }
+.text-upper  { text-transform: uppercase; letter-spacing: 0.08em; }
+
+.bg-navy  { background-color: var(--bd-navy); color: var(--bd-cream); }
+.bg-cream { background-color: var(--bd-cream); }

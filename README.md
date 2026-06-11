@@ -4,6 +4,78 @@
 
 ---
 
+## Installation
+
+> **Pre-built packages** are attached to every [GitHub Release](https://github.com/rleibman/jorlan/releases).
+
+### Linux (Ubuntu / Debian)
+
+```bash
+# Download the latest .deb packages from GitHub Releases:
+#   https://github.com/rleibman/jorlan/releases/latest
+#   → jorlan-server_<version>_all.deb
+#   → jorlan-shell_<version>_all.deb
+
+# Install (requires Java 21+: sudo apt install default-jre-headless)
+sudo dpkg -i jorlan-server_<version>_all.deb
+sudo dpkg -i jorlan-shell_<version>_all.deb   # optional — CLI client
+
+# Set up the database (requires MariaDB and root credentials)
+sudo jorlan-init-db --root-password <root-pw> --app-password <app-pw>
+
+# Edit the env file — at minimum set JORLAN_AUTH_SECRET_KEY
+sudo nano /etc/jorlan/server.env
+
+# Enable and start the server
+sudo systemctl enable jorlan-server
+sudo systemctl start jorlan-server
+
+# Run the shell to complete first-run setup
+jorlan
+```
+
+### macOS (Homebrew — recommended)
+
+```bash
+# Add the Jorlan tap
+brew tap rleibman/jorlan
+
+# Install server and shell
+brew install jorlan          # server daemon
+brew install jorlan-shell    # CLI client (optional)
+
+# Start the server
+brew services start jorlan   # as your user
+# or:
+sudo brew services start jorlan  # as a system daemon (starts at boot)
+
+# Set up the database
+jorlan-init-db --root-password <root-pw> --app-password <app-pw>
+
+# Edit the env file
+nano "$(brew --prefix)/etc/jorlan/server.env"
+
+# Run the shell to complete first-run setup
+jorlan
+```
+
+### macOS (manual tarball)
+
+For non-Homebrew users: download `jorlan-server-<version>.tgz` and `jorlan-shell-<version>.tgz`
+from the [latest release](https://github.com/rleibman/jorlan/releases/latest), then:
+
+```bash
+# Install server (requires Java 21+)
+mkdir -p /tmp/jorlan-server-install
+tar -xzf jorlan-server-<version>.tgz -C /tmp/jorlan-server-install --strip-components=1
+sudo bash /tmp/jorlan-server-install/scripts/install-macos.sh "${PWD}/jorlan-server-<version>.tgz"
+# Install shell
+tar -xzf jorlan-shell-<version>.tgz -C ~/jorlan-shell --strip-components=1
+echo 'export PATH="$HOME/jorlan-shell/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+---
+
 ## Overview
 
 Jorlan is a secure, observable, extensible, and model-agnostic runtime platform for AI agents and intelligent workflows.
@@ -29,7 +101,7 @@ The result is a platform that supports both autonomous AI-driven execution and h
 
 ## Technology Stack
 
-- **Language**: Scala 3.8.3 with `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
+- **Language**: Scala 3.8.4 with `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
 - **Effects**: ZIO 2.x throughout
 - **Database**: MariaDB via Quill (`quill-jdbc-zio`) + Flyway migrations
 - **API**: Caliban (GraphQL) as the primary external API
@@ -39,6 +111,7 @@ The result is a platform that supports both autonomous AI-driven execution and h
 - **Scheduling**: cron4s for cron expression parsing
 - **Testing**: zio-test + Testcontainers (MariaDB)
 - **Connection pool**: HikariCP
+- **Web frontend**: Scala.js + React 19 + MUI v9 (via ScalablyTyped bindings in `stLib`)
 
 ---
 
@@ -51,6 +124,8 @@ jorlan/
 ├── ai/           LLM client integrations (LangChain4j + Ollama)
 ├── server/       Caliban GraphQL API, HTTP server, agent runtime, scheduler, memory system
 ├── shell/        Interactive TUI shell — connects to the server over GraphQL + WebSocket
+├── web/          Scala.js SPA — React 19 + MUI v9 web frontend (served directly by the server)
+├── stLib/        ScalablyTyped bindings sub-project for React 19 + MUI v9 + Emotion
 ├── analytics/    Analytics subsystem (future)
 ├── integration/  Integration tests (Testcontainers)
 └── util/         Shared utilities
@@ -142,6 +217,7 @@ The server returns **503** for all non-status/init endpoints until setup complet
 | `GET  /api/jorlan/ws` | GraphQL over WebSocket (subscriptions) |
 | `GET  /api/jorlan/graphiql` | GraphiQL IDE (browser) |
 | `GET  /health` | Liveness probe |
+| `GET  /` | Web frontend SPA (served from `jorlan.web.root`, defaults to `/opt/jorlan/www`) |
 
 ---
 
@@ -210,13 +286,51 @@ Key bindings: **Enter** submit · **Backspace** delete · **PgUp/PgDn** scroll �
 
 ---
 
+## Web Frontend
+
+The `web` module is a Scala.js single-page application that connects to the Jorlan server via the same Caliban GraphQL API used by the shell. It is served directly by the server — no nginx or separate web server required.
+
+### Pages
+
+| Page | Description |
+|---|---|
+| **Chat** | Start sessions, send messages, stream responses in real time |
+| **Sessions** | Browse active/past sessions, create or terminate |
+| **Approvals** | Review and decide pending capability approval requests (live badge in nav) |
+| **Memory** | Search, remember, forget, and classify memory records |
+| **Scheduler** | Browse jobs and triggers, pause/resume/cancel/run-now/delete |
+| **Event Log** | Live-tail the event log via WebSocket subscription |
+| **Skills** | Skill registry browser (stub — awaiting `listSkillVersions` GraphQL query) |
+| **Users** | User, role, and permission management (admin) |
+| **Settings** | Server personality editor, model selector |
+
+### Building the web frontend
+
+```bash
+# Build the optimised bundle (outputs to dist/)
+bash scripts/build-web.sh
+
+# Build a fast (development) bundle (outputs to debugDist/)
+sbtn "web/debugDist"
+```
+
+The `stLib` ScalablyTyped sub-project must be published once before the web module can compile. Run this manually from the repo root when `stLib/` sources change:
+
+```bash
+cd stLib && sbt publishLocal
+```
+
+For local development, set `jorlan.web.root = "debugDist"` in `server/src/main/resources/application.conf` so the server serves the fast-opt bundle without needing a full production build.
+
+---
+
 ## Build & Test
 
 ```bash
 # Compile all modules
 sbt --error compile
 
-# Run all tests (unit + server + shell)
+# Run all tests (unit + server + shell + web)
 sbt --error test
 
 # Run integration tests (requires Docker for Testcontainers)
@@ -225,6 +339,9 @@ sbt --error integration/test
 # Format all sources
 sbt scalafmtAll
 
+# Build the web frontend
+bash scripts/build-web.sh
+
 # Regenerate GraphQL schema (after API changes)
 bash scripts/capture-schema.sh
 
@@ -232,7 +349,7 @@ bash scripts/capture-schema.sh
 bash scripts/gen-client.sh
 ```
 
-Test counts (as of Phase 10): **685 tests** across `ai`, `server`, `shell`, and `integration` modules — all passing without a running server or Ollama.
+Test counts (as of Phase 15): **843 tests** across `ai`, `server`, `shell`, `web`, and `integration` modules — all passing without a running server or Ollama.
 
 ---
 
@@ -316,14 +433,15 @@ All persistence goes through typed repository traits in `model`. The `db` module
 | 8.4 | AI module testing on CI with `FakeModelGateway` | ✅ Complete |
 | **9** | **Memory system — checkpointing, summarization, access policy, context injection** | **✅ Complete** |
 | **10** | **Durable scheduler — cron/interval triggers, DB locking, retry/backoff** | **✅ Complete** |
-| 11 | Telegram connector | Planned |
-| 12 | Built-in skills — workspace, shell, notification, identity | Planned |
+| **11** | **Telegram connector** | **✅ Complete** |
+| **12** | **Built-in skills — ReAct loop, SkillRegistry, 8 skills** | **✅ Complete** |
+| **18** | **Installer and distribution (.deb, macOS Homebrew)** | **✅ Complete** |
 | 13 | Email and Calendar skills | Planned |
 | 14 | Orchestrator integration | Planned |
-| 15 | Web frontend (Scala.js) | Planned |
+| **15** | **Web frontend (Scala.js + React 19 + MUI v9)** | **✅ Complete** |
 | 16 | Additional features (shell autocomplete, etc.) | Planned |
 | 17 | Advanced features — declarative skills, MCP adapter, vector memory | Planned |
-| 18 | Installer and distribution (.deb, macOS tarball) | Planned |
+| 18 | Installer and distribution (.deb, macOS Homebrew) | ✅ Complete |
 
 See `doc/development_roadmap.md` for the detailed task breakdown per phase.
 
