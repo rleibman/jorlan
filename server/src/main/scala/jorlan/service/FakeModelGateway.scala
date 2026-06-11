@@ -104,6 +104,21 @@ object FakeModelGateway {
       Ref.make(steps).map(ref => FakeModelGateway(chunks = Nil, stepsRef = Some(ref))),
     )
 
+  /** Creates a gateway that records whether [[seedHistory]] was called. Use to assert that prior conversation history
+    * is seeded when available.
+    */
+  def seedTrackingLayer(
+    chunks:     List[String],
+    seedCalled: Ref[Boolean],
+  ): ULayer[ModelGateway] =
+    ZLayer.succeed(new FakeModelGateway(chunks) {
+      override def seedHistory(
+        sessionId:    AgentSessionId,
+        messages:     List[jorlan.domain.Message],
+        systemPrompt: String,
+      ): UIO[Unit] = seedCalled.set(true)
+    })
+
 }
 
 /** A [[ModelGateway]] that captures system prompts for assertion in tests. */

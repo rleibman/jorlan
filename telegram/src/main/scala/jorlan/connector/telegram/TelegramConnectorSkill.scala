@@ -81,7 +81,8 @@ class TelegramConnectorSkill(
   pollingFiber:   Ref[Option[Fiber[Nothing, Unit]]],
 ) extends ConnectorSkill {
 
-  override val connectorType: ConnectorType = ConnectorType.Telegram
+  override val connectorType:       ConnectorType = ConnectorType.Telegram
+  override val sendMessageToolName: Option[String] = Some("telegram.send_message")
 
   private val sendCapability = CapabilityName("telegram.send")
 

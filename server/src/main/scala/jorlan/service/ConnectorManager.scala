@@ -12,6 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.ConnectorSkill
+import jorlan.domain.*
 import zio.*
 
 /** Minimal connector lifecycle manager — Phase 11 predecessor to the full [[SkillRegistry]] (Phase 12).
@@ -30,10 +31,16 @@ trait ConnectorManager {
   /** All registered connector skills (for wiring into [[SkillRegistry]]). */
   def connectors: List[ConnectorSkill]
 
+  /** Connector skills indexed by [[ConnectorType]] for O(1) lookup. */
+  def connectorMap: Map[ConnectorType, ConnectorSkill]
+
 }
 
 /** [[ConnectorManager]] backed by a fixed set of [[ConnectorSkill]]s. */
 class ConnectorManagerImpl(val connectors: List[ConnectorSkill]) extends ConnectorManager {
+
+  override val connectorMap: Map[ConnectorType, ConnectorSkill] =
+    connectors.map(c => c.connectorType -> c).toMap
 
   override def startAll: UIO[Unit] =
     ZIO.foreachParDiscard(connectors) { c =>

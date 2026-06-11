@@ -133,7 +133,10 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
                 enabled = true,
                 createdAt = now,
               ),
-            ).ignore
+            ).tapError(e =>
+              jobManager.cancelJob(job.id).ignore *>
+                ZIO.logWarning(s"scheduler.create_job: trigger creation failed, job ${job.id} cancelled: ${e.msg}"),
+            )
         } yield Json.Obj(
           "id"   -> Json.Str(job.id.value.toString),
           "name" -> Json.Str(job.name),

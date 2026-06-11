@@ -64,21 +64,12 @@ class NotifySkill(router: NotificationRouter) extends Skill {
       case other            => ZIO.fail(JorlanError(s"NotifySkill: unknown tool '$other'"))
     }
 
-  private def getStr(
-    args: Json,
-    key:  String,
-  ): Option[String] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
-      case _                => None
-    }
-
   private def notifyUser(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val userIdRaw = getStr(args, "userId")
-    val message = getStr(args, "message")
+    val userIdRaw = SkillArgs.str(args, "userId")
+    val message = SkillArgs.str(args, "message")
     (userIdRaw, message) match {
       case (None, _)              => ZIO.fail(JorlanError("notify.user: userId is required"))
       case (_, None)              => ZIO.fail(JorlanError("notify.user: message is required"))
@@ -94,23 +85,20 @@ class NotifySkill(router: NotificationRouter) extends Skill {
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val channelUserId = getStr(args, "channelUserId")
-    val channelTypeStr = getStr(args, "channelType")
-    val message = getStr(args, "message")
+    val channelUserId = SkillArgs.str(args, "channelUserId")
+    val channelTypeStr = SkillArgs.str(args, "channelType")
+    val message = SkillArgs.str(args, "message")
     (channelUserId, channelTypeStr, message) match {
       case (None, _, _)                      => ZIO.fail(JorlanError("notify.channel: channelUserId is required"))
       case (_, None, _)                      => ZIO.fail(JorlanError("notify.channel: channelType is required"))
       case (_, _, None)                      => ZIO.fail(JorlanError("notify.channel: message is required"))
       case (Some(cuid), Some(ct), Some(msg)) =>
-        parseChannelType(ct) match {
+        SkillArgs.parseChannelType(ct) match {
           case None         => ZIO.fail(JorlanError(s"notify.channel: unknown channelType '$ct'"))
           case Some(chType) => router.notifyChannel(cuid, chType, msg, ctx)
         }
     }
   }
-
-  private def parseChannelType(s: String): Option[ChannelType] =
-    ChannelType.values.find(_.toString.equalsIgnoreCase(s))
 
 }
 

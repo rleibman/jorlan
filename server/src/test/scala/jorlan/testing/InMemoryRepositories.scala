@@ -37,7 +37,11 @@ object InMemoryRepositories {
       store.get.map(_.get(id.value))
 
     override def search(s: UserSearch): RepositoryTask[List[User]] =
-      store.get.map(_.values.toList.filter(u => s.active.forall(_ == u.active)))
+      store.get.map(
+        _.values.toList
+          .filter(u => s.active.forall(_ == u.active))
+          .filter(u => s.nameContains.forall(n => u.displayName.toLowerCase.contains(n.toLowerCase))),
+      )
 
     override def upsert(user: User): RepositoryTask[User] =
       for {

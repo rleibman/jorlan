@@ -92,7 +92,6 @@ object SubscriptionClientIntegrationSpec
       CheckpointSummarizerImpl.live,
       ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
-      MemorySkill.live,
       SkillRegistry.live,
       ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,
@@ -100,12 +99,6 @@ object SubscriptionClientIntegrationSpec
       TriggerEngine.live,
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
-      NotifySkill.live,
-      ContactsSkill.live,
-      ZLayer.succeed(WorkspaceSettings()),
-      WorkspaceSkill.live,
-      ZLayer.succeed(ShellSettings()),
-      ShellSkill.live,
       Client.default,
     )
 

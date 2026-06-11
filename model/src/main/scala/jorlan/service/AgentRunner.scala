@@ -19,7 +19,7 @@ import zio.stream.ZStream
 /** The per-session agent execution loop.
   *
   * Receives a user message, streams the model response token-by-token through the session hub, and records all
-  * significant steps in the event log. The full ReAct planning loop (multi-step tool dispatch) is deferred to Phase 12.
+  * significant steps in the event log.
   */
 trait AgentRunner {
 

@@ -44,7 +44,7 @@ object WorkspaceSkillSpec extends ZIOSpecDefault {
           )
           .orDie,
       ).flatMap { root =>
-        body(new WorkspaceSkill(root))
+        body(new WorkspaceSkill(root, WorkspaceSettings(root = root.toString)))
       }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =

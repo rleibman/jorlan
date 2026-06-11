@@ -26,6 +26,9 @@ trait SkillRegistry {
   /** Register a skill, making its tools available to the ReAct loop. */
   def register(skill: Skill): UIO[Unit]
 
+  /** Return all registered [[Skill]] instances. */
+  def allSkills: UIO[List[Skill]]
+
   /** Return all tool descriptors from every registered skill. */
   def allTools: UIO[List[ToolDescriptor]]
 
@@ -42,27 +45,61 @@ trait SkillRegistry {
     ctx:      InvocationContext,
   ): UIO[Json]
 
+  def getSkill[S <: Skill](name: String): UIO[Option[S]]
+
 }
 
 object SkillRegistry {
 
+  private def makeCache: UIO[Ref[Option[List[ToolSpec]]]] = Ref.make(Option.empty[List[ToolSpec]])
+
+  /** Build an empty registry with capability enforcement disabled (for tests). */
   val live: ULayer[SkillRegistry] =
     ZLayer.fromZIO(
-      Ref.make(Map.empty[String, Skill]).map(SkillRegistryLive(_)),
+      for {
+        ref   <- Ref.make(Map.empty[String, Skill])
+        cache <- makeCache
+      } yield SkillRegistryLive(ref, None, cache),
     )
 
-  /** Build a registry pre-populated with the given skills. */
+  /** Build a registry pre-populated with the given skills (capability enforcement disabled; for tests). */
   def liveWith(skills: Skill*): ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
-        ref <- Ref.make(Map.empty[String, Skill])
-        registry = SkillRegistryLive(ref)
-        _ <- ZIO.foreach(skills)(registry.register)
+        ref   <- Ref.make(Map.empty[String, Skill])
+        cache <- makeCache
+        registry = SkillRegistryLive(ref, None, cache)
+        _ <- ZIO.foreachDiscard(skills)(registry.register)
+      } yield registry: SkillRegistry,
+    )
+
+  /** Build an empty registry wired with [[CapabilityEvaluator]] for production use. */
+  val liveSecure: URLayer[CapabilityEvaluator, SkillRegistry] =
+    ZLayer.fromZIO(
+      for {
+        evaluator <- ZIO.service[CapabilityEvaluator]
+        ref       <- Ref.make(Map.empty[String, Skill])
+        cache     <- makeCache
+      } yield SkillRegistryLive(ref, Some(evaluator), cache),
+    )
+
+  /** Build a pre-populated registry wired with [[CapabilityEvaluator]] for production use. */
+  def liveSecureWith(skills: Skill*): URLayer[CapabilityEvaluator, SkillRegistry] =
+    ZLayer.fromZIO(
+      for {
+        evaluator <- ZIO.service[CapabilityEvaluator]
+        ref       <- Ref.make(Map.empty[String, Skill])
+        cache     <- makeCache
+        registry = SkillRegistryLive(ref, Some(evaluator), cache)
+        _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
 
   def register(skill: Skill): URIO[SkillRegistry, Unit] =
     ZIO.serviceWithZIO[SkillRegistry](_.register(skill))
+
+  def allSkills: URIO[SkillRegistry, List[Skill]] =
+    ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
 
   def allTools: URIO[SkillRegistry, List[ToolDescriptor]] =
     ZIO.serviceWithZIO[SkillRegistry](_.allTools)
@@ -79,16 +116,38 @@ object SkillRegistry {
 
 }
 
-class SkillRegistryLive(skills: Ref[Map[String, Skill]]) extends SkillRegistry {
+class SkillRegistryLive(
+  skills:         Ref[Map[String, Skill]],
+  evaluator:      Option[CapabilityEvaluator],
+  toolSpecsCache: Ref[Option[List[ToolSpec]]],
+) extends SkillRegistry {
 
   override def register(skill: Skill): UIO[Unit] =
-    skills.update(m => m + (skill.descriptor.name -> skill))
+    for {
+      _ <- ZIO
+        .logWarning(s"SkillRegistry: overwriting existing skill '${skill.descriptor.name}'")
+        .whenZIO(skills.get.map(_.contains(skill.descriptor.name)))
+      _ <- skills.update(m => m + (skill.descriptor.name -> skill))
+      _ <- toolSpecsCache.set(None)
+    } yield ()
+
+  override def allSkills: UIO[List[Skill]] =
+    skills.get.map(_.values.toList)
 
   override def allTools: UIO[List[ToolDescriptor]] =
     skills.get.map(_.values.toList.flatMap(_.descriptor.tools))
 
   override def allToolSpecs: UIO[List[ToolSpec]] =
-    allTools.map(_.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString)))
+    toolSpecsCache.get.flatMap {
+      case Some(cached) => ZIO.succeed(cached)
+      case None         =>
+        allTools.map(_.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString))).flatMap { specs =>
+          toolSpecsCache.set(Some(specs)).as(specs)
+        }
+    }
+
+  def getSkill[S <: Skill](name: String): UIO[Option[S]] =
+    skills.get.map(_.find(_._2.descriptor.name == name).map(_._2.asInstanceOf[S]))
 
   override def invoke(
     toolName: String,
@@ -105,17 +164,55 @@ class SkillRegistryLive(skills: Ref[Map[String, Skill]]) extends SkillRegistry {
             case Left(err) =>
               ZIO.succeed(Json.Str(s"Error: $err"))
             case Right(args) =>
-              skill
-                .invoke(ctx, toolName, args)
-                .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg}"))
-                .fold(
-                  e => Json.Str(s"Error: ${e.msg}"),
-                  identity,
-                )
+              checkCapabilities(toolName, ctx, skill).flatMap {
+                case Some(denied) => ZIO.succeed(Json.Str(s"Error: $denied"))
+                case None         =>
+                  skill
+                    .invoke(ctx, toolName, args)
+                    .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg}"))
+                    .fold(
+                      e => Json.Str(s"Error: ${e.msg}"),
+                      identity,
+                    )
+              }
           }
       }
     }
   }
+
+  /** Returns `Some(denialReason)` if capability gating is enabled and any required capability is denied. */
+  private def checkCapabilities(
+    toolName: String,
+    ctx:      InvocationContext,
+    skill:    Skill,
+  ): UIO[Option[String]] =
+    evaluator match {
+      case None     => ZIO.none
+      case Some(ev) =>
+        skill.descriptor.tools.find(_.name == toolName) match {
+          case None                                            => ZIO.none
+          case Some(tool) if tool.requiredCapabilities.isEmpty => ZIO.none
+          case Some(tool)                                      =>
+            ZIO.foldLeft(tool.requiredCapabilities)(Option.empty[String]) {
+              (
+                denied,
+                cap,
+              ) =>
+                if (denied.isDefined) ZIO.succeed(denied)
+                else
+                  ev.evaluate(
+                    CapabilityRequest(cap, ctx.actorId, ctx.agentId, ctx.sessionId, None),
+                  ).fold(
+                      _ => Some(s"capability check failed for '${cap.value}'"),
+                      {
+                        case EvaluationResult.ExplicitDeny => Some(s"access denied: explicit deny on '${cap.value}'")
+                        case EvaluationResult.DefaultDeny  => Some(s"access denied: no permission for '${cap.value}'")
+                        case _                             => None
+                      },
+                    )
+            }
+        }
+    }
 
   private def validateRequiredFields(
     toolName: String,
@@ -131,13 +228,13 @@ class SkillRegistryLive(skills: Ref[Map[String, Skill]]) extends SkillRegistry {
       tool <- skill.descriptor.tools
         .find(_.name == toolName)
         .toRight(s"unknown tool '$toolName' in skill '${skill.descriptor.name}'")
-      requiredKeys <- tool.inputSchema match {
+      requiredKeys = tool.inputSchema match {
         case Json.Obj(fields) =>
           fields
             .collectFirst { case ("required", Json.Arr(reqs)) =>
               reqs.collect { case Json.Str(k) => k }.toList
-            }.orElse(Some(Nil)).toRight("malformed inputSchema")
-        case _ => Right(Nil)
+            }.getOrElse(Nil)
+        case _ => Nil
       }
       missingKeys = requiredKeys.filterNot(k => obj.fields.exists(_._1 == k))
       _ <-

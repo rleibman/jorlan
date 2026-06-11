@@ -25,7 +25,7 @@ import zio.json.ast.Json
 class MemorySkill(memoryService: MemoryService) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
-    name = "memory",
+    name = MemorySkill.skillName,
     tier = SkillTier.BuiltIn,
     tools = List(
       ToolDescriptor(
@@ -226,6 +226,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
 
 object MemorySkill {
 
+  final val skillName = "memory"
   val live: URLayer[MemoryService, MemorySkill] =
     ZLayer.fromFunction(MemorySkill(_))
 

@@ -16,7 +16,6 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.domain.*
 import jorlan.service.*
-import jorlan.testing.InMemoryRepositories.*
 import jorlan.testing.{InMemoryRepositories, NoOpMemoryService}
 import zio.*
 import zio.test.*
@@ -121,11 +120,16 @@ object JorlanAPISpec extends ZIOSpecDefault {
       session,
       FakeModelGateway.layer(List("ok")),
       AgentSessionManagerImpl.live,
-      memSvcLayer,
-      SkillRegistry.live,
+      memSvcLayer, {
+        ZLayer.fromZIO {
+          for {
+            memorySkill <- ZIO.service[MemorySkill]
+          } yield SkillRegistry.liveWith(memorySkill)
+        }.flatten
+      },
       ZLayer.succeed(AgentSettings()),
+      MemorySkill.live,
       AgentRunnerImpl.live,
-      memSvcLayer >>> MemorySkill.live,
       JobManagerImpl.live,
       approvalSvcLayer,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

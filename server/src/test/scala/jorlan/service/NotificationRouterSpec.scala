@@ -39,6 +39,22 @@ object NotificationRouterSpec extends ZIOSpecDefault {
   ): ChannelIdentity =
     ChannelIdentity(ChannelIdentityId.empty, UserId(userId), channelType, channelUserId, verified = true, None, now)
 
+  /** A fake [[ConnectorSkill]] that always fails on `invoke`. */
+  private def failingConnector(ct: ConnectorType): ConnectorSkill =
+    new ConnectorSkill {
+      override val connectorType: ConnectorType = ct
+      override val instanceId:    ConnectorInstanceId = ConnectorInstanceId(99L)
+      override val descriptor:    SkillDescriptor = SkillDescriptor(ct.toString.toLowerCase, SkillTier.BuiltIn, Nil)
+      override def start:         IO[JorlanError, Unit] = ZIO.unit
+      override def stop:          IO[JorlanError, Unit] = ZIO.unit
+      override val sendMessageToolName: Option[String] = Some(s"${ct.toString.toLowerCase}.send_message")
+      override def invoke(
+        ctx:  InvocationContext,
+        tool: String,
+        args: Json,
+      ): IO[JorlanError, Json] = ZIO.fail(JorlanError("connector unavailable"))
+    }
+
   /** A fake [[ConnectorSkill]] that records all `invoke` calls. */
   private def fakeConnector(
     ct:  ConnectorType,
@@ -56,6 +72,12 @@ object NotificationRouterSpec extends ZIOSpecDefault {
         args: Json,
       ): IO[JorlanError, Json] =
         ref.update(_ :+ (tool -> args)) *> ZIO.succeed(Json.Str("ok"))
+
+      /** Fully qualified tool name used to send a message through this connector (e.g. `"telegram.send_message"`).
+        *
+        * Returns `None` for connectors that are receive-only (no egress send capability).
+        */
+      override def sendMessageToolName: Option[String] = Some(s"${connectorType.toString.toLowerCase}.send_message")
     }
 
   /** A user repo whose channel identities come from a fixed map. */
@@ -196,6 +218,43 @@ object NotificationRouterSpec extends ZIOSpecDefault {
           calls.length == 1,
           calls.head._1 == "telegram.send_message",
         )
+      },
+      // P12-025: fallback to non-Telegram channel when no Telegram identity exists
+      test("notifyUser falls back to first non-Telegram channel when no Telegram identity") {
+        for {
+          callsRef <- Ref.make(List.empty[(String, Json)])
+          slackConnector = fakeConnector(ConnectorType.Slack, callsRef)
+          user = makeUser(10L, "Dana")
+          ciSlack = makeCi(10L, ChannelType.Slack, "slack-dana")
+          repo = InMemoryRepositories.live(
+            userRepoOpt = Some(userRepoWithIdentities(Map(10L -> user), Map(10L -> List(ciSlack)))),
+          )
+          result <- NotificationRouter
+            .notifyUser(UserId(10L), "hello Dana", ctx)
+            .provide(
+              NotificationRouter.live,
+              repo,
+              ZLayer.succeed(ConnectorManager.fromSkills(List(slackConnector))),
+            )
+          calls <- callsRef.get
+        } yield assertTrue(
+          result == Json.Str("ok"),
+          calls.length == 1,
+          calls.head._1 == "slack.send_message",
+        )
+      },
+      // P12-026: notifyChannel swallows connector invoke failure
+      test("notifyChannel swallows connector invoke failure and returns Error string") {
+        for {
+          repo = InMemoryRepositories.live()
+          result <- NotificationRouter
+            .notifyChannel("tg-fail", ChannelType.Telegram, "msg", ctx)
+            .provide(
+              NotificationRouter.live,
+              repo,
+              ZLayer.succeed(ConnectorManager.fromSkills(List(failingConnector(ConnectorType.Telegram)))),
+            )
+        } yield assertTrue(result.toString.contains("Error:"))
       },
     )
 

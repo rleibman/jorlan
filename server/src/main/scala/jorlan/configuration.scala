@@ -52,9 +52,17 @@ case class AgentSettings(
   maxToolSteps: Int = 10,
 )
 
+/** How workspace paths are scoped per invocation. */
+enum WorkspaceScope {
+
+  case Flat, Session, User
+
+}
+
 /** Workspace filesystem configuration. */
 case class WorkspaceSettings(
-  root: String = "/var/lib/jorlan/workspaces",
+  root:         String = "/var/lib/jorlan/workspaces",
+  defaultScope: WorkspaceScope = WorkspaceScope.Session,
 )
 
 /** Shell execution configuration.
@@ -63,10 +71,13 @@ case class WorkspaceSettings(
   *   Comma-separated list of absolute paths or bare binary names permitted for `shell.run`. Empty = all denied.
   * @param timeoutSeconds
   *   Maximum wall-clock time for a shell command before it is killed.
+  * @param captureThreshold
+  *   Stdout byte length above which the output is stored as an Artifact instead of inlined in the tool result.
   */
 case class ShellSettings(
-  allowedBinaries: List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
-  timeoutSeconds:  Int = 30,
+  allowedBinaries:  List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
+  timeoutSeconds:   Int = 30,
+  captureThreshold: Int = 65536,
 )
 
 /** Root server configuration, assembled from all module configs. */

@@ -162,7 +162,18 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with Z
   override def search(s: UserSearch): RepositoryTask[List[User]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qUsers.filter(u => lift(s.active).forall(a => u.active == a)))
+    val base = s.nameContains match {
+      case None =>
+        quote(qUsers.filter(u => lift(s.active).forall(a => u.active == a)))
+      case Some(name) =>
+        val likePattern = s"%$name%"
+        quote(
+          qUsers.filter(u =>
+            lift(s.active).forall(a => u.active == a) &&
+              infix"${u.displayName} LIKE ${lift(likePattern)}".as[Boolean],
+          ),
+        )
+    }
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[User]] = s.sorts match {
       case Some(Sort(UserOrder.Id, OrderDirection.Desc))          => quote(limited.sortBy(_.id)(Ord.desc))

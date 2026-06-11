@@ -117,21 +117,24 @@ private class NotificationRouterImpl(
       case None =>
         ZIO.succeed(Json.Str(s"Error: no connector available for channel type ${channelType.toString}"))
       case Some(connType) =>
-        val connector = connectorManager.connectors.find(_.connectorType == connType)
-        connector match {
+        connectorManager.connectorMap.get(connType) match {
           case None =>
             ZIO.succeed(Json.Str(s"Error: no registered connector for ${connType.toString}"))
           case Some(cs) =>
-            val toolName = s"${connType.toString.toLowerCase}.send_message"
-            val args = Json.Obj(
-              "chatId" -> Json.Str(channelUserId),
-              "text"   -> Json.Str(message),
-            )
-            cs.invoke(ctx, toolName, args)
-              .catchAll { e =>
-                ZIO.logWarning(s"NotificationRouter.notifyChannel[$toolName] error: ${e.msg}") *>
-                  ZIO.succeed(Json.Str(s"Error: ${e.msg}"))
-              }
+            cs.sendMessageToolName match {
+              case None =>
+                ZIO.succeed(Json.Str(s"Error: connector ${connType.toString} has no send capability"))
+              case Some(toolName) =>
+                val args = Json.Obj(
+                  "chatId" -> Json.Str(channelUserId),
+                  "text"   -> Json.Str(message),
+                )
+                cs.invoke(ctx, toolName, args)
+                  .catchAll { e =>
+                    ZIO.logWarning(s"NotificationRouter.notifyChannel[$toolName] error: ${e.msg}") *>
+                      ZIO.succeed(Json.Str(s"Error: ${e.msg}"))
+                  }
+            }
         }
     }
   }

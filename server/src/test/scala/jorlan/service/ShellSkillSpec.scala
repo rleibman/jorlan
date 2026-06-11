@@ -12,13 +12,17 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.InvocationContext
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
+import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
 import zio.test.TestAspect.*
 
-object ShellSkillSpec extends ZIOSpecDefault {
+object ShellSkillSpec extends ZIOSpec[ZIORepositories] {
+
+  override val bootstrap: ULayer[ZIORepositories] = InMemoryRepositories.live()
 
   private val ctx = InvocationContext(UserId(1L), None, None)
 
@@ -27,7 +31,8 @@ object ShellSkillSpec extends ZIOSpecDefault {
     timeoutSeconds = 5,
   )
 
-  private val skill = new ShellSkill(defaultSettings)
+  private def makeSkill(settings: ShellSettings = defaultSettings): URIO[ZIORepositories, ShellSkill] =
+    ZIO.serviceWith[ZIORepositories](new ShellSkill(settings, _))
 
   private def mkArgs(
     binary: String,
@@ -60,11 +65,12 @@ object ShellSkillSpec extends ZIOSpecDefault {
       case _                => None
     }
 
-  override def spec: Spec[TestEnvironment & Scope, Any] =
+  override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("ShellSkill")(
       // ─── allowed binary executes successfully ──────────────────────────────────
       test("echo with args returns stdout") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("echo", List("hello", "world")))
         } yield assertTrue(
           exitCode(result).contains(0),
@@ -73,6 +79,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       } @@ withLiveClock,
       test("echo with no args returns exit code 0") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("echo"))
         } yield assertTrue(
           exitCode(result).contains(0),
@@ -80,6 +87,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       } @@ withLiveClock,
       test("pwd returns a non-empty path") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("pwd"))
         } yield assertTrue(
           exitCode(result).contains(0),
@@ -89,6 +97,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       // ─── blocked binary ────────────────────────────────────────────────────────
       test("blocked binary returns exitCode=1 and error in stderr") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("rm"))
         } yield assertTrue(
           exitCode(result).contains(1),
@@ -97,6 +106,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       },
       test("blocked absolute-path binary is rejected") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("/bin/rm"))
         } yield assertTrue(
           exitCode(result).contains(1),
@@ -104,9 +114,9 @@ object ShellSkillSpec extends ZIOSpecDefault {
         )
       },
       test("allowed binary via absolute path executes when full path is in allowlist") {
-        val skillWithAbsolute = new ShellSkill(ShellSettings(allowedBinaries = List("/bin/echo"), timeoutSeconds = 5))
         for {
-          result <- skillWithAbsolute.invoke(ctx, "shell.run", mkArgs("/bin/echo", List("abs")))
+          skill  <- makeSkill(ShellSettings(allowedBinaries = List("/bin/echo"), timeoutSeconds = 5))
+          result <- skill.invoke(ctx, "shell.run", mkArgs("/bin/echo", List("abs")))
         } yield assertTrue(
           exitCode(result).contains(0),
           stdoutOf(result).exists(_.trim == "abs"),
@@ -115,21 +125,23 @@ object ShellSkillSpec extends ZIOSpecDefault {
       // ─── missing required field ────────────────────────────────────────────────
       test("missing binary field returns JorlanError") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
       // ─── unknown tool ──────────────────────────────────────────────────────────
       test("unknown tool name returns JorlanError") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.launch", mkArgs("echo")).either
         } yield assertTrue(result.isLeft)
       },
       // ─── timeout ──────────────────────────────────────────────────────────────
       test("command exceeding timeout returns exit code -1 with timeout message") {
         val slowSettings = ShellSettings(allowedBinaries = List("sleep"), timeoutSeconds = 1)
-        val slowSkill = new ShellSkill(slowSettings)
         for {
-          result <- slowSkill.invoke(
+          skill  <- makeSkill(slowSettings)
+          result <- skill.invoke(
             ctx,
             "shell.run",
             Json.Obj(
@@ -145,6 +157,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       // ─── cwd override ──────────────────────────────────────────────────────────
       test("cwd override changes working directory") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("pwd", Nil, Some("/tmp")))
         } yield assertTrue(
           exitCode(result).contains(0),
@@ -154,6 +167,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       // ─── result structure ─────────────────────────────────────────────────────
       test("result always has exitCode, stdout, stderr fields") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(ctx, "shell.run", mkArgs("echo", List("test")))
         } yield result match {
           case Json.Obj(fields) =>
@@ -169,6 +183,7 @@ object ShellSkillSpec extends ZIOSpecDefault {
       // ─── custom numeric timeoutSeconds (covers getInt success branch) ──────────
       test("shell.run with custom timeoutSeconds succeeds") {
         for {
+          skill  <- makeSkill()
           result <- skill.invoke(
             ctx,
             "shell.run",

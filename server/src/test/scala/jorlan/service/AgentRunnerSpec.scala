@@ -212,6 +212,57 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
         AgentRunnerImpl.live,
         SessionHub.live,
       ),
+      // P12-027: ensureSeeded calls seedHistory when prior conversation messages exist
+      test("ensureSeeded calls seedHistory when prior conversation history is non-empty") {
+        import java.time.Instant
+        for {
+          seedCalled <- Ref.make(false)
+          convRepo   <- InMemoryRepositories.InMemoryConversationRepo.make
+          // Pre-populate: create a conversation + message for this session
+          now = Instant.now()
+          conv <- convRepo.create(Conversation(ConversationId.empty, sessionId, now)).orDie
+          _    <- convRepo
+            .addMessage(Message(MessageId.empty, conv.id, MessageRole.User, "prior message", None, now)).orDie
+          repos = InMemoryRepositories.live(conversationRepoOpt = Some(convRepo))
+          _ <- ZIO
+            .serviceWithZIO[AgentRunner](_.processMessage(sessionId, "new message", Some(userId)))
+            .provide(
+              AgentRunnerImpl.live,
+              FakeModelGateway.seedTrackingLayer(List("ok"), seedCalled),
+              SessionHub.live,
+              NoOpMemoryService.layer,
+              SkillRegistry.live,
+              ZLayer.succeed(AgentSettings()),
+              repos,
+            )
+          wasCalled <- seedCalled.get
+        } yield assertTrue(wasCalled)
+      },
+      // P12-028: getOrCreateConversation reuses an existing DB conversation (cache-miss path)
+      test("getOrCreateConversation reuses existing DB conversation on cache-miss") {
+        import java.time.Instant
+        for {
+          convRepo <- InMemoryRepositories.InMemoryConversationRepo.make
+          now = Instant.now()
+          existing <- convRepo.create(Conversation(ConversationId.empty, sessionId, now)).orDie
+          repos = InMemoryRepositories.live(conversationRepoOpt = Some(convRepo))
+          _ <- ZIO
+            .serviceWithZIO[AgentRunner](_.processMessage(sessionId, "hello", Some(userId)))
+            .provide(
+              AgentRunnerImpl.live,
+              FakeModelGateway.layer(List("ok")),
+              SessionHub.live,
+              NoOpMemoryService.layer,
+              SkillRegistry.live,
+              ZLayer.succeed(AgentSettings()),
+              repos,
+            )
+          allConvs <- convRepo.search(ConversationSearch(sessionId = sessionId, pageSize = 10)).orDie
+        } yield assertTrue(
+          allConvs.exists(_.id == existing.id),
+          allConvs.length == 1, // No new conversation was created
+        )
+      },
       test("processMessage injects pre-stored memory records into system prompt") {
         import jorlan.service.*
         import jorlan.testing.InMemoryRepositories

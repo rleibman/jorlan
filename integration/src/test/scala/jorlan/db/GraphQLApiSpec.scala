@@ -62,7 +62,6 @@ object GraphQLApiSpec
       CheckpointSummarizerImpl.live,
       ZLayer.succeed(CheckpointPolicy.onSessionEnd),
       MemoryServiceImpl.live,
-      MemorySkill.live,
       SkillRegistry.live,
       ZLayer.succeed(AgentSettings()),
       AgentRunnerImpl.live,

@@ -74,12 +74,13 @@ object JorlanAPI {
     }
 
   type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-    MemorySkill & JobManager & ApprovalService & ModelGateway & SkillRegistry
+    JobManager & ApprovalService & ModelGateway & SkillRegistry
 
   /** GQL-safe view of a single tool exposed by a registered skill. */
   case class SkillToolInfo(
-    name:        String,
-    description: String,
+    name:                 String,
+    description:          String,
+    requiredCapabilities: List[String],
   )
 
   /** GQL-safe view of a registered skill and its tools. */
@@ -535,18 +536,20 @@ object JorlanAPI {
               .serviceWithZIO[ZIORepositories](_.permission.listPendingApprovals(actorId)).mapError(JorlanError(_))
           } yield result,
           availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
-          skills = ZIO.serviceWithZIO[SkillRegistry](_.allTools).map { tools =>
-            tools
-              .groupBy(t => t.name.takeWhile(_ != '.'))
-              .toList
-              .sortBy(_._1)
-              .map { case (ns, tds) =>
-                SkillInfo(
-                  name = ns,
-                  tier = tds.headOption.map(_ => "BuiltIn").getOrElse("Unknown"),
-                  tools = tds.map(td => SkillToolInfo(td.name, td.description)),
-                )
-              }
+          skills = ZIO.serviceWithZIO[SkillRegistry](_.allSkills).map { skills =>
+            skills.sortBy(_.descriptor.name).map { skill =>
+              SkillInfo(
+                name = skill.descriptor.name,
+                tier = skill.descriptor.tier.toString,
+                tools = skill.descriptor.tools.map(td =>
+                  SkillToolInfo(
+                    name = td.name,
+                    description = td.description,
+                    requiredCapabilities = td.requiredCapabilities.map(_.value),
+                  ),
+                ),
+              )
+            }
           },
         ),
         Mutations(
@@ -648,12 +651,22 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("memory.write", actorId)
               agentId <- resolveAgentId(actorId)
-              record  <- ZIO.serviceWithZIO[MemorySkill](
-                _.remember(input.key, input.text, input.scope, actorId, agentId),
+              now     <- Clock.instant
+              record = MemoryRecord(
+                id = MemoryRecordId.empty,
+                scope = input.scope,
+                userId = Some(actorId),
+                workspaceId = None,
+                agentId = Option.when(agentId != AgentId.empty)(agentId),
+                recordKey = input.key,
+                value = Json.Obj("text" -> Json.Str(input.text)),
+                ttl = None,
+                createdAt = now,
+                updatedAt = now,
               )
-              now <- Clock.instant
-              _   <- logEvent(EventType.MemoryWritten, Some(actorId), None, now)
-            } yield record,
+              saved <- ZIO.serviceWithZIO[MemoryService](_.store(record))
+              _     <- logEvent(EventType.MemoryWritten, Some(actorId), None, now)
+            } yield saved,
           forgetMemory = id =>
             for {
               actorId <- actorIdFromSession

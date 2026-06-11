@@ -104,18 +104,26 @@ object EnvironmentBuilder {
   private val shellSettingsLayer: ZLayer[ConfigurationService, ConfigurationError, ShellSettings] =
     ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.shell))
 
-  private val liveSkillRegistryLayer: URLayer[MemorySkill & SchedulerSkill, SkillRegistry] =
+  // TODO, move this to something that happens AFTER the system is built.
+  private val liveSkillRegistryLayer: ZLayer[
+    CapabilityEvaluator & MemorySkill & SchedulerSkill & ShellSkill & WorkspaceSkill & ContactsSkill, // & NotifySkill,
+    Nothing,
+    SkillRegistry,
+  ] =
     ZLayer.fromZIO {
       for {
+//          notifySkill    <- ZIO.service[NotifySkill] //TODO... missing this skill!! but we get a circular dependency
+        contactsSkill  <- ZIO.service[ContactsSkill]
+        workspaceSkill <- ZIO.service[WorkspaceSkill]
+        shellSkill     <- ZIO.service[ShellSkill]
         memorySkill    <- ZIO.service[MemorySkill]
         schedulerSkill <- ZIO.service[SchedulerSkill]
-        ref            <- zio.Ref.make(Map.empty[String, jorlan.connector.Skill])
-        registry = new SkillRegistryLive(ref)
-        _ <- registry.register(memorySkill)
-        _ <- registry.register(schedulerSkill)
-      } yield registry: SkillRegistry
-    }
+      } yield SkillRegistry.liveSecureWith(contactsSkill, workspaceSkill, shellSkill, memorySkill, schedulerSkill) // notifySkill,
+    }.flatten
 
+  // TODO THis is insane, building the environment shouldn't take these many layers.
+  // Things should be grouped together, and in particular, skills shouldn't be in the environment as they should
+  // be discoverable.
   val live: ULayer[JorlanEnvironment] =
     ZLayer
       .make[JorlanEnvironment](
@@ -136,25 +144,30 @@ object EnvironmentBuilder {
         AgentSessionManagerImpl.live,
         MemoryClassifierImpl.live,
         MemoryAccessPolicyImpl.live,
+        MemoryServiceImpl.live,
         CheckpointSummarizerImpl.live,
         ZLayer.succeed(CheckpointPolicy.onSessionEnd),
-        MemoryServiceImpl.live,
+        NotificationRouter.live,
+        ////////////////////////////////////
+        // Built in skills
         MemorySkill.live,
         SchedulerSkill.live,
-        NotificationRouter.live,
-        NotifySkill.live,
+//        NotifySkill.live, //TODO... missing this skill!! but we get a circular dependency
         ContactsSkill.live,
-        workspaceSettingsLayer,
         WorkspaceSkill.live,
-        shellSettingsLayer,
         ShellSkill.live,
+        ////////////////////////////////////
         liveSkillRegistryLayer,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,
         MessageIngressImpl.live,
         liveConnectorManagerLayer,
+
         agentSettingsLayer,
+        shellSettingsLayer,
+        workspaceSettingsLayer,
+
         Client.default,
       ).orDie
 

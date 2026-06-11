@@ -42,10 +42,11 @@ trait Search[OrderType] {
 
 enum UserOrder { case Id, DisplayName, CreatedAt }
 case class UserSearch(
-  active:   Option[Boolean] = None,
-  page:     Int = 0,
-  pageSize: Int = 20,
-  sorts:    Option[Sort[UserOrder]] = None,
+  active:       Option[Boolean] = None,
+  nameContains: Option[String] = None,
+  page:         Int = 0,
+  pageSize:     Int = 20,
+  sorts:        Option[Sort[UserOrder]] = None,
 ) extends Search[UserOrder]
 
 enum AgentOrder { case Id, Name, CreatedAt }

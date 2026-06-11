@@ -50,7 +50,11 @@ object ContactsSkillSpec extends ZIOSpecDefault {
 
     override def getById(id: UserId):   RepositoryTask[Option[User]] = ZIO.succeed(users.get(id.value))
     override def search(s: UserSearch): RepositoryTask[List[User]] =
-      ZIO.succeed(users.values.toList.filter(u => s.active.forall(_ == u.active)))
+      ZIO.succeed(
+        users.values.toList
+          .filter(u => s.active.forall(_ == u.active))
+          .filter(u => s.nameContains.forall(n => u.displayName.toLowerCase.contains(n.toLowerCase))),
+      )
     override def upsert(user:   User):                 RepositoryTask[User] = ZIO.die(RuntimeException("stub"))
     override def deactivate(id: UserId):               RepositoryTask[Long] = ZIO.die(RuntimeException("stub"))
     override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =

@@ -12,11 +12,13 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.db.repository.ZIORepositories
 import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 import zio.process.Command
 
+import java.net.URI
 import java.nio.file.Paths
 
 /** Built-in skill for executing shell commands from a configured allowlist.
@@ -27,7 +29,10 @@ import java.nio.file.Paths
   * Tool:
   *   - `shell.run` — execute a binary with arguments, optional cwd and timeout override
   */
-class ShellSkill(settings: ShellSettings) extends Skill {
+class ShellSkill(
+  settings: ShellSettings,
+  repo:     ZIORepositories,
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "shell",
@@ -53,38 +58,8 @@ class ShellSkill(settings: ShellSettings) extends Skill {
     args: Json,
   ): IO[JorlanError, Json] =
     tool match {
-      case "shell.run" => shellRun(args)
+      case "shell.run" => shellRun(ctx, args)
       case other       => ZIO.fail(JorlanError(s"ShellSkill: unknown tool '$other'"))
-    }
-
-  private def getStr(
-    args: Json,
-    key:  String,
-  ): Option[String] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
-      case _                => None
-    }
-
-  private def getStrList(
-    args: Json,
-    key:  String,
-  ): List[String] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`key`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
-          .getOrElse(Nil)
-      case _ => Nil
-    }
-
-  private def getInt(
-    args: Json,
-    key:  String,
-  ): Option[Int] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Num(n)) => n.intValue }
-      case _                => None
     }
 
   private def isAllowed(binary: String): Boolean = {
@@ -94,8 +69,54 @@ class ShellSkill(settings: ShellSettings) extends Skill {
     }
   }
 
-  private def shellRun(args: Json): IO[JorlanError, Json] = {
-    val binaryOpt = getStr(args, "binary")
+  private def logShellEvent(
+    ctx:         InvocationContext,
+    eventType:   EventType,
+    payloadJson: Json,
+  ): UIO[Unit] =
+    Clock.instant.flatMap { now =>
+      repo.eventLog
+        .append(
+          EventLog(
+            id = EventLogId.empty,
+            eventType = eventType,
+            actorId = Some(ctx.actorId),
+            agentId = ctx.agentId,
+            sessionId = ctx.sessionId,
+            resource = Option.empty[String],
+            payloadJson = Some(payloadJson),
+            occurredAt = now,
+          ),
+        ).orDie.unit
+    }
+
+  private def captureArtifact(
+    ctx:    InvocationContext,
+    binary: String,
+    stdout: String,
+  ): UIO[Option[String]] =
+    if (stdout.length <= settings.captureThreshold) ZIO.none
+    else
+      Clock.instant.flatMap { now =>
+        val artifact = Artifact(
+          id = ArtifactId.empty,
+          workspaceId = ctx.workspaceId,
+          sessionId = ctx.sessionId,
+          name = s"shell-output-${binary.replace('/', '_')}-${now.toEpochMilli}.txt",
+          mimeType = zio.http.MediaType.text.plain,
+          sizeBytes = stdout.length.toLong,
+          storageUri = URI.create(s"artifact://inline/${now.toEpochMilli}"),
+          metadataJson = Some(Json.Obj("binary" -> Json.Str(binary), "bytes" -> Json.Num(stdout.length))),
+          createdAt = now,
+        )
+        repo.artifact.upsert(artifact).orDie.map(a => Some(a.storageUri.toString))
+      }
+
+  private def shellRun(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
+    val binaryOpt = SkillArgs.str(args, "binary")
     binaryOpt match {
       case None         => ZIO.fail(JorlanError("shell.run: binary is required"))
       case Some(binary) =>
@@ -108,36 +129,53 @@ class ShellSkill(settings: ShellSettings) extends Skill {
             ),
           )
         } else {
-          val cmdArgs = getStrList(args, "args")
-          val cwdOpt = getStr(args, "cwd")
-          val timeoutSecs = getInt(args, "timeoutSeconds").getOrElse(settings.timeoutSeconds)
+          val cmdArgs = SkillArgs.strList(args, "args")
+          val cwdOpt = SkillArgs.str(args, "cwd")
+          val timeoutSecs = SkillArgs.int(args, "timeoutSeconds").getOrElse(settings.timeoutSeconds)
 
           val baseCmd = Command(binary, cmdArgs*)
           val cmdWithCwd = cwdOpt.fold(baseCmd)(cwd => baseCmd.workingDirectory(Paths.get(cwd).toFile))
 
-          cmdWithCwd.run
-            .flatMap { process =>
-              for {
-                stdout   <- process.stdout.string
-                stderr   <- process.stderr.string
-                exitCode <- process.exitCode
-              } yield Json.Obj(
-                "exitCode" -> Json.Num(exitCode.code),
-                "stdout"   -> Json.Str(stdout),
-                "stderr"   -> Json.Str(stderr),
-              )
+          for {
+            startTime <- Clock.instant
+            _         <- logShellEvent(
+              ctx,
+              EventType.ShellCommandInvoked,
+              Json.Obj("binary" -> Json.Str(binary), "args" -> Json.Arr(cmdArgs.map(Json.Str(_))*)),
+            )
+            rawResult <- cmdWithCwd.run
+              .flatMap { process =>
+                for {
+                  stdout   <- process.stdout.string
+                  stderr   <- process.stderr.string
+                  exitCode <- process.exitCode
+                } yield (exitCode.code, stdout, stderr)
+              }
+              .timeout(timeoutSecs.seconds)
+              .mapError(e => JorlanError(s"shell.run: ${e.getMessage}"))
+            (exitCode, stdout, stderr) = rawResult match {
+              case Some(t) => t
+              case None    => (-1, "", s"Error: command timed out after ${timeoutSecs}s")
             }
-            .timeout(timeoutSecs.seconds)
-            .map {
-              case Some(result) => result
-              case None         =>
-                Json.Obj(
-                  "exitCode" -> Json.Num(-1),
-                  "stdout"   -> Json.Str(""),
-                  "stderr"   -> Json.Str(s"Error: command timed out after ${timeoutSecs}s"),
-                )
-            }
-            .mapError(e => JorlanError(s"shell.run: ${e.getMessage}"))
+            endTime <- Clock.instant
+            durationMs = endTime.toEpochMilli - startTime.toEpochMilli
+            artifactUri <- captureArtifact(ctx, binary, stdout)
+            _           <- logShellEvent(
+              ctx,
+              EventType.ShellCommandCompleted,
+              Json.Obj(
+                "binary"     -> Json.Str(binary),
+                "exitCode"   -> Json.Num(exitCode),
+                "durationMs" -> Json.Num(durationMs),
+                "captured"   -> Json.Bool(artifactUri.isDefined),
+              ),
+            )
+            stdoutField = artifactUri.fold[Json](Json.Str(stdout))(uri => Json.Str(s"artifact:$uri"))
+          } yield Json.Obj(
+            "exitCode" -> Json.Num(exitCode),
+            "stdout"   -> stdoutField,
+            "stderr"   -> Json.Str(stderr),
+          )
         }
     }
   }
@@ -146,7 +184,7 @@ class ShellSkill(settings: ShellSettings) extends Skill {
 
 object ShellSkill {
 
-  val live: ZLayer[ShellSettings, Nothing, ShellSkill] =
-    ZLayer.fromFunction(new ShellSkill(_))
+  val live: ZLayer[ShellSettings & ZIORepositories, Nothing, ShellSkill] =
+    ZLayer.fromFunction(new ShellSkill(_, _))
 
 }
