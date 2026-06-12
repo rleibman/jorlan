@@ -10,7 +10,7 @@
 
 package jorlan.service.memory
 
-import jorlan.domain.MemoryScope
+import jorlan.MemoryScope
 import jorlan.service.memory.MemoryClassifierImpl
 import zio.test.*
 

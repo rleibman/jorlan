@@ -10,7 +10,9 @@
 
 package jorlan.service
 
-import jorlan.domain.*
+import jorlan.{AgentSessionId, ConnectionId, ResponseChunk}
+import jorlan
+.*
 import zio.*
 import zio.stream.ZStream
 

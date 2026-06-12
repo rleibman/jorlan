@@ -10,13 +10,14 @@
 
 package jorlan.shell
 
-import jorlan.domain.*
 import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClient.CapabilityGrant.grantorId
 import jorlan.init.ServerStatus
-import jorlan.shell.client.{AuthClient, GraphQLClient, InitClient, LoginResult, SubscriptionClient}
+import jorlan.shell.client.*
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.testing.FakeScreen
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
+import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -247,6 +248,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           userId = UserId(1L),
           workspaceId = None,
           status = SessionStatus.Active,
+          chatRef = None,
           modelId = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
@@ -283,7 +285,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ListModels, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfoGql.ModelInfoView]]](Some(Nil)) ++
+                fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfo.ModelInfoView]]](Some(Nil)) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -498,7 +500,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         import jorlan.graphql.client.JorlanClient
         val pView = JorlanClient.Personality.PersonalityView(
           name = "Jorlan",
-          formality = "Professional",
+          formality = Formality.Professional,
           languages = List("en"),
           expertise = Nil,
           prompt = "Be helpful.",
@@ -567,7 +569,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         import jorlan.graphql.client.JorlanClient
         val pView = JorlanClient.Personality.PersonalityView(
           name = "Jorlan",
-          formality = "Casual",
+          formality = Formality.Casual,
           languages = List("en"),
           expertise = Nil,
           prompt = "Be concise.",
@@ -610,12 +612,17 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       // ─── Memory command tests ────────────────────────────────────────────────
       test("/memory list shows records when GQL returns records") {
         import jorlan.graphql.client.JorlanClient
-        import jorlan.domain.{MemoryRecordId, MemoryScope}
+        import jorlan.{MemoryRecordId, MemoryScope}
         import zio.json.ast.Json
+
         import java.time.Instant
         val record = JorlanClient.MemoryRecord.MemoryRecordView(
           id = MemoryRecordId(1L),
-          scope = "User",
+          scope = MemoryScope.User,
+          userId = None,
+          workspaceId = None,
+          agentId = None,
+          ttl = None,
           recordKey = "user.lang",
           value = "Scala",
           createdAt = Instant.now(),
@@ -675,14 +682,19 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("Could not list memory"))
       },
       test("/memory search returns matching records") {
+        import jorlan.MemoryRecordId
         import jorlan.graphql.client.JorlanClient
-        import jorlan.domain.MemoryRecordId
+
         import java.time.Instant
         val record = JorlanClient.MemoryRecord.MemoryRecordView(
           id = MemoryRecordId(2L),
-          scope = "User",
+          scope = MemoryScope.User,
           recordKey = "user.pref",
           value = "prefers Scala",
+          userId = None,
+          workspaceId = None,
+          agentId = None,
+          ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
         )
@@ -758,14 +770,19 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("Forget failed"))
       },
       test("/memory remember shows stored record") {
+        import jorlan.MemoryRecordId
         import jorlan.graphql.client.JorlanClient
-        import jorlan.domain.MemoryRecordId
+
         import java.time.Instant
         val record = JorlanClient.MemoryRecord.MemoryRecordView(
           id = MemoryRecordId(3L),
-          scope = "User",
+          scope = MemoryScope.User,
           recordKey = "pref.lang",
           value = "Scala",
+          userId = None,
+          workspaceId = None,
+          agentId = None,
+          ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
         )
@@ -841,14 +858,19 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("Memory search failed"))
       },
       test("/memory list with explicit scope passes scope to GQL") {
+        import jorlan.MemoryRecordId
         import jorlan.graphql.client.JorlanClient
-        import jorlan.domain.MemoryRecordId
+
         import java.time.Instant
         val record = JorlanClient.MemoryRecord.MemoryRecordView(
           id = MemoryRecordId(9L),
-          scope = "User",
+          scope = MemoryScope.User,
           recordKey = "scoped.key",
           value = "filtered",
+          userId = None,
+          workspaceId = None,
+          agentId = None,
+          ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
         )
@@ -856,7 +878,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
           _    <- CommandHandler
-            .handle(ShellCommand.MemoryList(Some("User")), exit).provide(
+            .handle(ShellCommand.MemoryList(Some(MemoryScope.User)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 fakeGQLRunReturning(Some(List(record))) ++
@@ -899,22 +921,26 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         val grantViews = Some(
           List(
             CapabilityGrantView(
-              CapabilityGrantId(1L),
-              CapabilityName("memory.read"),
-              None,
-              UserId(1L),
-              "Persistent",
-              None,
-              java.time.Instant.EPOCH,
+              id = CapabilityGrantId(1L),
+              capability = CapabilityName("memory.read"),
+              scopeJson = None,
+              granteeId = UserId(1L),
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              resourceConstraints = None,
+              expiresAt = None,
+              createdAt = java.time.Instant.EPOCH,
             ),
             CapabilityGrantView(
-              CapabilityGrantId(2L),
-              CapabilityName("agent.message"),
-              None,
-              UserId(1L),
-              "Persistent",
-              None,
-              java.time.Instant.EPOCH,
+              id = CapabilityGrantId(2L),
+              capability = CapabilityName("agent.message"),
+              scopeJson = None,
+              granteeId = UserId(1L),
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              resourceConstraints = None,
+              expiresAt = None,
+              createdAt = java.time.Instant.EPOCH,
             ),
           ),
         )
@@ -954,19 +980,20 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("no session"))
       },
       test("/agents list shows sessions from server") {
+        import jorlan.WorkspaceId
         import jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView
-        import jorlan.domain.WorkspaceId
         val sessions = Some(
           List(
             AgentSessionView(
-              AgentSessionId(10L),
-              AgentId(1L),
-              UserId(1L),
-              None,
-              SessionStatus.Active,
-              None,
-              java.time.Instant.EPOCH,
-              java.time.Instant.EPOCH,
+              id = AgentSessionId(10L),
+              agentId = AgentId(1L),
+              userId = UserId(1L),
+              workspaceId = None,
+              status = SessionStatus.Active,
+              modelId = None,
+              chatRef = None,
+              createdAt = java.time.Instant.EPOCH,
+              updatedAt = java.time.Instant.EPOCH,
             ),
           ),
         )
@@ -1027,7 +1054,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
       },
       test("/approvals list shows approval requests") {
         import jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView
-        import jorlan.domain.{ApprovalRequestId, ApprovalStatus, RiskClass}
+        import jorlan.{ApprovalRequestId, ApprovalStatus, RiskClass}
         val approvals = Some(
           List(
             ApprovalRequestView(
@@ -1128,10 +1155,11 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           workspaceId = None,
           status = SessionStatus.Active,
           modelId = Some(ModelId("test-model")),
+          chatRef = None,
           createdAt = Instant.EPOCH,
           updatedAt = Instant.EPOCH,
         )
-        val modelView = JorlanClient.ModelInfoGql.ModelInfoView(
+        val modelView = JorlanClient.ModelInfo.ModelInfoView(
           id = ModelId("test-model"),
           provider = "test",
           contextWindow = 4096,

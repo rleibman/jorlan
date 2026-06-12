@@ -5,7 +5,7 @@
   <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
     <file>${user.home}/.jorlan/shell.log</file>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-      <fileNamePattern>${user.home}/.jorlan/shell.%d{yyyy-MM-dd}.log</fileNamePattern>
+      <fileNamePattern>${user.home}/.jorlan/logs/shell.%d{yyyy-MM-dd}.log</fileNamePattern>
       <maxHistory>7</maxHistory>
     </rollingPolicy>
     <encoder>

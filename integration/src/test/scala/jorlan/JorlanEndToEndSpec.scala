@@ -15,7 +15,7 @@ import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.QuillRepositories
-import jorlan.domain.*
+import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway

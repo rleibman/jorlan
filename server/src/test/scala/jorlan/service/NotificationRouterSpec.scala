@@ -13,7 +13,8 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json

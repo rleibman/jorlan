@@ -16,7 +16,7 @@ import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.connector.telegram.*
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.*
 import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.memory.MemoryServiceImpl

@@ -12,11 +12,13 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.*
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClientDecoders.given
 
 /** Skill registry browser.
   *

@@ -12,7 +12,8 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.NotificationRouter
 import jorlan.service.skills.NotifySkill
 import zio.*

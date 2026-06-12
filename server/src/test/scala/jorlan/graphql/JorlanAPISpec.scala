@@ -14,8 +14,8 @@ import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
-import jorlan.domain.ChannelType
+import jorlan
+.*
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
@@ -609,7 +609,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
   // Repo pre-seeded with a job owned by UserId(2) — distinct from serverSession's UserId(1).
   private val foreignJobRepoLayer: ULayer[ZIOSchedulerRepository] = ZLayer.fromZIO {
     import InMemoryRepositories.InMemorySchedulerRepo
-    import jorlan.domain.*
+    import jorlan.*
 
     import java.time.Instant
     InMemorySchedulerRepo.make.flatMap { repo =>

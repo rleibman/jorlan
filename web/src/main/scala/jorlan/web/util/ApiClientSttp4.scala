@@ -12,7 +12,7 @@ package jorlan.web.util
 
 import caliban.client.CalibanClientError
 import japgolly.scalajs.react.{AsyncCallback, Callback}
-import jorlan.domain.ConnectionId
+import jorlan.ConnectionId
 import org.scalajs.dom.window
 import sttp.capabilities
 import sttp.client4.*

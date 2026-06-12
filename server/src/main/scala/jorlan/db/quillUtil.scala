@@ -12,8 +12,9 @@ package jorlan.db
 
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
-import jorlan.{DataSourceConfig, DatabaseConfig}
-import jorlan.domain.*
+import jorlan.{AgentId, AgentSessionId, ApprovalDecisionId, ApprovalMode, ApprovalRequestId, ApprovalStatus, ArtifactId, CapabilityGrantId, CapabilityName, ChannelIdentityId, ChannelType, ConnectorInstanceId, ConnectorType, ConversationId, DataSourceConfig, DatabaseConfig, EmbeddingModelId, EventLogId, EventType, JobStatus, MemoryEmbeddingId, MemoryRecordId, MemoryScope, MessageId, MessageRole, MissedRunPolicy, ModelId, OrchestratorId, PermissionId, RetryBackoffPolicy, RiskClass, RoleId, SchedulerJobId, SchedulerTriggerId, SessionStatus, SkillId, SkillStatus, SkillTier, SkillVersionId, TriggerType, UserId, WorkspaceId}
+import jorlan
+.*
 import just.semver.{ParseError, SemVer}
 import zio.http.MediaType
 import zio.json.*

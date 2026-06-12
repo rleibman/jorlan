@@ -12,7 +12,8 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOMemoryRepository, ZIORepositories, ZIOServerSettingsRepository}
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.skills.SkillRegistry

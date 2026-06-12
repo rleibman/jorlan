@@ -12,7 +12,8 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -216,7 +217,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
           permRepo   <- ZIO.serviceWith[ZIORepositories](_.permission)
           // Find the user that was created (id=1 from InMemoryUserRepo)
-          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.domain.UserId(1L)))
+          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.UserId(1L)))
           grantedCaps = grants.map(_.capability.value).toSet
         } yield assertTrue(
           grantedCaps == expectedCapabilities,

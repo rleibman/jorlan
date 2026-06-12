@@ -10,11 +10,11 @@
 
 package jorlan.shell.client
 
-import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.{AgentSessionId, ResponseChunk}
 import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClient.ToolEventResult
 import jorlan.shell.ShellConfig
-import jorlan.shell.client.JorlanClientDecoders.*
+import jorlan.graphql.client.JorlanClientDecoders.given
 import sttp.client4.*
 import sttp.client4.ws.async.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend

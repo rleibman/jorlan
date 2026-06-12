@@ -11,8 +11,9 @@
 package jorlan.graphql.client
 
 import caliban.client.__Value.{__NumberValue, __StringValue}
-import jorlan.domain.{ApprovalStatus, EventType}
-import jorlan.shell.client.JorlanClientDecoders
+import caliban.client.{ArgEncoder, ScalarDecoder}
+import jorlan.graphql.client.JorlanClientDecoders.given
+import jorlan.{ApprovalStatus, EventType}
 import zio.test.*
 import zio.test.Assertion.*
 
@@ -28,38 +29,38 @@ object JorlanClientSpec extends ZIOSpecDefault {
       suite("ApprovalStatus decoder")(
         test("decodes Pending") {
           assertTrue(
-            JorlanClientDecoders.approvalStatusDecoder.decode(__StringValue("Pending")) == Right(ApprovalStatus.Pending),
+            summon[ScalarDecoder[ApprovalStatus]].decode(__StringValue("Pending")) == Right(ApprovalStatus.Pending),
           )
         },
         test("fails on unknown status") {
-          val result = JorlanClientDecoders.approvalStatusDecoder.decode(__StringValue("UnknownStatus"))
+          val result = summon[ScalarDecoder[ApprovalStatus]].decode(__StringValue("UnknownStatus"))
           assertTrue(result.isLeft)
         },
         test("fails on numeric value") {
-          val result = JorlanClientDecoders.approvalStatusDecoder.decode(__NumberValue(1))
+          val result = summon[ScalarDecoder[ApprovalStatus]].decode(__NumberValue(1))
           assertTrue(result.isLeft)
         },
       ),
       suite("ApprovalStatus encoder")(
         test("encodes Approved to __EnumValue") {
           import caliban.client.__Value.__EnumValue
-          val encoded = JorlanClientDecoders.approvalStatusEncoder.encode(ApprovalStatus.Approved)
+          val encoded = summon[ArgEncoder[ApprovalStatus]].encode(ApprovalStatus.Approved)
           assertTrue(encoded == __EnumValue("Approved"))
         },
       ),
       suite("EventType decoder")(
         test("decodes SkillInvoked") {
           assertTrue(
-            JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("SkillInvoked")) == Right(EventType.SkillInvoked),
+            summon[ScalarDecoder[EventType]].decode(__StringValue("SkillInvoked")) == Right(EventType.SkillInvoked),
           )
         },
         test("decodes UserCreated") {
           assertTrue(
-            JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("UserCreated")) == Right(EventType.UserCreated),
+            summon[ScalarDecoder[EventType]].decode(__StringValue("UserCreated")) == Right(EventType.UserCreated),
           )
         },
         test("fails on unknown event type") {
-          val result = JorlanClientDecoders.eventTypeDecoder.decode(__StringValue("NotAnEvent"))
+          val result = summon[ScalarDecoder[EventType]].decode(__StringValue("NotAnEvent"))
           assertTrue(result.isLeft)
         },
       ),

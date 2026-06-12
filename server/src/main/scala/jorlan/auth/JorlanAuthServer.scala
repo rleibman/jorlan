@@ -14,7 +14,6 @@ import auth.*
 import auth.oauth.OAuthUserInfo
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
-import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 

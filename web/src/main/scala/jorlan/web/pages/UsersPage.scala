@@ -12,14 +12,15 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.User
+import jorlan.*
 import jorlan.web.JorlanWebApp
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClientDecoders.given
 
 object UsersPage {
 
@@ -81,7 +82,7 @@ object UsersPage {
                     state.value.users.map { user =>
                       TableRow.withKey(user.id.value.toString)(
                         TableCell()(user.displayName),
-                        TableCell()(user.email.getOrElse("—")),
+                        TableCell()(user.email),
                         TableCell()(
                           Chip
                             .set("label", if (user.active) "Active" else "Inactive")

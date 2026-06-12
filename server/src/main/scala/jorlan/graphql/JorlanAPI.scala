@@ -17,9 +17,7 @@ import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
 import jorlan.service.*
-import jorlan.service.ToolEvent
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.JsonEncoder
@@ -80,27 +78,27 @@ object JorlanAPI {
     name:                 String,
     description:          String,
     requiredCapabilities: List[String],
-  )
+  ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe view of a registered skill and its tools. */
   case class SkillInfo(
     name:  String,
     tier:  String,
     tools: List[SkillToolInfo],
-  )
+  ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe view of one channel identity for a contact result. */
   case class ContactIdentityResult(
     channelType:   String,
     channelUserId: String,
-  )
+  ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe contact result from the `contacts` query. */
   case class ContactResult(
     userId:      Long,
     displayName: String,
     identities:  List[ContactIdentityResult],
-  )
+  ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL view of a tool invocation event (emitted by the ReAct loop). */
   case class ToolEventResult(
@@ -108,7 +106,7 @@ object JorlanAPI {
     eventType: String,
     toolName:  String,
     payload:   String,
-  )
+  ) derives Schema.SemiAuto, ArgBuilder
 
   // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
 

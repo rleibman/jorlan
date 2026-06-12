@@ -12,11 +12,11 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.*
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -27,7 +27,7 @@ object MemoryPage {
   case class StoreForm(
     key:   String,
     text:  String,
-    scope: String,
+    scope: MemoryScope = MemoryScope.User,
   )
 
   case class State(
@@ -42,7 +42,7 @@ object MemoryPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, "", loading = true, error = None, showStore = false, StoreForm("", "", "")))
+      .useState(State(Nil, "", loading = true, error = None, showStore = false, StoreForm("", "", MemoryScope.User)))
       .useEffectOnMountBy {
         (
           _,
@@ -52,7 +52,7 @@ object MemoryPage {
             JorlanWebApp
               .makeAdapter()
               .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.listMemory(None)(JorlanClient.MemoryRecord.view),
+                JorlanClient.Queries.listMemory(MemoryScope.User)(JorlanClient.MemoryRecord.view),
               )
               .flatMap { memories =>
                 state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
@@ -76,7 +76,7 @@ object MemoryPage {
               JorlanWebApp
                 .makeAdapter()
                 .asyncCalibanCallWithAuth(
-                  JorlanClient.Queries.listMemory(search)(JorlanClient.MemoryRecord.view),
+                  JorlanClient.Queries.listMemory(MemoryScope.User, search)(JorlanClient.MemoryRecord.view),
                 )
                 .flatMap { memories =>
                   state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
@@ -150,7 +150,7 @@ object MemoryPage {
               JorlanWebApp
                 .makeAdapter()
                 .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.storeMemory(f.key, f.text, if (f.scope.isEmpty) None else Some(f.scope))(
+                  JorlanClient.Mutations.storeMemory(f.key, f.text, f.scope)(
                     JorlanClient.MemoryRecord.view,
                   ),
                 )
@@ -161,7 +161,7 @@ object MemoryPage {
                       state.value.copy(
                         memories = updated,
                         showStore = false,
-                        storeForm = StoreForm("", "", ""),
+                        storeForm = StoreForm("", "", MemoryScope.User),
                       ),
                     )
                     .asAsyncCallback
@@ -221,7 +221,7 @@ object MemoryPage {
                         TableCell()(mem.createdAt.toString.take(19)),
                         TableCell()(
                           Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
-                            if (mem.scope != "shared")
+                            if (mem.scope != MemoryScope.Shared)
                               MuiButton
                                 .variant("outlined")
                                 .size("small")
@@ -281,7 +281,7 @@ object MemoryPage {
                   ),
                 MuiTextField
                   .label("Scope (optional)")
-                  .value(state.value.storeForm.scope)
+                  .value(state.value.storeForm.scope.toString)
                   .fullWidth(true)
                   .variant("outlined")
                   .size("small")
@@ -289,7 +289,17 @@ object MemoryPage {
                     state
                       .setState(
                         state.value
-                          .copy(storeForm = state.value.storeForm.copy(scope = e.target.value.asInstanceOf[String])),
+                          .copy(storeForm =
+                            state.value.storeForm
+                              .copy(scope =
+                                MemoryScope.values
+                                  .find(
+                                    _.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim),
+                                  ).getOrElse(
+                                    MemoryScope.User,
+                                  ),
+                              ),
+                          ),
                       )
                       .runNow(),
                   ),

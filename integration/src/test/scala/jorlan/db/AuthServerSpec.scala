@@ -16,7 +16,8 @@ import jorlan.*
 import jorlan.auth.JorlanAuthServer
 import jorlan.db.TestFixtures.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

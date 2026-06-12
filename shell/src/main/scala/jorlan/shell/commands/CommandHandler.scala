@@ -10,14 +10,17 @@
 
 package jorlan.shell.commands
 
+import caliban.client.SelectionBuilder
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.graphql.client.JorlanClient
-import jorlan.shell.{LiveSession, ShellConfig, ShellState}
+import jorlan.graphql.client.JorlanClient.SkillInfo.ViewSelection
+import jorlan.graphql.client.JorlanClient.SkillToolInfo
+import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.shell.client.*
-import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
-import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
+import jorlan.shell.{LiveSession, ShellConfig, ShellState}
+import org.slf4j.{LoggerFactory, Logger as Slf4jLogger}
 import zio.*
 
 import scala.language.unsafeNulls
@@ -33,33 +36,38 @@ object CommandHandler {
     exit: Promise[Nothing, Unit],
   ): ZIO[Env, Nothing, Unit] = {
     cmd match {
-      case ShellCommand.Message(text)                       => handleMessage(text)
-      case ShellCommand.Help                                => showCommands
-      case ShellCommand.Commands                            => showCommands
-      case ShellCommand.Status                              => showStatus
-      case ShellCommand.About                               => showAbout
-      case ShellCommand.WhoAmI                              => showWhoAmI
-      case ShellCommand.Quit                                => exit.succeed(()).unit
-      case ShellCommand.NewSession(m)                       => handleNewSession(m)
-      case ShellCommand.ModelInfo                           => showModelInfo
-      case ShellCommand.ListModels                          => listModels
-      case ShellCommand.Trace(level)                        => setTrace(level)
-      case ShellCommand.Personality                         => showPersonality
-      case ShellCommand.PersonalitySet(field, v)            => setPersonalityField(field, v)
-      case ShellCommand.MemoryList(scope)                   => listMemory(scope)
-      case ShellCommand.MemorySearch(text)                  => searchMemory(text)
-      case ShellCommand.MemoryForget(id)                    => forgetMemory(id)
-      case ShellCommand.MemoryShare(id)                     => shareMemory(id)
-      case ShellCommand.MemoryPrivatize(id)                 => privatizeMemory(id)
-      case ShellCommand.MemoryRemember(key, text, scopeOpt) => rememberMemory(key, text, scopeOpt)
-      case ShellCommand.Skills                              => showSkills
-      case ShellCommand.ContactsFind(name)                  => findContacts(name)
-      case ShellCommand.Capabilities                        => showCapabilities
-      case ShellCommand.AgentsList                          => listAgents
-      case ShellCommand.AgentsStop(id)                      => stopAgent(id)
-      case ShellCommand.ApprovalsList                       => listApprovals
-      case ShellCommand.ApprovalsApprove(id)                => decideApproval(id, approved = true)
-      case ShellCommand.ApprovalsDeny(id)                   => decideApproval(id, approved = false)
+      case ShellCommand.Message(text)                    => handleMessage(text)
+      case ShellCommand.Help                             => showCommands
+      case ShellCommand.Commands                         => showCommands
+      case ShellCommand.Status                           => showStatus
+      case ShellCommand.About                            => showAbout
+      case ShellCommand.WhoAmI                           => showWhoAmI
+      case ShellCommand.Quit                             => exit.succeed(()).unit
+      case ShellCommand.NewSession(m)                    => handleNewSession(m)
+      case ShellCommand.ModelInfo                        => showModelInfo
+      case ShellCommand.ListModels                       => listModels
+      case ShellCommand.Trace(level)                     => setTrace(level)
+      case ShellCommand.Personality                      => showPersonality
+      case ShellCommand.PersonalitySet(field, v)         => setPersonalityField(field, v)
+      case ShellCommand.MemoryList(scope)                => listMemory(scope)
+      case ShellCommand.MemorySearch(text)               => searchMemory(text)
+      case ShellCommand.MemoryForget(id)                 => forgetMemory(id)
+      case ShellCommand.MemoryShare(id)                  => shareMemory(id)
+      case ShellCommand.MemoryPrivatize(id)              => privatizeMemory(id)
+      case ShellCommand.MemoryRemember(key, text, scope) =>
+        rememberMemory(
+          key,
+          text,
+          scope.flatMap(s => MemoryScope.values.find(_.toString.equalsIgnoreCase(s))).getOrElse(MemoryScope.User),
+        )
+      case ShellCommand.Skills               => showSkills
+      case ShellCommand.ContactsFind(name)   => findContacts(name)
+      case ShellCommand.Capabilities         => showCapabilities
+      case ShellCommand.AgentsList           => listAgents
+      case ShellCommand.AgentsStop(id)       => stopAgent(id)
+      case ShellCommand.ApprovalsList        => listApprovals
+      case ShellCommand.ApprovalsApprove(id) => decideApproval(id, approved = true)
+      case ShellCommand.ApprovalsDeny(id)    => decideApproval(id, approved = false)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -185,7 +193,7 @@ object CommandHandler {
       result <- authCli(_.whoAmI).foldZIO(
         err => screen(_.addMessage(MessageKind.Error, s"Could not fetch identity: $err")),
         body =>
-          zio.json.JsonDecoder[jorlan.domain.User].decodeJson(body) match {
+          zio.json.JsonDecoder[User].decodeJson(body) match {
             case Left(_) =>
               screen(_.addMessage(MessageKind.System, body))
             case Right(u) =>
@@ -240,7 +248,7 @@ object CommandHandler {
       case Some(sid) =>
         for {
           sessionsResult <- gql(_.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))).either
-          modelsResult   <- gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).either
+          modelsResult   <- gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))).either
           _              <- (sessionsResult, modelsResult) match {
             case (Left(err), _) => screen(_.addMessage(MessageKind.Error, s"Failed to fetch session info: $err"))
             case (Right(None | Some(Nil)), _) =>
@@ -261,7 +269,7 @@ object CommandHandler {
     }
 
   private val listModels: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).foldZIO(
+    gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list models: $err")),
       {
         case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No models available."))
@@ -306,7 +314,10 @@ object CommandHandler {
             val f = field.toLowerCase
             val splitList = value.split(",").map(_.trim).filter(_.nonEmpty).toList
             val name = if (f == "name") value else p.name
-            val formality = if (f == "formality") value else p.formality
+            val formality =
+              if (f == "formality")
+                Formality.values.find(_.toString.equalsIgnoreCase(value)).getOrElse(Formality.Custom)
+              else p.formality
             val prompt = if (f == "prompt") value else p.prompt
             val languages = if (f == "languages") splitList else p.languages
             val expertise = if (f == "expertise") splitList else p.expertise
@@ -342,28 +353,22 @@ object CommandHandler {
     "debug"   -> Level.DEBUG,
   )
 
-  private val validMemoryScopes: Set[String] = Set("User", "Shared", "Workspace", "Private")
-
-  private def listMemory(scope: Option[String]): ZIO[Env, Nothing, Unit] =
-    scope match {
-      case Some(s) if !validMemoryScopes.exists(_.equalsIgnoreCase(s)) =>
-        screen(
-          _.addMessage(MessageKind.Error, s"Invalid scope '$s'. Valid: ${validMemoryScopes.mkString(", ")}"),
-        )
-      case _ =>
-        gql(_.run(JorlanClient.Queries.listMemory(scope, None)(JorlanClient.MemoryRecord.view))).foldZIO(
-          err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
-          {
-            case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
-            case Some(records)    =>
-              val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
-              screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
-          },
-        )
+  private def listMemory(scope: Option[MemoryScope]): ZIO[Env, Nothing, Unit] = {
+    scope.fold(ZIO.unit) { s =>
+      gql(_.run(JorlanClient.Queries.listMemory(s, None)(JorlanClient.MemoryRecord.view))).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
+        {
+          case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
+          case Some(records)    =>
+            val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
+            screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
+        },
+      )
     }
+  }
 
   private def searchMemory(text: String): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listMemory(None, Some(text))(JorlanClient.MemoryRecord.view))).foldZIO(
+    gql(_.run(JorlanClient.Queries.listMemory(MemoryScope.User, Some(text))(JorlanClient.MemoryRecord.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Memory search failed: $err")),
       {
         case None | Some(Nil) => screen(_.addMessage(MessageKind.System, s"No memory records matching '$text'."))
@@ -382,7 +387,7 @@ object CommandHandler {
   private def rememberMemory(
     key:   String,
     text:  String,
-    scope: Option[String] = None,
+    scope: MemoryScope = MemoryScope.User,
   ): ZIO[Env, Nothing, Unit] =
     gql(_.run(JorlanClient.Mutations.storeMemory(key, text, scope)(JorlanClient.MemoryRecord.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Remember failed: $err")),
@@ -506,22 +511,22 @@ object CommandHandler {
           ).flatten
     }
 
-  private val showSkills: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.skills(JorlanClient.SkillInfo.view))).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"Could not list skills: $err")),
-      {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No skills registered."))
-        case Some(skills)     =>
-          val lines = skills
-            .map { s =>
-              val toolLines = s.tools
-                .map(t => s"    • ${t.name}  [${t.requiredCapabilities.mkString(", ")}]")
-                .mkString("\n")
-              s"  ${s.name}  (${s.tier})\n$toolLines"
-            }.mkString("\n")
-          screen(_.addMessage(MessageKind.System, s"Registered skills:\n$lines"))
-      },
-    )
+  private val showSkills: ZIO[Env, Nothing, Unit] = ZIO.unit // TODO this needs to be fixed!
+//    gql(_.run(JorlanClient.Queries.skills(JorlanClient.SkillInfo.view))).foldZIO(
+//      err => screen(_.addMessage(MessageKind.Error, s"Could not list skills: $err")),
+//      {
+//        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No skills registered."))
+//        case Some(skills)     =>
+//          val lines = skills
+//            .map { s =>
+//              val toolLines = s.tools
+//                .map(t => s"    • ${t.name}  [${t.requiredCapabilities.mkString(", ")}]")
+//                .mkString("\n")
+//              s"  ${s.name}  (${s.tier})\n$toolLines"
+//            }.mkString("\n")
+//          screen(_.addMessage(MessageKind.System, s"Registered skills:\n$lines"))
+//      },
+//    )
 
   private def findContacts(name: String): ZIO[Env, Nothing, Unit] = {
     val query =

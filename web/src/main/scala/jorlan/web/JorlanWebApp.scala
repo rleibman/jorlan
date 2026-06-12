@@ -13,7 +13,7 @@ package jorlan.web
 import auth.{AuthClient, LoginRouter}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.{ConnectionId, User, UserId}
+import jorlan.{ConnectionId, User, UserId}
 import jorlan.web.graphql.ScalaJSClientAdapter
 import net.leibman.jorlan.muiMaterial.components.{CssBaseline, ThemeProvider}
 import net.leibman.jorlan.muiMaterial.stylesMod

@@ -13,7 +13,8 @@ package jorlan.db
 import jorlan.*
 import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.{CorrelationId, EventLogFilter, EventLogOrder}
 import zio.*
 import zio.test.*
@@ -60,7 +61,7 @@ object EventLogServiceIntegrationSpec extends ZIOSpec[ZIORepositories] {
         for {
           userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
           repo     <- ZIO.serviceWith[ZIORepositories](_.eventLog)
-          user     <- userRepo.upsert(jorlan.domain.User(jorlan.domain.UserId.empty, "EventActor", "", T0, T0))
+          user     <- userRepo.upsert(jorlan.User(jorlan.UserId.empty, "EventActor", "", T0, T0))
           _        <- repo.append(testEvent(EventType.AgentStarted, actorId = Some(user.id)))
           found    <- repo.search(EventLogFilter(eventType = Some(EventType.AgentStarted)))
         } yield assertTrue(found.exists(_.actorId.contains(user.id)))
@@ -92,7 +93,7 @@ object EventLogServiceIntegrationSpec extends ZIOSpec[ZIORepositories] {
         import jorlan.db.repository.ZIOAgentRepository
         for {
           agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
-          agent  <- agentRepo.upsert(jorlan.domain.Agent(jorlan.domain.AgentId.empty, "FilterAgent", None, None, 0, T0))
+          agent  <- agentRepo.upsert(jorlan.Agent(jorlan.AgentId.empty, "FilterAgent", None, None, 0, T0))
           repo   <- ZIO.serviceWith[ZIORepositories](_.eventLog)
           saved  <- repo.append(testEvent(EventType.AgentStarted, agentId = Some(agent.id)))
           _      <- repo.append(testEvent(EventType.AgentStarted))

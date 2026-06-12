@@ -12,7 +12,7 @@ package jorlan.web
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.User
+import jorlan.User
 import jorlan.web.pages.*
 import org.scalajs.dom
 

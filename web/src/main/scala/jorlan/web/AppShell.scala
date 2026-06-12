@@ -13,7 +13,7 @@ package jorlan.web
 import auth.AuthClient
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.User
+import jorlan.User
 import jorlan.web.components.{MuiIconButton, MuiListItemButton}
 import net.leibman.jorlan.muiMaterial.components.*
 

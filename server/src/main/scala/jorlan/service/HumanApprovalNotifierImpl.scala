@@ -12,7 +12,8 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
-import jorlan.domain.*
+import jorlan
+.*
 import zio.*
 
 /** Phase 8 stub — writes an [[EventType.ApprovalRequested]] event to the audit log. Real delivery (Telegram, in-app) is

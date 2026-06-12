@@ -26,7 +26,8 @@ import dev.langchain4j.model.chat.response.{ChatResponse, StreamingChatResponseH
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.*
 import zio.*
 import zio.json.JsonDecoder
@@ -266,9 +267,9 @@ private class OllamaModelGateway(
   }
 
   override def seedHistory(
-    sessionId:    AgentSessionId,
-    messages:     List[jorlan.domain.Message],
-    systemPrompt: String,
+                            sessionId:    AgentSessionId,
+                            messages:     List[Message],
+                            systemPrompt: String,
   ): UIO[Unit] =
     sessions.get.flatMap { map =>
       ZIO

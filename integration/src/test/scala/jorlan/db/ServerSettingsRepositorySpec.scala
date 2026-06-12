@@ -12,7 +12,7 @@ package jorlan.db
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 import zio.json.*
 import zio.json.ast.Json

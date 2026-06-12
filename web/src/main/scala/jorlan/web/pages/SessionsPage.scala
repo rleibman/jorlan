@@ -12,21 +12,21 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClientDecoders.given
 
 object SessionsPage {
 
   case class State(
     sessions:        List[JorlanClient.AgentSession.AgentSessionView],
-    models:          List[JorlanClient.ModelInfoGql.ModelInfoView],
+    models:          List[JorlanClient.ModelInfo.ModelInfoView],
     loading:         Boolean,
     error:           Option[String],
     showCreate:      Boolean,
@@ -87,7 +87,7 @@ object SessionsPage {
               // Fetch available models when the dialog opens
               adapter
                 .asyncCalibanCallWithAuth(
-                  JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view),
+                  JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view),
                 )
                 .flatMap { models =>
                   state.setState(state.value.copy(models = models.getOrElse(Nil), showCreate = true)).asAsyncCallback

@@ -12,7 +12,8 @@ package jorlan.service.memory
 
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.*
 import zio.*
 

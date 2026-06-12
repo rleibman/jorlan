@@ -12,7 +12,7 @@ package jorlan.connector.telegram
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.domain.*
+import jorlan.*
 import telegramium.bots.Update
 import telegramium.bots.{Message => TgMessage}
 import zio.*

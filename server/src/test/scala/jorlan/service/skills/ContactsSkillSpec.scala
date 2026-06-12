@@ -13,7 +13,8 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.skills.ContactsSkill
 import jorlan.testing.InMemoryRepositories
 import zio.*

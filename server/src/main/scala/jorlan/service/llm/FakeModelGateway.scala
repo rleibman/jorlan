@@ -10,7 +10,9 @@
 
 package jorlan.service.llm
 
-import jorlan.domain.*
+import jorlan.{AgentSessionId, Message, ModelId}
+import jorlan
+.*
 import jorlan.service.*
 import zio.*
 import zio.stream.ZStream
@@ -65,9 +67,9 @@ class FakeModelGateway(
     )
 
   override def seedHistory(
-    sessionId:    AgentSessionId,
-    messages:     List[jorlan.domain.Message],
-    systemPrompt: String,
+                            sessionId:    AgentSessionId,
+                            messages:     List[Message],
+                            systemPrompt: String,
   ): UIO[Unit] = ZIO.unit
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit
@@ -114,9 +116,9 @@ object FakeModelGateway {
   ): ULayer[ModelGateway] =
     ZLayer.succeed(new FakeModelGateway(chunks) {
       override def seedHistory(
-        sessionId:    AgentSessionId,
-        messages:     List[jorlan.domain.Message],
-        systemPrompt: String,
+                                sessionId:    AgentSessionId,
+                                messages:     List[Message],
+                                systemPrompt: String,
       ): UIO[Unit] = seedCalled.set(true)
     })
 
@@ -188,9 +190,9 @@ private class FailingFakeModelGateway(error: ModelError) extends ModelGateway {
     )
 
   override def seedHistory(
-    sessionId:    AgentSessionId,
-    messages:     List[jorlan.domain.Message],
-    systemPrompt: String,
+                            sessionId:    AgentSessionId,
+                            messages:     List[Message],
+                            systemPrompt: String,
   ): UIO[Unit] = ZIO.unit
 
   override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] = ZIO.unit

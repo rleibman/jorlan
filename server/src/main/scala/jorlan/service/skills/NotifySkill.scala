@@ -12,7 +12,8 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.NotificationRouter
 import zio.*
 import zio.json.ast.Json

@@ -10,8 +10,7 @@
 
 package jorlan.connector
 
-import jorlan.domain.ChannelType
-
+import jorlan.ChannelType
 import zio.json.{JsonDecoder, JsonEncoder}
 
 import java.time.Instant

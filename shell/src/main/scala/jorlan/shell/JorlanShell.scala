@@ -10,10 +10,10 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentSessionId, SessionStatus}
+import jorlan.{AgentSessionId, SessionStatus}
 import jorlan.graphql.client.JorlanClient
 import jorlan.shell.client.*
-import jorlan.shell.client.JorlanClientDecoders.*
+import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*

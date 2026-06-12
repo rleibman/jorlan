@@ -11,7 +11,6 @@
 package jorlan.db.repository
 
 import jorlan.*
-import jorlan.domain.Personality
 import zio.*
 import zio.json.*
 import zio.json.ast.Json

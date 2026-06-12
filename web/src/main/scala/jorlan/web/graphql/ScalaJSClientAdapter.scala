@@ -16,7 +16,7 @@ import caliban.client.Operations.{IsOperation, RootSubscription}
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import japgolly.scalajs.react.extra.TimerSupport
 import japgolly.scalajs.react.{AsyncCallback, Callback}
-import jorlan.domain.ConnectionId
+import jorlan.ConnectionId
 import jorlan.web.ClientConfiguration
 import jorlan.web.util.ApiClientSttp4
 import org.scalajs.dom.WebSocket

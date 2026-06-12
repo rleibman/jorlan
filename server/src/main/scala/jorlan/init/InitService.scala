@@ -12,7 +12,8 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan
+.*
 import zio.*
 import zio.json.ast.Json
 

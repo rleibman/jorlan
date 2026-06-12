@@ -12,16 +12,16 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
 import jorlan.web.graphql.WebSocketHandler
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClientDecoders.given
 
 object ChatPage {
 

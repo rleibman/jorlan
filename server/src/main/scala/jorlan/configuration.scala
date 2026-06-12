@@ -26,6 +26,7 @@ given DeriveConfig[Duration] = DeriveConfig[Long].map(Duration.fromMillis)
 case class HttpConfig(
   host: String = "0.0.0.0",
   port: Int = 8080,
+  staticContentDir: String = "/opt/jorlan/www",
 )
 
 /** Raw config for a single OAuth 2.0 provider, read from `application.conf`. Converted to
