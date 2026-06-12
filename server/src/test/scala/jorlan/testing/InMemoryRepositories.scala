@@ -12,8 +12,7 @@ package jorlan.testing
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.EventLogFilter
 import zio.*
 import zio.json.ast.Json

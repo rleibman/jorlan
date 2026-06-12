@@ -90,7 +90,7 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
 
   override def unauth: ZIO[ConfigurationService, JorlanError, Routes[ConfigurationService, JorlanError]] =
     ZIO.succeed(
-    Routes(
+      Routes(
         Method.GET / Root -> handler {
           (
             _: Request
@@ -105,12 +105,11 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
               }.mapError(JorlanError(_))
               .map(response => response.updateHeaders(_ => getHeaders("index.html")))
         }.flatten,
-      Method.GET / trailing -> handler {
-        (
-          path: Path,
+        Method.GET / trailing -> handler {
+          (
+            path: Path,
             _:    Request,
-        ) =>
-
+          ) =>
             // You might want to restrict the files that could come back, but then again, you may not
             val somethingElse = path.toString
             Handler
@@ -124,7 +123,7 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
               }.mapError(JorlanError(_))
               .map(response => response.updateHeaders(_ => getHeaders(somethingElse)))
               .contramap[(Path, Request)](_._2)
-      },
+        },
       ),
     )
 

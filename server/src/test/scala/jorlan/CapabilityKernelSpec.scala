@@ -10,8 +10,7 @@
 
 package jorlan
 
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.*
 import zio.*
 import zio.json.*

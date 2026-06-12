@@ -28,8 +28,6 @@ enum MemoryScope derives JsonEncoder, JsonDecoder {
 
 }
 
-
-
 /** A key-value memory entry that an agent can store and later retrieve.
   *
   * @param recordKey

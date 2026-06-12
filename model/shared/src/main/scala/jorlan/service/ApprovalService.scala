@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import zio.*
 
 /** Orchestrates the full capability authorization pipeline and manages the approval request lifecycle.

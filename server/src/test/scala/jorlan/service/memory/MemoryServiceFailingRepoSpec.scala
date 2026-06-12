@@ -12,8 +12,7 @@ package jorlan.service.memory
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.{CheckpointTrigger, MemoryService}

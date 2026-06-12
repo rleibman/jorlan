@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import zio.*
 import zio.stream.ZStream
 
@@ -137,9 +136,9 @@ trait ModelGateway {
     * A no-op if the session already has an in-memory entry (avoids double-seeding on concurrent requests).
     */
   def seedHistory(
-                   sessionId:    AgentSessionId,
-                   messages:     List[Message],
-                   systemPrompt: String = "",
+    sessionId:    AgentSessionId,
+    messages:     List[Message],
+    systemPrompt: String = "",
   ): UIO[Unit]
 
   /** Release all in-process resources (chat memory, connection pools) held for `sessionId`.

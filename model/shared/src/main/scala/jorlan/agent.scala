@@ -47,8 +47,8 @@ case class Agent(
   createdAt:    Instant,
 ) derives JsonEncoder, JsonDecoder
 
-/** A single runtime instance of an [[Agent]] executing on behalf of a [[User]]. Each session maintains
-  * its own conversation context window and execution state.
+/** A single runtime instance of an [[Agent]] executing on behalf of a [[User]]. Each session maintains its own
+  * conversation context window and execution state.
   *
   * @param agentId
   *   The agent definition driving this session.

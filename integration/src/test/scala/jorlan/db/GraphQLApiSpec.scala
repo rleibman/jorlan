@@ -12,8 +12,7 @@ package jorlan.db
 
 import caliban.*
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway

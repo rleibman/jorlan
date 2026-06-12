@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.AgentSessionId
-import jorlan
-.*
+import jorlan.*
 import zio.*
 import zio.stream.ZStream
 

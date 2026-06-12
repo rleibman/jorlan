@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.{AgentSessionId, ConnectionId, ResponseChunk}
-import jorlan
-.*
+import jorlan.*
 import zio.*
 import zio.stream.ZStream
 import zio.test.*

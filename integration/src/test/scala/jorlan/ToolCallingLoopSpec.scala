@@ -16,8 +16,7 @@ import caliban.GraphQLInterpreter
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan
-.*
+import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway

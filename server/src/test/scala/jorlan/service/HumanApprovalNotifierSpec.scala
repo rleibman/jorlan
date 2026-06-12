@@ -12,8 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*

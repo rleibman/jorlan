@@ -12,8 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.ConnectorSkill
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 

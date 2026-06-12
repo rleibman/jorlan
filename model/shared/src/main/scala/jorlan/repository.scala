@@ -250,8 +250,7 @@ trait ConversationRepository[F[_]] {
 
 }
 
-/** Repository for [[SkillRecord]] entries, [[SkillVersion]] snapshots, and
-  * [[ConnectorInstance]] configurations.
+/** Repository for [[SkillRecord]] entries, [[SkillVersion]] snapshots, and [[ConnectorInstance]] configurations.
   */
 trait SkillRepository[F[_]] {
 
@@ -286,8 +285,8 @@ trait MemoryRepository[F[_]] {
 
 }
 
-/** Append-only repository for [[EventLog]] records. No update or delete operations are defined — the
-  * event log must remain immutable for audit purposes.
+/** Append-only repository for [[EventLog]] records. No update or delete operations are defined — the event log must
+  * remain immutable for audit purposes.
   *
   * `append` is generic on the resource type `R` so callers can record typed entity references. `search` returns
   * `EventLog[Json]` since rows from different event types carry heterogeneous resource types.
@@ -303,8 +302,8 @@ trait EventLogRepository[F[_]] {
 
 }
 
-/** Repository for [[jorlan.SchedulerJob]] and [[SchedulerTrigger]] records. The `getPendingJobs`
-  * query is used by the trigger engine to claim jobs for execution.
+/** Repository for [[jorlan.SchedulerJob]] and [[SchedulerTrigger]] records. The `getPendingJobs` query is used by the
+  * trigger engine to claim jobs for execution.
   */
 trait SchedulerRepository[F[_]] {
 
@@ -392,12 +391,12 @@ trait PermissionRepository[F[_]] {
   def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
 
   /** All [[CapabilityGrant]] rows for a user + capability that are relevant to the evaluator: `Denied` grants are
-    * always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied` grants are filtered to
-    * those that have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
+    * always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied` grants are filtered to those that
+    * have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
     */
   def getGrantsForCapability(
-                              userId:     UserId,
-                              capability: CapabilityName,
+    userId:     UserId,
+    capability: CapabilityName,
   ): F[List[CapabilityGrant]]
 
   /** Returns `true` if the user has a direct (user-scoped) [[Permission]] row matching `resource` and `action`. */
@@ -418,9 +417,9 @@ trait PermissionRepository[F[_]] {
     * (used for `Session` and `Once` approval modes).
     */
   def findApprovedRequest(
-                           capability: CapabilityName,
-                           userId:     UserId,
-                           sessionId:  Option[AgentSessionId],
+    capability: CapabilityName,
+    userId:     UserId,
+    sessionId:  Option[AgentSessionId],
   ): F[Option[ApprovalRequest]]
 
 }

@@ -28,7 +28,7 @@ import zio.nio.file.Files
 object JorlanRoutes extends AppRoutes[JorlanApiEnv, JorlanSession, JorlanError] {
 
   lazy private val interpreter = JorlanAPI.api.interpreter
-  
+
   override def api: ZIO[JorlanApiEnv, JorlanError, Routes[JorlanApiEnv & JorlanSession, JorlanError]] =
     (for {
       interpreter <- interpreter

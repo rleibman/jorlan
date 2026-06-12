@@ -11,8 +11,7 @@
 package jorlan.service.memory
 
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.CheckpointSummarizerImpl
 import jorlan.service.{CheckpointSummarizer, ModelUnavailable}

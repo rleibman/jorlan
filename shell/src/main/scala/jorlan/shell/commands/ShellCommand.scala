@@ -81,9 +81,9 @@ object ShellCommand {
         case "trace" :: Nil                                           => Trace("info")
         case "personality" :: "set" :: field :: rest if rest.nonEmpty => PersonalitySet(field, rest.mkString(" "))
         case "personality" :: _                                       => Personality
-        case "memory" :: "list" :: scope :: _                         => MemoryList(MemoryScope.values.find(_.toString.equalsIgnoreCase(scope)))
-        case "memory" :: "list" :: Nil                                => MemoryList(None)
-        case "memory" :: "search" :: rest if rest.nonEmpty            => MemorySearch(rest.mkString(" "))
+        case "memory" :: "list" :: scope :: _ => MemoryList(MemoryScope.values.find(_.toString.equalsIgnoreCase(scope)))
+        case "memory" :: "list" :: Nil        => MemoryList(None)
+        case "memory" :: "search" :: rest if rest.nonEmpty                      => MemorySearch(rest.mkString(" "))
         case "memory" :: "forget" :: idStr :: _ if idStr.toLongOption.isDefined =>
           MemoryForget(MemoryRecordId(idStr.toLong))
         case "memory" :: "share" :: idStr :: _ if idStr.toLongOption.isDefined =>

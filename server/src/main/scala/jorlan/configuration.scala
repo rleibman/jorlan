@@ -24,8 +24,8 @@ given DeriveConfig[SecretKey] = DeriveConfig[String].map(SecretKey(_))
 given DeriveConfig[Duration] = DeriveConfig[Long].map(Duration.fromMillis)
 
 case class HttpConfig(
-  host: String = "0.0.0.0",
-  port: Int = 8080,
+  host:             String = "0.0.0.0",
+  port:             Int = 8080,
   staticContentDir: String = "/opt/jorlan/www",
 )
 

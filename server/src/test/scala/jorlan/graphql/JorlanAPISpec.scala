@@ -14,8 +14,7 @@ import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl

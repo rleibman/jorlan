@@ -18,21 +18,21 @@ import jorlan.*
 import scala.util.Try
 
 /** ScalarDecoder and ArgEncoder instances for the Jorlan opaque ID types. Wildcard-imported by the generated
- * JorlanClient via --imports.
- *
- * Uses `implicit val` (not `given`) so that `import JorlanClientDecoders._` picks them up. In Scala 3, `given`
- * instances are NOT imported by wildcard `._` — only by `import given`. The generated Caliban client uses Scala
- * 2-style implicit resolution via `._` imports.
- *
- * Note: Instant, Long, and Unit already have instances in ScalarDecoder / ArgEncoder companions so they are not
- * repeated here.
- */
+  * JorlanClient via --imports.
+  *
+  * Uses `implicit val` (not `given`) so that `import JorlanClientDecoders._` picks them up. In Scala 3, `given`
+  * instances are NOT imported by wildcard `._` — only by `import given`. The generated Caliban client uses Scala
+  * 2-style implicit resolution via `._` imports.
+  *
+  * Note: Instant, Long, and Unit already have instances in ScalarDecoder / ArgEncoder companions so they are not
+  * repeated here.
+  */
 object JorlanClientDecoders {
 
   private def longDecoder[A](
-                              wrap: Long => A,
-                              name: String,
-                            ): ScalarDecoder[A] = {
+    wrap: Long => A,
+    name: String,
+  ): ScalarDecoder[A] = {
     case __NumberValue(v) =>
       Try(v.toLongExact).toEither.left
         .map(e => DecodingError(s"Can't build $name from $v", Some(e)))
@@ -89,9 +89,9 @@ object JorlanClientDecoders {
   // ─── Enum decoders / encoders ─────────────────────────────────────────────────
 
   private def enumDecoder[A](
-                              valueOf: String => A,
-                              name:    String,
-                            ): ScalarDecoder[A] = {
+    valueOf: String => A,
+    name:    String,
+  ): ScalarDecoder[A] = {
     case __StringValue(v) =>
       Try(valueOf(v)).toEither.left.map(e => DecodingError(s"Can't build $name from '$v'", Some(e)))
     case other => Left(DecodingError(s"Expected string for $name, got: $other"))

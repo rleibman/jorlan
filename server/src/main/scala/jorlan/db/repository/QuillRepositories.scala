@@ -14,8 +14,7 @@ import io.getquill.*
 import io.getquill.extras.InstantOps
 import io.getquill.jdbczio.Quill
 import jorlan.db.{*, given}
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.{EventLogFilter, EventLogOrder}
 import jorlan.{*, given}
 import zio.*

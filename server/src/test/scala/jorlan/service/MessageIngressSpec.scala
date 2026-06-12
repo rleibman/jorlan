@@ -13,8 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.*
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.testing.*
 import zio.*
 import zio.stream.ZStream

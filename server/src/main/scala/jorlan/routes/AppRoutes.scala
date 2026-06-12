@@ -33,8 +33,10 @@ trait AppRoutes[-R, -SessionType, +E] {
 
   def unauth: ZIO[R, E, Routes[R, E]] = ZIO.succeed(Routes.empty)
 
-  def all: ZIO[R, E, Routes[R & SessionType, E]] = for {
-    a <- api
-    u <- unauth
-  } yield a ++ u
+  def all: ZIO[R, E, Routes[R & SessionType, E]] =
+    for {
+      a <- api
+      u <- unauth
+    } yield a ++ u
+
 }

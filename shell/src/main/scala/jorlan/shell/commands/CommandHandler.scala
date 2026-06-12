@@ -20,7 +20,7 @@ import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.shell.client.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import jorlan.shell.{LiveSession, ShellConfig, ShellState}
-import org.slf4j.{LoggerFactory, Logger as Slf4jLogger}
+import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
 import zio.*
 
 import scala.language.unsafeNulls

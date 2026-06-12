@@ -11,8 +11,7 @@
 package jorlan.service.memory
 
 import jorlan.{AgentId, MemoryRecord, MemoryScope, UserId}
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.MemoryAccessPolicy
 import zio.*
 

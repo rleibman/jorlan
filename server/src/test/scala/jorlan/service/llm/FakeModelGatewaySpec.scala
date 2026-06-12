@@ -11,8 +11,7 @@
 package jorlan.service.llm
 
 import jorlan.{AgentSessionId, ModelId}
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.{ChatStep, FinalAnswer, ModelGateway, ModelUnavailable}
 import zio.*

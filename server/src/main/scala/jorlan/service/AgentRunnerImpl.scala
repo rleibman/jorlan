@@ -13,8 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.*

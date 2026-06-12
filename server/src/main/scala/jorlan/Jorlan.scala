@@ -160,7 +160,7 @@ object Jorlan extends ZIOApp {
           .copy(requestStreaming = Server.RequestStreaming.Enabled),
       )
       randomConnectionId <- ConnectionId.randomZIO
-      _ <- (for {
+      _                  <- (for {
         _      <- startServices
         routes <- zapp(startTime)
         _      <- Server.serve(routes)

@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import zio.*
 
 /** High-level session lifecycle service.

@@ -11,8 +11,7 @@
 package jorlan.service.memory
 
 import jorlan.*
-import jorlan
-.*
+import jorlan.*
 import jorlan.service.{CheckpointSummarizer, ModelGateway}
 import zio.*
 import zio.json.ast.Json

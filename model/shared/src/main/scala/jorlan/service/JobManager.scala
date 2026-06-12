@@ -10,9 +10,17 @@
 
 package jorlan.service
 
-import jorlan.{AgentId, JorlanError, MissedRunPolicy, RetryBackoffPolicy, SchedulerJob, SchedulerJobId, SchedulerTrigger, UserId}
-import jorlan
-.*
+import jorlan.{
+  AgentId,
+  JorlanError,
+  MissedRunPolicy,
+  RetryBackoffPolicy,
+  SchedulerJob,
+  SchedulerJobId,
+  SchedulerTrigger,
+  UserId,
+}
+import jorlan.*
 import zio.*
 
 /** Manages the lifecycle of scheduled jobs and their triggers.

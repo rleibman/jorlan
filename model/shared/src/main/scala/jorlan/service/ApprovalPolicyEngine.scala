@@ -10,9 +10,18 @@
 
 package jorlan.service
 
-import jorlan.{ApprovalMode, ApprovalRequest, ApprovalRequestId, ApprovalStatus, AuthorizationResult, CapabilityGrant, CapabilityRequest, EvaluationResult, RiskClass}
-import jorlan
-.*
+import jorlan.{
+  ApprovalMode,
+  ApprovalRequest,
+  ApprovalRequestId,
+  ApprovalStatus,
+  AuthorizationResult,
+  CapabilityGrant,
+  CapabilityRequest,
+  EvaluationResult,
+  RiskClass,
+}
+import jorlan.*
 
 import java.time.Instant
 

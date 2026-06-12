@@ -11,8 +11,7 @@
 package jorlan.service
 
 import jorlan.{AgentId, AgentSessionId, EventLog, EventLogId, EventType, UserId}
-import jorlan
-.*
+import jorlan.*
 import zio.json.*
 import zio.json.ast.Json
 
