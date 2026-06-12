@@ -116,6 +116,8 @@ given MappedEncoding[Long, PermissionId] = MappedEncoding(PermissionId.apply)
 given MappedEncoding[PermissionId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, ChannelIdentityId] = MappedEncoding(ChannelIdentityId.apply)
 given MappedEncoding[ChannelIdentityId, Long] = MappedEncoding(_.value)
+given MappedEncoding[Long, ExternalCredentialId] = MappedEncoding(ExternalCredentialId.apply)
+given MappedEncoding[ExternalCredentialId, Long] = MappedEncoding(_.value)
 
 /** Quill `MappedEncoding`s for string-backed opaque value types. */
 given MappedEncoding[String, ModelId] = MappedEncoding(ModelId.apply)

@@ -115,6 +115,18 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
       },
     )
+    val noOpOAuthCredSvc: ULayer[OAuthCredentialService] = ZLayer.succeed(new OAuthCredentialService {
+      override def store(userId: UserId, provider: String, plainJson: zio.json.ast.Json): IO[JorlanError, Unit] =
+        ZIO.unit
+      override def load(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[zio.json.ast.Json]] = ZIO.none
+      override def revoke(userId: UserId, provider: String): IO[JorlanError, Unit] = ZIO.unit
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]]    = ZIO.succeed(Nil)
+      override def refreshAccessToken(userId: UserId, provider: String): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("no credentials"))
+    })
     ZLayer.make[FullEnv](
       agentRepoLayer,
       hubLayer,
@@ -133,6 +145,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       JobManagerImpl.live,
       approvalSvcLayer,
       noOpNotificationRouter,
+      noOpOAuthCredSvc,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
   }

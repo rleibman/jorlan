@@ -17,6 +17,22 @@ import zio.json.ast.Json
 
 import java.time.Instant
 
+/** Repository for [[jorlan.domain.ExternalCredential]] records (OAuth tokens and similar). */
+trait ExternalCredentialRepository[F[_]] {
+
+  def upsert(
+    userId:        UserId,
+    provider:      String,
+    encryptedData: Json,
+    expiresAt:     Option[Instant],
+    scopes:        Option[String],
+  ): F[Unit]
+  def find(userId:      UserId, provider: String): F[Option[ExternalCredential]]
+  def delete(userId:    UserId, provider: String): F[Unit]
+  def listByUser(userId: UserId):                  F[List[ExternalCredential]]
+
+}
+
 // ─── Search infrastructure ────────────────────────────────────────────────────
 
 enum OrderDirection {
@@ -447,15 +463,16 @@ trait ServerSettingsRepository[F[_]] {
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
-  def user:         UserRepository[F]
-  def agent:        AgentRepository[F]
+  def user:        UserRepository[F]
+  def agent:       AgentRepository[F]
   def conversation: ConversationRepository[F]
-  def skill:        SkillRepository[F]
-  def memory:       MemoryRepository[F]
-  def eventLog:     EventLogRepository[F]
-  def scheduler:    SchedulerRepository[F]
-  def artifact:     ArtifactRepository[F]
-  def permission:   PermissionRepository[F]
-  def setting:      ServerSettingsRepository[F]
+  def skill:       SkillRepository[F]
+  def memory:      MemoryRepository[F]
+  def eventLog:    EventLogRepository[F]
+  def scheduler:   SchedulerRepository[F]
+  def artifact:    ArtifactRepository[F]
+  def permission:  PermissionRepository[F]
+  def setting:     ServerSettingsRepository[F]
+  def extCredential: ExternalCredentialRepository[F]
 
 }

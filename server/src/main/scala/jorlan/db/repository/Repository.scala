@@ -97,4 +97,6 @@ extension (settings: ZIOServerSettingsRepository) {
 
 }
 
+type ZIOExternalCredentialRepository = ExternalCredentialRepository[RepositoryTask]
+
 type ZIORepositories = Repositories[RepositoryTask]

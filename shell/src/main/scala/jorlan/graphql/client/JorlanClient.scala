@@ -584,6 +584,50 @@ object JorlanClient {
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
       _root_.caliban.client.SelectionBuilder.Field("skills", OptionOf(ListOf(Obj(innerSelection))))
 
+    def oauthStatus[A](
+      provider:       String,
+      innerSelection: SelectionBuilder[OAuthStatus, A],
+    )(implicit
+      encoder0: ArgEncoder[String],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "oauthStatus",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(Argument("provider", provider, "String!")),
+      )
+
+    def listOAuthProviders: SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[String]]] =
+      _root_.caliban.client.SelectionBuilder.Field("listOAuthProviders", OptionOf(ListOf(Scalar())))
+
+  }
+
+  type OAuthStartResult
+  object OAuthStartResult {
+
+    def authUrl: SelectionBuilder[OAuthStartResult, String] =
+      _root_.caliban.client.SelectionBuilder.Field("authUrl", Scalar())
+
+  }
+
+  type OAuthStatus
+  object OAuthStatus {
+
+    final case class OAuthStatusView(
+      connected: Boolean,
+      expiresAt: scala.Option[java.time.Instant],
+    )
+
+    type ViewSelection = SelectionBuilder[OAuthStatus, OAuthStatusView]
+
+    val view: ViewSelection =
+      (connected ~ expiresAt).map { case (c, e) => OAuthStatusView(c, e) }
+
+    def connected: SelectionBuilder[OAuthStatus, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("connected", Scalar())
+
+    def expiresAt: SelectionBuilder[OAuthStatus, scala.Option[java.time.Instant]] =
+      _root_.caliban.client.SelectionBuilder.Field("expiresAt", OptionOf(Scalar()))
+
   }
 
   type ModelInfoGql
@@ -846,6 +890,42 @@ object JorlanClient {
         "terminateSession",
         OptionOf(Scalar()),
         arguments = List(Argument("value", value, "AgentSessionId!")),
+      )
+
+    def startOAuth[A](
+      provider:       String,
+      innerSelection: SelectionBuilder[OAuthStartResult, A],
+    )(implicit encoder0: ArgEncoder[String],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "startOAuth",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(Argument("provider", provider, "String!")),
+      )
+
+    def revokeOAuth(
+      provider:        String,
+    )(implicit encoder0: ArgEncoder[String],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "revokeOAuth",
+        OptionOf(Scalar()),
+        arguments = List(Argument("provider", provider, "String!")),
+      )
+
+    def invokeTool(
+      toolName: String,
+      argsJson: String,
+    )(implicit
+      encoder0: ArgEncoder[String],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[String]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "invokeTool",
+        OptionOf(Scalar()),
+        arguments = List(
+          Argument("toolName", toolName, "String!"),
+          Argument("argsJson", argsJson, "String!"),
+        ),
       )
 
   }

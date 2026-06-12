@@ -60,6 +60,15 @@ object CommandHandler {
       case ShellCommand.ApprovalsList                       => listApprovals
       case ShellCommand.ApprovalsApprove(id)                => decideApproval(id, approved = true)
       case ShellCommand.ApprovalsDeny(id)                   => decideApproval(id, approved = false)
+      case ShellCommand.OAuthStatus(provider)               => showOAuthStatus(provider)
+      case ShellCommand.OAuthConnect(provider)              => connectOAuth(provider)
+      case ShellCommand.OAuthRevoke(provider)               => revokeOAuth(provider)
+      case ShellCommand.OAuthList                           => listOAuthProviders
+      case ShellCommand.EmailList(maxResults)               => emailList(maxResults)
+      case ShellCommand.EmailRead(messageId)                => emailRead(messageId)
+      case ShellCommand.EmailSearch(query)                  => emailSearch(query)
+      case ShellCommand.CalendarToday                       => calendarToday
+      case ShellCommand.CalendarList(date)                  => calendarList(date)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -566,6 +575,120 @@ object CommandHandler {
             .mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Contacts matching '$name':\n$lines"))
         }
+      },
+    )
+  }
+
+  private def showOAuthStatus(provider: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.oauthStatus(provider, JorlanClient.OAuthStatus.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not get OAuth status: $err")),
+      {
+        case None => screen(_.addMessage(MessageKind.System, s"OAuth status for '$provider': not found"))
+        case Some(s) =>
+          val expiry = s.expiresAt.map(t => s"  expires: $t").getOrElse("")
+          screen(_.addMessage(MessageKind.System, s"OAuth '$provider': connected=${s.connected}$expiry"))
+      },
+    )
+
+  private val listOAuthProviders: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listOAuthProviders)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list OAuth providers: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No OAuth providers connected."))
+        case Some(providers)  =>
+          screen(_.addMessage(MessageKind.System, s"Connected OAuth providers: ${providers.mkString(", ")}"))
+      },
+    )
+
+  private def connectOAuth(provider: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.startOAuth(provider, JorlanClient.OAuthStartResult.authUrl))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not start OAuth: $err")),
+      {
+        case None =>
+          screen(_.addMessage(MessageKind.Error, s"No auth URL returned for provider '$provider'"))
+        case Some(authUrl) =>
+          screen(
+            _.addMessage(MessageKind.System, s"Open this URL in your browser to connect $provider:\n  $authUrl"),
+          )
+      },
+    )
+
+  private def revokeOAuth(provider: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.revokeOAuth(provider))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not revoke OAuth: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"OAuth credentials for '$provider' revoked.")),
+    )
+
+  private def emailList(maxResults: Int): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.invokeTool("email.list", s"""{"maxResults":$maxResults}"""))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.list failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.list"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+
+  private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] =
+    gql(
+      _.run(JorlanClient.Mutations.invokeTool("email.read", s"""{"messageId":"$messageId"}"""))
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.read failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.read"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+
+  private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
+    val escaped = query.replace("\"", "\\\"")
+    gql(
+      _.run(JorlanClient.Mutations.invokeTool("email.search", s"""{"query":"$escaped"}"""))
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.search failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.search"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+  }
+
+  private val calendarToday: ZIO[Env, Nothing, Unit] = {
+    import java.time.{LocalDate, ZoneOffset}
+    val todayMin = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant
+    val todayMax = todayMin.plusSeconds(86400)
+    gql(
+      _.run(
+        JorlanClient.Mutations.invokeTool(
+          "calendar.listEvents",
+          s"""{"timeMin":"${todayMin}","timeMax":"${todayMax}","maxResults":50}""",
+        ),
+      ),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No events today."))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+  }
+
+  private def calendarList(date: Option[String]): ZIO[Env, Nothing, Unit] = {
+    import java.time.{LocalDate, ZoneOffset}
+    val day    = date.flatMap(d => scala.util.Try(LocalDate.parse(d)).toOption).getOrElse(LocalDate.now())
+    val dayMin = day.atStartOfDay(ZoneOffset.UTC).toInstant
+    val dayMax = dayMin.plusSeconds(86400)
+    gql(
+      _.run(
+        JorlanClient.Mutations.invokeTool(
+          "calendar.listEvents",
+          s"""{"timeMin":"${dayMin}","timeMax":"${dayMax}","maxResults":50}""",
+        ),
+      ),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, s"No events for $day."))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
       },
     )
   }

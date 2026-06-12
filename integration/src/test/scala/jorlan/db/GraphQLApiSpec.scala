@@ -20,6 +20,7 @@ import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SkillRegistry
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 
 /** Integration tests for the Caliban GraphQL API.
@@ -41,6 +42,17 @@ object GraphQLApiSpec
       override def evaluate(request: CapabilityRequest): IO[JorlanError, EvaluationResult] =
         ZIO.succeed(EvaluationResult.ResourcePermissionAllows)
     })
+
+  private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
+    new OAuthCredentialService {
+      override def store(userId: UserId, provider: String, plainJson: Json): IO[JorlanError, Unit] = ZIO.unit
+      override def load(userId: UserId, provider: String): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(userId: UserId, provider: String): IO[JorlanError, Unit] = ZIO.unit
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def refreshAccessToken(userId: UserId, provider: String): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+    },
+  )
 
   private val stubApprovalService: ULayer[ApprovalService] = ZLayer.succeed(
     new ApprovalService {
@@ -69,6 +81,7 @@ object GraphQLApiSpec
       JobManagerImpl.live,
       NotificationRouter.live,
       ZLayer.succeed(ConnectorManager.empty),
+      stubOAuthCredentialService,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

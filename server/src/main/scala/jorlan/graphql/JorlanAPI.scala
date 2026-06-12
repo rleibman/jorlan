@@ -22,7 +22,7 @@ import jorlan.service.*
 import jorlan.service.ToolEvent
 import jorlan.service.skills.SkillRegistry
 import zio.*
-import zio.json.JsonEncoder
+import zio.json.{EncoderOps, JsonEncoder}
 import zio.json.ast.Json
 import zio.stream.ZStream
 
@@ -261,6 +261,22 @@ object JorlanAPI {
     message: String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  case class InvokeToolInput(
+    toolName: String,
+    argsJson: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Result type for `oauthStatus` — whether the user has connected credentials for a provider. */
+  case class OAuthStatus(
+    connected: Boolean,
+    expiresAt: Option[Instant],
+  ) derives Schema.SemiAuto
+
+  /** Result type for `startOAuth` — the URL the user should open in a browser. */
+  case class OAuthStartResult(
+    authUrl: String,
+  ) derives Schema.SemiAuto
+
   // ─── Query / Mutation / Subscription containers ───────────────────────────────
 
   case class Queries(
@@ -290,6 +306,10 @@ object JorlanAPI {
     skills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillInfo]],
     /** Case-insensitive substring search on user displayName, with channel identities. Requires `contacts.read`. */
     contacts: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ContactResult]],
+    /** Returns OAuth connection status for a given provider. */
+    oauthStatus: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, OAuthStatus],
+    /** Returns the list of OAuth providers the calling user has connected credentials for. */
+    listOAuthProviders: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[String]],
   )
 
   case class Mutations(
@@ -318,6 +338,12 @@ object JorlanAPI {
     terminateSession:  AgentSessionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Send a notification to a user's preferred channel. Requires `notify.send` capability. */
     notifyUser: NotifyUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Returns the Google OAuth authorization URL for the calling user to open in a browser. */
+    startOAuth: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, OAuthStartResult],
+    /** Revokes stored OAuth credentials for the calling user and the named provider. */
+    revokeOAuth: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Directly invokes a skill tool by name with JSON args; returns JSON result as a string. */
+    invokeTool: InvokeToolInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, String],
   )
 
   case class Subscriptions(
@@ -610,6 +636,23 @@ object JorlanAPI {
                   }
               }
             } yield results,
+          oauthStatus = provider =>
+            for {
+              actorId <- actorIdFromSession
+              credOpt <- ZIO
+                .serviceWithZIO[OAuthCredentialService](_.load(actorId, provider))
+                .mapError(e => JorlanError(s"Failed to load OAuth status: ${e.getMessage}"))
+            } yield OAuthStatus(
+              connected = credOpt.isDefined,
+              expiresAt = None, // expiresAt is in the encrypted credential; not exposed here
+            ),
+          listOAuthProviders =
+            for {
+              actorId <- actorIdFromSession
+              providers <- ZIO
+                .serviceWithZIO[OAuthCredentialService](_.listProviders(actorId))
+                .mapError(e => JorlanError(s"Failed to list OAuth providers: ${e.getMessage}"))
+            } yield providers,
         ),
         Mutations(
           createUser = input =>
@@ -868,6 +911,24 @@ object JorlanAPI {
                 case _                                                  => true
               }
             } yield succeeded,
+          startOAuth = provider =>
+            for {
+              // Resolve caller; fail early if unauthenticated
+              _ <- actorIdFromSession
+            } yield OAuthStartResult(authUrl = s"/api/oauth/start/$provider"),
+          revokeOAuth = provider =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- ZIO
+                .serviceWithZIO[OAuthCredentialService](_.revoke(actorId, provider))
+                .mapError(e => JorlanError(s"Failed to revoke OAuth: ${e.getMessage}"))
+            } yield true,
+          invokeTool = input =>
+            for {
+              actorId <- actorIdFromSession
+              ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
+              result <- ZIO.serviceWithZIO[SkillRegistry](_.invoke(input.toolName, input.argsJson, ctx))
+            } yield result.toJson,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

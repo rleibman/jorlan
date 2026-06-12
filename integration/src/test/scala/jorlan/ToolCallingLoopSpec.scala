@@ -67,23 +67,21 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
-  /** Stub skill registered in the registry so that `echo.run` invocations succeed rather than returning an error. */
-  private val echoSkill: Skill = new Skill {
+  private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
+    new OAuthCredentialService {
+      override def store(userId: UserId, provider: String, plainJson: Json): IO[JorlanError, Unit] = ZIO.unit
+      override def load(userId: UserId, provider: String): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(userId: UserId, provider: String): IO[JorlanError, Unit] = ZIO.unit
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def refreshAccessToken(userId: UserId, provider: String): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+    },
+  )
 
-    override val descriptor: SkillDescriptor = SkillDescriptor(
-      name = "echo",
-      tier = SkillTier.BuiltIn,
-      tools = List(
-        ToolDescriptor(
-          name = "echo.run",
-          description = "Echo the tool name back",
-          inputSchema = Json.decoder
-            .decodeJson("""{"type":"object","properties":{},"required":[]}""")
-            .getOrElse(Json.Obj()),
-          outputSchema = Json.Obj("type" -> Json.Str("string")),
-          requiredCapabilities = Nil,
-        ),
-      ),
+  /** FakeModelGateway steps: one ToolCallRequested → FinalAnswer */
+  private val toolCallingSteps: List[ChatStep] = List(
+    ToolCallRequested(id = "tc-1", name = "echo.run", argsJson = """{}"""),
+    FinalAnswer(ZStream.fromIterable(List("Tool result: ", "done"))),
     )
 
     override def invoke(
@@ -120,6 +118,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       TriggerEngine.live,
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
+      stubOAuthCredentialService,
       Client.default,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

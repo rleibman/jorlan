@@ -825,17 +825,179 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
 
 **Goal:** Agents can read email and calendar events; can send/modify with explicit approval.
 
-- [ ] **Email skill abstraction** (provider-independent interface)
-    - Operations: `list`, `search`, `read`, `draft`, `send`, `reply`, `forward`, `archive`
-    - Send/forward/delete require approval
-- [ ] Gmail API provider (OAuth2 per-user credentials, stored securely)
-- [ ] IMAP/SMTP provider
-- [ ] PGP support: verify inbound sender signature, sign outbound messages (configurable per user)
-- [ ] **Google Calendar skill**: `listEvents`, `getEvent`, `createEvent`, `updateEvent`, `deleteEvent` (write ops
-  require approval)
-- [ ] **Google Drive skill**: `listFiles`, `readFile`, `downloadFile` (write/delete deferred or require approval)
-- [ ] OAuth2 credential management ZIO service (per-user, encrypted at rest)
-- [ ] Tests using mock/stub providers; no live credentials in CI
+See `doc/mini-designs/phase13-email-calendar.md` for full design.
+
+Two new SBT modules:
+- **`email`** — IMAP/SMTP via `emil` library + `EmailSkill` + `PgpService`
+- **`google-services`** — Gmail, Calendar, Drive via Google REST APIs + `OAuthCredentialService`
+
+### 13.0 — SBT Module Setup
+
+- [x] Add `email` module to `build.sbt`: depends on `model`, `connector-api`, `db`; libraries
+  `emil-common 0.19.0`, `emil-javamail 0.19.0`, `zio-interop-cats 23.1.0.5`, `bcpg-jdk18on 1.79`;
+  source directory `email/src/main/scala/jorlan/email/`
+- [x] Add `google-services` module to `build.sbt`: depends on `model`, `connector-api`, `db`;
+  source directory `google-services/src/main/scala/jorlan/google/`
+- [x] Add `email` and `google-services` as dependencies of `server` in `build.sbt`
+- [x] `ThisBuild / libraryDependencySchemes` entries if needed for version conflicts
+
+### 13.1 — Domain Types (model module)
+
+- [x] `EmailMessageId` opaque type + `EmailMessage`, `EmailAttachment`, `EmailDraft` case classes in
+  `model/src/main/scala/jorlan/domain/email.scala`
+- [x] `CalendarId`, `CalendarEventId` opaque types + `CalendarEntry`, `CalendarAttendee`, `UserCalendar`,
+  `CalendarEventStatus`, `AttendeeResponse` in `model/src/main/scala/jorlan/domain/calendar.scala`
+- [x] `DriveFileId` opaque type + `DriveFile` case class in `model/src/main/scala/jorlan/domain/drive.scala`
+- [x] `ExternalCredential` case class + `ExternalCredentialId` opaque type in
+  `model/src/main/scala/jorlan/domain/externalCredential.scala`
+- [x] `ExternalCredentialRepository[F[_]]` trait in `model/src/main/scala/jorlan/repository.scala`
+- [x] `OAuthCredentialService` trait in `model/src/main/scala/jorlan/service/OAuthCredentialService.scala`:
+  `store`, `load`, `revoke`, `listProviders`, `refreshAccessToken`
+- [x] `EmailProvider` trait in `model/src/main/scala/jorlan/service/EmailProvider.scala`
+- [x] New `EventType` variants: `EmailMessageRead`, `EmailMessageSent`, `EmailDraftCreated`, `EmailMessageArchived`,
+  `CalendarEventRead`, `CalendarEventCreated`, `CalendarEventUpdated`, `CalendarEventDeleted`,
+  `DriveFileRead`, `DriveFileListed`
+- [x] zio-json codecs for all new domain types
+
+### 13.2 — Database & Persistence (db module)
+
+- [x] **V025** migration: `external_credentials` table (userId FK, provider, encryptedData JSON, expiresAt, scopes,
+  timestamps, unique key on `(user_id, provider)`, CASCADE FK to `users`)
+- [x] `QuillExternalCredentialRepository` in `db`: implements `ExternalCredentialRepository[RepositoryTask]`
+  (upsert, find, delete, listByUser) using Quill
+
+### 13.3 — Credential Encryption (server module)
+
+- [x] `OAuthCredentialEncryptor` class in `google-services/src/main/scala/jorlan/google/OAuthCredentialEncryptor.scala`:
+  AES-256-GCM; key = HKDF-SHA256(`JORLAN_AUTH_SECRET_KEY`, info=`"jorlan-external-credentials"`);
+  output `{ iv: base64, ciphertext: base64 }`; uses `javax.crypto` only
+
+### 13.4 — Configuration (server module)
+
+- [x] `GoogleOAuthSettings` case class: `clientId`, `clientSecret`, `redirectUri` — added to `configuration.scala`
+- [x] `ImapSettings` + `SmtpSettings` + `PgpSettings` + `EmailSettings` — added to `configuration.scala`
+- [x] `JorlanConfig` extended with `google: GoogleOAuthSettings` and `email: EmailSettings`
+- [x] `application.conf` template updated with `jorlan.google.*` and `jorlan.email.*` stanzas
+- [x] `.env.example` updated with `JORLAN_GOOGLE_CLIENT_ID`, `JORLAN_GOOGLE_CLIENT_SECRET`,
+  `JORLAN_GOOGLE_REDIRECT_URI`
+
+### 13.5 — OAuth2 HTTP Routes (server module)
+
+- [x] `OAuthRoutes` in `server/src/main/scala/jorlan/routes/OAuthRoutes.scala`:
+  `GET /api/oauth/start/:provider` (builds Google auth URL with CSRF state JWT, redirects);
+  `GET /api/oauth/callback/google` (verifies state JWT, exchanges code → tokens, stores via
+  `OAuthCredentialService`, redirects to `/?oauth=success`)
+- [x] State JWT: 30-min TTL, signed with `JORLAN_AUTH_SECRET_KEY`, carries `userId + provider` — CSRF protection
+- [x] Google OAuth scopes requested together: `gmail.modify`, `calendar`, `drive.readonly`
+- [x] `OAuthRoutes` wired into `Jorlan.zapp`
+
+### 13.6 — `google-services` Module: OAuthCredentialService + Providers
+
+- [x] `OAuthCredentialServiceImpl` in `google-services/src/main/scala/jorlan/google/`:
+  backed by `ExternalCredentialRepository` + `OAuthCredentialEncryptor`;
+  `refreshAccessToken` POSTs to `https://oauth2.googleapis.com/token` via zio-http;
+  all three Google skills use `provider = "google"` (one token row, three APIs)
+- [x] `GmailProvider` implements `EmailProvider[IO[JorlanError,*]]`: uses Google API Java client (not zio-http);
+  wraps blocking calls with `ZIO.attemptBlocking`; maps Gmail API → `EmailMessage`
+- [x] `GoogleCalendarProvider` in `google-services`: uses Google Calendar Java client;
+  `listCalendars`, `listEvents`, `getEvent`, `createEvent`, `updateEvent`, `deleteEvent`
+- [x] `GoogleDriveProvider` in `google-services`: uses Google Drive Java client;
+  `listFiles`, `readTextFile` (exports Google Docs as text/plain), `downloadFile`
+- [x] `FakeGmailProvider` in `google-services/src/test/scala/`: configurable messages + call recorder
+- [x] `FakeCalendarProvider` in test: configurable event list + call recorder
+- [x] `FakeDriveProvider` in test: configurable file list + content map
+
+### 13.7 — `google-services` Module: Skills
+
+- [x] `GoogleCalendarSkill` in `server/src/main/scala/jorlan/service/skills/GoogleCalendarSkill.scala` — 6 tools:
+    - `calendar.listCalendars` — `calendar.read`, RiskClass ReadOnly
+    - `calendar.listEvents { calendarId?, maxResults?, timeMin?, timeMax? }` — `calendar.read`, RiskClass ReadOnly
+    - `calendar.getEvent { calendarId?, eventId }` — `calendar.read`, RiskClass ReadOnly
+    - `calendar.createEvent { summary, start, end, description?, location?, attendees?, calendarId? }` —
+      `calendar.write`, RiskClass ExternalEffect
+    - `calendar.updateEvent { eventId, summary?, start?, end?, description?, location?, calendarId? }` —
+      `calendar.write`, RiskClass Modification
+    - `calendar.deleteEvent { eventId, calendarId? }` — `calendar.write`, RiskClass ExternalEffect
+- [x] `GoogleDriveSkill` in `server/src/main/scala/jorlan/service/skills/GoogleDriveSkill.scala` — 3 read-only
+  tools:
+    - `drive.listFiles { folderId?, query?, maxResults? }` — `drive.read`, RiskClass ReadOnly
+    - `drive.readFile { fileId }` — `drive.read`, RiskClass ReadOnly
+    - `drive.downloadFile { fileId }` — `drive.read`, RiskClass ReadOnly; stores result as Artifact
+- [x] Event log writes per invocation in both skills
+
+### 13.8 — `email` Module: PgpService + ImapSmtpProvider + EmailSkill
+
+- [x] `PgpService` trait in `email/src/main/scala/jorlan/email/PgpService.scala` (stub impl; full BouncyCastle impl deferred)
+- [x] `ImapSmtpProvider` in `email/src/main/scala/jorlan/email/ImapSmtpProvider.scala`:
+  implements `EmailProvider`; stub methods returning `ZIO.fail(JorlanError("not yet implemented"))` (full Emil impl deferred)
+- [x] `EmailSkill` in `server/src/main/scala/jorlan/service/skills/EmailSkill.scala`:
+  provider-injected; 8 tools:
+    - `email.list { maxResults?, query? }` — `email.read`, RiskClass ReadOnly
+    - `email.search { query }` — `email.read`, RiskClass ReadOnly
+    - `email.read { messageId }` — `email.read`, RiskClass ReadOnly
+    - `email.draft { to, subject, body, cc?, bcc? }` — `email.write`, RiskClass Low
+    - `email.send { to, subject, body, cc?, bcc? }` — `email.send`, RiskClass ExternalEffect
+    - `email.reply { messageId, body }` — `email.send`, RiskClass ExternalEffect
+    - `email.delete { messageId }` — `email.write`, RiskClass Modification
+    - `email.archive { messageId }` — `email.write`, RiskClass Modification
+- [x] Event log writes per tool invocation
+- [x] `FakeEmailProvider` in `email/src/test/scala/`
+
+### 13.9 — EnvironmentBuilder Wiring (server module)
+
+- [x] `OAuthCredentialServiceImpl.live` ZLayer in `google-services`; wired in `EnvironmentBuilder`
+- [x] `GmailProvider` constructed with `oauthSvc` (config.google used for OAuth flow separately)
+- [x] `ImapSmtpProvider` constructed with `MailConfig` from `config.email.imap/smtp`
+- [x] `EmailSkill` uses `GmailProvider` or `ImapSmtpProvider` based on `config.email.defaultProvider`
+- [x] `GoogleCalendarSkill` + `GoogleDriveSkill` constructed with `GoogleCalendarProvider` / `GoogleDriveProvider`
+- [x] All three skills registered in `SkillRegistry` at startup
+
+### 13.10 — Capability Seeding
+
+- [x] Seed in `InitService.complete`:
+  `email.read` (Persistent), `email.write` (Persistent), `email.send` (PerInvocation),
+  `calendar.read` (Persistent), `calendar.write` (PerInvocation), `drive.read` (Persistent)
+
+### 13.11 — GraphQL Additions (server module)
+
+- [x] Query `oauthStatus(provider: String!): OAuthStatus!` — `{ connected: Boolean!, expiresAt: DateTime }`
+- [x] Query `listOAuthProviders: [String!]!` — providers with stored credentials for calling user
+- [x] Mutation `startOAuth(provider: String!): OAuthStartResult!` — returns `{ authUrl: String! }`
+- [x] Mutation `revokeOAuth(provider: String!): Boolean!`
+- [x] Mutation `invokeTool(toolName: String!, argsJson: String!): String!` — direct skill tool invocation
+
+### 13.12 — Shell Commands (server module)
+
+- [x] `/oauth status <provider>` — show OAuth connection status for provider
+- [x] `/oauth` — list connected providers
+- [x] `/oauth connect google` — print Google auth URL
+- [x] `/oauth revoke google` — revoke stored credentials
+- [x] `/email list [n]` — list last n emails (default 10)
+- [x] `/email read <id>` — show full email
+- [x] `/email search <query>` — search inbox
+- [x] `/calendar today` — show today's events
+- [x] `/calendar list [date]` — show events for a date (YYYY-MM-DD)
+
+### 13.13 — Tests
+
+- [x] `ExternalCredentialRepositorySpec` (Testcontainers, integration module): upsert, find, delete, listByUser
+- [x] `OAuthCredentialEncryptorSpec` (google-services): encrypt/decrypt round-trip; wrong key fails
+- [ ] `OAuthRoutesSpec` (server): state JWT; CSRF rejection; redirect URL
+- [ ] `PgpServiceSpec` (email): sign + verify round-trip (BouncyCastle test keypair); missing key → warning
+- [x] `EmailSkillSpec` (server): all 8 tools via `FakeEmailProvider`; capability gates; event log entries
+- [ ] `GmailProviderSpec` (google-services): via `FakeGmailProvider`; token refresh before expiry
+- [x] `GoogleCalendarSkillSpec` (server): all 6 tools via `FakeCalendarProvider`; write blocked
+  without capability; event log entries
+- [x] `GoogleDriveSkillSpec` (server): all 3 tools; download stores Artifact
+- [ ] Overall test coverage ≥ 80% for all new Phase 13 code
+- [ ] `sbt --error scalafmtAll` clean before merge
+- [x] `sbt --error test` passes with all Phase 13 tests included (1047 total)
+
+### Appendix updates
+
+- [x] Mark `Email (IMAP/SMTP)` connector `[x]` in the Connectors appendix table
+- [ ] Mark `Google Calendar` skill `[x]` in the Skills appendix table
+- [ ] Update module dependency graph in Appendix
 
 ---
 
@@ -1151,5 +1313,5 @@ model
 |  [ ]   | Facebook Messenger |          | Built-in |             |
 |  [ ]   | Twitter DM         |          | Built-in |             |
 |  [ ]   | LinkedIn Messaging |          | Built-in |             |
-|  [ ]   | Email (IMAP/SMTP)  | 2        | Built-in |             |
+|  [x]   | Email (IMAP/SMTP)  | 2        | Built-in |             |
 

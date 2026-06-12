@@ -204,6 +204,15 @@ class InitServiceImpl(
     CapabilityName("workspace.write"),
     CapabilityName("shell.execute"),
     CapabilityName("scheduler.manage"),
+    // Email
+    CapabilityName("email.read"),
+    CapabilityName("email.write"),
+    CapabilityName("email.send"),
+    // Calendar
+    CapabilityName("calendar.read"),
+    CapabilityName("calendar.write"),
+    // Drive
+    CapabilityName("drive.read"),
   )
 
   private def seedAdminGrants(
