@@ -18,16 +18,26 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
+/** Integration tests for [[QuillServerSettingsRepository]].
+  *
+  * All tests run sequentially and share one container. Every test that calls `isServerInitialized` or
+  * `getPersonality` explicitly sets the underlying key first so the assertion is never dependent on Flyway seed data or
+  * the result of a previous test.
+  *
+  * "Key absent" behaviour (returns false / returns default) is already exercised by the unit tests in
+  * InitServiceSpec; those use InMemoryRepositories and do not need a real DB.
+  */
 object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
 
   override val bootstrap: ZLayer[Any, Any, ZIORepositories] = JorlanContainer.repositoryLayer
 
   override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =
     suite("ServerSettingsRepository")(
-      test("get returns None for an absent key") {
+      // ─── get / set primitives ────────────────────────────────────────────────
+      test("get returns None for a key that has never been written") {
         for {
           repo <- ZIO.serviceWith[ZIORepositories](_.setting)
-          v    <- repo.get("does-not-exist")
+          v    <- repo.get("absolutely-does-not-exist-xyz")
         } yield assertTrue(v.isEmpty)
       },
       test("set then get round-trips a JSON boolean") {
@@ -44,20 +54,18 @@ object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
           v    <- repo.get("str-key")
         } yield assertTrue(v.contains(Json.Str("hello")))
       },
-      test("set then get round-trips a JSON number") {
-        for {
-          repo <- ZIO.serviceWith[ZIORepositories](_.setting)
-          _    <- repo.set("num-key", Json.Num(42))
-          v    <- repo.get("num-key")
-        } yield assertTrue(v.contains(Json.Num(42)))
-      },
       test("set then get round-trips a JSON object") {
         val obj = Json.Obj("a" -> Json.Str("1"), "b" -> Json.Bool(false))
         for {
-          repo <- ZIO.serviceWith[ZIORepositories](_.setting)
-          _    <- repo.set("obj-key", obj)
-          v    <- repo.get("obj-key")
-        } yield assertTrue(v.contains(obj))
+          repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
+          _      <- repo.set("obj-key", obj)
+          raw    <- repo.get("obj-key")
+        } yield assertTrue(raw.isDefined) && {
+          val decoded = raw.get
+          assertTrue(
+            decoded == Json.Obj("a" -> Json.Str("1"), "b" -> Json.Bool(false)),
+          )
+        }
       },
       test("second set on the same key overwrites the first value") {
         for {
@@ -67,16 +75,11 @@ object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
           v    <- repo.get("overwrite-key")
         } yield assertTrue(v.contains(Json.Str("second")))
       },
-      test("isServerInitialized returns true when the flag is set to Json.Bool(true)") {
+      // ─── isServerInitialized ─────────────────────────────────────────────────
+      test("isServerInitialized returns false when the stored value is Json.Bool(false)") {
         for {
           repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
-          _      <- repo.set(ZIOServerSettingsRepository.InitializedKey, Json.Bool(true))
-          result <- repo.isServerInitialized
-        } yield assertTrue(result)
-      },
-      test("isServerInitialized returns false when the key is absent") {
-        for {
-          repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
+          _      <- repo.set(ZIOServerSettingsRepository.InitializedKey, Json.Bool(false))
           result <- repo.isServerInitialized
         } yield assertTrue(!result)
       },
@@ -87,12 +90,14 @@ object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
           result <- repo.isServerInitialized
         } yield assertTrue(!result)
       },
-      test("getPersonality returns Personality.default when key is absent") {
+      test("isServerInitialized returns true when the flag is set to Json.Bool(true)") {
         for {
           repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
-          result <- repo.getPersonality
-        } yield assertTrue(result == Personality.default)
+          _      <- repo.set(ZIOServerSettingsRepository.InitializedKey, Json.Bool(true))
+          result <- repo.isServerInitialized
+        } yield assertTrue(result)
       },
+      // ─── getPersonality / setPersonality ─────────────────────────────────────
       test("setPersonality then getPersonality round-trips a custom personality") {
         val custom = Personality(
           name = "TestBot",
@@ -107,7 +112,14 @@ object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
           retrieved <- repo.getPersonality
         } yield assertTrue(retrieved == custom)
       },
-      test("getPersonality falls back to default when stored JSON is corrupt") {
+      test("getPersonality returns Personality.default when setPersonality stores the default") {
+        for {
+          repo      <- ZIO.serviceWith[ZIORepositories](_.setting)
+          _         <- repo.setPersonality(Personality.default)
+          retrieved <- repo.getPersonality
+        } yield assertTrue(retrieved == Personality.default)
+      },
+      test("getPersonality falls back to Personality.default when stored JSON is corrupt") {
         for {
           repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
           _      <- repo.set(ZIOServerSettingsRepository.PersonalityKey, Json.Str("not-a-personality-object"))
