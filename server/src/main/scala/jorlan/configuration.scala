@@ -12,7 +12,7 @@ package jorlan
 
 import _root_.ai.LangChainConfig
 import _root_.auth.{AuthConfig, SecretKey}
-import com.typesafe.config.{ConfigFactory, Config as TypesafeConfig}
+import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
 import zio.{Duration, IO, UIO, ZIO, ZLayer}
