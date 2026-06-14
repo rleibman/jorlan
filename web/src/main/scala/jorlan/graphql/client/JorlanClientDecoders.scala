@@ -14,25 +14,27 @@ import caliban.client.CalibanClientError.DecodingError
 import caliban.client.__Value.{__NumberValue, __StringValue}
 import caliban.client.{ArgEncoder, ScalarDecoder}
 import jorlan.*
+import jorlan.graphql.client.JorlanClient.SchedulerJob.SchedulerJobView
+import jorlan.graphql.client.JorlanClient.SchedulerTrigger.SchedulerTriggerView
 
 import scala.util.Try
 
 /** ScalarDecoder and ArgEncoder instances for the Jorlan opaque ID types. Wildcard-imported by the generated
-  * JorlanClient via --imports.
-  *
-  * Uses `implicit val` (not `given`) so that `import JorlanClientDecoders._` picks them up. In Scala 3, `given`
-  * instances are NOT imported by wildcard `._` — only by `import given`. The generated Caliban client uses Scala
-  * 2-style implicit resolution via `._` imports.
-  *
-  * Note: Instant, Long, and Unit already have instances in ScalarDecoder / ArgEncoder companions so they are not
-  * repeated here.
-  */
+ * JorlanClient via --imports.
+ *
+ * Uses `implicit val` (not `given`) so that `import JorlanClientDecoders._` picks them up. In Scala 3, `given`
+ * instances are NOT imported by wildcard `._` — only by `import given`. The generated Caliban client uses Scala
+ * 2-style implicit resolution via `._` imports.
+ *
+ * Note: Instant, Long, and Unit already have instances in ScalarDecoder / ArgEncoder companions so they are not
+ * repeated here.
+ */
 object JorlanClientDecoders {
 
   private def longDecoder[A](
-    wrap: Long => A,
-    name: String,
-  ): ScalarDecoder[A] = {
+                              wrap: Long => A,
+                              name: String,
+                            ): ScalarDecoder[A] = {
     case __NumberValue(v) =>
       Try(v.toLongExact).toEither.left
         .map(e => DecodingError(s"Can't build $name from $v", Some(e)))
@@ -89,9 +91,9 @@ object JorlanClientDecoders {
   // ─── Enum decoders / encoders ─────────────────────────────────────────────────
 
   private def enumDecoder[A](
-    valueOf: String => A,
-    name:    String,
-  ): ScalarDecoder[A] = {
+                              valueOf: String => A,
+                              name:    String,
+                            ): ScalarDecoder[A] = {
     case __StringValue(v) =>
       Try(valueOf(v)).toEither.left.map(e => DecodingError(s"Can't build $name from '$v'", Some(e)))
     case other => Left(DecodingError(s"Expected string for $name, got: $other"))
@@ -104,7 +106,7 @@ object JorlanClientDecoders {
   given ScalarDecoder[SessionStatus] = enumDecoder(SessionStatus.valueOf, "SessionStatus")
   given ScalarDecoder[ApprovalStatus] = enumDecoder(ApprovalStatus.valueOf, "ApprovalStatus")
   given ScalarDecoder[ApprovalMode] = enumDecoder(ApprovalMode.valueOf, "ApprovalMode")
-  given ScalarDecoder[MemoryScope] = enumDecoder(MemoryScope.valueOf, "ApprovalMode")
+  given ScalarDecoder[MemoryScope] = enumDecoder(MemoryScope.valueOf, "MemoryScope")
   given ScalarDecoder[Formality] = enumDecoder(Formality.valueOf, "Formality")
   given ScalarDecoder[ChannelType] = enumDecoder(ChannelType.valueOf, "ChannelType")
   given ScalarDecoder[RiskClass] = enumDecoder(RiskClass.valueOf, "RiskClass")
@@ -123,5 +125,40 @@ object JorlanClientDecoders {
   given ArgEncoder[TriggerType] = enumEncoder(_.toString)
   given ArgEncoder[RetryBackoffPolicy] = enumEncoder(_.toString)
   given ArgEncoder[MissedRunPolicy] = enumEncoder(_.toString)
+
+  given Conversion[SchedulerJobView, SchedulerJob] =
+    (j: SchedulerJobView) =>
+      SchedulerJob(
+        id = j.id,
+        agentId = j.agentId,
+        userId = j.userId,
+        skillId = j.skillId,
+        name = j.name,
+        inputJson = j.inputJson,
+        status = j.status,
+        scheduledAt = j.scheduledAt,
+        startedAt = j.startedAt,
+        finishedAt = j.finishedAt,
+        resultJson = j.resultJson,
+        maxRetries = j.maxRetries,
+        retryCount = j.retryCount,
+        backoffSeconds = j.backoffSeconds,
+        backoffPolicy = j.backoffPolicy,
+        missedRunPolicy = j.missedRunPolicy,
+        leasedAt = j.leasedAt,
+        leasedBy = j.leasedBy,
+        createdAt = j.createdAt,
+      )
+
+  given Conversion[SchedulerTriggerView, SchedulerTrigger] =
+    (t: SchedulerTriggerView) =>
+      SchedulerTrigger(
+        id = t.id,
+        jobId = t.jobId,
+        triggerType = t.triggerType,
+        expression = t.expression,
+        enabled = t.enabled,
+        createdAt = t.createdAt,
+      )
 
 }

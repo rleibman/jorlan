@@ -17,7 +17,7 @@ import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.WebSocketHandler
+import caliban.WebSocketHandler
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls

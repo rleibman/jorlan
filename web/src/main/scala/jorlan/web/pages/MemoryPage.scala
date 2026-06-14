@@ -18,6 +18,7 @@ import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
 import net.leibman.jorlan.muiMaterial.components.*
+import zio.IsSubtypeOfError.impl
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -211,7 +212,7 @@ object MemoryPage {
                       TableRow.withKey(mem.id.value.toString)(
                         TableCell()(mem.recordKey),
                         TableCell()(
-                          Chip.set("label", mem.scope).set("size", "small")(),
+                          Chip.set("label", mem.scope.toString).set("size", "small")(),
                         ),
                         TableCell()(
                           <.span(^.title := mem.value)(

@@ -15,7 +15,7 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.{MuiButton, MuiTextField}
-import jorlan.web.graphql.WebSocketHandler
+import caliban.WebSocketHandler
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls

@@ -14,23 +14,22 @@ import caliban.client.SelectionBuilder
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
+import jorlan.graphql.client.JorlanClient
+import jorlan.graphql.client.JorlanClient.SchedulerJob.SchedulerJobView
+import jorlan.graphql.client.JorlanClient.SchedulerTrigger.SchedulerTriggerView
+import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.web.JorlanWebApp
 import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 
 object SchedulerPage {
 
-  type JobView = JorlanClient.SchedulerJob.SchedulerJobView
-  type TriggerView = JorlanClient.SchedulerTrigger.SchedulerTriggerView
-
   case class State(
-    jobs:     scala.List[JobView],
-    triggers: Map[SchedulerJobId, scala.List[TriggerView]],
+    jobs:     scala.List[SchedulerJob],
+    triggers: Map[SchedulerJobId, scala.List[SchedulerTrigger]],
     expanded: Set[SchedulerJobId],
     loading:  Boolean,
     error:    Option[String],
@@ -63,7 +62,11 @@ object SchedulerPage {
               )
               .flatMap {
                 case Some(jobs) =>
-                  state.setState(state.value.copy(jobs = jobs, loading = false)).asAsyncCallback
+                  state
+                    .setState(
+                      state.value
+                        .copy(jobs = jobs.map(summon[Conversion[SchedulerJobView, SchedulerJob]]), loading = false),
+                    ).asAsyncCallback
                 case None =>
                   state
                     .setState(state.value.copy(loading = false, error = Some("Failed to load jobs")))
@@ -96,7 +99,12 @@ object SchedulerPage {
                   .flatMap {
                     case Some(ts) =>
                       state
-                        .setState(state.value.copy(triggers = state.value.triggers + (jobId -> ts)))
+                        .setState(
+                          state.value.copy(triggers =
+                            state.value.triggers + (jobId -> ts
+                              .map(summon[Conversion[SchedulerTriggerView, SchedulerTrigger]])),
+                          ),
+                        )
                         .asAsyncCallback
                     case None => AsyncCallback.unit
                   }
@@ -140,7 +148,13 @@ object SchedulerPage {
                       )
                       .flatMap {
                         case Some(jobs) =>
-                          state.setState(state.value.copy(jobs = jobs, loading = false)).asAsyncCallback
+                          state
+                            .setState(
+                              state.value.copy(
+                                jobs = jobs.map(summon[Conversion[SchedulerJobView, SchedulerJob]]),
+                                loading = false,
+                              ),
+                            ).asAsyncCallback
                         case None => AsyncCallback.unit
                       }
                       .completeWith(_ => Callback.empty)

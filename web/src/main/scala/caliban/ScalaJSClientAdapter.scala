@@ -8,10 +8,11 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.web.graphql
+package caliban
 
 import caliban.client.*
-import caliban.client.CalibanClientError.DecodingError
+import caliban.client.CalibanClientError.{DecodingError, ServerError}
+import caliban.client.GraphQLResponseError.Location
 import caliban.client.Operations.{IsOperation, RootSubscription}
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import japgolly.scalajs.react.extra.TimerSupport
@@ -45,25 +46,124 @@ trait WebSocketHandler {
 
 }
 
-case class ScalaJSClientAdapter(
-  serverUri:    Uri,
-  connectionId: ConnectionId,
-) extends TimerSupport {
+case class ScalaJSClientAdapter(serverUri: Uri) extends TimerSupport {
 
-  private def requestToJson(q: GraphQLRequest): Option[Json] = {
-    val jsonStr = writeToString(q)(using GraphQLRequest.jsonEncoder)
-    jsonStr.fromJson[Json].toOption
-  }
+  // Custom encoder/decoder for __Value that maps to/from JSON without discriminators
+  given JsonEncoder[__Value] =
+    new JsonEncoder[__Value] {
+      def unsafeEncode(
+        value:  __Value,
+        indent: Option[Int],
+        out:    zio.json.internal.Write,
+      ): Unit = {
+        value match {
+          case __Value.__StringValue(s)    => JsonEncoder.string.unsafeEncode(s, indent, out)
+          case __Value.__NumberValue(n)    => JsonEncoder.bigDecimal.unsafeEncode(n.bigDecimal, indent, out)
+          case __Value.__BooleanValue(b)   => JsonEncoder.boolean.unsafeEncode(b, indent, out)
+          case __Value.__NullValue         => out.write("null")
+          case __Value.__EnumValue(e)      => JsonEncoder.string.unsafeEncode(e, indent, out)
+          case __Value.__ListValue(values) =>
+            out.write('[')
+            var first = true
+            values.foreach { v =>
+              if (!first) out.write(',')
+              first = false
+              unsafeEncode(v, indent, out)
+            }
+            out.write(']')
+          case __Value.__ObjectValue(fields) =>
+            out.write('{')
+            var first = true
+            fields.foreach { case (k, v) =>
+              if (!first) out.write(',')
+              first = false
+              JsonEncoder.string.unsafeEncode(k, indent, out)
+              out.write(':')
+              unsafeEncode(v, indent, out)
+            }
+            out.write('}')
+        }
+      }
+    }
 
+  given JsonDecoder[__Value] =
+    new JsonDecoder[__Value] {
+      def unsafeDecode(
+        trace: List[JsonError],
+        in:    zio.json.internal.RetractReader,
+      ): __Value = {
+        // Parse as zio.json.ast.Json first, then convert
+        val json = JsonDecoder[Json].unsafeDecode(trace, in)
+        jsonToValue(json)
+      }
+
+      private def jsonToValue(json: Json): __Value =
+        json match {
+          case Json.Str(s)      => __Value.__StringValue(s)
+          case Json.Num(n)      => __Value.__NumberValue(n)
+          case Json.Bool(b)     => __Value.__BooleanValue(b)
+          case Json.Null        => __Value.__NullValue
+          case Json.Arr(arr)    => __Value.__ListValue(arr.map(jsonToValue).toList)
+          case Json.Obj(fields) =>
+            __Value.__ObjectValue(fields.toList.map { case (k, v) => k -> jsonToValue(v) })
+        }
+    }
+
+  given JsonEncoder[Location] = DeriveJsonEncoder.gen[Location]
+  given JsonDecoder[Location] = DeriveJsonDecoder.gen[Location]
+  given JsonEncoder[GraphQLResponseError] = DeriveJsonEncoder.gen[GraphQLResponseError]
+  given JsonDecoder[GraphQLResponseError] = DeriveJsonDecoder.gen[GraphQLResponseError]
+
+  given JsonEncoder[__Value.__ObjectValue] =
+    new JsonEncoder[__Value.__ObjectValue] {
+      def unsafeEncode(
+        value:  __Value.__ObjectValue,
+        indent: Option[Int],
+        out:    zio.json.internal.Write,
+      ): Unit = {
+        summon[JsonEncoder[__Value]].unsafeEncode(value, indent, out)
+      }
+    }
+  given JsonDecoder[__Value.__ObjectValue] =
+    new JsonDecoder[__Value.__ObjectValue] {
+      def unsafeDecode(
+        trace: List[JsonError],
+        in:    zio.json.internal.RetractReader,
+      ): __Value.__ObjectValue = {
+        summon[JsonDecoder[__Value]].unsafeDecode(trace, in) match {
+          case obj: __Value.__ObjectValue => obj
+          case other => throw new Exception(s"Expected object but got $other")
+        }
+      }
+    }
+
+  given JsonEncoder[GraphQLResponse] = DeriveJsonEncoder.gen[GraphQLResponse]
+  given JsonDecoder[GraphQLResponse] = DeriveJsonDecoder.gen[GraphQLResponse]
+  given JsonEncoder[GraphQLRequest] = DeriveJsonEncoder.gen[GraphQLRequest]
+  given JsonDecoder[GraphQLRequest] = DeriveJsonDecoder.gen[GraphQLRequest]
   given JsonEncoder[GQLOperationMessage] = DeriveJsonEncoder.gen[GQLOperationMessage]
   given JsonDecoder[GQLOperationMessage] = DeriveJsonDecoder.gen[GQLOperationMessage]
 
+  // Enhancement error management switch this, insteaf of returning AsyncCallback, return an Either[Throwable, A]
   def asyncCalibanCallWithAuth[Origin, A](
     selectionBuilder: SelectionBuilder[Origin, A],
   )(using ev:         IsOperation[Origin],
   ): AsyncCallback[A] = {
     ApiClientSttp4
-      .withAuth(selectionBuilder.toRequest(serverUri), connectionId)
+      .withAuth(selectionBuilder.toRequest(serverUri))
+      .flatMap {
+        case Left(exception) => AsyncCallback.throwException(exception)
+        case Right(value)    => AsyncCallback.pure(value)
+      }
+  }
+
+  // Enhancement error management switch this, insteaf of returning AsyncCallback, return an Either[Throwable, A]
+  def asyncCalibanCallWithAuthOptional[Origin, A](
+    selectionBuilder: SelectionBuilder[Origin, A],
+  )(using ev:         IsOperation[Origin],
+  ): AsyncCallback[A] = {
+    ApiClientSttp4
+      .withAuthOptional(selectionBuilder.toRequest(serverUri))
       .flatMap {
         case Left(exception) => AsyncCallback.throwException(exception)
         case Right(value)    => AsyncCallback.pure(value)
@@ -78,12 +178,14 @@ case class ScalaJSClientAdapter(
     payload: Option[Json] = None,
   )
 
-  object GQLOperationMessage {
+  private object GQLOperationMessage {
 
+    // Client messages
     val GQL_CONNECTION_INIT = "connection_init"
     val GQL_START = "start"
     val GQL_STOP = "stop"
     val GQL_CONNECTION_TERMINATE = "connection_terminate"
+    // Server messages
     val GQL_COMPLETE = "complete"
     val GQL_CONNECTION_ACK = "connection_ack"
     val GQL_CONNECTION_ERROR = "connection_error"
@@ -142,13 +244,13 @@ case class ScalaJSClientAdapter(
     *   calling `Instant.now()` directly so that tests can substitute a deterministic clock.
     */
   def makeWebSocketClient[A](
-    webSocket:            Option[WebSocket],
-    query:                SelectionBuilder[RootSubscription, A],
-    operationId:          String,
-    socketConnectionId:   String,
-    onData:               (String, Option[A]) => Callback,
-    connectionParams:     Option[Json] = None,
-    timeout:              Duration = 8.minutes,
+    webSocket:          Option[WebSocket],
+    query:              SelectionBuilder[RootSubscription, A],
+    operationId:        String,
+    socketConnectionId: String,
+    onData:             (String, Option[A]) => Callback,
+    connectionParams:   Option[Json] = None,
+    timeout: Duration = 8.minutes, // how long the client should wait in ms for a keep-alive message from the server (default 5 minutes), this parameter is ignored if the server does not send keep-alive messages. This will also be used to calculate the max connection time per connect/reconnect
     reconnect:            Boolean = true,
     reconnectionAttempts: Int = 3,
     onConnected:          (String, Option[Json]) => Callback = {
@@ -188,8 +290,8 @@ case class ScalaJSClientAdapter(
       def GQLConnectionInit(): GQLOperationMessage =
         GQLOperationMessage(GQL_CONNECTION_INIT, Option(operationId), connectionParams)
 
-      def GQLStart(q: GraphQLRequest): GQLOperationMessage =
-        GQLOperationMessage(GQL_START, Option(operationId), payload = requestToJson(q))
+      def GQLStart(query: GraphQLRequest): GQLOperationMessage =
+        GQLOperationMessage(GQL_START, Option(operationId), payload = query.toJsonAST.toOption)
 
       def GQLStop(): GQLOperationMessage = GQLOperationMessage(GQL_STOP, Option(operationId))
 
@@ -220,16 +322,16 @@ case class ScalaJSClientAdapter(
 
       private var connectionState: ConnectionState = ConnectionState()
 
-      private val MAX_RECONNECT_DELAY_MS = 10 * 60 * 1000
-      private val MAX_TOTAL_RECONNECT_TIME_MS = 60 * 60 * 1000
-      private val BASE_RECONNECT_DELAY_MS = 1000
+      private val MAX_RECONNECT_DELAY_MS = 10 * 60 * 1000 // 10 minutes
+      private val MAX_TOTAL_RECONNECT_TIME_MS = 60 * 60 * 1000 // 60 minutes
+      private val BASE_RECONNECT_DELAY_MS = 1000 // 1 second
 
       private def calculateBackoffDelay(attemptNumber: Int): Int = {
         val exponentialDelay = (BASE_RECONNECT_DELAY_MS * scala.math.pow(2, attemptNumber)).toInt
         scala.math.min(exponentialDelay, MAX_RECONNECT_DELAY_MS)
       }
 
-      private def attemptReconnect(): Unit =
+      private def attemptReconnect(): Unit = {
         if (connectionState.closed) {
           Callback.log("Not reconnecting - connection was explicitly closed").runNow()
         } else {
@@ -262,6 +364,7 @@ case class ScalaJSClientAdapter(
             connectionState = connectionState.copy(reconnectTimeoutId = Some(timeoutId))
           }
         }
+      }
 
       def doConnect(): Unit = {
         if (!connectionState.closed) {
@@ -283,10 +386,13 @@ case class ScalaJSClientAdapter(
                 onConnected(id.getOrElse(""), payload).runNow()
                 connectionState = connectionState.copy(firstConnection = false, reconnectCount = 0)
               } else onReconnected(id.getOrElse(""), payload).runNow()
-              ws.send(GQLStart(graphql).toJson)
+              val sendMe = GQLStart(graphql)
+              println(s"Sending: $sendMe")
+              ws.send(sendMe.toJson)
             case Right(GQLOperationMessage(GQL_CONNECTION_ERROR, id, payload)) =>
               onServerError(id.getOrElse(""), payload).runNow()
             case Right(GQLOperationMessage(GQL_CONNECTION_KEEP_ALIVE, id, payload)) =>
+              println("ka")
               connectionState = connectionState.copy(reconnectCount = 0)
               if (connectionState.lastKAOpt.isEmpty) {
                 connectionState = connectionState.copy(kaIntervalOpt =
@@ -302,7 +408,8 @@ case class ScalaJSClientAdapter(
                                 connectionState.copy(reconnectCount = connectionState.reconnectCount + 1)
                               onReconnecting(id.getOrElse("")).runNow()
                               doConnect()
-                            }
+                            } else if (connectionState.reconnectCount > reconnectionAttempts)
+                              println("Maximum number of connection retries exceeded")
                           }
                         }
                       },
@@ -314,12 +421,24 @@ case class ScalaJSClientAdapter(
               connectionState = connectionState.copy(lastKAOpt = Option(now()))
               onKeepAlive(payload).runNow()
             case Right(GQLOperationMessage(GQL_DATA, id, payloadOpt)) =>
-              if (!connectionState.closed) {
+              if (connectionState.closed) println("Connection is already closed")
+              else {
                 connectionState = connectionState.copy(reconnectCount = 0)
                 val res = for {
                   payload <- payloadOpt.toRight(DecodingError("No payload"))
-                  payloadStr = payload.toJson
-                  (result, _, _) <- query.decode(payloadStr)
+                  parsed  <-
+                    payload
+                      .as[GraphQLResponse]
+                      .left
+                      .map(ex => DecodingError(s"Json deserialization error: $ex"))
+                  data <-
+                    if (parsed.errors.nonEmpty) Left(ServerError(parsed.errors))
+                    else Right(parsed.data)
+                  objectValue <- data match {
+                    case Some(o) => Right(o)
+                    case _       => Left(DecodingError(s"Result is not an object ($data)"))
+                  }
+                  result <- query.fromGraphQL(objectValue)
                 } yield result
 
                 res match {
@@ -350,7 +469,10 @@ case class ScalaJSClientAdapter(
         }
 
         ws.onclose = { (e: org.scalajs.dom.CloseEvent) =>
-          Callback.log(s"WebSocket closed: ${e.reason}").runNow()
+          if (connectionState.firstConnection)
+            println(s"Socket closed before connection could be established: $query, ${e.reason}")
+          else
+            Callback.log(s"WebSocket closed: ${e.reason}").runNow()
           if (!connectionState.closed) attemptReconnect()
         }
       }
@@ -359,10 +481,12 @@ case class ScalaJSClientAdapter(
 
       override def close(): Callback = {
         if (socket.readyState == WebSocket.CONNECTING) {
-          Callback.log("Socket connecting, retrying close in 1s") >>
+          Callback.log(
+            "Socket is currently connecting, waiting a second for it to finish and then we'r trying again",
+          ) >>
             setTimeoutMs(close(), 1000)
         } else if (socket.readyState == WebSocket.OPEN) {
-          Callback.log(s"Closing WebSocket subscription") >> Callback {
+          Callback.log(s"Closing socket: $query") >> Callback {
             connectionState = connectionState.copy(closed = true)
             connectionState.reconnectTimeoutId.foreach(id => org.scalajs.dom.window.clearTimeout(id))
             connectionState.kaIntervalOpt.foreach(id => org.scalajs.dom.window.clearInterval(id))
@@ -371,7 +495,7 @@ case class ScalaJSClientAdapter(
             socket.close()
           }
         } else
-          Callback.log("WebSocket already closed")
+          Callback.log(s"Socket is already closed: $query")
       }
 
     }

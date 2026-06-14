@@ -11,6 +11,7 @@
 package jorlan.graphql
 
 import caliban.*
+import caliban.introspection.adt.__EnumValue
 import caliban.schema.*
 import caliban.schema.Schema.auto.*
 import caliban.wrappers.Wrapper.OverallWrapper
@@ -73,6 +74,194 @@ object JorlanAPI {
             process(request)
     }
 
+  // ─── Schema instances ─────────────────────────────────────────────────────────
+
+  private given Schema[Any, UserId] =
+    Schema.scalarSchema("UserId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, RoleId] =
+    Schema.scalarSchema("RoleId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, PermissionId] =
+    Schema.scalarSchema("PermissionId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, AgentId] =
+    Schema.scalarSchema("AgentId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, AgentSessionId] =
+    Schema.scalarSchema("AgentSessionId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, ApprovalRequestId] =
+    Schema.scalarSchema("ApprovalRequestId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, EventLogId] =
+    Schema.scalarSchema("EventLogId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, WorkspaceId] =
+    Schema.scalarSchema("WorkspaceId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, CapabilityName] =
+    Schema.scalarSchema("CapabilityName", None, None, None, cn => Value.StringValue(cn.value))
+
+  private given Schema[Any, ModelId] =
+    Schema.scalarSchema("ModelId", None, None, None, id => Value.StringValue(id.value))
+
+  private given Schema[Any, RiskClass] =
+    Schema.scalarSchema("RiskClass", None, None, None, r => Value.StringValue(r.toString))
+
+  private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
+
+  private given Schema[Any, ChannelType] =
+    Schema.scalarSchema("ChannelType", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, ApprovalStatus] =
+    Schema.scalarSchema("ApprovalStatus", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, ApprovalMode] =
+    Schema.scalarSchema("ApprovalMode", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, EventType] =
+    Schema.scalarSchema("EventType", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, SessionStatus] =
+    Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, Formality] =
+    Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
+
+  private given Schema[Any, SkillToolInfo] = Schema.gen[Any, SkillToolInfo]
+
+  private given Schema[Any, SkillInfo] = Schema.gen[Any, SkillInfo]
+
+  private given Schema[Any, ContactIdentityResult] = Schema.gen[Any, ContactIdentityResult]
+
+  private given Schema[Any, ContactResult] = Schema.gen[Any, ContactResult]
+
+  private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
+
+  private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
+
+  private given ArgBuilder[ApprovalMode] = ArgBuilder.string.map(ApprovalMode.valueOf)
+
+  private given ArgBuilder[EventType] = ArgBuilder.string.map(EventType.valueOf)
+
+  private given ArgBuilder[SessionStatus] = ArgBuilder.string.map(SessionStatus.valueOf)
+
+  private given ArgBuilder[RiskClass] = ArgBuilder.string.map(RiskClass.valueOf)
+
+  private given ArgBuilder[Formality] = ArgBuilder.string.map(Formality.valueOf)
+
+  private given Schema[Any, User] = Schema.gen[Any, User]
+
+  private given Schema[Any, Role] = Schema.gen[Any, Role]
+
+  private given Schema[Any, Permission] = Schema.gen[Any, Permission]
+
+  private given Schema[Any, ApprovalRequest] = Schema.gen[Any, ApprovalRequest]
+
+  private given Schema[Any, EventLog[Json]] = Schema.gen[Any, EventLog[Json]]
+
+  private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
+
+  private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
+
+  private given Schema[Any, Personality] = Schema.gen[Any, Personality]
+
+  private given Schema[Any, MemoryRecordId] =
+    Schema.scalarSchema("MemoryRecordId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, MemoryRecord] = Schema.gen[Any, MemoryRecord]
+
+  private given Schema[Any, CapabilityGrantId] =
+    Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, CapabilityGrant] = Schema.gen[Any, CapabilityGrant]
+
+  private given Schema[Any, SchedulerJobId] =
+    Schema.scalarSchema("SchedulerJobId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, SchedulerTriggerId] =
+    Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, JobStatus] =
+    Schema.scalarSchema("JobStatus", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, MemoryScope] =
+    Schema.enumSchema[MemoryScope](
+      name = "MemoryScope",
+      values = MemoryScope.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, TriggerType] =
+    Schema.scalarSchema("TriggerType", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, MissedRunPolicy] =
+    Schema.scalarSchema("MissedRunPolicy", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, RetryBackoffPolicy] =
+    Schema.scalarSchema("RetryBackoffPolicy", None, None, None, e => Value.StringValue(e.toString))
+
+  private given Schema[Any, SkillId] =
+    Schema.scalarSchema("SkillId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, SchedulerJob] = Schema.gen[Any, SchedulerJob]
+
+  private given Schema[Any, SchedulerTrigger] = Schema.gen[Any, SchedulerTrigger]
+
+  // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
+
+  private given ArgBuilder[UserId] = ArgBuilder.long.map(UserId(_))
+  private given ArgBuilder[RoleId] = ArgBuilder.long.map(RoleId(_))
+  private given ArgBuilder[PermissionId] = ArgBuilder.long.map(PermissionId(_))
+  private given ArgBuilder[AgentId] = ArgBuilder.long.map(AgentId(_))
+  private given ArgBuilder[AgentSessionId] = ArgBuilder.long.map(AgentSessionId(_))
+  private given ArgBuilder[EventLogId] = ArgBuilder.long.map(EventLogId(_))
+  private given ArgBuilder[WorkspaceId] = ArgBuilder.long.map(WorkspaceId(_))
+  private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
+  private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
+  private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
+  private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
+  private given ArgBuilder[SchedulerJobId] = ArgBuilder.long.map(SchedulerJobId(_))
+  private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
+  private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
+  private given ArgBuilder[MemoryScope] =
+    ArgBuilder.enumString[MemoryScope] { s =>
+      MemoryScope.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MemoryScope '$s'"))
+    }
+
+  private given ArgBuilder[TriggerType] =
+    ArgBuilder.string.flatMap { s =>
+      TriggerType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
+    }
+  private given ArgBuilder[RetryBackoffPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      RetryBackoffPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
+          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
+        )
+    }
+  private given ArgBuilder[MissedRunPolicy] =
+    ArgBuilder.string.flatMap { s =>
+      MissedRunPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
+    }
+
+  // ─── Query input types ────────────────────────────────────────────────────────
+
   /** GQL-safe view of a single tool exposed by a registered skill. */
   case class SkillToolInfo(
     name:                 String,
@@ -101,53 +290,12 @@ object JorlanAPI {
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL view of a tool invocation event (emitted by the ReAct loop). */
-  case class ToolEventResult(
+  private case class ToolEventResult(
     sessionId: Long,
     eventType: String,
     toolName:  String,
     payload:   String,
   ) derives Schema.SemiAuto, ArgBuilder
-
-  // ─── ArgBuilder instances for opaque ID types, if you remove them you won't get nice Ids in the gql schema ────────────────────────────────
-
-  private given ArgBuilder[UserId] = ArgBuilder.long.map(UserId(_))
-  private given ArgBuilder[RoleId] = ArgBuilder.long.map(RoleId(_))
-  private given ArgBuilder[PermissionId] = ArgBuilder.long.map(PermissionId(_))
-  private given ArgBuilder[AgentId] = ArgBuilder.long.map(AgentId(_))
-  private given ArgBuilder[AgentSessionId] = ArgBuilder.long.map(AgentSessionId(_))
-  private given ArgBuilder[EventLogId] = ArgBuilder.long.map(EventLogId(_))
-  private given ArgBuilder[WorkspaceId] = ArgBuilder.long.map(WorkspaceId(_))
-  private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
-  private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
-  private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
-  private given ArgBuilder[MemoryScope] =
-    ArgBuilder.string.flatMap { s =>
-      MemoryScope.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MemoryScope '$s'"))
-    }
-  private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
-  private given ArgBuilder[SchedulerJobId] = ArgBuilder.long.map(SchedulerJobId(_))
-  private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
-  private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
-  private given ArgBuilder[TriggerType] =
-    ArgBuilder.string.flatMap { s =>
-      TriggerType.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
-    }
-  private given ArgBuilder[RetryBackoffPolicy] =
-    ArgBuilder.string.flatMap { s =>
-      RetryBackoffPolicy.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
-          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
-        )
-    }
-  private given ArgBuilder[MissedRunPolicy] =
-    ArgBuilder.string.flatMap { s =>
-      MissedRunPolicy.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
-    }
-
-  // ─── Query input types ────────────────────────────────────────────────────────
 
   /** Standard pagination input used by list queries. Defaults: `page = 0`, `pageSize = 20`. */
   case class PaginationInput(
@@ -216,6 +364,10 @@ object JorlanAPI {
     content:   String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Necessary because you can't have simple options
+    */
+  case class JobsListInput(optAgentId: Option[AgentId]) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `listMemory` — filters memory records by scope and optional text search. */
   case class ListMemoryInput(
     scope:      MemoryScope = MemoryScope.User,
@@ -275,7 +427,7 @@ object JorlanAPI {
     /** Returns active capability grants for the authenticated user. */
     listCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
     /** Returns scheduler jobs, optionally filtered by agentId. */
-    jobs: Option[AgentId] => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerJob]],
+    jobs: JobsListInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerJob]],
     /** Returns a single scheduler job by ID. */
     job: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[SchedulerJob]],
     /** Returns triggers for a given job. */
@@ -318,97 +470,13 @@ object JorlanAPI {
     notifyUser: NotifyUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
   )
 
-  case class Subscriptions(
+  private case class Subscriptions(
     approvalNotifications: ZStream[JorlanApiEnv & JorlanSession, JorlanError, ApprovalRequest],
     eventLogTail:          ZStream[JorlanApiEnv & JorlanSession, JorlanError, EventLog[Json]],
     agentResponseStream:   AgentSessionId => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ResponseChunk],
     /** Streams tool invocation events for the given session (SkillInvoked / SkillSucceeded). */
     toolEvents: AgentSessionId => ZStream[JorlanApiEnv & JorlanSession, JorlanError, ToolEventResult],
   )
-
-  // ─── Schema instances ─────────────────────────────────────────────────────────
-
-  private given Schema[Any, UserId] =
-    Schema.scalarSchema("UserId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, RoleId] =
-    Schema.scalarSchema("RoleId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, PermissionId] =
-    Schema.scalarSchema("PermissionId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, AgentId] =
-    Schema.scalarSchema("AgentId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, AgentSessionId] =
-    Schema.scalarSchema("AgentSessionId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, ApprovalRequestId] =
-    Schema.scalarSchema("ApprovalRequestId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, EventLogId] =
-    Schema.scalarSchema("EventLogId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, WorkspaceId] =
-    Schema.scalarSchema("WorkspaceId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, CapabilityName] =
-    Schema.scalarSchema("CapabilityName", None, None, None, cn => Value.StringValue(cn.value))
-  private given Schema[Any, ModelId] =
-    Schema.scalarSchema("ModelId", None, None, None, id => Value.StringValue(id.value))
-  private given Schema[Any, RiskClass] =
-    Schema.scalarSchema("RiskClass", None, None, None, r => Value.StringValue(r.toString))
-  private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
-  private given Schema[Any, ChannelType] =
-    Schema.scalarSchema("ChannelType", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, ApprovalStatus] =
-    Schema.scalarSchema("ApprovalStatus", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, ApprovalMode] =
-    Schema.scalarSchema("ApprovalMode", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, EventType] =
-    Schema.scalarSchema("EventType", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, SessionStatus] =
-    Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, Formality] =
-    Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
-  private given Schema[Any, SkillToolInfo] = Schema.gen[Any, SkillToolInfo]
-  private given Schema[Any, SkillInfo] = Schema.gen[Any, SkillInfo]
-  private given Schema[Any, ContactIdentityResult] = Schema.gen[Any, ContactIdentityResult]
-  private given Schema[Any, ContactResult] = Schema.gen[Any, ContactResult]
-
-  private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
-  private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
-  private given ArgBuilder[ApprovalMode] = ArgBuilder.string.map(ApprovalMode.valueOf)
-  private given ArgBuilder[EventType] = ArgBuilder.string.map(EventType.valueOf)
-  private given ArgBuilder[SessionStatus] = ArgBuilder.string.map(SessionStatus.valueOf)
-  private given ArgBuilder[RiskClass] = ArgBuilder.string.map(RiskClass.valueOf)
-  private given ArgBuilder[Formality] = ArgBuilder.string.map(Formality.valueOf)
-
-  private given Schema[Any, User] = Schema.gen[Any, User]
-  private given Schema[Any, Role] = Schema.gen[Any, Role]
-  private given Schema[Any, Permission] = Schema.gen[Any, Permission]
-  private given Schema[Any, ApprovalRequest] = Schema.gen[Any, ApprovalRequest]
-  private given Schema[Any, EventLog[Json]] = Schema.gen[Any, EventLog[Json]]
-  private given Schema[Any, AgentSession] = Schema.gen[Any, AgentSession]
-  private given Schema[Any, ResponseChunk] = Schema.gen[Any, ResponseChunk]
-  private given Schema[Any, Personality] = Schema.gen[Any, Personality]
-  private given Schema[Any, MemoryScope] =
-    Schema.scalarSchema("MemoryScope", None, None, None, s => Value.StringValue(s.toString))
-  private given Schema[Any, MemoryRecordId] =
-    Schema.scalarSchema("MemoryRecordId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, MemoryRecord] = Schema.gen[Any, MemoryRecord]
-  private given Schema[Any, CapabilityGrantId] =
-    Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, CapabilityGrant] = Schema.gen[Any, CapabilityGrant]
-  private given Schema[Any, SchedulerJobId] =
-    Schema.scalarSchema("SchedulerJobId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, SchedulerTriggerId] =
-    Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, JobStatus] =
-    Schema.scalarSchema("JobStatus", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, TriggerType] =
-    Schema.scalarSchema("TriggerType", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, MissedRunPolicy] =
-    Schema.scalarSchema("MissedRunPolicy", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, RetryBackoffPolicy] =
-    Schema.scalarSchema("RetryBackoffPolicy", None, None, None, e => Value.StringValue(e.toString))
-  private given Schema[Any, SkillId] =
-    Schema.scalarSchema("SkillId", None, None, None, id => Value.IntValue(id.value))
-  private given Schema[Any, SchedulerJob] = Schema.gen[Any, SchedulerJob]
-  private given Schema[Any, SchedulerTrigger] = Schema.gen[Any, SchedulerTrigger]
 
   // ─── Authorization helpers ────────────────────────────────────────────────────
 
@@ -544,11 +612,11 @@ object JorlanAPI {
               _.permission.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
             )
           } yield grants,
-          jobs = agentIdOpt =>
+          jobs = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("scheduler.manage", actorId)
-              jobs    <- ZIO.serviceWithZIO[JobManager](_.listJobs(agentIdOpt))
+              jobs    <- ZIO.serviceWithZIO[JobManager](_.listJobs(input.optAgentId))
             } yield jobs,
           job = id =>
             for {
@@ -895,7 +963,7 @@ object JorlanAPI {
                         toolName,
                         resultJson,
                       )
-                  }.mapError(_ => JorlanError("toolEvents stream error"))
+                  }
               },
             ),
         ),

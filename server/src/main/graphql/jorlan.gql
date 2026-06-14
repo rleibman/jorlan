@@ -33,8 +33,6 @@ scalar Long
 
 scalar MemoryRecordId
 
-scalar MemoryScope
-
 scalar MissedRunPolicy
 
 scalar ModelId
@@ -62,6 +60,13 @@ scalar Unit
 scalar UserId
 
 scalar WorkspaceId
+
+enum MemoryScope {
+  User
+  Shared
+  Workspace
+  Private
+}
 
 type AgentSession {
   id: AgentSessionId!
@@ -196,7 +201,7 @@ type Queries {
   serverPersonality: Personality
   listMemory(scope: MemoryScope!, textSearch: String): [MemoryRecord!]
   listCapabilities: [CapabilityGrant!]
-  jobs(value: AgentId): [SchedulerJob!]
+  jobs(optAgentId: AgentId): [SchedulerJob!]
   job(value: SchedulerJobId!): SchedulerJob
   triggers(value: SchedulerJobId!): [SchedulerTrigger!]
   listApprovals: [ApprovalRequest!]

@@ -13,8 +13,8 @@ package jorlan.web.util
 import caliban.client.CalibanClientError
 import japgolly.scalajs.react.{AsyncCallback, Callback}
 import jorlan.ConnectionId
+import jorlan.web.JorlanWebApp
 import org.scalajs.dom.window
-import sttp.capabilities
 import sttp.client4.*
 import sttp.client4.fetch.FetchBackend
 import sttp.model.*
@@ -25,20 +25,21 @@ import scala.language.unsafeNulls
 
 object ApiClientSttp4 {
 
-  import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
-
-  private def encodeConnectionId(connectionId: ConnectionId): String = {
-    java.util.Base64.getEncoder.nn.encodeToString(connectionId.toJson.getBytes).nn
+  private def encodeConnectionId[ConnectionId: JsonEncoder](connectionId: ConnectionId): String = {
+    java.util.Base64.getEncoder.encodeToString(connectionId.toJson.getBytes)
   }
+  // All of this goes away once caliban supports sttp4
+
+  import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
   private def asyncJwtToken: AsyncCallback[Option[String]] =
     AsyncCallback.pure(Option(window.localStorage.getItem("jwtToken")))
 
-  val backend: WebSocketBackend[Future] = FetchBackend()
+  private val backend: WebSocketBackend[Future] = FetchBackend()
 
-  case class ZioJsonException(error: String) extends Exception
+  private case class ZioJsonException(error: String) extends Exception
 
-  object JsonInput {
+  private object JsonInput {
 
     def sanitize[T: IsOption]: String => String = { s =>
       if (implicitly[IsOption[T]].isOption && s.trim.isEmpty) "null" else s
@@ -49,8 +50,25 @@ object ApiClientSttp4 {
   def asJson[B: {JsonDecoder, IsOption}]: ResponseAs[Either[ResponseException[String], B]] =
     asString.mapWithMetadata(ResponseAs.deserializeRightWithError(deserializeJson))
 
-  def deserializeJson[B: {JsonDecoder, IsOption}]: String => Either[Exception, B] =
+  private def deserializeJson[B: {JsonDecoder, IsOption}]: String => Either[Exception, B] =
     JsonInput.sanitize[B].andThen(_.fromJson[B].left.map(ZioJsonException(_)))
+
+  def withAuthOptional[A](
+    request: Request[Either[CalibanClientError, A]],
+  ): AsyncCallback[Either[CalibanClientError, A]] = {
+    def doCall(tokOpt: Option[String]): AsyncCallback[Response[Either[CalibanClientError, A]]] = {
+      AsyncCallback.fromFuture {
+        val reqWithConnectionId = request.header("X-Connection-Id", encodeConnectionId(JorlanWebApp.connectionId))
+        val finalReq = tokOpt.fold(reqWithConnectionId)(tok => reqWithConnectionId.auth.bearer(tok))
+        finalReq.send(backend)
+      }
+    }
+
+    for {
+      tokOpt   <- asyncJwtToken
+      response <- doCall(tokOpt)
+    } yield response.body
+  }
 
   /** Executes a Caliban GraphQL request with JWT Bearer authentication.
     *
@@ -64,9 +82,8 @@ object ApiClientSttp4 {
     *   called when there is no token or a refresh fails; the default reloads the page so `LoginRouter` re-gates.
     */
   def withAuth[A](
-    request:      Request[Either[CalibanClientError, A]],
-    connectionId: ConnectionId,
-    onAuthError:  String => AsyncCallback[Any] = msg =>
+    request:     Request[Either[CalibanClientError, A]],
+    onAuthError: String => AsyncCallback[Any] = msg =>
       AsyncCallback.pure {
         window.console.log(msg)
         window.location.reload()
@@ -75,7 +92,7 @@ object ApiClientSttp4 {
     def doCall(tok: String): AsyncCallback[Response[Either[CalibanClientError, A]]] = {
       AsyncCallback.fromFuture {
         request
-          .header("X-Connection-Id", encodeConnectionId(connectionId))
+          .header("X-Connection-Id", encodeConnectionId(JorlanWebApp.connectionId))
           .auth
           .bearer(tok)
           .send(backend)
@@ -123,6 +140,7 @@ object ApiClientSttp4 {
         case Some(other) if other.code == StatusCode.Unauthorized =>
           // Token is definitively invalid — clear it so the user is redirected to login
           AsyncCallback.pure {
+            // Clear the token
             window.localStorage.removeItem("jwtToken")
           } >>
             AsyncCallback.pure(other.body)
