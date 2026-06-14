@@ -10,7 +10,8 @@
 
 package jorlan
 
-import jorlan.domain.*
+import jorlan
+.*
 import jorlan.service.EventLogFilter
 import zio.json.JsonEncoder
 import zio.json.ast.Json

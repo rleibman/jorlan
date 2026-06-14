@@ -58,6 +58,21 @@ type: project
 - Missing event log writes: `pauseJob`, `resumeJob`, `triggerNow`, `deleteJob`, `addTrigger` mutations in JorlanAPI have no `logEvent` call; `SchedulerJobPaused`/`SchedulerJobResumed`/`SchedulerJobDeleted` event types don't even exist in `EventType`
 - `decideApproval` mutation has no `requireCapability` guard — any authenticated user can approve/reject any approval request
 
+## Phase 13 Findings (2026-06-12)
+- `logEvent` helper duplicated verbatim in EmailSkill, GoogleCalendarSkill, GoogleDriveSkill — each has an identical private method; extract to a shared trait or utility
+- `GoogleNetHttpTransport.newTrustedTransport()` + `GsonFactory.getDefaultInstance` called in constructor eager vals in all 3 Google providers — blocking JVM calls at construction time, not wrapped in ZIO.attemptBlocking; can throw at startup
+- `listMessages` in GmailProvider is an N+1 query: fetches message references then issues one `get` per message; each get call also re-fetches the access token and recreates the Gmail client — O(N) token refreshes per list call
+- `FakeEmailProvider` is defined in the same file as `EmailSkillSpec` (test source), correct pattern; but `FakeCalendarProvider`, `FakeDriveProvider`, `FakeGmailProvider` are in `google-services/src/test/` with no corresponding Fake* in the `email/` module — inconsistent placement across modules
+- `invokeTool` mutation in JorlanAPI has no `requireCapability` guard — any authenticated user can invoke any registered skill tool including email.send, calendar.createEvent, drive.downloadFile
+- `emailDelete` logs with `EventType.EmailMessageArchived` instead of a dedicated `EmailMessageDeleted` type — incorrect event type silently wrong
+- `Instant.now()` used in `OAuthRoutes.verifyStateJwt` (line 86) instead of `ZIO Clock` — bypasses test clock, not deterministically testable
+- No HTTP response status check after token exchange in OAuthRoutes (callbackRoute line 158) or after token refresh in OAuthCredentialServiceImpl (callTokenRefresh) — a 400/401 from Google is silently parsed as JSON and stored as a credential
+- `OAuthCredentialEncryptor` key derivation calls `md.update(salt)` then `md.digest(secret)` — the salt is not concatenated with the secret; SHA-256 over salt then over secret != HKDF; weak KDF
+- `GoogleOAuthSettings.clientSecret` exposed in config with default `""` and no startup validation; the secret is also baked into the `callTokenRefresh` HTTP body built in `OAuthCredentialServiceImpl` as a plain string interpolation — no explicit log-scrubbing guard
+- `IOExternalCredentialRepository` anonymous inner class constructed inline in `EnvironmentBuilder.live` (lines 77-96) — 20-line anonymous class adapting `RepositoryError` to `JorlanError`; should be extracted to a named adapter or a helper method on the repository companion
+- Providers (`GmailProvider`, `GoogleCalendarProvider`, `GoogleDriveProvider`) are constructed with `new` as plain instances in `Jorlan.registerBuiltInSkills` — no ZLayer, no ZIO service pattern, no testability injection point at the wiring site; inconsistent with how `OAuthCredentialService` is provided (as a proper ZLayer)
+- `ImapSmtpProvider` has all 6 methods returning `ZIO.fail(JorlanError("... not yet implemented"))` — ships a production class that crashes on every call; should either not be registered or gated behind a feature flag
+
 ## Phase 12 Findings (2026-06-10)
 - `getStr` helper duplicated verbatim in NotifySkill, ContactsSkill, WorkspaceSkill, ShellSkill — extract to a shared `SkillArgs` utility object
 - `parseChannelType` duplicated in ContactsSkill and NotifySkill — identical one-liner

@@ -13,8 +13,6 @@ package jorlan.web.graphql.client
 import caliban.client.FieldBuilder._
 import caliban.client._
 
-import jorlan.domain._
-import jorlan.web.graphql.client.JorlanClientDecoders._
 
 object JorlanClient {
 
