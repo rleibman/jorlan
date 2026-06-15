@@ -754,7 +754,21 @@ object InMemoryRepositories {
           store.get.map(_.get(id.value))
 
         override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] =
-          store.get.map(_.values.toList)
+          store.get.map { m =>
+            val filtered = m.values.toList.filter(_.workspaceId.contains(s.workspaceId))
+            val sorted = s.sorts match {
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))      => filtered.sortBy(_.name)
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc))     => filtered.sortBy(_.name)(Ordering[String].reverse)
+              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc)) => filtered.sortBy(_.createdAt)
+              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) =>
+                filtered.sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Asc))        => filtered.sortBy(_.id.value)
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc))       => filtered.sortBy(_.id.value)(Ordering[Long].reverse)
+              case None                                                    => filtered
+            }
+            val from = s.page * s.pageSize
+            sorted.slice(from, from + s.pageSize)
+          }
 
         override def upsert(artifact: Artifact): RepositoryTask[Artifact] =
           if (artifact.id == ArtifactId.empty) {
