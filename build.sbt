@@ -85,6 +85,14 @@ enablePlugins(
   com.github.sbt.git.GitVersioning,
 )
 
+val emilVersion = "0.19.0"
+val zioInteropCatsVersion = "23.1.0.5"
+val bouncyCastleVersion = "1.79"
+val googleApiClientVersion = "2.9.0"
+val googleApisGmailVersion = "v1-rev20260112-2.0.0"
+val googleApisCalendarVersion = "v3-rev20251123-2.0.0"
+val googleApisDriveVersion = "v3-rev20260220-2.0.0"
+val googleAuthLibraryVersion = "1.48.0"
 val telegramiumVersion = "10.1000.0"
 val calibanClientVersion = "3.1.2"
 val calibanVersion = "3.1.2"
@@ -226,6 +234,61 @@ lazy val telegramConnector = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Email Connector — IMAP/SMTP provider + PGP service
+
+lazy val emailConnector = project
+  .in(file("email"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(model, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-email",
+    libraryDependencies ++= Seq(
+      "dev.zio"          %% "zio"              % zioVersion withSources (),
+      "dev.zio"          %% "zio-json"         % zioJsonVersion withSources (),
+      "dev.zio"          %% "zio-http"         % zioHttpVersion withSources (),
+      "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
+      "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
+      "dev.zio"          %% "zio-interop-cats" % zioInteropCatsVersion withSources (),
+      "org.bouncycastle"  % "bcpg-jdk18on"     % bouncyCastleVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
+
+lazy val googleServices = project
+  .in(file("google-services"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(model, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-google-services",
+    libraryDependencies ++= Seq(
+      "dev.zio"                %% "zio"                               % zioVersion withSources (),
+      "dev.zio"                %% "zio-json"                          % zioJsonVersion withSources (),
+      "dev.zio"                %% "zio-http"                          % zioHttpVersion withSources (),
+      "com.google.api-client"   % "google-api-client"                 % googleApiClientVersion withSources (),
+      "com.google.apis"         % "google-api-services-gmail"         % googleApisGmailVersion withSources (),
+      "com.google.apis"         % "google-api-services-calendar"      % googleApisCalendarVersion withSources (),
+      "com.google.apis"         % "google-api-services-drive"         % googleApisDriveVersion withSources (),
+      "com.google.auth"         % "google-auth-library-oauth2-http"   % googleAuthLibraryVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Analytics
 
 lazy val analytics = project
@@ -269,7 +332,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(model, ai, analytics, connectorApi, telegramConnector)
+  .dependsOn(model, ai, analytics, connectorApi, telegramConnector, emailConnector, googleServices)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -668,6 +731,8 @@ lazy val root = project
     model,
     connectorApi,
     telegramConnector,
+    emailConnector,
+    googleServices,
     ai,
     server,
     shell,

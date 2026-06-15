@@ -65,11 +65,67 @@ object JorlanAPISpec extends ZIOSpecDefault {
       MemoryServiceImpl.live,
     )
 
+  private val noOpOAuthCredSvc: ULayer[OAuthCredentialService] = ZLayer.succeed(new OAuthCredentialService {
+    override def store(
+      userId:    UserId,
+      provider:  String,
+      plainJson: zio.json.ast.Json,
+    ): IO[JorlanError, Unit] =
+      ZIO.unit
+    override def load(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, Option[zio.json.ast.Json]] = ZIO.none
+    override def revoke(
+      userId:   UserId,
+      provider: String,
+    ):                                          IO[JorlanError, Unit] = ZIO.unit
+    override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+    override def refreshAccessToken(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.fail(JorlanError("no credentials"))
+    override def getExpiresAt(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+  })
+
+  private val connectedOAuthCredSvc: ULayer[OAuthCredentialService] = ZLayer.succeed(new OAuthCredentialService {
+    override def store(
+      userId:    UserId,
+      provider:  String,
+      plainJson: zio.json.ast.Json,
+    ): IO[JorlanError, Unit] =
+      ZIO.unit
+    override def load(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, Option[zio.json.ast.Json]] =
+      ZIO.some(zio.json.ast.Json.Obj())
+    override def revoke(
+      userId:   UserId,
+      provider: String,
+    ):                                          IO[JorlanError, Unit] = ZIO.unit
+    override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(List("google"))
+    override def refreshAccessToken(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.fail(JorlanError("no credentials"))
+    override def getExpiresAt(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+  })
+
   private def makeAppLayer(
-    capEval:     ULayer[CapabilityEvaluator] = allowAll,
-    session:     ULayer[JorlanSession] = serverSessionLayer,
-    memSvcLayer: ULayer[MemoryService] = NoOpMemoryService.layer,
-    repoLayer:   ULayer[ZIORepositories] = InMemoryRepositories.live(),
+    capEval:           ULayer[CapabilityEvaluator] = allowAll,
+    session:           ULayer[JorlanSession] = serverSessionLayer,
+    memSvcLayer:       ULayer[MemoryService] = NoOpMemoryService.layer,
+    repoLayer:         ULayer[ZIORepositories] = InMemoryRepositories.live(),
+    oauthCredSvcLayer: ULayer[OAuthCredentialService] = noOpOAuthCredSvc,
   ): ULayer[FullEnv] = {
     val hubLayer = SessionHub.live
 
@@ -133,6 +189,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       JobManagerImpl.live,
       approvalSvcLayer,
       noOpNotificationRouter,
+      oauthCredSvcLayer,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
   }
@@ -164,6 +221,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
       memorySuite,
       schedulerSuite,
       modelSuite,
+      oauthSuite,
+      invokeToolSuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -839,6 +898,110 @@ object JorlanAPISpec extends ZIOSpecDefault {
         termResult.data.toString.contains("true"),
         listResult.errors.isEmpty,
         listResult.data.toString.contains("Completed"),
+      )
+    }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── OAuth resolver tests (P13-009) ──────────────────────────────────────────
+
+  private val oauthSuite = suite("OAuth resolvers")(
+    test("oauthStatus returns connected=false when no credentials stored") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ oauthStatus(value: "google") { connected expiresAt } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("false"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("listOAuthProviders returns empty list when no credentials stored") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listOAuthProviders }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("[]"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("oauthStatus returns connected=true when credential stored") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ oauthStatus(value: "google") { connected } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("true"),
+      )
+    }.provideLayer(makeAppLayer(oauthCredSvcLayer = connectedOAuthCredSvc)),
+    test("startOAuth returns a URL for authenticated user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { startOAuth(value: "google") { authUrl } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("oauth"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("startOAuth fails for unauthenticated user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { startOAuth(value: "google") { authUrl } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("revokeOAuth returns true for authenticated user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { revokeOAuth(value: "google") }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("true"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("revokeOAuth fails for unauthenticated user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { revokeOAuth(value: "google") }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+  )
+
+  // ─── invokeTool tests (P13-009) ───────────────────────────────────────────────
+
+  private val invokeToolSuite = suite("invokeTool resolver")(
+    test("invokeTool fails for unauthenticated user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { invokeTool(toolName: "memory.store", argsJson: "{}") }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("invokeTool fails when capability check denies") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { invokeTool(toolName: "memory.store", argsJson: "{}") }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("invokeTool invokes a registered tool when authorized") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { invokeTool(toolName: "memory.list", argsJson: "{}") }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("invokeTool returns error string for unknown tool name") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { invokeTool(toolName: "no.such.tool", argsJson: "{}") }""",
+        )
+        dataStr = result.data.toString
+      } yield assertTrue(
+        // SkillRegistry returns errors as JSON strings, not GraphQL errors
+        result.errors.isEmpty,
+        dataStr.contains("Error:"),
       )
     }.provideLayer(makeAppLayer()),
   )

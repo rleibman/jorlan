@@ -750,19 +750,47 @@ object InMemoryRepositories {
         idGen <- Ref.make(0L)
         store <- Ref.make(Map.empty[Long, Artifact])
       } yield new ZIOArtifactRepository {
-        override def getById(id: ArtifactId): RepositoryTask[Option[Artifact]] = ???
+        override def getById(id: ArtifactId): RepositoryTask[Option[Artifact]] =
+          store.get.map(_.get(id.value))
 
-        override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] = ???
+        override def search(s: ArtifactSearch): RepositoryTask[List[Artifact]] =
+          store.get.map { m =>
+            val filtered = m.values.toList.filter(_.workspaceId.contains(s.workspaceId))
+            val sorted = s.sorts match {
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))      => filtered.sortBy(_.name)
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc))     => filtered.sortBy(_.name)(Ordering[String].reverse)
+              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc)) => filtered.sortBy(_.createdAt)
+              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) =>
+                filtered.sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Asc))        => filtered.sortBy(_.id.value)
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc))       => filtered.sortBy(_.id.value)(Ordering[Long].reverse)
+              case None                                                    => filtered
+            }
+            val from = s.page * s.pageSize
+            sorted.slice(from, from + s.pageSize)
+          }
 
-        override def upsert(artifact: Artifact): RepositoryTask[Artifact] = ???
+        override def upsert(artifact: Artifact): RepositoryTask[Artifact] =
+          if (artifact.id == ArtifactId.empty) {
+            idGen.updateAndGet(_ + 1).flatMap { newId =>
+              val saved = artifact.copy(id = ArtifactId(newId))
+              store.update(_.updated(newId, saved)) *> ZIO.succeed(saved)
+            }
+          } else {
+            store.update(_.updated(artifact.id.value, artifact)) *> ZIO.succeed(artifact)
+          }
 
-        override def delete(id: ArtifactId): RepositoryTask[Long] = ???
+        override def delete(id: ArtifactId): RepositoryTask[Long] =
+          store.update(_.removed(id.value)) *> ZIO.succeed(id.value)
 
-        override def getWorkspace(id: WorkspaceId): RepositoryTask[Option[Workspace]] = ???
+        override def getWorkspace(id: WorkspaceId): RepositoryTask[Option[Workspace]] =
+          ZIO.succeed(None)
 
-        override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] = ???
+        override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] =
+          ZIO.succeed(Nil)
 
-        override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] = ???
+        override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] =
+          ZIO.succeed(ws)
       }
 
   }
@@ -841,16 +869,17 @@ object InMemoryRepositories {
           _.build.map(_.get[ZIOServerSettingsRepository]),
         )
       } yield new ZIORepositories {
-        override def user:         ZIOUserRepository = userRepo
-        override def agent:        ZIOAgentRepository = agentRepo
-        override def conversation: ZIOConversationRepository = conversationRepo
-        override def skill:        ZIOSkillRepository = skillRepo
-        override def memory:       ZIOMemoryRepository = memoryRepo
-        override def eventLog:     ZIOEventLogRepository = eventLogRepo
-        override def scheduler:    ZIOSchedulerRepository = schedulerRepo
-        override def artifact:     ZIOArtifactRepository = artifactRepo
-        override def permission:   ZIOPermissionRepository = permissionRepo
-        override def setting:      ZIOServerSettingsRepository = settingsRepo
+        override def user:          ZIOUserRepository = userRepo
+        override def agent:         ZIOAgentRepository = agentRepo
+        override def conversation:  ZIOConversationRepository = conversationRepo
+        override def skill:         ZIOSkillRepository = skillRepo
+        override def memory:        ZIOMemoryRepository = memoryRepo
+        override def eventLog:      ZIOEventLogRepository = eventLogRepo
+        override def scheduler:     ZIOSchedulerRepository = schedulerRepo
+        override def artifact:      ZIOArtifactRepository = artifactRepo
+        override def permission:    ZIOPermissionRepository = permissionRepo
+        override def setting:       ZIOServerSettingsRepository = settingsRepo
+        override def extCredential: ZIOExternalCredentialRepository = original.extCredential
       })
     }
 
@@ -880,6 +909,7 @@ object InMemoryRepositories {
         artifactRepo     <- artifactRepoOpt.fold(InMemoryArtifactRepo.make)(ZIO.succeed)
         permissionRepo   <- permissionRepoOpt.fold(InMemoryPermissionRepo.make)(ZIO.succeed)
         settingsRepo     <- settingsRepoOpt.fold(InMemoryServerSettingsRepo.make())(ZIO.succeed)
+        extCredRepo      <- InMemoryExtCredentialRepo.make
       } yield new ZIORepositories {
         override def user: ZIOUserRepository = userRepo
 
@@ -900,7 +930,67 @@ object InMemoryRepositories {
         override def permission: ZIOPermissionRepository = permissionRepo
 
         override def setting: ZIOServerSettingsRepository = settingsRepo
+
+        override def extCredential: ZIOExternalCredentialRepository = extCredRepo
       }
+    }
+
+}
+
+private class InMemoryExtCredentialRepo(
+  idGen: Ref[Long],
+  store: Ref[Map[(Long, String), ExternalCredential]],
+) extends ZIOExternalCredentialRepository {
+
+  override def upsert(
+    userId:        UserId,
+    provider:      String,
+    encryptedData: Json,
+    expiresAt:     Option[Instant],
+    scopes:        Option[String],
+  ): RepositoryTask[Unit] =
+    for {
+      now      <- Clock.instant
+      existing <- store.get.map(_.get((userId.value, provider)))
+      id       <- existing match {
+        case Some(e) => ZIO.succeed(e.id)
+        case None    => idGen.updateAndGet(_ + 1).map(ExternalCredentialId(_))
+      }
+      cred = ExternalCredential(
+        id = id,
+        userId = userId,
+        provider = provider,
+        credentialData = encryptedData,
+        expiresAt = expiresAt,
+        scopes = scopes,
+        createdAt = existing.map(_.createdAt).getOrElse(now),
+        updatedAt = now,
+      )
+      _ <- store.update(_.updated((userId.value, provider), cred))
+    } yield ()
+
+  override def find(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Option[ExternalCredential]] =
+    store.get.map(_.get((userId.value, provider)))
+
+  override def delete(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Unit] =
+    store.update(_.removed((userId.value, provider)))
+
+  override def listByUser(userId: UserId): RepositoryTask[List[ExternalCredential]] =
+    store.get.map(_.values.filter(_.userId == userId).toList)
+
+}
+
+object InMemoryExtCredentialRepo {
+
+  def make: UIO[InMemoryExtCredentialRepo] =
+    (Ref.make(0L) <*> Ref.make(Map.empty[(Long, String), ExternalCredential])).map { case (idGen, store) =>
+      InMemoryExtCredentialRepo(idGen, store)
     }
 
 }

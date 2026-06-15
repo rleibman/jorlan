@@ -208,6 +208,12 @@ object InitServiceSpec extends ZIOSpecDefault {
           "workspace.write",
           "shell.execute",
           "scheduler.manage",
+          "email.read",
+          "email.write",
+          "email.send",
+          "calendar.read",
+          "calendar.write",
+          "drive.read",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]

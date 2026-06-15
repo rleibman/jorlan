@@ -60,6 +60,15 @@ object CommandHandler {
       case ShellCommand.ApprovalsList                       => listApprovals
       case ShellCommand.ApprovalsApprove(id)                => decideApproval(id, approved = true)
       case ShellCommand.ApprovalsDeny(id)                   => decideApproval(id, approved = false)
+      case ShellCommand.OAuthStatus(provider)               => showOAuthStatus(provider)
+      case ShellCommand.OAuthConnect(provider)              => connectOAuth(provider)
+      case ShellCommand.OAuthRevoke(provider)               => revokeOAuth(provider)
+      case ShellCommand.OAuthList                           => listOAuthProviders
+      case ShellCommand.EmailList(maxResults)               => emailList(maxResults)
+      case ShellCommand.EmailRead(messageId)                => emailRead(messageId)
+      case ShellCommand.EmailSearch(query)                  => emailSearch(query)
+      case ShellCommand.CalendarToday                       => calendarToday
+      case ShellCommand.CalendarList(date)                  => calendarList(date)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -139,6 +148,15 @@ object CommandHandler {
       "/approvals list                      List pending approval requests",
       "/approvals approve <id>              Approve a pending request",
       "/approvals deny <id>                 Deny a pending request",
+      "/oauth status <provider>             Show OAuth connection status for a provider",
+      "/oauth connect <provider>            Start OAuth authorization flow for a provider",
+      "/oauth revoke <provider>             Revoke stored OAuth credentials for a provider",
+      "/oauth list                          List all connected OAuth providers",
+      "/email list [maxResults]             List recent email messages",
+      "/email read <messageId>              Read a specific email message",
+      "/email search <query>                Search email messages",
+      "/calendar today                      List today's calendar events",
+      "/calendar list [YYYY-MM-DD]          List calendar events for a date",
       "/trace [level]      Set log level: none | error | warning | info | debug",
       "/quit /exit         Exit the shell",
     )
@@ -568,6 +586,139 @@ object CommandHandler {
         }
       },
     )
+  }
+
+  private def showOAuthStatus(provider: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.oauthStatus(provider, JorlanClient.OAuthStatus.view))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not get OAuth status: $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.System, s"OAuth status for '$provider': not found"))
+        case Some(s) =>
+          val expiry = s.expiresAt.map(t => s"  expires: $t").getOrElse("")
+          screen(_.addMessage(MessageKind.System, s"OAuth '$provider': connected=${s.connected}$expiry"))
+      },
+    )
+
+  private val listOAuthProviders: ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Queries.listOAuthProviders)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list OAuth providers: $err")),
+      {
+        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No OAuth providers connected."))
+        case Some(providers)  =>
+          screen(_.addMessage(MessageKind.System, s"Connected OAuth providers: ${providers.mkString(", ")}"))
+      },
+    )
+
+  private def connectOAuth(provider: String): ZIO[Env, Nothing, Unit] =
+    for {
+      serverUrl <- cfg(_.serverUrl)
+      _ <- gql(_.run(JorlanClient.Mutations.startOAuth(provider, JorlanClient.OAuthStartResult.authUrl))).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not start OAuth: $err")),
+        {
+          case None =>
+            screen(_.addMessage(MessageKind.Error, s"No auth URL returned for provider '$provider'"))
+          case Some(authPath) =>
+            val fullUrl =
+              if (authPath.startsWith("http")) authPath
+              else s"$serverUrl$authPath"
+            screen(
+              _.addMessage(MessageKind.System, s"Open this URL in your browser to connect $provider:\n  $fullUrl"),
+            )
+        },
+      )
+    } yield ()
+
+  private def revokeOAuth(provider: String): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.revokeOAuth(provider))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not revoke OAuth: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"OAuth credentials for '$provider' revoked.")),
+    )
+
+  private def emailList(maxResults: Int): ZIO[Env, Nothing, Unit] =
+    gql(_.run(JorlanClient.Mutations.invokeTool("email.list", s"""{"maxResults":$maxResults}"""))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.list failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.list"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+
+  private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] = {
+    import zio.json.*
+    import zio.json.ast.Json
+
+    val argsJson = Json.Obj("messageId" -> Json.Str(messageId)).toJson
+    gql(
+      _.run(JorlanClient.Mutations.invokeTool("email.read", argsJson)),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.read failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.read"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+  }
+
+  private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
+    import zio.json.*
+    import zio.json.ast.Json
+
+    val argsJson = Json.Obj("query" -> Json.Str(query)).toJson
+    gql(
+      _.run(JorlanClient.Mutations.invokeTool("email.search", argsJson)),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"email.search failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No response from email.search"))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+  }
+
+  private val calendarToday: ZIO[Env, Nothing, Unit] = {
+    import java.time.{LocalDate, ZoneOffset}
+    val todayMin = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant
+    val todayMax = todayMin.plusSeconds(86400)
+    gql(
+      _.run(
+        JorlanClient.Mutations.invokeTool(
+          "calendar.listEvents",
+          s"""{"timeMin":"$todayMin","timeMax":"$todayMax","maxResults":50}""",
+        ),
+      ),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
+      {
+        case None         => screen(_.addMessage(MessageKind.System, "No events today."))
+        case Some(result) => screen(_.addMessage(MessageKind.System, result))
+      },
+    )
+  }
+
+  private def calendarList(date: Option[String]): ZIO[Env, Nothing, Unit] = {
+    import java.time.{LocalDate, ZoneOffset}
+    date.flatMap(d => scala.util.Try(LocalDate.parse(d)).failed.toOption.map(_ => d)) match {
+      case Some(raw) =>
+        screen(_.addMessage(MessageKind.Error, s"Invalid date format '$raw'. Use YYYY-MM-DD."))
+      case None =>
+        val day = date.flatMap(d => scala.util.Try(LocalDate.parse(d)).toOption).getOrElse(LocalDate.now())
+        val dayMin = day.atStartOfDay(ZoneOffset.UTC).toInstant
+        val dayMax = dayMin.plusSeconds(86400)
+        gql(
+          _.run(
+            JorlanClient.Mutations.invokeTool(
+              "calendar.listEvents",
+              s"""{"timeMin":"$dayMin","timeMax":"$dayMax","maxResults":50}""",
+            ),
+          ),
+        ).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
+          {
+            case None         => screen(_.addMessage(MessageKind.System, s"No events for $day."))
+            case Some(result) => screen(_.addMessage(MessageKind.System, result))
+          },
+        )
+    }
   }
 
 }

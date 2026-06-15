@@ -204,6 +204,21 @@ class InitServiceImpl(
     CapabilityName("workspace.write"),
     CapabilityName("shell.execute"),
     CapabilityName("scheduler.manage"),
+    // Email
+    CapabilityName("email.read"),
+    CapabilityName("email.write"),
+    CapabilityName("email.send"),
+    // Calendar
+    CapabilityName("calendar.read"),
+    CapabilityName("calendar.write"),
+    // Drive
+    CapabilityName("drive.read"),
+  )
+
+  // email.send and calendar.write require per-invocation approval per design spec.
+  private val perInvocationCapabilities: Set[CapabilityName] = Set(
+    CapabilityName("email.send"),
+    CapabilityName("calendar.write"),
   )
 
   private def seedAdminGrants(
@@ -212,6 +227,9 @@ class InitServiceImpl(
   ): IO[JorlanError, Unit] =
     ZIO
       .foreachDiscard(adminCapabilities) { cap =>
+        val mode =
+          if (perInvocationCapabilities.contains(cap)) ApprovalMode.PerInvocation
+          else ApprovalMode.Persistent
         repo.permission.upsertCapabilityGrant(
           CapabilityGrant(
             id = CapabilityGrantId.empty,
@@ -219,7 +237,7 @@ class InitServiceImpl(
             scopeJson = None,
             granteeId = userId,
             grantorId = None,
-            approvalMode = ApprovalMode.Persistent,
+            approvalMode = mode,
             expiresAt = None,
             resourceConstraints = None,
             createdAt = now,

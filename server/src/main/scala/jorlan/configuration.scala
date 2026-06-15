@@ -86,6 +86,39 @@ case class WebConfig(
   root: String = "/opt/jorlan/www",
 )
 
+case class GoogleOAuthSettings(
+  clientId:     String = "",
+  clientSecret: String = "",
+  redirectUri:  String = "http://localhost:8080/api/oauth/callback/google",
+  /** Dedicated AES-256 key for credential encryption. Set `JORLAN_GOOGLE_CREDENTIAL_ENCRYPTION_KEY` in the environment.
+    * If empty, falls back to the JWT auth secret (key-reuse — migrate to a dedicated key in production).
+    */
+  credentialEncryptionKey: String = "",
+)
+
+case class ImapSettings(
+  host: String = "",
+  port: Int = 993,
+  ssl:  Boolean = true,
+)
+
+case class SmtpSettings(
+  host:     String = "",
+  port:     Int = 587,
+  startTls: Boolean = true,
+)
+
+case class PgpSettings(
+  enabled: Boolean = false,
+)
+
+case class EmailSettings(
+  defaultProvider: String = "gmail",
+  imap:            ImapSettings = ImapSettings(),
+  smtp:            SmtpSettings = SmtpSettings(),
+  pgp:             PgpSettings = PgpSettings(),
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
   db:        DatabaseConfig,
@@ -98,6 +131,8 @@ case class JorlanConfig(
   workspace: WorkspaceSettings = WorkspaceSettings(),
   shell:     ShellSettings = ShellSettings(),
   web:       WebConfig = WebConfig(),
+  google:    GoogleOAuthSettings = GoogleOAuthSettings(),
+  email:     EmailSettings = EmailSettings(),
 )
 
 /** Root application configuration. */

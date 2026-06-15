@@ -20,12 +20,12 @@ import zio.test.*
 
 /** Integration tests for [[QuillServerSettingsRepository]].
   *
-  * All tests run sequentially and share one container. Every test that calls `isServerInitialized` or
-  * `getPersonality` explicitly sets the underlying key first so the assertion is never dependent on Flyway seed data or
-  * the result of a previous test.
+  * All tests run sequentially and share one container. Every test that calls `isServerInitialized` or `getPersonality`
+  * explicitly sets the underlying key first so the assertion is never dependent on Flyway seed data or the result of a
+  * previous test.
   *
-  * "Key absent" behaviour (returns false / returns default) is already exercised by the unit tests in
-  * InitServiceSpec; those use InMemoryRepositories and do not need a real DB.
+  * "Key absent" behaviour (returns false / returns default) is already exercised by the unit tests in InitServiceSpec;
+  * those use InMemoryRepositories and do not need a real DB.
   */
 object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
 
@@ -57,9 +57,9 @@ object ServerSettingsRepositorySpec extends ZIOSpec[ZIORepositories] {
       test("set then get round-trips a JSON object") {
         val obj = Json.Obj("a" -> Json.Str("1"), "b" -> Json.Bool(false))
         for {
-          repo   <- ZIO.serviceWith[ZIORepositories](_.setting)
-          _      <- repo.set("obj-key", obj)
-          raw    <- repo.get("obj-key")
+          repo <- ZIO.serviceWith[ZIORepositories](_.setting)
+          _    <- repo.set("obj-key", obj)
+          raw  <- repo.get("obj-key")
         } yield assertTrue(raw.isDefined) && {
           val decoded = raw.get
           assertTrue(
