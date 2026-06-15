@@ -14,6 +14,7 @@ import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClient.CapabilityGrant.grantorId
 import jorlan.init.ServerStatus
 import jorlan.shell.client.*
+import jorlan.shell.client.ZIOClientRepositories
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.testing.FakeScreen
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -171,6 +172,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
 
   val defaultCfg: ULayer[ShellConfig] = ZLayer.succeed(ShellConfig())
 
+  private val fakeRepo: ULayer[ZIOClientRepositories] = fakeGQL() >>> ZIOClientRepositories.live
+
   def runCmd(cmd: ShellCommand): ZIO[Any, Nothing, (FakeScreen, Unit)] =
     for {
       fs   <- FakeScreen.make
@@ -179,7 +182,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         .handle(cmd, exit).provide(
           ZLayer.succeed[JorlanScreen](fs) ++
             fakeAuth() ++
-            fakeGQL() ++
+            fakeRepo ++
             defaultCfg ++
             ShellState.live ++
             fakeSubscriptionClient ++
@@ -232,7 +235,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.NewSession(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("connection refused") ++
+                (fakeGQLRunFailing("connection refused") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -261,7 +264,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.NewSession(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(sessionView)) ++
+                (fakeGQLRunReturning(Some(sessionView)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -286,7 +289,9 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ListModels, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfo.ModelInfoView]]](Some(Nil)) ++
+                (fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfo.ModelInfoView]]](
+                  Some(Nil),
+                ) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -332,7 +337,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Quit, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQL() ++
+                (fakeGQL() >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -350,7 +355,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Status, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQL(Right(Json.Obj())) ++
+                (fakeGQL(Right(Json.Obj())) >>> ZIOClientRepositories.live) ++
                 ZLayer.succeed(ShellConfig(serverUrl = "http://test-server:9090")) ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -368,7 +373,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Status, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQL(Left("connection refused")) ++
+                (fakeGQL(Left("connection refused")) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -386,7 +391,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.WhoAmI, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth(Right("alice@test.com")) ++
-                fakeGQL() ++
+                (fakeGQL() >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -404,7 +409,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.WhoAmI, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth(whoAmIResult = Left("401 Unauthorized")) ++
-                fakeGQL() ++
+                (fakeGQL() >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -436,7 +441,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Message("hi"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
+                (fakeGQLSubmitWithTokens(tokenQueue, tokens) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
                 fakeSubscriptionClient ++
@@ -461,7 +466,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Message("hello"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLSubmitWithTokens(tokenQueue, tokens) ++
+                (fakeGQLSubmitWithTokens(tokenQueue, tokens) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
                 fakeSubscriptionClient ++
@@ -485,7 +490,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Message("hello"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("server error") ++
+                (fakeGQLRunFailing("server error") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
                 fakeSubscriptionClient ++
@@ -513,7 +518,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Personality, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(pView)) ++
+                (fakeGQLRunReturning(Some(pView)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -531,7 +536,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Personality, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("server unavailable") ++
+                (fakeGQLRunFailing("server unavailable") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -549,7 +554,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Personality, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(None) ++
+                (fakeGQLRunReturning(None) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -582,7 +587,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.PersonalitySet("formality", "Casual"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(pView)) ++
+                (fakeGQLRunReturning(Some(pView)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -600,7 +605,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.PersonalitySet("name", "NewBot"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("network error") ++
+                (fakeGQLRunFailing("network error") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -636,7 +641,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryList(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(List(record))) ++
+                (fakeGQLRunReturning(Some(List(record))) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -654,7 +659,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryList(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(List.empty)) ++
+                (fakeGQLRunReturning(Some(List.empty)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -672,7 +677,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryList(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("timeout") ++
+                (fakeGQLRunFailing("timeout") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -706,7 +711,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemorySearch("Scala"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(List(record))) ++
+                (fakeGQLRunReturning(Some(List(record))) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -724,7 +729,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemorySearch("xyz"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(List.empty)) ++
+                (fakeGQLRunReturning(Some(List.empty)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -742,7 +747,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(true)) ++
+                (fakeGQLRunReturning(Some(true)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -760,7 +765,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("not found") ++
+                (fakeGQLRunFailing("not found") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -794,7 +799,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryRemember("pref.lang", "Scala"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(record)) ++
+                (fakeGQLRunReturning(Some(record)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -804,7 +809,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           text = msgs.map(_.content).mkString
         } yield assertTrue(text.contains("pref.lang"))
       },
-      test("/memory remember shows 'Memory stored' when server returns None") {
+      test("/memory remember shows 'Stored' confirmation when server returns None (uses input record as fallback)") {
         for {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
@@ -812,7 +817,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryRemember("k", "v"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(None) ++
+                (fakeGQLRunReturning(None) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -820,7 +825,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             )
           msgs <- fs.messagesOfKind(MessageKind.System)
           text = msgs.map(_.content).mkString
-        } yield assertTrue(text.contains("Memory stored"))
+        } yield assertTrue(text.contains("Stored"))
       },
       test("/memory remember shows error when GQL fails") {
         for {
@@ -830,7 +835,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryRemember("k", "v"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("store error") ++
+                (fakeGQLRunFailing("store error") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -848,7 +853,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemorySearch("term"), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunFailing("timeout") ++
+                (fakeGQLRunFailing("timeout") >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -882,7 +887,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryList(Some(MemoryScope.User)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(List(record))) ++
+                (fakeGQLRunReturning(Some(List(record))) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -900,7 +905,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.MemoryForget(MemoryRecordId(42L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(Some(true)) ++
+                (fakeGQLRunReturning(Some(true)) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -952,7 +957,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.Capabilities, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(grantViews) ++
+                (fakeGQLRunReturning(grantViews) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -970,7 +975,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.NewSession(None), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(None) ++
+                (fakeGQLRunReturning(None) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1005,7 +1010,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.AgentsList, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(sessions) ++
+                (fakeGQLRunReturning(sessions) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1024,7 +1029,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.AgentsList, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(empty) ++
+                (fakeGQLRunReturning(empty) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1043,7 +1048,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.AgentsStop(AgentSessionId(10L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(result) ++
+                (fakeGQLRunReturning(result) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1079,7 +1084,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ApprovalsList, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(approvals) ++
+                (fakeGQLRunReturning(approvals) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1098,7 +1103,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ApprovalsList, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(empty) ++
+                (fakeGQLRunReturning(empty) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1117,7 +1122,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ApprovalsApprove(ApprovalRequestId(5L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(result) ++
+                (fakeGQLRunReturning(result) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1136,7 +1141,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ApprovalsDeny(ApprovalRequestId(5L)), exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                fakeGQLRunReturning(result) ++
+                (fakeGQLRunReturning(result) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
                 fakeSubscriptionClient ++
@@ -1181,7 +1186,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
             .handle(ShellCommand.ModelInfo, exit).provide(
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
-                gqlLayer ++
+                (gqlLayer >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ZLayer.succeed[ShellState](state) ++
                 fakeSubscriptionClient ++

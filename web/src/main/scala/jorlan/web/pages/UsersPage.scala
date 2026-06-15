@@ -12,20 +12,17 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.User
 import jorlan.*
-import jorlan.web.JorlanWebApp
+import jorlan.web.AsyncCallbackRepositories
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 
 object UsersPage {
 
   case class State(
-    users:   List[JorlanClient.User.UserView],
+    users:   List[User],
     loading: Boolean,
     error:   Option[String],
   )
@@ -40,14 +37,9 @@ object UsersPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.users()(JorlanClient.User.view),
-              )
-              .flatMap(users =>
-                state.setState(State(users.getOrElse(Nil), loading = false, error = None)).asAsyncCallback,
-              )
+            AsyncCallbackRepositories.user
+              .search(UserSearch())
+              .flatMap(users => state.setState(State(users, loading = false, error = None)).asAsyncCallback)
               .completeWith {
                 case scala.util.Failure(ex) =>
                   state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))

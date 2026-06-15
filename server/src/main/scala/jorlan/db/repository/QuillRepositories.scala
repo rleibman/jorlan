@@ -171,6 +171,11 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
 
   override def extCredential: ZIOExternalCredentialRepository = QuillExternalCredentialRepository(qc)
 
+  override def serverInfo: ZIOServerInfoRepository =
+    new ZIOServerInfoRepository {
+      override def statusCheck(): RepositoryTask[Json] = ZIO.succeed(Json.Obj())
+    }
+
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────
@@ -310,6 +315,8 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with Z
   override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
     exec(qc.ctx.run(qChannelIdentities.filter(_.id == lift(id)).delete))
 
+  override def findContacts(nameOpt: Option[String]): RepositoryTask[Json] = ZIO.succeed(Json.Arr())
+
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
@@ -409,6 +416,18 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
           ).as(session),
       )
     }
+
+  override def createSession(modelId: Option[ModelId]): RepositoryTask[Option[AgentSession]] =
+    ZIO.fail(RepositoryError("createSession not implemented in QuillAgentRepository"))
+  override def terminateSession(sessionId: AgentSessionId): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("terminateSession not implemented in QuillAgentRepository"))
+  override def availableModels(): RepositoryTask[List[ModelInfo]] =
+    ZIO.fail(RepositoryError("availableModels not implemented in QuillAgentRepository"))
+  override def submitMessage(
+    sessionId: AgentSessionId,
+    content:   String,
+  ): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("submitMessage not implemented in QuillAgentRepository"))
 
 }
 
@@ -601,6 +620,14 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
             .returningGenerated(_.id),
         ).map(id => ci.copy(id = id)),
     )
+
+  override def listSkills(): RepositoryTask[List[SkillInfo]] =
+    ZIO.fail(RepositoryError("listSkills not implemented in QuillSkillRepository"))
+  override def invokeTool(
+    toolName: String,
+    argsJson: String,
+  ): RepositoryTask[Option[String]] =
+    ZIO.fail(RepositoryError("invokeTool not implemented in QuillSkillRepository"))
 
 }
 
@@ -841,8 +868,28 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
       )
     }
 
-  override def deleteJob(id: SchedulerJobId): RepositoryTask[Long] =
-    exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).delete))
+  override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+    exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).delete)).map(_ > 0L)
+
+  override def pauseJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+    exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).update(_.status -> lift(JobStatus.Paused)))).map(_ > 0L)
+
+  override def resumeJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+    exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).update(_.status -> lift(JobStatus.Pending)))).map(_ > 0L)
+
+  override def cancelJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+    exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).update(_.status -> lift(JobStatus.Cancelled)))).map(_ > 0L)
+
+  override def triggerNow(id: SchedulerJobId): RepositoryTask[Boolean] =
+    ZIO.clockWith(_.instant).flatMap { now =>
+      exec(
+        qc.ctx.run(
+          qSchedulerJobs
+            .filter(_.id == lift(id))
+            .update(_.status -> lift(JobStatus.Pending), _.scheduledAt -> lift(now)),
+        ),
+      ).map(_ > 0L)
+    }
 
   override def claimJob(
     id:              SchedulerJobId,
@@ -1337,6 +1384,17 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
       )
     } yield result
 
+  override def listCapabilities(): RepositoryTask[List[CapabilityGrant]] =
+    ZIO.fail(RepositoryError("listCapabilities not implemented in QuillPermissionRepository"))
+  override def listApprovals(): RepositoryTask[List[ApprovalRequest]] =
+    ZIO.fail(RepositoryError("listApprovals not implemented in QuillPermissionRepository"))
+  override def decideApproval(
+    id:       ApprovalRequestId,
+    approved: Boolean,
+    note:     Option[String] = None,
+  ): RepositoryTask[Boolean] =
+    ZIO.fail(RepositoryError("decideApproval not implemented in QuillPermissionRepository"))
+
 }
 
 // ─── ServerSettings ───────────────────────────────────────────────────────────
@@ -1380,6 +1438,22 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
           ),
       ),
     ).unit.orDie
+  }
+
+  override def serverPersonality(): UIO[Option[Personality]] =
+    get(ZIOServerSettingsRepository.PersonalityKey).map(_.flatMap(_.as[Personality].toOption))
+
+  override def updatePersonality(
+    name:      String,
+    formality: Formality,
+    languages: List[String],
+    expertise: List[String],
+    prompt:    String,
+  ): UIO[Option[Personality]] = {
+    val p = Personality(name, formality, languages, expertise, prompt)
+    ZIO
+      .fromEither(p.toJsonAST.left.map(RuntimeException(_))).orDie
+      .flatMap(json => set(ZIOServerSettingsRepository.PersonalityKey, json).as(Some(p)))
   }
 
 }
@@ -1477,5 +1551,14 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
         .run(qExternalCredentials.filter(_.userId == lift(userId)))
         .map(_.map(rowToCredential)),
     )
+
+  override def listOAuthProviders(): RepositoryTask[List[String]] =
+    ZIO.fail(RepositoryError("listOAuthProviders not implemented in QuillExternalCredentialRepository"))
+  override def startOAuth(provider: String): RepositoryTask[Option[String]] =
+    ZIO.fail(RepositoryError("startOAuth not implemented in QuillExternalCredentialRepository"))
+  override def revokeOAuth(provider: String): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("revokeOAuth not implemented in QuillExternalCredentialRepository"))
+  override def oauthStatus(provider: String): RepositoryTask[Option[OAuthStatus]] =
+    ZIO.fail(RepositoryError("oauthStatus not implemented in QuillExternalCredentialRepository"))
 
 }

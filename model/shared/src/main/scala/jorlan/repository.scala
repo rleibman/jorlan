@@ -223,19 +223,28 @@ trait UserRepository[F[_]] {
     channelUserId: String,
   ): F[Option[User]]
 
+  def findContacts(nameOpt: Option[String]): F[Json]
+
 }
 
 /** Repository for [[Agent]] definitions and [[AgentSession]] runtime records.
   */
 trait AgentRepository[F[_]] {
 
-  def getById(id:            AgentId):            F[Option[Agent]]
-  def search(s:              AgentSearch):        F[List[Agent]]
-  def upsert(agent:          Agent):              F[Agent]
-  def delete(id:             AgentId):            F[Long]
-  def getSession(id:         AgentSessionId):     F[Option[AgentSession]]
-  def searchSessions(s:      AgentSessionSearch): F[List[AgentSession]]
-  def upsertSession(session: AgentSession):       F[AgentSession]
+  def getById(id:                 AgentId):            F[Option[Agent]]
+  def search(s:                   AgentSearch):        F[List[Agent]]
+  def upsert(agent:               Agent):              F[Agent]
+  def delete(id:                  AgentId):            F[Long]
+  def getSession(id:              AgentSessionId):     F[Option[AgentSession]]
+  def searchSessions(s:           AgentSessionSearch): F[List[AgentSession]]
+  def upsertSession(session:      AgentSession):       F[AgentSession]
+  def createSession(modelId:      Option[ModelId]):    F[Option[AgentSession]]
+  def terminateSession(sessionId: AgentSessionId):     F[Unit]
+  def availableModels():                               F[List[ModelInfo]]
+  def submitMessage(
+    sessionId: AgentSessionId,
+    content:   String,
+  ): F[Unit]
 
 }
 
@@ -263,6 +272,11 @@ trait SkillRepository[F[_]] {
   def getConnector(id:    ConnectorInstanceId): F[Option[ConnectorInstance]]
   def searchConnectors(s: ConnectorSearch):     F[List[ConnectorInstance]]
   def upsertConnector(ci: ConnectorInstance):   F[ConnectorInstance]
+  def listSkills():                             F[List[SkillInfo]]
+  def invokeTool(
+    toolName: String,
+    argsJson: String,
+  ): F[Option[String]]
 
 }
 
@@ -314,7 +328,11 @@ trait SchedulerRepository[F[_]] {
   ):                                              F[List[SchedulerJob]]
   def getPendingJobs:                             F[List[SchedulerJob]]
   def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
-  def deleteJob(id:          SchedulerJobId):     F[Long]
+  def deleteJob(id:          SchedulerJobId):     F[Boolean]
+  def pauseJob(id:           SchedulerJobId):     F[Boolean]
+  def resumeJob(id:          SchedulerJobId):     F[Boolean]
+  def cancelJob(id:          SchedulerJobId):     F[Boolean]
+  def triggerNow(id:         SchedulerJobId):     F[Boolean]
   def searchTriggers(s:      TriggerSearch):      F[List[SchedulerTrigger]]
   def upsertTrigger(trigger: SchedulerTrigger):   F[SchedulerTrigger]
   def deleteTrigger(id:      SchedulerTriggerId): F[Long]
@@ -374,13 +392,20 @@ trait PermissionRepository[F[_]] {
   def removeRole(
     userId: UserId,
     roleId: RoleId,
-  ):                                                       F[Unit]
-  def searchPermissions(s:             PermissionSearch):  F[List[Permission]]
-  def upsertPermission(permission:     Permission):        F[Permission]
-  def deletePermission(id:             PermissionId):      F[Long]
-  def upsertCapabilityGrant(grant:     CapabilityGrant):   F[CapabilityGrant]
-  def revokeGrant(id:                  CapabilityGrantId): F[Long]
-  def searchGrants(s:                  GrantSearch):       F[List[CapabilityGrant]]
+  ):                                                   F[Unit]
+  def searchPermissions(s:         PermissionSearch):  F[List[Permission]]
+  def upsertPermission(permission: Permission):        F[Permission]
+  def deletePermission(id:         PermissionId):      F[Long]
+  def upsertCapabilityGrant(grant: CapabilityGrant):   F[CapabilityGrant]
+  def revokeGrant(id:              CapabilityGrantId): F[Long]
+  def searchGrants(s:              GrantSearch):       F[List[CapabilityGrant]]
+  def listCapabilities():                              F[List[CapabilityGrant]]
+  def listApprovals():                                 F[List[ApprovalRequest]]
+  def decideApproval(
+    id:       ApprovalRequestId,
+    approved: Boolean,
+    note:     Option[String] = None,
+  ):                                                       F[Boolean]
   def createApprovalRequest(req:       ApprovalRequest):   F[ApprovalRequest]
   def cancelApprovalRequest(id:        ApprovalRequestId): F[Long]
   def expireApprovalRequest(id:        ApprovalRequestId): F[Long]
@@ -440,6 +465,18 @@ trait ServerSettingsRepository[F[_]] {
     value: Json,
   ): F[Unit]
 
+  /** Reads and decodes the server [[Personality]], or `None` if not yet configured. */
+  def serverPersonality(): F[Option[Personality]]
+
+  /** Persists a new [[Personality]] and returns it, or `None` if serialisation fails. */
+  def updatePersonality(
+    name:      String,
+    formality: Formality,
+    languages: List[String],
+    expertise: List[String],
+    prompt:    String,
+  ): F[Option[Personality]]
+
 }
 
 /** Repository for [[jorlan.ExternalCredential]] records (OAuth tokens and similar). */
@@ -459,8 +496,19 @@ trait ExternalCredentialRepository[F[_]] {
   def delete(
     userId:   UserId,
     provider: String,
-  ):                              F[Unit]
-  def listByUser(userId: UserId): F[List[ExternalCredential]]
+  ):                                 F[Unit]
+  def listByUser(userId:    UserId): F[List[ExternalCredential]]
+  def listOAuthProviders():          F[List[String]]
+  def startOAuth(provider:  String): F[Option[String]]
+  def revokeOAuth(provider: String): F[Unit]
+  def oauthStatus(provider: String): F[Option[OAuthStatus]]
+
+}
+
+/** Lightweight repository for server-level introspection queries (e.g. health check, schema ping). */
+trait ServerInfoRepository[F[_]] {
+
+  def statusCheck(): F[Json]
 
 }
 
@@ -478,5 +526,6 @@ trait Repositories[F[_]] {
   def permission:    PermissionRepository[F]
   def setting:       ServerSettingsRepository[F]
   def extCredential: ExternalCredentialRepository[F]
+  def serverInfo:    ServerInfoRepository[F]
 
 }

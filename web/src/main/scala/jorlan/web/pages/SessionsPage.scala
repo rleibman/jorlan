@@ -13,20 +13,18 @@ package jorlan.web.pages
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
-import jorlan.web.JorlanWebApp
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 
 object SessionsPage {
 
   case class State(
-    sessions:        List[JorlanClient.AgentSession.AgentSessionView],
-    models:          List[JorlanClient.ModelInfo.ModelInfoView],
+    sessions:        List[AgentSession],
+    models:          List[ModelInfo],
     loading:         Boolean,
     error:           Option[String],
     showCreate:      Boolean,
@@ -43,13 +41,10 @@ object SessionsPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view),
-              )
+            AsyncCallbackRepositories.agent
+              .searchSessions(AgentSessionSearch())
               .flatMap(sessions =>
-                state.setState(state.value.copy(sessions = sessions.getOrElse(Nil), loading = false)).asAsyncCallback,
+                state.setState(state.value.copy(sessions = sessions, loading = false)).asAsyncCallback,
               )
               .completeWith {
                 case scala.util.Failure(ex) =>
@@ -64,12 +59,10 @@ object SessionsPage {
           _,
           state,
         ) =>
-          val adapter = JorlanWebApp.makeAdapter()
-
           def terminate(sessionId: AgentSessionId): Callback =
             Callback {
-              adapter
-                .asyncCalibanCallWithAuth(JorlanClient.Mutations.terminateSession(sessionId))
+              AsyncCallbackRepositories.agent
+                .terminateSession(sessionId)
                 .flatMap { _ =>
                   state
                     .setState(state.value.copy(sessions = state.value.sessions.filterNot(_.id == sessionId)))
@@ -84,13 +77,10 @@ object SessionsPage {
 
           def openCreateDialog(): Callback =
             Callback {
-              // Fetch available models when the dialog opens
-              adapter
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view),
-                )
+              AsyncCallbackRepositories.agent
+                .availableModels()
                 .flatMap { models =>
-                  state.setState(state.value.copy(models = models.getOrElse(Nil), showCreate = true)).asAsyncCallback
+                  state.setState(state.value.copy(models = models, showCreate = true)).asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
@@ -101,10 +91,8 @@ object SessionsPage {
 
           def createSession(): Callback =
             Callback {
-              adapter
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.createSession(state.value.selectedModelId)(JorlanClient.AgentSession.view),
-                )
+              AsyncCallbackRepositories.agent
+                .createSession(state.value.selectedModelId)
                 .flatMap { sessionOpt =>
                   sessionOpt.fold(AsyncCallback.unit) { session =>
                     state

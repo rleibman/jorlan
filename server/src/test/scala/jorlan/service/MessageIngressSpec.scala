@@ -65,6 +65,8 @@ object MessageIngressSpec extends ZIOSpecDefault {
               ct:   ChannelType,
               cuid: String,
             ): RepositoryTask[Option[User]] = ZIO.succeed(result.filter(_ => ct == ChannelType.Telegram))
+            override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+              ZIO.succeed(zio.json.ast.Json.Arr())
           }
         }
       },

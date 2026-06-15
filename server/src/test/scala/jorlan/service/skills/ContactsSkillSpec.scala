@@ -83,6 +83,8 @@ object ContactsSkillSpec extends ZIOSpecDefault {
       channelType:   ChannelType,
       channelUserId: String,
     ): RepositoryTask[Option[User]] = ZIO.succeed(byChannel.get((channelType, channelUserId)))
+    override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+      ZIO.succeed(zio.json.ast.Json.Arr())
 
   }
 

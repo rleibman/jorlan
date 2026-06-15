@@ -17,8 +17,6 @@ import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 
 /** Skill registry browser.
   *
@@ -44,7 +42,7 @@ object SkillsPage {
           ),
           // TODO: render table once listSkillVersions query is available:
           //   TableContainer > Table > TableHead (Name | Tier | Status | Version | "") +
-          //   TableBody rows from JorlanClient.Queries.listSkillVersions(...)
+          //   TableBody rows from AsyncCallbackRepositories.listSkills()
           //   Each row: name, Chip(tier), Chip(status), version, expand button for manifestJson
         )
       }

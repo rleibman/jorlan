@@ -13,15 +13,13 @@ package jorlan.web.pages
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
-import jorlan.web.JorlanWebApp
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.{MuiButton, MuiTextField}
 import caliban.WebSocketHandler
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 
 object ChatPage {
 
@@ -65,46 +63,33 @@ object ChatPage {
         ) =>
           def openStreamSubscription(sessionId: AgentSessionId): Callback =
             Callback {
-              // Close any existing stream subscription before opening a new one
               state.value.wsHandler.foreach(_.close().runNow())
-              val handler = JorlanWebApp
-                .makeAdapter().makeWebSocketClient(
-                  webSocket = None,
-                  query = JorlanClient.Subscriptions
-                    .agentResponseStream(sessionId)(JorlanClient.ResponseChunk.view),
-                  operationId = s"chat-stream-${sessionId.value}",
-                  socketConnectionId = s"chat-${sessionId.value}",
-                  onData = {
-                    (
-                      _,
-                      dataOpt,
-                    ) =>
-                      dataOpt.flatten.fold(Callback.empty) { chunk =>
-                        if (chunk.finished) {
-                          // Flush the completed response into the messages list
-                          val completedMsg = ChatMessage(
-                            if (chunk.isError) "error" else "assistant",
-                            state.value.streamBuffer + chunk.content,
-                            new js.Date().toISOString(),
-                          )
-                          state.setState(
-                            state.value.copy(
-                              messages = state.value.messages :+ completedMsg,
-                              streaming = false,
-                              streamBuffer = "",
-                            ),
-                          )
-                        } else {
-                          state.setState(
-                            state.value.copy(
-                              streaming = true,
-                              streamBuffer = state.value.streamBuffer + chunk.content,
-                            ),
-                          )
-                        }
-                      }
-                  },
-                )
+              val handler = AsyncCallbackRepositories.subscribeToAgentStream(
+                sessionId,
+                onData = { chunk =>
+                  if (chunk.finished) {
+                    val completedMsg = ChatMessage(
+                      if (chunk.isError) "error" else "assistant",
+                      state.value.streamBuffer + chunk.content,
+                      new js.Date().toISOString(),
+                    )
+                    state.setState(
+                      state.value.copy(
+                        messages = state.value.messages :+ completedMsg,
+                        streaming = false,
+                        streamBuffer = "",
+                      ),
+                    )
+                  } else {
+                    state.setState(
+                      state.value.copy(
+                        streaming = true,
+                        streamBuffer = state.value.streamBuffer + chunk.content,
+                      ),
+                    )
+                  }
+                },
+              )
               handlerRef.set(Some(handler)).runNow()
               state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
             }
@@ -122,11 +107,8 @@ object ChatPage {
               ) >>
                 state.value.sessionId.fold(Callback.empty) { sessionId =>
                   Callback {
-                    JorlanWebApp
-                      .makeAdapter()
-                      .asyncCalibanCallWithAuth(
-                        JorlanClient.Mutations.submitMessage(sessionId, text),
-                      )
+                    AsyncCallbackRepositories.agent
+                      .submitMessage(sessionId, text)
                       .completeWith {
                         case scala.util.Failure(ex) =>
                           state.setState(state.value.copy(streaming = false, error = Some(ex.getMessage)))
@@ -149,11 +131,8 @@ object ChatPage {
 
           def createSession(): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view),
-                )
+              AsyncCallbackRepositories.agent
+                .createSession(None)
                 .flatMap {
                   case Some(session) =>
                     (state

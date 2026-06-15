@@ -110,7 +110,9 @@ object NotificationRouterSpec extends ZIOSpecDefault {
       override def userByChannelIdentity(
         channelType:   ChannelType,
         channelUserId: String,
-      ): RepositoryTask[Option[User]] = ZIO.none
+      ):                                                  RepositoryTask[Option[User]] = ZIO.none
+      override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+        ZIO.succeed(zio.json.ast.Json.Arr())
     }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =

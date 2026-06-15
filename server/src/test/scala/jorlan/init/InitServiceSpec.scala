@@ -58,7 +58,9 @@ object InitServiceSpec extends ZIOSpecDefault {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    ):                                                  RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+      ZIO.die(RuntimeException("stub"))
   })
 
   private val initServiceLayer: URLayer[ZIORepositories & InitTokenStore & SkillRegistry, InitServiceImpl] =

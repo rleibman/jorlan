@@ -13,13 +13,12 @@ package jorlan.web.pages
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
-import jorlan.web.JorlanWebApp
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.{MuiButton, MuiTextField}
 import net.leibman.jorlan.muiMaterial.components.*
-import zio.IsSubtypeOfError.impl
+import zio.json.ast.Json
 
+import java.time.Instant
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
@@ -32,13 +31,19 @@ object MemoryPage {
   )
 
   case class State(
-    memories:  List[JorlanClient.MemoryRecord.MemoryRecordView],
+    memories:  List[MemoryRecord],
     search:    String,
     loading:   Boolean,
     error:     Option[String],
     showStore: Boolean,
     storeForm: StoreForm,
   )
+
+  private def valueString(v: Json): String =
+    v match {
+      case Json.Str(s) => s
+      case other       => other.toString
+    }
 
   val component =
     ScalaFnComponent
@@ -50,13 +55,10 @@ object MemoryPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.listMemory(MemoryScope.User)(JorlanClient.MemoryRecord.view),
-              )
+            AsyncCallbackRepositories.memory
+              .search(MemorySearch(MemoryScope.User))
               .flatMap { memories =>
-                state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
+                state.setState(state.value.copy(memories = memories, loading = false)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
@@ -74,13 +76,10 @@ object MemoryPage {
           def runSearch(q: String): Callback =
             Callback {
               val search = if (q.trim.isEmpty) None else Some(q.trim)
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Queries.listMemory(MemoryScope.User, search)(JorlanClient.MemoryRecord.view),
-                )
+              AsyncCallbackRepositories.memory
+                .search(MemorySearch(MemoryScope.User, textSearch = search))
                 .flatMap { memories =>
-                  state.setState(state.value.copy(memories = memories.getOrElse(Nil), loading = false)).asAsyncCallback
+                  state.setState(state.value.copy(memories = memories, loading = false)).asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
@@ -92,9 +91,8 @@ object MemoryPage {
 
           def forget(id: MemoryRecordId): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(JorlanClient.Mutations.forgetMemory(id))
+              AsyncCallbackRepositories.memory
+                .delete(id)
                 .flatMap(_ =>
                   state.setState(state.value.copy(memories = state.value.memories.filter(_.id != id))).asAsyncCallback,
                 )
@@ -107,15 +105,19 @@ object MemoryPage {
 
           def markShared(id: MemoryRecordId): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(JorlanClient.Mutations.markMemoryShared(id)(JorlanClient.MemoryRecord.view))
-                .flatMap { updated =>
-                  updated.fold(AsyncCallback.unit) { mem =>
+              AsyncCallbackRepositories.memory
+                .updateScope(id, MemoryScope.Shared)
+                .flatMap { count =>
+                  if (count > 0L)
                     state
-                      .setState(state.value.copy(memories = state.value.memories.map(m => if (m.id == id) mem else m)))
+                      .setState(
+                        state.value.copy(
+                          memories =
+                            state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Shared) else m),
+                        ),
+                      )
                       .asAsyncCallback
-                  }
+                  else AsyncCallback.unit
                 }
                 .completeWith {
                   case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
@@ -126,17 +128,19 @@ object MemoryPage {
 
           def markPrivate(id: MemoryRecordId): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.markMemoryPrivate(id)(JorlanClient.MemoryRecord.view),
-                )
-                .flatMap { updated =>
-                  updated.fold(AsyncCallback.unit) { mem =>
+              AsyncCallbackRepositories.memory
+                .updateScope(id, MemoryScope.Private)
+                .flatMap { count =>
+                  if (count > 0L)
                     state
-                      .setState(state.value.copy(memories = state.value.memories.map(m => if (m.id == id) mem else m)))
+                      .setState(
+                        state.value.copy(
+                          memories =
+                            state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Private) else m),
+                        ),
+                      )
                       .asAsyncCallback
-                  }
+                  else AsyncCallback.unit
                 }
                 .completeWith {
                   case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
@@ -148,19 +152,26 @@ object MemoryPage {
           def storeMemory(): Callback = {
             val f = state.value.storeForm
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.storeMemory(f.key, f.text, f.scope)(
-                    JorlanClient.MemoryRecord.view,
+              AsyncCallbackRepositories.memory
+                .upsert(
+                  MemoryRecord(
+                    id = MemoryRecordId.empty,
+                    scope = f.scope,
+                    userId = None,
+                    workspaceId = None,
+                    agentId = None,
+                    recordKey = f.key,
+                    value = Json.Str(f.text),
+                    ttl = None,
+                    createdAt = Instant.EPOCH,
+                    updatedAt = Instant.EPOCH,
                   ),
                 )
                 .flatMap { stored =>
-                  val updated = stored.fold(state.value.memories)(m => state.value.memories :+ m)
                   state
                     .setState(
                       state.value.copy(
-                        memories = updated,
+                        memories = state.value.memories :+ stored,
                         showStore = false,
                         storeForm = StoreForm("", "", MemoryScope.User),
                       ),
@@ -209,14 +220,15 @@ object MemoryPage {
                   ),
                   TableBody()(
                     state.value.memories.map { mem =>
+                      val v = valueString(mem.value)
                       TableRow.withKey(mem.id.value.toString)(
                         TableCell()(mem.recordKey),
                         TableCell()(
                           Chip.set("label", mem.scope.toString).set("size", "small")(),
                         ),
                         TableCell()(
-                          <.span(^.title := mem.value)(
-                            if (mem.value.length > 60) mem.value.take(60) + "…" else mem.value,
+                          <.span(^.title := v)(
+                            if (v.length > 60) v.take(60) + "…" else v,
                           ),
                         ),
                         TableCell()(mem.createdAt.toString.take(19)),

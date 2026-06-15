@@ -60,24 +60,6 @@ case class ToolCallRequested(
   argsJson: String,
 ) extends ChatStep
 
-/** Runtime metadata for a model known to the gateway.
-  *
-  * @param id
-  *   Opaque model identifier (e.g. `"llama3.2:3b"`).
-  * @param provider
-  *   Provider name (e.g. `"ollama"`, `"openai"`).
-  * @param contextWindow
-  *   Maximum token context the model supports.
-  * @param supportsStreaming
-  *   Whether the provider exposes a streaming (token-by-token) response API.
-  */
-case class ModelInfo(
-  id:                ModelId,
-  provider:          String,
-  contextWindow:     Int,
-  supportsStreaming: Boolean,
-)
-
 /** Root error type for all model-call failures. */
 sealed abstract class ModelError(
   override val msg:   String,

@@ -10,10 +10,8 @@
 
 package jorlan.shell
 
-import jorlan.{AgentSessionId, SessionStatus}
-import jorlan.graphql.client.JorlanClient
+import jorlan.{AgentSessionId, AgentSessionSearch, SessionStatus}
 import jorlan.shell.client.*
-import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.shell.commands.{CommandHandler, ShellCommand}
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import zio.*
@@ -32,7 +30,8 @@ import zio.logging.backend.SLF4J
 object JorlanShell extends ZIOApp {
 
   override type Environment =
-    ShellConfig & AuthClient & GraphQLClient & JorlanScreen & ShellState & SubscriptionClient & InitClient
+    ShellConfig & AuthClient & GraphQLClient & ZIOClientRepositories & JorlanScreen & ShellState & SubscriptionClient &
+      InitClient
 
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
@@ -42,6 +41,7 @@ object JorlanShell extends ZIOApp {
         ShellConfig.layer,
         AuthClient.live,
         GraphQLClient.live,
+        ZIOClientRepositories.live,
         JorlanScreen.live,
         ShellState.live,
         SubscriptionClient.live,
@@ -183,27 +183,21 @@ object JorlanShell extends ZIOApp {
         _ <- screen.addMessage(MessageKind.System, msg)
       } yield ()
 
-    def createNew: ZIO[GraphQLClient & ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
-      ZIO
-        .serviceWithZIO[GraphQLClient](
-          _.run(JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view)),
-        ).either.flatMap {
-          case Right(Some(session)) => applySession(session.id, s"Session ${session.id.value} started.")
-          case Right(None)          => screen.addMessage(MessageKind.Error, "Server returned no session.")
-          case Left(err)            => screen.addMessage(MessageKind.Error, s"Failed to create session: $err")
-        }
-
-    ZIO
-      .serviceWithZIO[GraphQLClient](
-        _.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view)),
-      ).either.flatMap {
-        case Right(Some(sessions)) =>
-          sessions.find(_.status == SessionStatus.Active) match {
-            case Some(s) => applySession(s.id, s"Resumed session ${s.id.value}.")
-            case None    => createNew
-          }
-        case _ => createNew
+    def createNew: ZIO[ZIOClientRepositories & ShellState & JorlanScreen & SubscriptionClient, Nothing, Unit] =
+      ZIO.serviceWithZIO[ZIOClientRepositories](_.agent.createSession(None)).either.flatMap {
+        case Right(Some(session)) => applySession(session.id, s"Session ${session.id.value} started.")
+        case Right(None)          => screen.addMessage(MessageKind.Error, "Server returned no session.")
+        case Left(err)            => screen.addMessage(MessageKind.Error, s"Failed to create session: $err")
       }
+
+    ZIO.serviceWithZIO[ZIOClientRepositories](_.agent.searchSessions(AgentSessionSearch())).either.flatMap {
+      case Right(sessions) =>
+        sessions.find(_.status == SessionStatus.Active) match {
+          case Some(s) => applySession(s.id, s"Resumed session ${s.id.value}.")
+          case None    => createNew
+        }
+      case _ => createNew
+    }
   }
 
   /** Show goodbye message, interrupt background fibers, and shut the screen down.

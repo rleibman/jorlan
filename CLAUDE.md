@@ -140,3 +140,7 @@ Each phase follows this sequence, commanded and supervised manually by the user:
   off the items as you go, otherwise it's really hard to figure out where you were if something goes wrong
 - NEVER make modifications directly to the graphql schema or the generated JorlanClient file, you should always modify
   JorlanAPI and then call the scripts to generate the gql and the client. No exceptions
+- NEVER put a full copy of a trait's interface into its companion object as ZIO accessor methods (e.g. `def
+  listSessions(): ZIO[JorlanRepository, String, List[...]] = ZIO.serviceWithZIO[JorlanRepository](_.listSessions())`).
+  Use `ZIO.serviceWithZIO[Service](_.method())` at the call site instead. The companion object should only hold the
+  `live` layer factory.

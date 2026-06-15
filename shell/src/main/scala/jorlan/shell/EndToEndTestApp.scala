@@ -10,8 +10,6 @@
 
 package jorlan.shell
 
-import jorlan.graphql.client.JorlanClient
-import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.shell.client.*
 import zio.*
 import zio.logging.backend.SLF4J
@@ -37,7 +35,8 @@ import scala.language.unsafeNulls
   */
 object EndToEndTestApp extends ZIOApp {
 
-  override type Environment = ShellConfig & AuthClient & GraphQLClient & ShellState & SubscriptionClient & InitClient
+  override type Environment =
+    ShellConfig & AuthClient & GraphQLClient & ZIOClientRepositories & ShellState & SubscriptionClient & InitClient
 
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
@@ -47,6 +46,7 @@ object EndToEndTestApp extends ZIOApp {
         ShellConfig.layer,
         AuthClient.live,
         GraphQLClient.live,
+        ZIOClientRepositories.live,
         ShellState.live,
         SubscriptionClient.live,
         InitClient.live,
@@ -122,18 +122,10 @@ object EndToEndTestApp extends ZIOApp {
     liveSession: LiveSession,
     prompt:      String,
     timeout:     Duration = 90.seconds,
-  ): ZIO[GraphQLClient, String, String] =
+  ): ZIO[ZIOClientRepositories, String, String] =
     for {
-      // Discard any stale tokens from a previous message.
-      _      <- liveSession.tokenQueue.takeAll
-      result <- ZIO
-        .serviceWithZIO[GraphQLClient](
-          _.run(JorlanClient.Mutations.submitMessage(sessionId, prompt)),
-        )
-      _ <- result match {
-        case None    => ZIO.fail("submitMessage returned null")
-        case Some(_) => ZIO.unit
-      }
+      _        <- liveSession.tokenQueue.takeAll
+      _        <- ZIO.serviceWithZIO[ZIOClientRepositories](_.agent.submitMessage(sessionId, prompt))
       response <- drainResponse(liveSession.tokenQueue, timeout)
     } yield response
 
@@ -171,19 +163,17 @@ object EndToEndTestApp extends ZIOApp {
       }
     } yield result
 
-  private val testGraphQLSmoke: ZIO[GraphQLClient, Nothing, TestResult] =
+  private val testGraphQLSmoke: ZIO[ZIOClientRepositories, Nothing, TestResult] =
     ZIO
-      .serviceWithZIO[GraphQLClient](_.execute("{ __typename }"))
+      .serviceWithZIO[ZIOClientRepositories](_.serverInfo.statusCheck())
       .foldZIO(
         err => fail("graphql_smoke", s"introspection query failed: $err"),
         _ => pass("graphql_smoke"),
       )
 
-  private def testSessionCreation: ZIO[GraphQLClient, Nothing, (TestResult, Option[jorlan.AgentSessionId])] =
+  private def testSessionCreation: ZIO[ZIOClientRepositories, Nothing, (TestResult, Option[jorlan.AgentSessionId])] =
     ZIO
-      .serviceWithZIO[GraphQLClient](
-        _.run(JorlanClient.Mutations.createSession(None)(JorlanClient.AgentSession.view)),
-      )
+      .serviceWithZIO[ZIOClientRepositories](_.agent.createSession(None))
       .foldZIO(
         err => fail("session_creation", s"createSession mutation failed: $err").map(_ -> None),
         {
@@ -195,7 +185,7 @@ object EndToEndTestApp extends ZIOApp {
   private def testLlmResponseDelivery(
     sessionId:   jorlan.AgentSessionId,
     liveSession: LiveSession,
-  ): ZIO[GraphQLClient, Nothing, TestResult] = {
+  ): ZIO[ZIOClientRepositories, Nothing, TestResult] = {
     val prompt = "Reply with exactly the word PONG and nothing else."
     submitAndWait(sessionId, liveSession, prompt)
       .foldZIO(
@@ -213,7 +203,7 @@ object EndToEndTestApp extends ZIOApp {
   private def testWsConnectionStability(
     sessionId:   jorlan.AgentSessionId,
     liveSession: LiveSession,
-  ): ZIO[GraphQLClient, Nothing, TestResult] = {
+  ): ZIO[ZIOClientRepositories, Nothing, TestResult] = {
     val prompts = List(
       "Say 'A'",
       "Say 'B'",
@@ -243,7 +233,7 @@ object EndToEndTestApp extends ZIOApp {
   private def testTelegramNotifyRoberto(
     sessionId:   jorlan.AgentSessionId,
     liveSession: LiveSession,
-  ): ZIO[GraphQLClient, Nothing, TestResult] = {
+  ): ZIO[ZIOClientRepositories, Nothing, TestResult] = {
     val prompt =
       "Please send a Telegram message to Roberto saying: 'End-to-end test ping from Jorlan — please ignore.'"
     submitAndWait(sessionId, liveSession, prompt, 120.seconds)
@@ -264,7 +254,7 @@ object EndToEndTestApp extends ZIOApp {
   private def testMemoryViaLlm(
     sessionId:   jorlan.AgentSessionId,
     liveSession: LiveSession,
-  ): ZIO[GraphQLClient, Nothing, TestResult] = {
+  ): ZIO[ZIOClientRepositories, Nothing, TestResult] = {
     val uniqueKey = s"e2e-test-${java.time.Instant.now.toEpochMilli}"
     val storePrompt = s"Please remember this: $uniqueKey is my test marker."
     val recallPrompt = s"What is $uniqueKey?"

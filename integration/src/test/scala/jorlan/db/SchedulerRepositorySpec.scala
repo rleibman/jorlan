@@ -113,7 +113,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
           job        <- repo.upsertJob(makeJob(aid, uid, "del-job"))
           count      <- repo.deleteJob(job.id)
           fetched    <- repo.getJob(job.id)
-        } yield assertTrue(count == 1L, fetched.isEmpty)
+        } yield assertTrue(count, fetched.isEmpty)
       },
       test("upsertTrigger and searchTriggers") {
         for {
