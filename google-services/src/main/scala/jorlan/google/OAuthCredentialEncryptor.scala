@@ -29,7 +29,7 @@ import java.security.{MessageDigest, SecureRandom}
 class OAuthCredentialEncryptor(secretKey: String) {
 
   private val keyBytes:     Array[Byte] = deriveKey(secretKey)
-  private val secureRandom: SecureRandom = SecureRandom.getInstanceStrong
+  private val secureRandom: SecureRandom = new SecureRandom()
 
   private def deriveKey(secret: String): Array[Byte] = {
     val md = MessageDigest.getInstance("SHA-256")
