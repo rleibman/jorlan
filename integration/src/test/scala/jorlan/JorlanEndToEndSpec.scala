@@ -99,69 +99,69 @@ object JorlanEndToEndSpec
         userId:     UserId,
         maxResults: Int,
         query:      Option[String],
-      ): IO[JorlanError, List[domain.EmailMessage]] =
+      ): IO[JorlanError, List[EmailMessage]] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
       override def getMessage(
         userId:    UserId,
-        messageId: domain.EmailMessageId,
-      ): IO[JorlanError, domain.EmailMessage] =
+        messageId: EmailMessageId,
+      ): IO[JorlanError, EmailMessage] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
       override def sendDraft(
         userId: UserId,
-        draft:  domain.EmailDraft,
-      ): IO[JorlanError, domain.EmailMessageId] =
+        draft:  EmailDraft,
+      ): IO[JorlanError, EmailMessageId] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
       override def createDraft(
         userId: UserId,
-        draft:  domain.EmailDraft,
+        draft:  EmailDraft,
       ): IO[JorlanError, String] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
       override def archiveMessage(
         userId:    UserId,
-        messageId: domain.EmailMessageId,
+        messageId: EmailMessageId,
       ): IO[JorlanError, Unit] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
       override def deleteMessage(
         userId:    UserId,
-        messageId: domain.EmailMessageId,
+        messageId: EmailMessageId,
       ): IO[JorlanError, Unit] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
     }
 
   private val stubCalendarProvider: CalendarProvider[[A] =>> IO[JorlanError, A]] =
     new CalendarProvider[[A] =>> IO[JorlanError, A]] {
-      override def listCalendars(userId: UserId): IO[JorlanError, List[domain.UserCalendar]] =
+      override def listCalendars(userId: UserId): IO[JorlanError, List[UserCalendar]] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
       override def listEvents(
         userId:     UserId,
-        calendarId: domain.CalendarId,
+        calendarId: CalendarId,
         maxResults: Int,
         timeMin:    Option[Instant],
         timeMax:    Option[Instant],
-      ): IO[JorlanError, List[domain.CalendarEntry]] =
+      ): IO[JorlanError, List[CalendarEntry]] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
       override def getEvent(
         userId:     UserId,
-        calendarId: domain.CalendarId,
-        eventId:    domain.CalendarEventId,
-      ): IO[JorlanError, domain.CalendarEntry] =
+        calendarId: CalendarId,
+        eventId:    CalendarEventId,
+      ): IO[JorlanError, CalendarEntry] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
       override def createEvent(
         userId:     UserId,
-        calendarId: domain.CalendarId,
-        entry:      domain.CalendarEntry,
-      ): IO[JorlanError, domain.CalendarEntry] =
+        calendarId: CalendarId,
+        entry:      CalendarEntry,
+      ): IO[JorlanError, CalendarEntry] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
       override def updateEvent(
         userId:     UserId,
-        calendarId: domain.CalendarId,
-        entry:      domain.CalendarEntry,
-      ): IO[JorlanError, domain.CalendarEntry] =
+        calendarId: CalendarId,
+        entry:      CalendarEntry,
+      ): IO[JorlanError, CalendarEntry] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
       override def deleteEvent(
         userId:     UserId,
-        calendarId: domain.CalendarId,
-        eventId:    domain.CalendarEventId,
+        calendarId: CalendarId,
+        eventId:    CalendarEventId,
       ): IO[JorlanError, Unit] =
         ZIO.fail(JorlanError("No calendar credentials in test environment"))
     }
@@ -173,16 +173,16 @@ object JorlanEndToEndSpec
         folderId:   Option[String],
         query:      Option[String],
         maxResults: Int,
-      ): IO[JorlanError, List[domain.DriveFile]] =
+      ): IO[JorlanError, List[DriveFile]] =
         ZIO.fail(JorlanError("No drive credentials in test environment"))
       override def readTextFile(
         userId: UserId,
-        fileId: domain.DriveFileId,
+        fileId: DriveFileId,
       ): IO[JorlanError, String] =
         ZIO.fail(JorlanError("No drive credentials in test environment"))
       override def downloadFile(
         userId: UserId,
-        fileId: domain.DriveFileId,
+        fileId: DriveFileId,
       ): IO[JorlanError, Array[Byte]] =
         ZIO.fail(JorlanError("No drive credentials in test environment"))
     }
