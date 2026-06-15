@@ -315,16 +315,16 @@ object JorlanEndToEndSpec
         for {
           interp      <- ZIO.service[Interp]
           storeResult <- interp.execute(
-            """mutation { storeMemory(key: "e2e.memory", text: "E2E memory value", scope: "User") { id scope recordKey } }""",
+            """mutation { storeMemory(key: "e2e.memory", text: "E2E memory value", scope: User) { id scope recordKey } }""",
           )
-          listResult <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+          listResult <- interp.execute("""{ listMemory(scope: User) { id scope recordKey } }""")
           id = {
             import scala.language.unsafeNulls
             val pat = """"id":([0-9]+)""".r
             pat.findFirstMatchIn(storeResult.data.toString).map(_.group(1).toLong).getOrElse(0L)
           }
           forgetResult <- interp.execute(s"""mutation { forgetMemory(value: $id) }""")
-          afterList    <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+          afterList    <- interp.execute("""{ listMemory(scope: User) { id scope recordKey } }""")
         } yield assertTrue(
           storeResult.errors.isEmpty,
           listResult.data.toString.contains("e2e.memory"),
@@ -336,7 +336,7 @@ object JorlanEndToEndSpec
         for {
           interp      <- ZIO.service[Interp]
           storeResult <- interp.execute(
-            """mutation { storeMemory(key: "e2e.share", text: "shared value", scope: "User") { id } }""",
+            """mutation { storeMemory(key: "e2e.share", text: "shared value", scope: User) { id } }""",
           )
           id = {
             import scala.language.unsafeNulls
@@ -344,7 +344,7 @@ object JorlanEndToEndSpec
             pat.findFirstMatchIn(storeResult.data.toString).map(_.group(1).toLong).getOrElse(0L)
           }
           shareResult <- interp.execute(s"""mutation { markMemoryShared(value: $id) { id scope } }""")
-          sharedList  <- interp.execute("""{ listMemory(scope: "Shared") { id scope recordKey } }""")
+          sharedList  <- interp.execute("""{ listMemory(scope: Shared) { id scope recordKey } }""")
         } yield assertTrue(
           storeResult.errors.isEmpty,
           shareResult.data.toString.contains("Shared"),
