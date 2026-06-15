@@ -10,8 +10,7 @@
 
 package jorlan
 
-import jorlan
-.*
+import jorlan.domain.*
 import jorlan.service.EventLogFilter
 import zio.json.JsonEncoder
 import zio.json.ast.Json
@@ -28,9 +27,15 @@ trait ExternalCredentialRepository[F[_]] {
     expiresAt:     Option[Instant],
     scopes:        Option[String],
   ): F[Unit]
-  def find(userId:      UserId, provider: String): F[Option[ExternalCredential]]
-  def delete(userId:    UserId, provider: String): F[Unit]
-  def listByUser(userId: UserId):                  F[List[ExternalCredential]]
+  def find(
+    userId:   UserId,
+    provider: String,
+  ): F[Option[ExternalCredential]]
+  def delete(
+    userId:   UserId,
+    provider: String,
+  ):                              F[Unit]
+  def listByUser(userId: UserId): F[List[ExternalCredential]]
 
 }
 
@@ -464,16 +469,16 @@ trait ServerSettingsRepository[F[_]] {
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
-  def user:        UserRepository[F]
-  def agent:       AgentRepository[F]
-  def conversation: ConversationRepository[F]
-  def skill:       SkillRepository[F]
-  def memory:      MemoryRepository[F]
-  def eventLog:    EventLogRepository[F]
-  def scheduler:   SchedulerRepository[F]
-  def artifact:    ArtifactRepository[F]
-  def permission:  PermissionRepository[F]
-  def setting:     ServerSettingsRepository[F]
+  def user:          UserRepository[F]
+  def agent:         AgentRepository[F]
+  def conversation:  ConversationRepository[F]
+  def skill:         SkillRepository[F]
+  def memory:        MemoryRepository[F]
+  def eventLog:      EventLogRepository[F]
+  def scheduler:     SchedulerRepository[F]
+  def artifact:      ArtifactRepository[F]
+  def permission:    PermissionRepository[F]
+  def setting:       ServerSettingsRepository[F]
   def extCredential: ExternalCredentialRepository[F]
 
 }

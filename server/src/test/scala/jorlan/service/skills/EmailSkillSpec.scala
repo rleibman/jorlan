@@ -75,13 +75,19 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
   private def makeSkill(provider: EmailProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, EmailSkill] =
     ZIO.serviceWith[ZIORepositories](new EmailSkill(provider, _))
 
-  private def strField(json: Json, key: String): Option[String] =
+  private def strField(
+    json: Json,
+    key:  String,
+  ): Option[String] =
     json match {
       case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
       case _                => None
     }
 
-  private def intField(json: Json, key: String): Option[Int] =
+  private def intField(
+    json: Json,
+    key:  String,
+  ): Option[Int] =
     json match {
       case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Num(n)) => n.intValue }
       case _                => None
@@ -171,10 +177,10 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
       },
       test("email.archive archives a message") {
         for {
-          provider  <- makeProvider()
-          skill     <- makeSkill(provider)
-          result    <- skill.invoke(ctx, "email.archive", Json.Obj("messageId" -> Json.Str("msg-1")))
-          archived  <- provider.archivedIds
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          result   <- skill.invoke(ctx, "email.archive", Json.Obj("messageId" -> Json.Str("msg-1")))
+          archived <- provider.archivedIds
         } yield assertTrue(
           strField(result, "messageId").contains("msg-1"),
           archived.contains(EmailMessageId("msg-1")),
@@ -182,10 +188,10 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
       },
       test("email.delete deletes a message") {
         for {
-          provider  <- makeProvider()
-          skill     <- makeSkill(provider)
-          result    <- skill.invoke(ctx, "email.delete", Json.Obj("messageId" -> Json.Str("msg-2")))
-          archived  <- provider.archivedIds
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          result   <- skill.invoke(ctx, "email.delete", Json.Obj("messageId" -> Json.Str("msg-2")))
+          archived <- provider.archivedIds
         } yield assertTrue(
           strField(result, "messageId").contains("msg-2"),
           archived.contains(EmailMessageId("msg-2")),
@@ -193,8 +199,8 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
       },
       test("email.reply replies to a message") {
         for {
-          provider  <- makeProvider()
-          skill     <- makeSkill(provider)
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
           args = Json.Obj(
             "messageId" -> Json.Str("msg-1"),
             "body"      -> Json.Str("Thanks for the message!"),
@@ -221,6 +227,33 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
           result   <- skill.invoke(ctx, "email.search", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
+      test("email.reply fails without messageId") {
+        for {
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          result   <- skill.invoke(ctx, "email.reply", Json.Obj("body" -> Json.Str("Hello"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      test("email.send with cc and bcc fields") {
+        for {
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          args = Json.Obj(
+            "to"      -> Json.Arr(Json.Str("alice@example.com")),
+            "cc"      -> Json.Arr(Json.Str("bob@example.com")),
+            "bcc"     -> Json.Arr(Json.Str("carol@example.com")),
+            "subject" -> Json.Str("CC Test"),
+            "body"    -> Json.Str("With CC and BCC"),
+          )
+          result <- skill.invoke(ctx, "email.send", args)
+          sent   <- provider.sentMessages
+        } yield assertTrue(
+          strField(result, "messageId").isDefined,
+          sent.length == 1,
+          sent.head.cc == List("bob@example.com"),
+          sent.head.bcc == List("carol@example.com"),
+        )
+      },
       test("unknown tool returns JorlanError") {
         for {
           provider <- makeProvider()
@@ -239,32 +272,52 @@ class FakeEmailProvider(
   archivedRef: Ref[List[EmailMessageId]],
 ) extends EmailProvider[[A] =>> IO[JorlanError, A]] {
 
-  override def listMessages(userId: UserId, maxResults: Int, query: Option[String]): IO[JorlanError, List[EmailMessage]] =
+  override def listMessages(
+    userId:     UserId,
+    maxResults: Int,
+    query:      Option[String],
+  ): IO[JorlanError, List[EmailMessage]] =
     messagesRef.get.map { msgs =>
       val filtered = query.fold(msgs)(q => msgs.filter(m => m.subject.contains(q) || m.body.contains(q)))
       filtered.take(maxResults)
     }
 
-  override def getMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, EmailMessage] =
+  override def getMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, EmailMessage] =
     messagesRef.get.flatMap { msgs =>
-      ZIO.fromOption(msgs.find(_.id == messageId))
+      ZIO
+        .fromOption(msgs.find(_.id == messageId))
         .orElseFail(JorlanError(s"Message not found: ${messageId.value}"))
     }
 
-  override def sendDraft(userId: UserId, draft: EmailDraft): IO[JorlanError, EmailMessageId] =
+  override def sendDraft(
+    userId: UserId,
+    draft:  EmailDraft,
+  ): IO[JorlanError, EmailMessageId] =
     sentRef.update(_ :+ draft) *> ZIO.succeed(EmailMessageId("fake-sent-id"))
 
-  override def createDraft(userId: UserId, draft: EmailDraft): IO[JorlanError, String] =
+  override def createDraft(
+    userId: UserId,
+    draft:  EmailDraft,
+  ): IO[JorlanError, String] =
     draftsRef.update(_ :+ draft) *> ZIO.succeed("fake-draft-id")
 
-  override def archiveMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, Unit] =
+  override def archiveMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, Unit] =
     archivedRef.update(_ :+ messageId)
 
-  override def deleteMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, Unit] =
+  override def deleteMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, Unit] =
     archivedRef.update(_ :+ messageId)
 
-  def sentMessages: UIO[List[EmailDraft]]    = sentRef.get
-  def draftMessages: UIO[List[EmailDraft]]   = draftsRef.get
-  def archivedIds: UIO[List[EmailMessageId]] = archivedRef.get
+  def sentMessages:  UIO[List[EmailDraft]] = sentRef.get
+  def draftMessages: UIO[List[EmailDraft]] = draftsRef.get
+  def archivedIds:   UIO[List[EmailMessageId]] = archivedRef.get
 
 }

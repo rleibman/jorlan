@@ -103,10 +103,10 @@ object JorlanSchema {
       querySchema[ExternalCredentialRow](
         "external_credentials",
         _.credentialData -> "credential_data",
-        _.expiresAt -> "expires_at",
-        _.createdAt -> "created_at",
-        _.updatedAt -> "updated_at",
-        _.userId -> "user_id",
+        _.expiresAt      -> "expires_at",
+        _.createdAt      -> "created_at",
+        _.updatedAt      -> "updated_at",
+        _.userId         -> "user_id",
       ),
     )
 
@@ -1387,8 +1387,7 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
 // ─── ExternalCredential ───────────────────────────────────────────────────────
 
 private class QuillExternalCredentialRepository(qc: QuillCtx)
-    extends QuillRepoBase(qc)
-    with ZIOExternalCredentialRepository {
+    extends QuillRepoBase(qc) with ZIOExternalCredentialRepository {
 
   import JorlanSchema.*
   import qc.ctx.{*, given}
@@ -1446,7 +1445,10 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
     }
   }
 
-  override def find(userId: UserId, provider: String): RepositoryTask[Option[ExternalCredential]] =
+  override def find(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Option[ExternalCredential]] =
     exec(
       qc.ctx
         .run(
@@ -1456,7 +1458,10 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
         .map(_.headOption.map(rowToCredential)),
     )
 
-  override def delete(userId: UserId, provider: String): RepositoryTask[Unit] =
+  override def delete(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Unit] =
     exec(
       qc.ctx
         .run(

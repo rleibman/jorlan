@@ -893,8 +893,8 @@ object JorlanClient {
       )
 
     def startOAuth[A](
-      provider:       String,
-      innerSelection: SelectionBuilder[OAuthStartResult, A],
+      provider:          String,
+      innerSelection:    SelectionBuilder[OAuthStartResult, A],
     )(implicit encoder0: ArgEncoder[String],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
       _root_.caliban.client.SelectionBuilder.Field(
@@ -904,7 +904,7 @@ object JorlanClient {
       )
 
     def revokeOAuth(
-      provider:        String,
+      provider:          String,
     )(implicit encoder0: ArgEncoder[String],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
       _root_.caliban.client.SelectionBuilder.Field(

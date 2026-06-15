@@ -14,11 +14,15 @@ import zio.json.{JsonDecoder, JsonEncoder}
 import java.time.Instant
 
 enum CalendarEventStatus derives JsonEncoder, JsonDecoder {
+
   case Confirmed, Tentative, Cancelled
+
 }
 
 enum AttendeeResponse derives JsonEncoder, JsonDecoder {
+
   case Accepted, Declined, Tentative, NeedsAction
+
 }
 
 case class CalendarAttendee(

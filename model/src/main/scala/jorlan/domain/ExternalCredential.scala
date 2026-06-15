@@ -15,9 +15,10 @@ import zio.json.ast.Json
 import java.time.Instant
 
 case class ExternalCredential(
-  id:             ExternalCredentialId,
-  userId:         UserId,
-  provider:       String,
+  id:       ExternalCredentialId,
+  userId:   UserId,
+  provider: String,
+  /** Stored encrypted via [[jorlan.google.OAuthCredentialEncryptor]]. Never log or transmit in plaintext. */
   credentialData: Json,
   expiresAt:      Option[Instant],
   scopes:         Option[String],

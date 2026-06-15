@@ -62,12 +62,29 @@ object SubscriptionClientIntegrationSpec
 
   private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
     new OAuthCredentialService {
-      override def store(userId: UserId, provider: String, plainJson: Json): IO[JorlanError, Unit] = ZIO.unit
-      override def load(userId: UserId, provider: String): IO[JorlanError, Option[Json]] = ZIO.none
-      override def revoke(userId: UserId, provider: String): IO[JorlanError, Unit] = ZIO.unit
+      override def store(
+        userId:    UserId,
+        provider:  String,
+        plainJson: Json,
+      ): IO[JorlanError, Unit] = ZIO.unit
+      override def load(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(
+        userId:   UserId,
+        provider: String,
+      ):                                          IO[JorlanError, Unit] = ZIO.unit
       override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
-      override def refreshAccessToken(userId: UserId, provider: String): IO[JorlanError, String] =
+      override def refreshAccessToken(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
         ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+      override def getExpiresAt(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
     },
   )
 

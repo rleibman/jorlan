@@ -33,15 +33,23 @@ class FakeDriveProvider(
       filtered.take(maxResults)
     }
 
-  override def readTextFile(userId: UserId, fileId: DriveFileId): IO[JorlanError, String] =
+  override def readTextFile(
+    userId: UserId,
+    fileId: DriveFileId,
+  ): IO[JorlanError, String] =
     contentMap.get.flatMap { m =>
-      ZIO.fromOption(m.get(fileId.value).map(new String(_, "UTF-8")))
+      ZIO
+        .fromOption(m.get(fileId.value).map(new String(_, "UTF-8")))
         .orElseFail(JorlanError(s"File not found: ${fileId.value}"))
     }
 
-  override def downloadFile(userId: UserId, fileId: DriveFileId): IO[JorlanError, Array[Byte]] =
+  override def downloadFile(
+    userId: UserId,
+    fileId: DriveFileId,
+  ): IO[JorlanError, Array[Byte]] =
     contentMap.get.flatMap { m =>
-      ZIO.fromOption(m.get(fileId.value))
+      ZIO
+        .fromOption(m.get(fileId.value))
         .orElseFail(JorlanError(s"File not found: ${fileId.value}"))
     }
 

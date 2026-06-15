@@ -20,9 +20,16 @@ import javax.crypto.Cipher
 import javax.crypto.spec.{GCMParameterSpec, SecretKeySpec}
 import java.security.{MessageDigest, SecureRandom}
 
+/** Encrypts and decrypts OAuth credential JSON using AES-256-GCM with a random 96-bit IV per encryption.
+  *
+  * Key derivation: `SHA-256("jorlan-external-credentials" ++ secret)` truncated to 32 bytes. The secret is currently
+  * shared with the JWT signing key (known limitation — see P13-003 for the planned fix using a dedicated env var and
+  * HKDF derivation). A new `SecureRandom` instance is created once at construction and reused for all IV generation.
+  */
 class OAuthCredentialEncryptor(secretKey: String) {
 
-  private val keyBytes: Array[Byte] = deriveKey(secretKey)
+  private val keyBytes:     Array[Byte] = deriveKey(secretKey)
+  private val secureRandom: SecureRandom = SecureRandom.getInstanceStrong
 
   private def deriveKey(secret: String): Array[Byte] = {
     val md = MessageDigest.getInstance("SHA-256")
@@ -33,7 +40,7 @@ class OAuthCredentialEncryptor(secretKey: String) {
   def encrypt(plaintext: String): Either[JorlanError, Json] =
     try {
       val iv = new Array[Byte](12)
-      SecureRandom.getInstanceStrong.nextBytes(iv)
+      secureRandom.nextBytes(iv)
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv))
       val ciphertext = cipher.doFinal(plaintext.getBytes("UTF-8"))
@@ -48,14 +55,14 @@ class OAuthCredentialEncryptor(secretKey: String) {
 
   def decrypt(encrypted: Json): Either[JorlanError, String] =
     try {
-      val fields = encrypted match {
-        case Json.Obj(fs) => fs
-        case _            => Chunk.empty
-      }
-      val fieldMap   = fields.toMap
-      val iv         = Base64.getDecoder.decode(fieldMap.get("iv").flatMap(_.asString).getOrElse(""))
-      val ciphertext = Base64.getDecoder.decode(fieldMap.get("ciphertext").flatMap(_.asString).getOrElse(""))
-      val cipher     = Cipher.getInstance("AES/GCM/NoPadding")
+      def field(key: String): String =
+        encrypted match {
+          case Json.Obj(fs) => fs.collectFirst { case (`key`, Json.Str(v)) => v }.getOrElse("")
+          case _            => ""
+        }
+      val iv = Base64.getDecoder.decode(field("iv"))
+      val ciphertext = Base64.getDecoder.decode(field("ciphertext"))
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv))
       Right(new String(cipher.doFinal(ciphertext), "UTF-8"))
     } catch {

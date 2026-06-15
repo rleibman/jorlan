@@ -47,7 +47,8 @@ class FakeCalendarProvider(
     eventId:    CalendarEventId,
   ): IO[JorlanError, CalendarEntry] =
     eventsRef.get.flatMap { m =>
-      ZIO.fromOption(m.getOrElse(calendarId.value, Nil).find(_.id == eventId))
+      ZIO
+        .fromOption(m.getOrElse(calendarId.value, Nil).find(_.id == eventId))
         .orElseFail(JorlanError(s"Event not found: ${eventId.value}"))
     }
 
@@ -58,8 +59,8 @@ class FakeCalendarProvider(
   ): IO[JorlanError, CalendarEntry] =
     for {
       newId <- idGenRef.updateAndGet(_ + 1).map(n => CalendarEventId(s"fake-event-$n"))
-      saved  = entry.copy(id = newId)
-      _     <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, Nil) :+ saved))
+      saved = entry.copy(id = newId)
+      _ <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, Nil) :+ saved))
     } yield saved
 
   override def updateEvent(

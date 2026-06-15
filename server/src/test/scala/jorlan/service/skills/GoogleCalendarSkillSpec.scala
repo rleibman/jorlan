@@ -60,10 +60,14 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
       ir <- Ref.make(0L)
     } yield FakeCalendarProvider(cr, er, ir)
 
-  private def makeSkill(provider: CalendarProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, GoogleCalendarSkill] =
+  private def makeSkill(provider: CalendarProvider[[A] =>> IO[JorlanError, A]])
+    : URIO[ZIORepositories, GoogleCalendarSkill] =
     ZIO.serviceWith[ZIORepositories](new GoogleCalendarSkill(provider, _))
 
-  private def strField(json: Json, key: String): Option[String] =
+  private def strField(
+    json: Json,
+    key:  String,
+  ): Option[String] =
     json match {
       case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
       case _                => None
@@ -99,12 +103,12 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
           case _ => assertTrue(false)
         }
       },
-      test("calendar.listEvents fails without calendarId") {
+      test("calendar.listEvents uses 'primary' as default calendarId") {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
           result   <- skill.invoke(ctx, "calendar.listEvents", Json.Obj()).either
-        } yield assertTrue(result.isLeft)
+        } yield assertTrue(result.isRight)
       },
       test("calendar.getEvent returns specific event") {
         for {
@@ -127,14 +131,15 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
-          result   <- skill.invoke(
-            ctx,
-            "calendar.getEvent",
-            Json.Obj(
-              "calendarId" -> Json.Str("primary"),
-              "eventId"    -> Json.Str("no-such-event"),
-            ),
-          ).either
+          result   <- skill
+            .invoke(
+              ctx,
+              "calendar.getEvent",
+              Json.Obj(
+                "calendarId" -> Json.Str("primary"),
+                "eventId"    -> Json.Str("no-such-event"),
+              ),
+            ).either
         } yield assertTrue(result.isLeft)
       },
       test("calendar.createEvent creates a new event") {
@@ -154,11 +159,12 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
-          result   <- skill.invoke(
-            ctx,
-            "calendar.createEvent",
-            Json.Obj("calendarId" -> Json.Str("primary")),
-          ).either
+          result   <- skill
+            .invoke(
+              ctx,
+              "calendar.createEvent",
+              Json.Obj("calendarId" -> Json.Str("primary")),
+            ).either
         } yield assertTrue(result.isLeft)
       },
       test("calendar.deleteEvent deletes an event") {
@@ -179,6 +185,20 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
             assertTrue(deleted.contains(true))
           case _ => assertTrue(false)
         }
+      },
+      test("calendar.updateEvent updates event fields") {
+        for {
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          args = Json.Obj(
+            "calendarId" -> Json.Str("primary"),
+            "eventId"    -> Json.Str("evt-1"),
+            "summary"    -> Json.Str("Updated Meeting"),
+            "start"      -> Json.Str("2026-06-15T10:00:00Z"),
+            "end"        -> Json.Str("2026-06-15T11:00:00Z"),
+          )
+          result <- skill.invoke(ctx, "calendar.updateEvent", args)
+        } yield assertTrue(strField(result, "summary").contains("Updated Meeting"))
       },
       test("unknown tool returns JorlanError") {
         for {
@@ -221,7 +241,8 @@ class FakeCalendarProvider(
     eventId:    CalendarEventId,
   ): IO[JorlanError, CalendarEntry] =
     eventsRef.get.flatMap { m =>
-      ZIO.fromOption(m.getOrElse(calendarId.value, Nil).find(_.id == eventId))
+      ZIO
+        .fromOption(m.getOrElse(calendarId.value, Nil).find(_.id == eventId))
         .orElseFail(JorlanError(s"Event not found: ${eventId.value}"))
     }
 
@@ -232,8 +253,8 @@ class FakeCalendarProvider(
   ): IO[JorlanError, CalendarEntry] =
     for {
       newId <- idGenRef.updateAndGet(_ + 1).map(n => CalendarEventId(s"fake-event-$n"))
-      saved  = entry.copy(id = newId)
-      _     <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, Nil) :+ saved))
+      saved = entry.copy(id = newId)
+      _ <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, Nil) :+ saved))
     } yield saved
 
   override def updateEvent(

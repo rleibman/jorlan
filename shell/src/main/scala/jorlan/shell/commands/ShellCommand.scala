@@ -116,22 +116,22 @@ object ShellCommand {
           ApprovalsApprove(ApprovalRequestId(idStr.toLong))
         case "approvals" :: "deny" :: idStr :: _ if idStr.toLongOption.isDefined =>
           ApprovalsDeny(ApprovalRequestId(idStr.toLong))
-        case "approvals" :: _ => Unknown("/approvals")
-        case "oauth" :: "status" :: provider :: _ => OAuthStatus(provider)
-        case "oauth" :: "connect" :: provider :: _ => OAuthConnect(provider)
-        case "oauth" :: "revoke" :: provider :: _ => OAuthRevoke(provider)
-        case "oauth" :: _ => OAuthList
+        case "approvals" :: _                                       => Unknown("/approvals")
+        case "oauth" :: "status" :: provider :: _                   => OAuthStatus(provider)
+        case "oauth" :: "connect" :: provider :: _                  => OAuthConnect(provider)
+        case "oauth" :: "revoke" :: provider :: _                   => OAuthRevoke(provider)
+        case "oauth" :: _                                           => OAuthList
         case "email" :: "list" :: n :: _ if n.toIntOption.isDefined => EmailList(n.toInt)
-        case "email" :: "list" :: _ => EmailList(10)
-        case "email" :: "read" :: id :: _ => EmailRead(id)
-        case "email" :: "search" :: rest if rest.nonEmpty => EmailSearch(rest.mkString(" "))
-        case "email" :: _ => Unknown("/email")
-        case "calendar" :: "today" :: _ => CalendarToday
-        case "calendar" :: "list" :: date :: _ => CalendarList(Some(date))
-        case "calendar" :: "list" :: Nil => CalendarList(None)
-        case "calendar" :: _ => Unknown("/calendar")
-        case other :: _       => Unknown(s"/$other")
-        case Nil              => Unknown("/")
+        case "email" :: "list" :: _                                 => EmailList(10)
+        case "email" :: "read" :: id :: _                           => EmailRead(id)
+        case "email" :: "search" :: rest if rest.nonEmpty           => EmailSearch(rest.mkString(" "))
+        case "email" :: _                                           => Unknown("/email")
+        case "calendar" :: "today" :: _                             => CalendarToday
+        case "calendar" :: "list" :: date :: _                      => CalendarList(Some(date))
+        case "calendar" :: "list" :: Nil                            => CalendarList(None)
+        case "calendar" :: _                                        => Unknown("/calendar")
+        case other :: _                                             => Unknown(s"/$other")
+        case Nil                                                    => Unknown("/")
       }
     }
   }

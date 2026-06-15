@@ -642,13 +642,18 @@ object JorlanAPI {
               credOpt <- ZIO
                 .serviceWithZIO[OAuthCredentialService](_.load(actorId, provider))
                 .mapError(e => JorlanError(s"Failed to load OAuth status: ${e.getMessage}"))
+              expiresAt <- ZIO
+                .serviceWithZIO[OAuthCredentialService](_.getExpiresAt(actorId, provider))
+                .mapError(e => JorlanError(s"Failed to load OAuth expiry: ${e.getMessage}"))
+                .when(credOpt.isDefined)
+                .map(_.flatten)
             } yield OAuthStatus(
               connected = credOpt.isDefined,
-              expiresAt = None, // expiresAt is in the encrypted credential; not exposed here
+              expiresAt = expiresAt,
             ),
           listOAuthProviders =
             for {
-              actorId <- actorIdFromSession
+              actorId   <- actorIdFromSession
               providers <- ZIO
                 .serviceWithZIO[OAuthCredentialService](_.listProviders(actorId))
                 .mapError(e => JorlanError(s"Failed to list OAuth providers: ${e.getMessage}"))
@@ -926,6 +931,7 @@ object JorlanAPI {
           invokeTool = input =>
             for {
               actorId <- actorIdFromSession
+              _       <- requireCapability("agent.skill.invoke", actorId)
               ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
               result <- ZIO.serviceWithZIO[SkillRegistry](_.invoke(input.toolName, input.argsJson, ctx))
             } yield result.toJson,

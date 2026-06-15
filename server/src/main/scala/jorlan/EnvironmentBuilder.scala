@@ -18,7 +18,14 @@ import jorlan.connector.telegram.*
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.domain.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
-import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider, OAuthCredentialEncryptor, OAuthCredentialServiceImpl}
+import jorlan.google.{
+  GmailProvider,
+  GoogleCalendarProvider,
+  GoogleDriveProvider,
+  MappedExternalCredentialRepository,
+  OAuthCredentialEncryptor,
+  OAuthCredentialServiceImpl,
+}
 import jorlan.service.*
 import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.memory.MemoryServiceImpl
@@ -64,43 +71,37 @@ object EnvironmentBuilder {
     }
 
   /** ZLayer that provides [[OAuthCredentialService]] from config + repositories + HTTP client. */
-  private val oauthCredentialServiceLayer: URLayer[ConfigurationService & ZIORepositories & Client, OAuthCredentialService] =
+  private val oauthCredentialServiceLayer
+    : URLayer[ConfigurationService & ZIORepositories & Client, OAuthCredentialService] =
     ZLayer.fromZIO {
       for {
         config     <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
         repos      <- ZIO.service[ZIORepositories]
         httpClient <- ZIO.service[Client]
-        secretKey   = config.jorlan.auth.secretKey.key
-        googleCfg   = config.jorlan.google
-        encryptor   = OAuthCredentialEncryptor(secretKey)
-        // Wrap the QuillExternalCredentialRepository (RepositoryTask) to IO[JorlanError, A]
-        repoWrapped = new jorlan.google.IOExternalCredentialRepository {
-          override def upsert(
-            userId:        UserId,
-            provider:      String,
-            encryptedData: zio.json.ast.Json,
-            expiresAt:     Option[java.time.Instant],
-            scopes:        Option[String],
-          ): zio.IO[JorlanError, Unit] =
-            repos.extCredential.upsert(userId, provider, encryptedData, expiresAt, scopes)
-              .mapError(JorlanError(_))
-
-          override def find(userId: UserId, provider: String): zio.IO[JorlanError, Option[ExternalCredential]] =
-            repos.extCredential.find(userId, provider).mapError(JorlanError(_))
-
-          override def delete(userId: UserId, provider: String): zio.IO[JorlanError, Unit] =
-            repos.extCredential.delete(userId, provider).mapError(JorlanError(_))
-
-          override def listByUser(userId: UserId): zio.IO[JorlanError, List[ExternalCredential]] =
-            repos.extCredential.listByUser(userId).mapError(JorlanError(_))
-        }
-      } yield OAuthCredentialServiceImpl.make(
-        repo = repoWrapped,
-        encryptor = encryptor,
-        clientId = googleCfg.clientId,
-        clientSecret = googleCfg.clientSecret,
-        client = httpClient,
-      )
+        googleCfg = config.jorlan.google
+        _ <- ZIO.when(googleCfg.clientId.isEmpty)(
+          ZIO.logWarning(
+            "google.clientId is not configured — OAuth flows and Gmail/Calendar/Drive skills will not work",
+          ),
+        )
+        _ <- ZIO.when(googleCfg.clientSecret.isEmpty)(
+          ZIO.logWarning(
+            "google.clientSecret is not configured — OAuth flows and Gmail/Calendar/Drive skills will not work",
+          ),
+        )
+        encryptionKey =
+          if (googleCfg.credentialEncryptionKey.nonEmpty) googleCfg.credentialEncryptionKey
+          else config.jorlan.auth.secretKey.key
+        encryptor = OAuthCredentialEncryptor(encryptionKey)
+        repoWrapped = MappedExternalCredentialRepository(repos.extCredential, JorlanError(_))
+        oauthSvc <- OAuthCredentialServiceImpl.make(
+          repo = repoWrapped,
+          encryptor = encryptor,
+          clientId = googleCfg.clientId,
+          clientSecret = googleCfg.clientSecret,
+          client = httpClient,
+        )
+      } yield oauthSvc
     }
 
   val live: ULayer[JorlanEnvironment] =

@@ -15,7 +15,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.web.graphql.ScalaJSClientAdapter
-import net.leibman.jorlan.muiMaterial.components.{CssBaseline, ThemeProvider}
+import net.leibman.jorlan.muiMaterial.components.{Alert, CssBaseline, ThemeProvider}
 import net.leibman.jorlan.muiMaterial.stylesMod
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeMod.ThemeOptions
 import org.scalajs.dom
@@ -62,14 +62,24 @@ object JorlanWebApp {
       .asInstanceOf[ThemeOptions],
   )
 
+  /** Read the `oauth` query parameter from the current URL (set by the OAuth callback redirect). */
+  private def oauthResultFromUrl(): Option[String] = {
+    val search = dom.window.location.search
+    if (search.contains("oauth=success")) Some("success")
+    else if (search.contains("oauth=error")) Some("error")
+    else None
+  }
+
   val component =
     ScalaFnComponent
       .withHooks[Unit]
       .useState(Option.empty[Option[User]])
+      .useState(oauthResultFromUrl()) // oauth toast: Some("success") | Some("error") | None
       .useEffectOnMountBy {
         (
           _,
           userState,
+          _,
         ) =>
           AuthClient
             .whoami[User, ConnectionId](Some(connectionId))
@@ -86,9 +96,17 @@ object JorlanWebApp {
         (
           _,
           userState,
+          oauthToast,
         ) =>
           ThemeProvider(theme)(
             CssBaseline(),
+            // OAuth callback result banner — shown when redirected back from Google with ?oauth=success/error
+            oauthToast.value.fold(EmptyVdom) { result =>
+              Alert.set("severity", if (result == "success") "success" else "error")(
+                if (result == "success") "Google account connected successfully."
+                else "Failed to connect Google account. Please try again.",
+              )
+            },
             userState.value match {
               case None =>
                 <.div(^.className := "loading")("Loading…")

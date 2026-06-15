@@ -148,6 +148,15 @@ object CommandHandler {
       "/approvals list                      List pending approval requests",
       "/approvals approve <id>              Approve a pending request",
       "/approvals deny <id>                 Deny a pending request",
+      "/oauth status <provider>             Show OAuth connection status for a provider",
+      "/oauth connect <provider>            Start OAuth authorization flow for a provider",
+      "/oauth revoke <provider>             Revoke stored OAuth credentials for a provider",
+      "/oauth list                          List all connected OAuth providers",
+      "/email list [maxResults]             List recent email messages",
+      "/email read <messageId>              Read a specific email message",
+      "/email search <query>                Search email messages",
+      "/calendar today                      List today's calendar events",
+      "/calendar list [YYYY-MM-DD]          List calendar events for a date",
       "/trace [level]      Set log level: none | error | warning | info | debug",
       "/quit /exit         Exit the shell",
     )
@@ -583,7 +592,7 @@ object CommandHandler {
     gql(_.run(JorlanClient.Queries.oauthStatus(provider, JorlanClient.OAuthStatus.view))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not get OAuth status: $err")),
       {
-        case None => screen(_.addMessage(MessageKind.System, s"OAuth status for '$provider': not found"))
+        case None    => screen(_.addMessage(MessageKind.System, s"OAuth status for '$provider': not found"))
         case Some(s) =>
           val expiry = s.expiresAt.map(t => s"  expires: $t").getOrElse("")
           screen(_.addMessage(MessageKind.System, s"OAuth '$provider': connected=${s.connected}$expiry"))
@@ -601,17 +610,23 @@ object CommandHandler {
     )
 
   private def connectOAuth(provider: String): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.startOAuth(provider, JorlanClient.OAuthStartResult.authUrl))).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"Could not start OAuth: $err")),
-      {
-        case None =>
-          screen(_.addMessage(MessageKind.Error, s"No auth URL returned for provider '$provider'"))
-        case Some(authUrl) =>
-          screen(
-            _.addMessage(MessageKind.System, s"Open this URL in your browser to connect $provider:\n  $authUrl"),
-          )
-      },
-    )
+    for {
+      serverUrl <- cfg(_.serverUrl)
+      _ <- gql(_.run(JorlanClient.Mutations.startOAuth(provider, JorlanClient.OAuthStartResult.authUrl))).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not start OAuth: $err")),
+        {
+          case None =>
+            screen(_.addMessage(MessageKind.Error, s"No auth URL returned for provider '$provider'"))
+          case Some(authPath) =>
+            val fullUrl =
+              if (authPath.startsWith("http")) authPath
+              else s"$serverUrl$authPath"
+            screen(
+              _.addMessage(MessageKind.System, s"Open this URL in your browser to connect $provider:\n  $fullUrl"),
+            )
+        },
+      )
+    } yield ()
 
   private def revokeOAuth(provider: String): ZIO[Env, Nothing, Unit] =
     gql(_.run(JorlanClient.Mutations.revokeOAuth(provider))).foldZIO(
@@ -630,7 +645,7 @@ object CommandHandler {
 
   private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] =
     gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.read", s"""{"messageId":"$messageId"}"""))
+      _.run(JorlanClient.Mutations.invokeTool("email.read", s"""{"messageId":"$messageId"}""")),
     ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.read failed: $err")),
       {
@@ -642,7 +657,7 @@ object CommandHandler {
   private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
     val escaped = query.replace("\"", "\\\"")
     gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.search", s"""{"query":"$escaped"}"""))
+      _.run(JorlanClient.Mutations.invokeTool("email.search", s"""{"query":"$escaped"}""")),
     ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.search failed: $err")),
       {
@@ -660,7 +675,7 @@ object CommandHandler {
       _.run(
         JorlanClient.Mutations.invokeTool(
           "calendar.listEvents",
-          s"""{"timeMin":"${todayMin}","timeMax":"${todayMax}","maxResults":50}""",
+          s"""{"timeMin":"$todayMin","timeMax":"$todayMax","maxResults":50}""",
         ),
       ),
     ).foldZIO(
@@ -674,23 +689,28 @@ object CommandHandler {
 
   private def calendarList(date: Option[String]): ZIO[Env, Nothing, Unit] = {
     import java.time.{LocalDate, ZoneOffset}
-    val day    = date.flatMap(d => scala.util.Try(LocalDate.parse(d)).toOption).getOrElse(LocalDate.now())
-    val dayMin = day.atStartOfDay(ZoneOffset.UTC).toInstant
-    val dayMax = dayMin.plusSeconds(86400)
-    gql(
-      _.run(
-        JorlanClient.Mutations.invokeTool(
-          "calendar.listEvents",
-          s"""{"timeMin":"${dayMin}","timeMax":"${dayMax}","maxResults":50}""",
-        ),
-      ),
-    ).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
-      {
-        case None         => screen(_.addMessage(MessageKind.System, s"No events for $day."))
-        case Some(result) => screen(_.addMessage(MessageKind.System, result))
-      },
-    )
+    date.flatMap(d => scala.util.Try(LocalDate.parse(d)).failed.toOption.map(_ => d)) match {
+      case Some(raw) =>
+        screen(_.addMessage(MessageKind.Error, s"Invalid date format '$raw'. Use YYYY-MM-DD."))
+      case None =>
+        val day = date.flatMap(d => scala.util.Try(LocalDate.parse(d)).toOption).getOrElse(LocalDate.now())
+        val dayMin = day.atStartOfDay(ZoneOffset.UTC).toInstant
+        val dayMax = dayMin.plusSeconds(86400)
+        gql(
+          _.run(
+            JorlanClient.Mutations.invokeTool(
+              "calendar.listEvents",
+              s"""{"timeMin":"$dayMin","timeMax":"$dayMax","maxResults":50}""",
+            ),
+          ),
+        ).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
+          {
+            case None         => screen(_.addMessage(MessageKind.System, s"No events for $day."))
+            case Some(result) => screen(_.addMessage(MessageKind.System, result))
+          },
+        )
+    }
   }
 
 }

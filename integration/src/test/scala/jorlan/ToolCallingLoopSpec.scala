@@ -69,27 +69,46 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
 
   private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
     new OAuthCredentialService {
-      override def store(userId: UserId, provider: String, plainJson: Json): IO[JorlanError, Unit] = ZIO.unit
-      override def load(userId: UserId, provider: String): IO[JorlanError, Option[Json]] = ZIO.none
-      override def revoke(userId: UserId, provider: String): IO[JorlanError, Unit] = ZIO.unit
+      override def store(
+        userId:    UserId,
+        provider:  String,
+        plainJson: Json,
+      ): IO[JorlanError, Unit] = ZIO.unit
+      override def load(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(
+        userId:   UserId,
+        provider: String,
+      ):                                          IO[JorlanError, Unit] = ZIO.unit
       override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
-      override def refreshAccessToken(userId: UserId, provider: String): IO[JorlanError, String] =
+      override def refreshAccessToken(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
         ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+      override def getExpiresAt(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
     },
   )
 
-  /** FakeModelGateway steps: one ToolCallRequested → FinalAnswer */
-  private val toolCallingSteps: List[ChatStep] = List(
-    ToolCallRequested(id = "tc-1", name = "echo.run", argsJson = """{}"""),
-    FinalAnswer(ZStream.fromIterable(List("Tool result: ", "done"))),
-    )
-
+  private val echoSkill: Skill = new Skill {
+    override def descriptor: SkillDescriptor =
+      SkillDescriptor(
+        name = "echo",
+        tier = SkillTier.BuiltIn,
+        tools = List(
+          ToolDescriptor("echo.run", "Echo a tool call", Json.Obj(zio.Chunk.empty), Json.Obj(zio.Chunk.empty), Nil),
+        ),
+      )
     override def invoke(
       ctx:  InvocationContext,
       tool: String,
       args: Json,
     ): IO[JorlanError, Json] = ZIO.succeed(Json.Str(s"echo:$tool"))
-
   }
 
   /** Builds the full service stack above the shared DB layer for a given sequence of model steps.

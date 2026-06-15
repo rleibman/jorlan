@@ -66,13 +66,19 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
   private def makeSkill(provider: DriveProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, GoogleDriveSkill] =
     ZIO.serviceWith[ZIORepositories](new GoogleDriveSkill(provider, _))
 
-  private def intField(json: Json, key: String): Option[Int] =
+  private def intField(
+    json: Json,
+    key:  String,
+  ): Option[Int] =
     json match {
       case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Num(n)) => n.intValue }
       case _                => None
     }
 
-  private def strField(json: Json, key: String): Option[String] =
+  private def strField(
+    json: Json,
+    key:  String,
+  ): Option[String] =
     json match {
       case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
       case _                => None
@@ -109,6 +115,17 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
           )
         } yield assertTrue(intField(result, "count").contains(1))
       },
+      test("drive.listFiles with query filters by name") {
+        for {
+          provider <- makeProvider()
+          skill    <- makeSkill(provider)
+          result   <- skill.invoke(
+            ctx,
+            "drive.listFiles",
+            Json.Obj("query" -> Json.Str("report")),
+          )
+        } yield assertTrue(intField(result, "count").contains(1))
+      },
       test("drive.readFile returns file content") {
         for {
           provider <- makeProvider()
@@ -133,14 +150,15 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
           result   <- skill.invoke(ctx, "drive.readFile", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
-      test("drive.downloadFile stores artifact and returns info") {
+      test("drive.downloadFile returns base64 content") {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
           result   <- skill.invoke(ctx, "drive.downloadFile", Json.Obj("fileId" -> Json.Str("file-2")))
         } yield assertTrue(
           strField(result, "fileId").contains("file-2"),
-          strField(result, "artifactId").isDefined,
+          strField(result, "content").isDefined,
+          intField(result, "sizeBytes").isDefined,
         )
       },
       test("drive.downloadFile fails without fileId") {
@@ -179,15 +197,23 @@ class FakeDriveProvider(
       filtered.take(maxResults)
     }
 
-  override def readTextFile(userId: UserId, fileId: DriveFileId): IO[JorlanError, String] =
+  override def readTextFile(
+    userId: UserId,
+    fileId: DriveFileId,
+  ): IO[JorlanError, String] =
     contentMap.get.flatMap { m =>
-      ZIO.fromOption(m.get(fileId.value).map(new String(_, "UTF-8")))
+      ZIO
+        .fromOption(m.get(fileId.value).map(new String(_, "UTF-8")))
         .orElseFail(JorlanError(s"File not found: ${fileId.value}"))
     }
 
-  override def downloadFile(userId: UserId, fileId: DriveFileId): IO[JorlanError, Array[Byte]] =
+  override def downloadFile(
+    userId: UserId,
+    fileId: DriveFileId,
+  ): IO[JorlanError, Array[Byte]] =
     contentMap.get.flatMap { m =>
-      ZIO.fromOption(m.get(fileId.value))
+      ZIO
+        .fromOption(m.get(fileId.value))
         .orElseFail(JorlanError(s"File not found: ${fileId.value}"))
     }
 

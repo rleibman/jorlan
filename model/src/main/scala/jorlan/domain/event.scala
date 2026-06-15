@@ -56,7 +56,7 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case SchedulerTriggerAdded
 
   // ─── Email ───────────────────────────────────────────────────────────────────
-  case EmailMessageRead, EmailMessageSent, EmailDraftCreated, EmailMessageArchived
+  case EmailMessageRead, EmailMessageSent, EmailDraftCreated, EmailMessageArchived, EmailMessageDeleted
 
   // ─── Calendar ────────────────────────────────────────────────────────────────
   case CalendarEventRead, CalendarEventCreated, CalendarEventUpdated, CalendarEventDeleted

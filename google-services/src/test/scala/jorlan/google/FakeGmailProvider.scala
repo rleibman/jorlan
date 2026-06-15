@@ -32,27 +32,43 @@ class FakeGmailProvider(
       filtered.take(maxResults)
     }
 
-  override def getMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, EmailMessage] =
+  override def getMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, EmailMessage] =
     messagesRef.get.flatMap { msgs =>
-      ZIO.fromOption(msgs.find(_.id == messageId))
+      ZIO
+        .fromOption(msgs.find(_.id == messageId))
         .orElseFail(JorlanError(s"Message not found: ${messageId.value}"))
     }
 
-  override def sendDraft(userId: UserId, draft: EmailDraft): IO[JorlanError, EmailMessageId] =
+  override def sendDraft(
+    userId: UserId,
+    draft:  EmailDraft,
+  ): IO[JorlanError, EmailMessageId] =
     sentRef.update(_ :+ draft) *> ZIO.succeed(EmailMessageId("fake-gmail-sent-id"))
 
-  override def createDraft(userId: UserId, draft: EmailDraft): IO[JorlanError, String] =
+  override def createDraft(
+    userId: UserId,
+    draft:  EmailDraft,
+  ): IO[JorlanError, String] =
     draftsRef.update(_ :+ draft) *> ZIO.succeed("fake-gmail-draft-id")
 
-  override def archiveMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, Unit] =
+  override def archiveMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, Unit] =
     archivedRef.update(_ :+ messageId)
 
-  override def deleteMessage(userId: UserId, messageId: EmailMessageId): IO[JorlanError, Unit] =
+  override def deleteMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+  ): IO[JorlanError, Unit] =
     archivedRef.update(_ :+ messageId)
 
-  def sentMessages: UIO[List[EmailDraft]]    = sentRef.get
-  def draftMessages: UIO[List[EmailDraft]]   = draftsRef.get
-  def archivedIds: UIO[List[EmailMessageId]] = archivedRef.get
+  def sentMessages:  UIO[List[EmailDraft]] = sentRef.get
+  def draftMessages: UIO[List[EmailDraft]] = draftsRef.get
+  def archivedIds:   UIO[List[EmailMessageId]] = archivedRef.get
 
 }
 

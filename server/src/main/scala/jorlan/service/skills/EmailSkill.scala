@@ -32,9 +32,9 @@ import zio.json.ast.Json
   *   - `email.search` — search for messages
   */
 class EmailSkill(
-  emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
-  repo:          ZIORepositories,
-) extends Skill {
+  emailProvider:      EmailProvider[[A] =>> IO[JorlanError, A]],
+  protected val repo: ZIORepositories,
+) extends Skill with SkillEventLogger {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
@@ -43,88 +43,64 @@ class EmailSkill(
       ToolDescriptor(
         name = "email.list",
         description = "List recent email messages from the inbox.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of messages to return (default 10)"},"query":{"type":"string","description":"Optional search query to filter messages"}},"required":[]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of messages to return (default 10)"},"query":{"type":"string","description":"Optional search query to filter messages"}},"required":[]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
       ),
       ToolDescriptor(
         name = "email.read",
         description = "Read a specific email message by ID.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID"}},"required":["messageId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
       ),
       ToolDescriptor(
         name = "email.send",
         description = "Send an email message immediately.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"},"description":"Recipient email addresses"},"cc":{"type":"array","items":{"type":"string"},"description":"CC recipients"},"bcc":{"type":"array","items":{"type":"string"},"description":"BCC recipients"},"subject":{"type":"string","description":"Email subject"},"body":{"type":"string","description":"Email body text"},"replyToMessageId":{"type":"string","description":"Message ID to reply to (optional)"},"signWithPgp":{"type":"boolean","description":"Sign with PGP (default false)"}},"required":["to","subject","body"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"},"description":"Recipient email addresses"},"cc":{"type":"array","items":{"type":"string"},"description":"CC recipients"},"bcc":{"type":"array","items":{"type":"string"},"description":"BCC recipients"},"subject":{"type":"string","description":"Email subject"},"body":{"type":"string","description":"Email body text"},"replyToMessageId":{"type":"string","description":"Message ID to reply to (optional)"},"signWithPgp":{"type":"boolean","description":"Sign with PGP (default false)"}},"required":["to","subject","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.send")),
       ),
       ToolDescriptor(
         name = "email.draft",
         description = "Create an email draft without sending.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"bcc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"replyToMessageId":{"type":"string"}},"required":["to","subject","body"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"bcc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"replyToMessageId":{"type":"string"}},"required":["to","subject","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
       ),
       ToolDescriptor(
         name = "email.archive",
         description = "Archive an email message.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to archive"}},"required":["messageId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to archive"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
       ),
       ToolDescriptor(
         name = "email.delete",
         description = "Delete an email message.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to delete"}},"required":["messageId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to delete"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
       ),
       ToolDescriptor(
         name = "email.reply",
         description = "Reply to an email message.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"messageId":{"type":"string","description":"The message ID to reply to"},"body":{"type":"string","description":"Reply body text"},"replyAll":{"type":"boolean","description":"Reply to all recipients (default false)"}},"required":["messageId","body"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The message ID to reply to"},"body":{"type":"string","description":"Reply body text"},"replyAll":{"type":"boolean","description":"Reply to all recipients (default false)"}},"required":["messageId","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.send")),
       ),
       ToolDescriptor(
         name = "email.search",
         description = "Search for email messages using a query string.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"query":{"type":"string","description":"Search query (supports Gmail-style search operators)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 10)"}},"required":["query"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema =
+          parseSchema("""{"type":"object","properties":{"query":{"type":"string","description":"Search query (supports Gmail-style search operators)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 10)"}},"required":["query"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
       ),
@@ -148,31 +124,13 @@ class EmailSkill(
       case other           => ZIO.fail(JorlanError(s"EmailSkill: unknown tool '$other'"))
     }
 
-  private def logEvent(
-    ctx:       InvocationContext,
-    eventType: EventType,
-    payload:   Json,
-  ): UIO[Unit] =
-    Clock.instant.flatMap { now =>
-      repo.eventLog
-        .append(
-          EventLog(
-            id = EventLogId.empty,
-            eventType = eventType,
-            actorId = Some(ctx.actorId),
-            agentId = ctx.agentId,
-            sessionId = ctx.sessionId,
-            resource = Option.empty[String],
-            payloadJson = Some(payload),
-            occurredAt = now,
-          ),
-        ).orDie.unit
-    }
-
-  private def buildDraft(args: Json, replyToId: Option[String] = None): Option[EmailDraft] = {
-    val to      = SkillArgs.strList(args, "to")
+  private def buildDraft(
+    args:      Json,
+    replyToId: Option[String] = None,
+  ): Option[EmailDraft] = {
+    val to = SkillArgs.strList(args, "to")
     val subject = SkillArgs.str(args, "subject")
-    val body    = SkillArgs.str(args, "body")
+    val body = SkillArgs.str(args, "body")
     (subject, body) match {
       case (Some(subj), Some(b)) =>
         Some(
@@ -183,14 +141,17 @@ class EmailSkill(
             subject = subj,
             body = b,
             replyToMessageId = replyToId.orElse(SkillArgs.str(args, "replyToMessageId")),
-            signWithPgp = false,
+            signWithPgp = SkillArgs.bool(args, "signWithPgp").getOrElse(false),
           ),
         )
       case _ => None
     }
   }
 
-  private def emailList(ctx: InvocationContext, args: Json): IO[JorlanError, Json] = {
+  private def emailList(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
     val maxResults = SkillArgs.int(args, "maxResults").getOrElse(10)
     for {
       msgs <- emailProvider.listMessages(ctx.actorId, maxResults, None)
@@ -214,26 +175,32 @@ class EmailSkill(
     )
   }
 
-  private def emailRead(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailRead(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     SkillArgs.str(args, "messageId") match {
-      case None    => ZIO.fail(JorlanError("email.read: messageId is required"))
+      case None     => ZIO.fail(JorlanError("email.read: messageId is required"))
       case Some(id) =>
         for {
           msg <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
           _   <- logEvent(ctx, EventType.EmailMessageRead, Json.Obj("messageId" -> Json.Str(id)))
         } yield Json.Obj(
-          "id"         -> Json.Str(msg.id.value),
-          "from"       -> Json.Str(msg.from),
-          "to"         -> Json.Arr(msg.to.map(Json.Str(_))*),
-          "subject"    -> Json.Str(msg.subject),
-          "body"       -> Json.Str(msg.body),
-          "date"       -> Json.Str(msg.date.toString),
-          "labels"     -> Json.Arr(msg.labels.map(Json.Str(_))*),
-          "pgpSigned"  -> Json.Bool(msg.pgpSigned),
+          "id"        -> Json.Str(msg.id.value),
+          "from"      -> Json.Str(msg.from),
+          "to"        -> Json.Arr(msg.to.map(Json.Str(_))*),
+          "subject"   -> Json.Str(msg.subject),
+          "body"      -> Json.Str(msg.body),
+          "date"      -> Json.Str(msg.date.toString),
+          "labels"    -> Json.Arr(msg.labels.map(Json.Str(_))*),
+          "pgpSigned" -> Json.Bool(msg.pgpSigned),
         )
     }
 
-  private def emailSend(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailSend(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     buildDraft(args) match {
       case None        => ZIO.fail(JorlanError("email.send: to, subject and body are required"))
       case Some(draft) =>
@@ -251,7 +218,10 @@ class EmailSkill(
         } yield Json.Obj("messageId" -> Json.Str(msgId.value), "sent" -> Json.Bool(true))
     }
 
-  private def emailDraft(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailDraft(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     buildDraft(args) match {
       case None        => ZIO.fail(JorlanError("email.draft: to, subject and body are required"))
       case Some(draft) =>
@@ -265,9 +235,12 @@ class EmailSkill(
         } yield Json.Obj("draftId" -> Json.Str(draftId), "created" -> Json.Bool(true))
     }
 
-  private def emailArchive(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailArchive(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     SkillArgs.str(args, "messageId") match {
-      case None    => ZIO.fail(JorlanError("email.archive: messageId is required"))
+      case None     => ZIO.fail(JorlanError("email.archive: messageId is required"))
       case Some(id) =>
         for {
           _ <- emailProvider.archiveMessage(ctx.actorId, EmailMessageId(id))
@@ -275,48 +248,49 @@ class EmailSkill(
         } yield Json.Obj("messageId" -> Json.Str(id), "archived" -> Json.Bool(true))
     }
 
-  private def emailDelete(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailDelete(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     SkillArgs.str(args, "messageId") match {
-      case None    => ZIO.fail(JorlanError("email.delete: messageId is required"))
+      case None     => ZIO.fail(JorlanError("email.delete: messageId is required"))
       case Some(id) =>
         for {
           _ <- emailProvider.deleteMessage(ctx.actorId, EmailMessageId(id))
-          _ <- logEvent(ctx, EventType.EmailMessageArchived, Json.Obj("messageId" -> Json.Str(id), "action" -> Json.Str("delete")))
+          _ <- logEvent(ctx, EventType.EmailMessageDeleted, Json.Obj("messageId" -> Json.Str(id)))
         } yield Json.Obj("messageId" -> Json.Str(id), "deleted" -> Json.Bool(true))
     }
 
-  private def emailReply(ctx: InvocationContext, args: Json): IO[JorlanError, Json] = {
-    val replyToId = SkillArgs.str(args, "messageId")
-    replyToId match {
-      case None    => ZIO.fail(JorlanError("email.reply: messageId is required"))
-      case Some(id) =>
-        val bodyOpt = SkillArgs.str(args, "body")
-        bodyOpt match {
-          case None       => ZIO.fail(JorlanError("email.reply: body is required"))
-          case Some(body) =>
-            for {
-              original <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
-              draft = EmailDraft(
-                to = List(original.from),
-                cc = Nil,
-                bcc = Nil,
-                subject = s"Re: ${original.subject}",
-                body = body,
-                replyToMessageId = Some(id),
-                signWithPgp = false,
-              )
-              msgId <- emailProvider.sendDraft(ctx.actorId, draft)
-              _     <- logEvent(
-                ctx,
-                EventType.EmailMessageSent,
-                Json.Obj("replyTo" -> Json.Str(id), "messageId" -> Json.Str(msgId.value)),
-              )
-            } yield Json.Obj("messageId" -> Json.Str(msgId.value), "sent" -> Json.Bool(true))
-        }
-    }
-  }
+  private def emailReply(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
+    for {
+      id <- ZIO
+        .fromOption(SkillArgs.str(args, "messageId")).orElseFail(JorlanError("email.reply: messageId is required"))
+      body     <- ZIO.fromOption(SkillArgs.str(args, "body")).orElseFail(JorlanError("email.reply: body is required"))
+      original <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
+      draft = EmailDraft(
+        to = List(original.from),
+        cc = Nil,
+        bcc = Nil,
+        subject = s"Re: ${original.subject}",
+        body = body,
+        replyToMessageId = Some(id),
+        signWithPgp = false,
+      )
+      msgId <- emailProvider.sendDraft(ctx.actorId, draft)
+      _     <- logEvent(
+        ctx,
+        EventType.EmailMessageSent,
+        Json.Obj("replyTo" -> Json.Str(id), "messageId" -> Json.Str(msgId.value)),
+      )
+    } yield Json.Obj("messageId" -> Json.Str(msgId.value), "sent" -> Json.Bool(true))
 
-  private def emailSearch(ctx: InvocationContext, args: Json): IO[JorlanError, Json] =
+  private def emailSearch(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
     SkillArgs.str(args, "query") match {
       case None        => ZIO.fail(JorlanError("email.search: query is required"))
       case Some(query) =>

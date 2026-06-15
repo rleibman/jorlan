@@ -90,6 +90,10 @@ case class GoogleOAuthSettings(
   clientId:     String = "",
   clientSecret: String = "",
   redirectUri:  String = "http://localhost:8080/api/oauth/callback/google",
+  /** Dedicated AES-256 key for credential encryption. Set `JORLAN_GOOGLE_CREDENTIAL_ENCRYPTION_KEY` in the environment.
+    * If empty, falls back to the JWT auth secret (key-reuse — migrate to a dedicated key in production).
+    */
+  credentialEncryptionKey: String = "",
 )
 
 case class ImapSettings(

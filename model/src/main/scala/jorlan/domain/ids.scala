@@ -383,8 +383,8 @@ object ConnectionId {
 opaque type ExternalCredentialId = Long
 object ExternalCredentialId {
 
-  def apply(v: Long): ExternalCredentialId = v
-  val empty: ExternalCredentialId = 0L
+  def apply(v:   Long): ExternalCredentialId = v
+  val empty:            ExternalCredentialId = 0L
   extension (id: ExternalCredentialId) { def value: Long = id }
   given JsonEncoder[ExternalCredentialId] = JsonEncoder[Long].contramap(_.value)
   given JsonDecoder[ExternalCredentialId] = JsonDecoder[Long].map(ExternalCredentialId(_))
@@ -395,7 +395,7 @@ object ExternalCredentialId {
 opaque type EmailMessageId = String
 object EmailMessageId {
 
-  def apply(v: String): EmailMessageId = v
+  def apply(v:   String): EmailMessageId = v
   extension (id: EmailMessageId) { def value: String = id }
   given JsonEncoder[EmailMessageId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[EmailMessageId] = JsonDecoder[String].map(EmailMessageId(_))
@@ -406,7 +406,7 @@ object EmailMessageId {
 opaque type CalendarId = String
 object CalendarId {
 
-  def apply(v: String): CalendarId = v
+  def apply(v:   String): CalendarId = v
   extension (id: CalendarId) { def value: String = id }
   given JsonEncoder[CalendarId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[CalendarId] = JsonDecoder[String].map(CalendarId(_))
@@ -417,7 +417,7 @@ object CalendarId {
 opaque type CalendarEventId = String
 object CalendarEventId {
 
-  def apply(v: String): CalendarEventId = v
+  def apply(v:   String): CalendarEventId = v
   extension (id: CalendarEventId) { def value: String = id }
   given JsonEncoder[CalendarEventId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[CalendarEventId] = JsonDecoder[String].map(CalendarEventId(_))
@@ -428,7 +428,7 @@ object CalendarEventId {
 opaque type DriveFileId = String
 object DriveFileId {
 
-  def apply(v: String): DriveFileId = v
+  def apply(v:   String): DriveFileId = v
   extension (id: DriveFileId) { def value: String = id }
   given JsonEncoder[DriveFileId] = JsonEncoder[String].contramap(_.value)
   given JsonDecoder[DriveFileId] = JsonDecoder[String].map(DriveFileId(_))

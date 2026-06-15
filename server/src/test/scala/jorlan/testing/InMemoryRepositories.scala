@@ -855,16 +855,16 @@ object InMemoryRepositories {
           _.build.map(_.get[ZIOServerSettingsRepository]),
         )
       } yield new ZIORepositories {
-        override def user:         ZIOUserRepository = userRepo
-        override def agent:        ZIOAgentRepository = agentRepo
-        override def conversation: ZIOConversationRepository = conversationRepo
-        override def skill:        ZIOSkillRepository = skillRepo
-        override def memory:       ZIOMemoryRepository = memoryRepo
-        override def eventLog:     ZIOEventLogRepository = eventLogRepo
-        override def scheduler:    ZIOSchedulerRepository = schedulerRepo
-        override def artifact:     ZIOArtifactRepository = artifactRepo
-        override def permission:   ZIOPermissionRepository = permissionRepo
-        override def setting:      ZIOServerSettingsRepository = settingsRepo
+        override def user:          ZIOUserRepository = userRepo
+        override def agent:         ZIOAgentRepository = agentRepo
+        override def conversation:  ZIOConversationRepository = conversationRepo
+        override def skill:         ZIOSkillRepository = skillRepo
+        override def memory:        ZIOMemoryRepository = memoryRepo
+        override def eventLog:      ZIOEventLogRepository = eventLogRepo
+        override def scheduler:     ZIOSchedulerRepository = schedulerRepo
+        override def artifact:      ZIOArtifactRepository = artifactRepo
+        override def permission:    ZIOPermissionRepository = permissionRepo
+        override def setting:       ZIOServerSettingsRepository = settingsRepo
         override def extCredential: ZIOExternalCredentialRepository = original.extCredential
       })
     }
@@ -936,9 +936,9 @@ private class InMemoryExtCredentialRepo(
     scopes:        Option[String],
   ): RepositoryTask[Unit] =
     for {
-      now     <- Clock.instant
+      now      <- Clock.instant
       existing <- store.get.map(_.get((userId.value, provider)))
-      id <- existing match {
+      id       <- existing match {
         case Some(e) => ZIO.succeed(e.id)
         case None    => idGen.updateAndGet(_ + 1).map(ExternalCredentialId(_))
       }
@@ -955,10 +955,16 @@ private class InMemoryExtCredentialRepo(
       _ <- store.update(_.updated((userId.value, provider), cred))
     } yield ()
 
-  override def find(userId: UserId, provider: String): RepositoryTask[Option[ExternalCredential]] =
+  override def find(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Option[ExternalCredential]] =
     store.get.map(_.get((userId.value, provider)))
 
-  override def delete(userId: UserId, provider: String): RepositoryTask[Unit] =
+  override def delete(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Unit] =
     store.update(_.removed((userId.value, provider)))
 
   override def listByUser(userId: UserId): RepositoryTask[List[ExternalCredential]] =
