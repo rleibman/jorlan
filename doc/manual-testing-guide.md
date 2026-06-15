@@ -568,10 +568,9 @@ is missing and what needs to be built.
 2. Confirm the agent responds with the created event ID.
 3. Verify the event appears in Google Calendar.
 
-### I7. Drive list files
+### I7. Drive list files (not yet wired)
 
-1. With Google connected, send: `/drive list`
-2. Confirm the response lists files from Google Drive (or "no files" if empty).
+> Note: This branch does not implement `/drive` slash commands yet. Drive tools exist (`drive.listFiles`, `drive.readFile`, `drive.downloadFile`) but are not exposed via `/drive ...` commands in the shell.
 
 ### I8. OAuth error handling
 
