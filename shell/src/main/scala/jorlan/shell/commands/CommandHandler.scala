@@ -643,9 +643,13 @@ object CommandHandler {
       },
     )
 
-  private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] =
+  private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] = {
+    import zio.json.*
+    import zio.json.ast.Json
+
+    val argsJson = Json.Obj("messageId" -> Json.Str(messageId)).toJson
     gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.read", s"""{"messageId":"$messageId"}""")),
+      _.run(JorlanClient.Mutations.invokeTool("email.read", argsJson)),
     ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.read failed: $err")),
       {
@@ -653,6 +657,7 @@ object CommandHandler {
         case Some(result) => screen(_.addMessage(MessageKind.System, result))
       },
     )
+  }
 
   private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
     val escaped = query.replace("\"", "\\\"")
