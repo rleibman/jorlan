@@ -13,6 +13,7 @@ package jorlan.init
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.*
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
 
@@ -115,6 +116,13 @@ trait InitService {
     adminPassword: String,
   ): IO[JorlanError, Unit]
 
+  /** Idempotently grants all admin capabilities to every existing admin user.
+    *
+    * Runs on every startup so that capabilities added after the initial `complete` call are automatically applied to
+    * pre-existing admin users. Uses upsert semantics — existing grants are untouched.
+    */
+  def topUpAdminCapabilities: IO[JorlanError, Unit]
+
 }
 
 object InitService {
@@ -131,12 +139,16 @@ object InitService {
   ): ZIO[InitService, JorlanError, Unit] =
     ZIO.serviceWithZIO[InitService](_.complete(token, serverName, adminEmail, adminName, adminPassword))
 
+  def topUpAdminCapabilities: ZIO[InitService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[InitService](_.topUpAdminCapabilities)
+
 }
 
 @scala.annotation.nowarn("msg=IsUnionOf")
 class InitServiceImpl(
-  repo:       ZIORepositories,
-  tokenStore: InitTokenStore,
+  repo:          ZIORepositories,
+  tokenStore:    InitTokenStore,
+  skillRegistry: SkillRegistry,
 ) extends InitService {
 
   override def isInitialized: IO[JorlanError, Boolean] =
@@ -179,7 +191,10 @@ class InitServiceImpl(
       )
     } yield ()
 
-  private val adminCapabilities: List[CapabilityName] = List(
+  // Platform-level capabilities not tied to any particular skill.
+  // Skill-specific capabilities (memory.*, notify.*, telegram.*, etc.) are derived
+  // automatically from the SkillRegistry so new skills never require an update here.
+  private val systemCapabilities: List[CapabilityName] = List(
     CapabilityName("agent.session.create"),
     CapabilityName("agent.session.list"),
     CapabilityName("agent.message"),
@@ -194,39 +209,54 @@ class InitServiceImpl(
     CapabilityName("permission.grant"),
     CapabilityName("permission.revoke"),
     CapabilityName("approval.decide"),
-    CapabilityName("memory.read"),
-    CapabilityName("memory.write"),
     CapabilityName("agent.skill.invoke"),
-    CapabilityName("notify.send"),
-    CapabilityName("contacts.read"),
-    CapabilityName("identity.manage"),
-    CapabilityName("workspace.read"),
-    CapabilityName("workspace.write"),
-    CapabilityName("shell.execute"),
-    CapabilityName("scheduler.manage"),
   )
+
+  private def allAdminCaps: UIO[List[CapabilityName]] =
+    skillRegistry.allAdminCapabilities.map(skillCaps => (systemCapabilities ++ skillCaps).distinct)
 
   private def seedAdminGrants(
     userId: UserId,
     now:    java.time.Instant,
   ): IO[JorlanError, Unit] =
-    ZIO
-      .foreachDiscard(adminCapabilities) { cap =>
-        repo.permission.upsertCapabilityGrant(
-          CapabilityGrant(
-            id = CapabilityGrantId.empty,
-            capability = cap,
-            scopeJson = None,
-            granteeId = userId,
-            grantorId = None,
-            approvalMode = ApprovalMode.Persistent,
-            expiresAt = None,
-            resourceConstraints = None,
-            createdAt = now,
-          ),
-        )
+    allAdminCaps.flatMap { caps =>
+      ZIO
+        .foreachDiscard(caps) { cap =>
+          repo.permission.upsertCapabilityGrant(
+            CapabilityGrant(
+              id = CapabilityGrantId.empty,
+              capability = cap,
+              scopeJson = None,
+              granteeId = userId,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = now,
+            ),
+          )
+        }
+        .mapError(JorlanError(_))
+    }
+
+  override def topUpAdminCapabilities: IO[JorlanError, Unit] =
+    for {
+      now   <- Clock.instant
+      users <- repo.user.search(UserSearch()).mapError(JorlanError(_))
+      adminMarker = CapabilityName("admin.personality.update")
+      _ <- ZIO.foreachDiscard(users) { user =>
+        repo.permission
+          .getGrantsForCapability(user.id, adminMarker)
+          .mapError(JorlanError(_))
+          .flatMap { grants =>
+            val isAdmin = grants.exists(g =>
+              g.approvalMode != ApprovalMode.Denied &&
+                g.expiresAt.forall(_.isAfter(now)),
+            )
+            ZIO.when(isAdmin)(seedAdminGrants(user.id, now))
+          }
       }
-      .mapError(JorlanError(_))
+    } yield ()
 
   private def validateInputs(
     serverName:    String,
@@ -249,7 +279,7 @@ object InitServiceImpl {
   // this layer. `InitTokenStore` requires the `initialized` flag read from the DB after Flyway has run,
   // which is not available at ZLayer bootstrap time. This layer is available for test code that
   // provides a pre-built `InitTokenStore` via its own setup logic.
-  val layer: URLayer[ZIORepositories & InitTokenStore, InitService] =
-    ZLayer.fromFunction(InitServiceImpl(_, _))
+  val layer: URLayer[ZIORepositories & InitTokenStore & SkillRegistry, InitService] =
+    ZLayer.fromFunction(InitServiceImpl(_, _, _))
 
 }

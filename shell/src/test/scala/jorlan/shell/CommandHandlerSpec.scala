@@ -42,6 +42,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         ): IO[String, LoginResult] =
           ZIO.fail("not used in these tests")
         override def whoAmI:       IO[String, String] = ZIO.fromEither(whoAmIResult)
+        override def refresh:      IO[String, String] = ZIO.fail("not used in these tests")
         override def currentToken: UIO[Option[String]] = ZIO.succeed(token)
       }
     }

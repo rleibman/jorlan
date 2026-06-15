@@ -101,6 +101,7 @@ object SubscriptionClientIntegrationSpec
       ZIO.fail("not implemented in stub")
     override def whoAmI:       IO[String, String] = ZIO.fail("not implemented in stub")
     override def currentToken: UIO[Option[String]] = ZIO.none
+    override def refresh:      IO[String, String] = ZIO.fail("not implemented in stub")
   })
 
   override def spec: Spec[FullEnv & TestEnvironment & Scope, Any] =

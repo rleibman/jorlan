@@ -167,11 +167,17 @@ object JorlanShell extends ZIOApp {
         ls <- LiveSession.start(
           sessionId,
           onToolEvent = ev =>
-            if (ev.eventType == "SkillInvoked")
-              screen.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}…")
-            else if (ev.eventType == "SkillSucceeded")
-              screen.addMessage(MessageKind.System, s"✓ ${ev.toolName} done")
-            else ZIO.unit,
+            ev.eventType match {
+              case "SkillInvoked" =>
+                val argsSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                screen.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}  args: $argsSummary")
+              case "SkillSucceeded" =>
+                val resultSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                screen.addMessage(MessageKind.System, s"✓ ${ev.toolName}  → $resultSummary")
+              case "SkillFailed" =>
+                screen.addMessage(MessageKind.Error, s"✗ ${ev.toolName}  → ${ev.payload.take(120)}")
+              case _ => ZIO.unit
+            },
         )
         _ <- screen.setModeStatus(s" [session: ${ls.sessionId.value}]  [model: default]")
         _ <- screen.addMessage(MessageKind.System, msg)
@@ -335,17 +341,24 @@ object JorlanShell extends ZIOApp {
     val check = AuthClient.whoAmI
       .foldZIO(
         _ =>
-          // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
-          // heartbeat fiber; the main shell process continues until the user quits.
-          for {
-            screen <- ZIO.service[JorlanScreen]
-            _      <- screen.addMessage(MessageKind.Error, "Lost connection to server.")
-            _      <- screen.setModeStatus(s" [reconnecting…]  [no session]")
-            r      <- connectWithRetry(email, password, serverUrl).orDie
-            _      <- screen.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]")
-            _      <- screen.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]")
-            _      <- screen.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}.")
-          } yield (),
+          // Try a silent token refresh first; only show "Lost connection" if that also fails.
+          AuthClient.refresh
+            .foldZIO(
+              _ =>
+                // Refresh unavailable or failed — fall back to full re-login.
+                // If reconnect fails with a 4xx, orDie surfaces as a defect that kills only this
+                // heartbeat fiber; the main shell process continues until the user quits.
+                for {
+                  screen <- ZIO.service[JorlanScreen]
+                  _      <- screen.addMessage(MessageKind.Error, "Lost connection to server.")
+                  _      <- screen.setModeStatus(s" [reconnecting…]  [no session]")
+                  r      <- connectWithRetry(email, password, serverUrl).orDie
+                  _      <- screen.setStatus(s" ● Jorlan Shell  [${r.displayName}]  [${serverUrl.value}]")
+                  _ <- screen.setModeStatus(s" [connected: ${serverUrl.value}]  [user: ${r.displayName}]  [no session]")
+                  _ <- screen.addMessage(MessageKind.System, s"Reconnected as ${r.displayName}.")
+                } yield (),
+              _ => ZIO.unit, // Silent refresh succeeded — no UI noise
+            ),
         _ => ZIO.unit,
       )
 

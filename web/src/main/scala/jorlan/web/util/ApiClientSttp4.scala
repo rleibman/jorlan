@@ -73,10 +73,10 @@ object ApiClientSttp4 {
   /** Executes a Caliban GraphQL request with JWT Bearer authentication.
     *
     * Reads the JWT from `localStorage["jwtToken"]`. If the token is expired the client attempts a silent refresh via
-    * `GET /api/auth/refresh`; the new token replaces the stored one and the original request is retried. If the server
-    * returns 401 (definitively invalid) the stored token is removed so the next render redirects to login. Transient
-    * non-2xx responses (500, 503, 429 …) do **not** clear the token — the session is preserved and the error is
-    * surfaced to the caller.
+    * `GET /refresh`; the new token replaces the stored one and the original request is retried. If the server returns
+    * 401 (definitively invalid) the stored token is removed so the next render redirects to login. Transient non-2xx
+    * responses (500, 503, 429 …) do **not** clear the token — the session is preserved and the error is surfaced to the
+    * caller.
     *
     * @param onAuthError
     *   called when there is no token or a refresh fails; the default reloads the page so `LoginRouter` re-gates.
@@ -112,7 +112,7 @@ object ApiClientSttp4 {
               refreshResponse <-
                 AsyncCallback.fromFuture(
                   basicRequest
-                    .get(uri"/api/auth/refresh")
+                    .get(uri"/refresh")
                     .response(asString)
                     .send(backend),
                 )

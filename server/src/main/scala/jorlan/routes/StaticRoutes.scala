@@ -110,16 +110,16 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
             path: Path,
             _:    Request,
           ) =>
-            // You might want to restrict the files that could come back, but then again, you may not
             val somethingElse = path.toString
             Handler
               .fromFileZIO {
                 for {
                   config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
                   staticContentDir = config.jorlan.http.staticContentDir
-                  file <- file(s"$staticContentDir/$somethingElse")
-                  cacheHeaders = getHeaders(somethingElse)
-                } yield file
+                  // Fall back to index.html for SPA routing when the requested path doesn't exist
+                  result <- file(s"$staticContentDir/$somethingElse")
+                    .orElse(file(s"$staticContentDir/index.html"))
+                } yield result
               }.mapError(JorlanError(_))
               .map(response => response.updateHeaders(_ => getHeaders(somethingElse)))
               .contramap[(Path, Request)](_._2)

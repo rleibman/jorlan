@@ -34,6 +34,7 @@ object GraphQLClientSpec extends ZIOSpecDefault {
         ): IO[String, LoginResult] =
           ZIO.fail("not used")
         override def whoAmI:       IO[String, String] = ZIO.fail("not used")
+        override def refresh:      IO[String, String] = ZIO.fail("not used")
         override def currentToken: UIO[Option[String]] = ZIO.succeed(token)
       }
     }

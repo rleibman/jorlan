@@ -55,6 +55,15 @@ enum EventType derives JsonEncoder, JsonDecoder {
   case SchedulerJobPaused, SchedulerJobResumed, SchedulerJobTriggered, SchedulerJobDeleted
   case SchedulerTriggerAdded
 
+  // ─── Email ───────────────────────────────────────────────────────────────────
+  case EmailMessageRead, EmailMessageSent, EmailDraftCreated, EmailMessageArchived, EmailMessageDeleted
+
+  // ─── Calendar ────────────────────────────────────────────────────────────────
+  case CalendarEventRead, CalendarEventCreated, CalendarEventUpdated, CalendarEventDeleted
+
+  // ─── Drive ───────────────────────────────────────────────────────────────────
+  case DriveFileRead, DriveFileListed
+
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
   case ServerInitialized

@@ -66,13 +66,19 @@ object NotifySkillSpec extends ZIOSpecDefault {
           calls.head._2 == "hello",
         )
       },
-      test("notify.user fails when userId is missing") {
+      test("notify.user defaults to actorId when userId is missing") {
         for {
           userCalls    <- Ref.make(List.empty[(UserId, String)])
           channelCalls <- Ref.make(List.empty[(String, ChannelType, String)])
           skill = new NotifySkill(stubRouter(userCalls, channelCalls))
-          result <- skill.invoke(ctx, "notify.user", mkArgs("message" -> "hello")).either
-        } yield assertTrue(result.isLeft)
+          result <- skill.invoke(ctx, "notify.user", mkArgs("message" -> "hello"))
+          calls  <- userCalls.get
+        } yield assertTrue(
+          result == Json.Str("ok"),
+          calls.length == 1,
+          calls.head._1 == ctx.actorId,
+          calls.head._2 == "hello",
+        )
       },
       test("notify.user fails when message is missing") {
         for {

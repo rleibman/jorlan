@@ -46,7 +46,8 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories & JorlanSession] {
       adminEmail:    String,
       adminName:     String,
       adminPassword: String,
-    ): IO[JorlanError, Unit] = result
+    ):                                   IO[JorlanError, Unit] = result
+    override def topUpAdminCapabilities: IO[JorlanError, Unit] = ZIO.unit
 
   }
 
@@ -131,7 +132,7 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories & JorlanSession] {
               ),
             )
             currentTime  <- Clock.currentTime(TimeUnit.MILLISECONDS)
-            statusRoutes <- StatusRoutes(currentTime).all
+            statusRoutes <- StatusRoutes(currentTime).all.provideLayer(ZLayer.succeed[ZIORepositories](repo))
             resp         <- getStatus(statusRoutes)
             body         <- resp.body.asString
             decoded = body.fromJson[ServerStatus]

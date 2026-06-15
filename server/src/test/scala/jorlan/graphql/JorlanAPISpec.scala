@@ -499,22 +499,22 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("listMemory query returns empty list when no records stored") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+        result <- interp.execute("""{ listMemory(scope: User) { id scope recordKey } }""")
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
     }.provideLayer(makeAppLayer(memSvcLayer = realMemoryServiceLayer)),
     test("listMemory query fails when unauthenticated") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ listMemory(scope: "User") { id } }""")
+        result <- interp.execute("""{ listMemory(scope: User) { id } }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(session = unauthSessionLayer, memSvcLayer = realMemoryServiceLayer)),
     test("storeMemory mutation stores a record and is retrievable") {
       for {
         interp      <- ZIO.service[Interp]
         storeResult <- interp.execute(
-          """mutation { storeMemory(key: "test.key", text: "hello world", scope: "User") { id scope recordKey } }""",
+          """mutation { storeMemory(key: "test.key", text: "hello world", scope: User) { id scope recordKey } }""",
         )
-        listResult <- interp.execute("""{ listMemory(scope: "User") { id scope recordKey } }""")
+        listResult <- interp.execute("""{ listMemory(scope: User) { id scope recordKey } }""")
       } yield assertTrue(
         storeResult.errors.isEmpty,
         storeResult.data.toString.contains("test.key"),
@@ -526,7 +526,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { storeMemory(key: "k", text: "v", scope: "User") { id } }""",
+          """mutation { storeMemory(key: "k", text: "v", scope: User) { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(session = unauthSessionLayer, memSvcLayer = realMemoryServiceLayer)),
@@ -534,7 +534,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp      <- ZIO.service[Interp]
         storeResult <- interp.execute(
-          """mutation { storeMemory(key: "forget.me", text: "temporary", scope: "User") { id } }""",
+          """mutation { storeMemory(key: "forget.me", text: "temporary", scope: User) { id } }""",
         )
         id = extractLong(storeResult.data.toString, "id")
         forgetResult <- interp.execute(s"""mutation { forgetMemory(value: $id) }""")
@@ -547,7 +547,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp      <- ZIO.service[Interp]
         storeResult <- interp.execute(
-          """mutation { storeMemory(key: "share.key", text: "shared fact", scope: "User") { id } }""",
+          """mutation { storeMemory(key: "share.key", text: "shared fact", scope: User) { id } }""",
         )
         id = extractLong(storeResult.data.toString, "id")
         shareResult <- interp.execute(s"""mutation { markMemoryShared(value: $id) { id scope } }""")
@@ -561,7 +561,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp      <- ZIO.service[Interp]
         storeResult <- interp.execute(
-          """mutation { storeMemory(key: "priv.key", text: "private fact", scope: "User") { id } }""",
+          """mutation { storeMemory(key: "priv.key", text: "private fact", scope: User) { id } }""",
         )
         id = extractLong(storeResult.data.toString, "id")
         privResult <- interp.execute(s"""mutation { markMemoryPrivate(value: $id) { id scope } }""")
@@ -580,13 +580,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("listMemory query fails when memory.read capability is denied") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ listMemory(scope: "User") { id } }""")
+        result <- interp.execute("""{ listMemory(scope: User) { id } }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll, memSvcLayer = realMemoryServiceLayer)),
     test("storeMemory mutation fails when memory.write capability is denied") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""mutation { storeMemory(key: "k", text: "v", scope: "User") { id } }""")
+        result <- interp.execute("""mutation { storeMemory(key: "k", text: "v", scope: User) { id } }""")
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll, memSvcLayer = realMemoryServiceLayer)),
     test("forgetMemory mutation fails when memory.write capability is denied") {
@@ -641,7 +641,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("jobs query returns empty list") {
       for {
         interp <- ZIO.service[Interp]
-        result <- interp.execute("""{ jobs(value: null) { id name status } }""")
+        result <- interp.execute("""{ jobs { id name status } }""")
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
     }.provideLayer(makeAppLayer()),
     test("job query returns null for unknown id") {

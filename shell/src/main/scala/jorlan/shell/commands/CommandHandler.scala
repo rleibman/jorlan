@@ -227,11 +227,17 @@ object CommandHandler {
             _         <- LiveSession.start(
               session.id,
               onToolEvent = ev =>
-                if (ev.eventType == "SkillInvoked")
-                  screenSvc.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}…")
-                else if (ev.eventType == "SkillSucceeded")
-                  screenSvc.addMessage(MessageKind.System, s"✓ ${ev.toolName} done")
-                else ZIO.unit,
+                ev.eventType match {
+                  case "SkillInvoked" =>
+                    val argsSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                    screenSvc.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}  args: $argsSummary")
+                  case "SkillSucceeded" =>
+                    val resultSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                    screenSvc.addMessage(MessageKind.System, s"✓ ${ev.toolName}  → $resultSummary")
+                  case "SkillFailed" =>
+                    screenSvc.addMessage(MessageKind.Error, s"✗ ${ev.toolName}  → ${ev.payload.take(120)}")
+                  case _ => ZIO.unit
+                },
             )
             _ <- ZIO.serviceWithZIO[JorlanScreen](
               _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),

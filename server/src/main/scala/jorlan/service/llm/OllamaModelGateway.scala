@@ -193,7 +193,7 @@ private class OllamaModelGateway(
 
     for {
       runtime    <- ZIO.runtime[Any]
-      tokenQueue <- Queue.unbounded[String]
+      tokenQueue <- Queue.unbounded[Option[String]]
       done       <- Promise.make[ModelError, ChatStep]
       _          <- ZIO
         .attempt {
@@ -202,7 +202,7 @@ private class OllamaModelGateway(
             lcTools,
             new StreamingChatResponseHandler {
               override def onPartialResponse(s: String): Unit =
-                Unsafe.unsafe(implicit u => runtime.unsafe.run(tokenQueue.offer(s).unit))
+                Unsafe.unsafe(implicit u => runtime.unsafe.run(tokenQueue.offer(Some(s)).unit))
 
               override def onCompleteResponse(response: ChatResponse): Unit = {
                 val effect = ToolSupport.extractToolCall(response) match {
@@ -210,8 +210,19 @@ private class OllamaModelGateway(
                     tokenQueue.shutdown *>
                       done.succeed(ToolCallRequested(call.id, call.name, call.argsJson))
                   case None =>
-                    tokenQueue.shutdown *>
-                      done.succeed(FinalAnswer(ZStream.fromQueue(tokenQueue)))
+                    // Offer a None sentinel to signal end-of-stream BEFORE resolving the promise.
+                    // We must NOT call tokenQueue.shutdown here: ZIO's UnboundedQueue checks the
+                    // shutdown flag before draining buffered items, so shutdown would silently
+                    // discard all tokens that onPartialResponse already offered.
+                    tokenQueue.offer(None).unit *>
+                      done.succeed(
+                        FinalAnswer(
+                          ZStream
+                            .fromQueue(tokenQueue)
+                            .collectWhile { case Some(s) => s }
+                            .ensuring(tokenQueue.shutdown),
+                        ),
+                      )
                 }
                 Unsafe.unsafe(implicit u => runtime.unsafe.run(effect))
               }

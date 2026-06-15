@@ -442,6 +442,28 @@ trait ServerSettingsRepository[F[_]] {
 
 }
 
+/** Repository for [[jorlan.domain.ExternalCredential]] records (OAuth tokens and similar). */
+trait ExternalCredentialRepository[F[_]] {
+
+  def upsert(
+    userId:        UserId,
+    provider:      String,
+    encryptedData: Json,
+    expiresAt:     Option[Instant],
+    scopes:        Option[String],
+  ): F[Unit]
+  def find(
+    userId:   UserId,
+    provider: String,
+  ): F[Option[ExternalCredential]]
+  def delete(
+    userId:   UserId,
+    provider: String,
+  ):                              F[Unit]
+  def listByUser(userId: UserId): F[List[ExternalCredential]]
+
+}
+
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 

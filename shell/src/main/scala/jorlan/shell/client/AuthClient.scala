@@ -29,8 +29,9 @@ case class LoginResult(
   email:       Option[String],
 )
 
-/** HTTP client for the zio-auth endpoints (`POST /login`, `GET /api/whoami`). The JWT is held in a `Ref` and reused for
-  * all subsequent requests via [[GraphQLClient]].
+/** HTTP client for the zio-auth endpoints (`POST /login`, `GET /api/whoami`, `GET /refresh`). The JWT is held in a
+  * `Ref` and reused for all subsequent requests via [[GraphQLClient]]. A refresh token (from the `Set-Cookie` response
+  * on login) is stored separately and used to silently renew the access token before falling back to a full re-login.
   */
 trait AuthClient {
 
@@ -39,6 +40,7 @@ trait AuthClient {
     password: String,
   ):                IO[String, LoginResult]
   def whoAmI:       IO[String, String]
+  def refresh:      IO[String, String]
   def currentToken: UIO[Option[String]]
 
 }
@@ -50,7 +52,8 @@ object AuthClient {
     password: String,
   ): ZIO[AuthClient, String, LoginResult] = ZIO.serviceWithZIO[AuthClient](_.login(email, password))
 
-  def whoAmI: ZIO[AuthClient, String, String] = ZIO.serviceWithZIO[AuthClient](_.whoAmI)
+  def whoAmI:  ZIO[AuthClient, String, String] = ZIO.serviceWithZIO[AuthClient](_.whoAmI)
+  def refresh: ZIO[AuthClient, String, String] = ZIO.serviceWithZIO[AuthClient](_.refresh)
 
   def currentToken: URIO[AuthClient, Option[String]] = ZIO.serviceWithZIO[AuthClient](_.currentToken)
 
@@ -58,26 +61,29 @@ object AuthClient {
   // This avoids creating a new HttpClient thread pool on every request.
   val live: ZLayer[ShellConfig, Throwable, AuthClient] = ZLayer.scoped {
     for {
-      cfg      <- ZIO.service[ShellConfig]
-      tokenRef <- Ref.make(Option.empty[String])
-      backend  <- HttpClientZioBackend.scoped()
-    } yield AuthClientImpl(cfg, tokenRef, backend)
+      cfg             <- ZIO.service[ShellConfig]
+      tokenRef        <- Ref.make(Option.empty[String])
+      refreshTokenRef <- Ref.make(Option.empty[String])
+      backend         <- HttpClientZioBackend.scoped()
+    } yield AuthClientImpl(cfg, tokenRef, refreshTokenRef, backend)
   }
 
   // Factory for tests — allows injecting a stub backend without a real HTTP server.
   private[client] def makeForTesting(
-    cfg:      ShellConfig,
-    tokenRef: Ref[Option[String]],
-    backend:  Backend[Task],
-  ): AuthClient = AuthClientImpl(cfg, tokenRef, backend)
+    cfg:             ShellConfig,
+    tokenRef:        Ref[Option[String]],
+    refreshTokenRef: Ref[Option[String]],
+    backend:         Backend[Task],
+  ): AuthClient = AuthClientImpl(cfg, tokenRef, refreshTokenRef, backend)
 
 }
 
 // Made private[client] so tests can construct instances with a stub backend.
 private[client] class AuthClientImpl(
-  cfg:      ShellConfig,
-  tokenRef: Ref[Option[String]],
-  backend:  Backend[Task],
+  cfg:             ShellConfig,
+  tokenRef:        Ref[Option[String]],
+  refreshTokenRef: Ref[Option[String]],
+  backend:         Backend[Task],
 ) extends AuthClient {
 
   override def login(
@@ -102,6 +108,15 @@ private[client] class AuthClientImpl(
               .fromEither(json.fromJson[UserPayload])
               .mapError(e => s"Failed to decode user from login response: $e")
             _ <- tokenRef.set(Some(token))
+            // Extract refresh token from Set-Cookie header (value is the cookie content after the name=).
+            _ <- ZIO.foreachDiscard(
+              resp
+                .headers("Set-Cookie")
+                .collectFirst {
+                  case h if h.startsWith("X-Refresh-Token=") =>
+                    h.stripPrefix("X-Refresh-Token=").takeWhile(_ != ';')
+                },
+            )(rt => refreshTokenRef.set(Some(rt)))
           } yield LoginResult(token, u.displayName, u.email)
         } else {
           ZIO.fail(s"Login failed (${resp.code.code}): ${resp.body.merge}")
@@ -126,6 +141,38 @@ private[client] class AuthClientImpl(
           }
         } else {
           ZIO.fail(s"whoami failed (${resp.code.code}): ${resp.body.merge}")
+        }
+    } yield result
+  }
+
+  override def refresh: IO[String, String] = {
+    for {
+      rt   <- refreshTokenRef.get
+      _    <- ZIO.fromOption(rt).orElseFail("No refresh token available")
+      resp <- basicRequest
+        .get(uri"${cfg.serverUrl}/refresh")
+        .header("Cookie", s"X-Refresh-Token=${rt.get}")
+        .send(backend)
+        .mapError(e => s"HTTP error on refresh: ${e.getMessage}")
+      result <-
+        if (resp.code.isSuccess) {
+          ZIO
+            .fromOption(resp.header("Authorization").map(_.stripPrefix("Bearer ")))
+            .orElseFail("Refresh succeeded but no Authorization header in response")
+            .flatMap { newToken =>
+              tokenRef.set(Some(newToken)) *>
+                ZIO.foreachDiscard(
+                  resp
+                    .headers("Set-Cookie")
+                    .collectFirst {
+                      case h if h.startsWith("X-Refresh-Token=") =>
+                        h.stripPrefix("X-Refresh-Token=").takeWhile(_ != ';')
+                    },
+                )(rt => refreshTokenRef.set(Some(rt))) *>
+                ZIO.succeed(newToken)
+            }
+        } else {
+          ZIO.fail(s"refresh failed (${resp.code.code}): ${resp.body.merge}")
         }
     } yield result
   }

@@ -181,6 +181,9 @@ class TelegramConnectorSkill(
               "Webhook ingress requires a publicly reachable HTTPS route wired into the server.",
           ),
         ) *>
+          ZIO.logInfo("[telegram] deleting any active webhook before starting long-poll loop") *>
+          apiClient.deleteWebhook
+            .tapError(e => ZIO.logWarning(s"[telegram] deleteWebhook failed (continuing): ${e.msg}")).ignore *>
           pollLoop(offset = 0L).forkDaemon
             .flatMap(f => pollingFiber.set(Some(f)))
     }

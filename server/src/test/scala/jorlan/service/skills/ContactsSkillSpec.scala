@@ -136,12 +136,15 @@ object ContactsSkillSpec extends ZIOSpecDefault {
           case _               => assertTrue(false)
         }
       },
-      test("contacts.find fails when name is missing") {
+      test("contacts.find returns all users when name is missing") {
         for {
           userRepo <- fakeUserRepo(Map.empty)
           skill    <- buildSkill(InMemoryRepositories.live(userRepoOpt = Some(userRepo)))
-          result   <- skill.invoke(ctx, "contacts.find", Json.Obj()).either
-        } yield assertTrue(result.isLeft)
+          result   <- skill.invoke(ctx, "contacts.find", Json.Obj())
+        } yield result match {
+          case Json.Arr(elems) => assertTrue(elems.isEmpty)
+          case _               => assertTrue(false)
+        }
       },
       test("contacts.find includes identities in results") {
         val user = makeUser(4L, "Dave")
@@ -273,12 +276,15 @@ object ContactsSkillSpec extends ZIOSpecDefault {
           case _               => assertTrue(false)
         }
       },
-      test("identity.listAliases fails when userId is missing") {
+      test("identity.listAliases defaults to actorId when userId is missing") {
         for {
           userRepo <- fakeUserRepo(Map.empty)
           skill    <- buildSkill(InMemoryRepositories.live(userRepoOpt = Some(userRepo)))
-          result   <- skill.invoke(ctx, "identity.listAliases", Json.Obj()).either
-        } yield assertTrue(result.isLeft)
+          result   <- skill.invoke(ctx, "identity.listAliases", Json.Obj())
+        } yield result match {
+          case Json.Arr(elems) => assertTrue(elems.isEmpty)
+          case _               => assertTrue(false)
+        }
       },
       test("identity.listAliases fails when userId is non-numeric") {
         for {
@@ -304,14 +310,18 @@ object ContactsSkillSpec extends ZIOSpecDefault {
         } yield assertTrue(result.isLeft)
       },
       // ─── identity.link missing / invalid fields ────────────────────────────────
-      test("identity.link fails when userId is missing") {
+      test("identity.link defaults to actorId when userId is missing") {
         for {
           userRepo <- fakeUserRepo(Map.empty)
           skill    <- buildSkill(InMemoryRepositories.live(userRepoOpt = Some(userRepo)))
-          result   <- skill
-            .invoke(ctx, "identity.link", mkArgs("channelType" -> "Telegram", "channelUserId" -> "x"))
-            .either
-        } yield assertTrue(result.isLeft)
+          result   <- skill.invoke(ctx, "identity.link", mkArgs("channelType" -> "Telegram", "channelUserId" -> "x"))
+        } yield result match {
+          case Json.Obj(fields) =>
+            val channelUserId = fields.collectFirst { case ("channelUserId", Json.Str(c)) => c }
+            val channelType = fields.collectFirst { case ("channelType", Json.Str(t)) => t }
+            assertTrue(channelUserId.contains("x"), channelType.contains("Telegram"))
+          case _ => assertTrue(false)
+        }
       },
       test("identity.link fails when channelUserId is missing") {
         for {

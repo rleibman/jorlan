@@ -69,6 +69,13 @@ trait TelegramApiClient {
     timeoutSeconds: Int,
   ): IO[JorlanError, List[Update]]
 
+  /** Delete any active webhook so that long-polling via [[getUpdates]] can be used.
+    *
+    * Must be called before starting the polling loop if a webhook may have been registered previously. Idempotent —
+    * safe to call when no webhook is set.
+    */
+  def deleteWebhook: IO[JorlanError, Unit]
+
   /** Send a text message to a chat.
     *
     * @param chatId
@@ -173,7 +180,11 @@ class TelegramApiClientLive(
           resp.body.asString
             .mapError(e => JorlanError(s"Telegram getUpdates failed: $e"))
             .flatMap { body =>
-              if (!resp.status.isSuccess)
+              if (resp.status.code == 409)
+                ZIO.logWarning(
+                  s"[telegram] getUpdates 409 Conflict — Telegram says: $body — backing off 30 s.",
+                ) *> ZIO.sleep(30.seconds) *> ZIO.succeed(Nil)
+              else if (!resp.status.isSuccess)
                 ZIO.logWarning(s"[telegram] getUpdates non-2xx ${resp.status.code}: $body") *> ZIO.succeed(Nil)
               else
                 ZIO
@@ -194,6 +205,14 @@ class TelegramApiClientLive(
         }
     }
   }
+
+  override def deleteWebhook: IO[JorlanError, Unit] =
+    run {
+      Client
+        .batched(Request.get(s"$base/deleteWebhook"))
+        .mapError(e => JorlanError(s"Telegram deleteWebhook failed: $e"))
+        .flatMap(checkSuccess)
+    }
 
   override def sendMessage(
     chatId: String,

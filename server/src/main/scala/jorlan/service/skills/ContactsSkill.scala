@@ -34,10 +34,10 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     tools = List(
       ToolDescriptor(
         name = "contacts.find",
-        description = "Case-insensitive substring search on user display names. Returns matching users with their channel identities.",
+        description = "Search users by display name (case-insensitive substring match). Omit 'name' to list all users.",
         inputSchema = Json.decoder
           .decodeJson(
-            """|{"type":"object","properties":{"name":{"type":"string","description":"Substring to search in displayName (case-insensitive)"}},"required":["name"]}""",
+            """|{"type":"object","properties":{"name":{"type":"string","description":"Substring to search in displayName — omit to list all users"}},"required":[]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
@@ -56,10 +56,10 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
       ),
       ToolDescriptor(
         name = "identity.link",
-        description = "Create or update a channel identity for a user.",
+        description = "Create or update a channel identity for a user. If userId is omitted, links to the currently authenticated user.",
         inputSchema = Json.decoder
           .decodeJson(
-            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID"},"channelType":{"type":"string","description":"Channel type: Telegram, Slack, Email, etc."},"channelUserId":{"type":"string","description":"Channel-native user identifier"}},"required":["userId","channelType","channelUserId"]}""",
+            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to use the current user"},"channelType":{"type":"string","description":"Channel type: Telegram, Slack, Email, etc."},"channelUserId":{"type":"string","description":"Channel-native user identifier (e.g. Telegram numeric user ID)"}},"required":["channelType","channelUserId"]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
@@ -67,10 +67,11 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
       ),
       ToolDescriptor(
         name = "identity.listAliases",
-        description = "List all registered channel identities for a user.",
+        description =
+          "List all registered channel identities for a user. If userId is omitted, lists for the current user.",
         inputSchema = Json.decoder
           .decodeJson(
-            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID"}},"required":["userId"]}""",
+            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to use the current user"}},"required":[]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
@@ -87,38 +88,34 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     tool match {
       case "contacts.find"        => contactFind(args)
       case "identity.resolve"     => identityResolve(args)
-      case "identity.link"        => identityLink(args)
-      case "identity.listAliases" => identityListAliases(args)
+      case "identity.link"        => identityLink(ctx, args)
+      case "identity.listAliases" => identityListAliases(ctx, args)
       case other                  => ZIO.fail(JorlanError(s"ContactsSkill: unknown tool '$other'"))
     }
 
-  private def contactFind(args: Json): IO[JorlanError, Json] = { // contacts.find
+  private def contactFind(args: Json): IO[JorlanError, Json] = {
     val nameOpt = SkillArgs.str(args, "name")
-    nameOpt match {
-      case None       => ZIO.fail(JorlanError("contacts.find: name is required"))
-      case Some(name) =>
-        for {
-          users   <- repo.user.search(UserSearch(nameContains = Some(name))).mapError(JorlanError(_))
-          results <- ZIO.foreachPar(users) { u =>
-            repo.user
-              .getChannelIdentities(u.id)
-              .mapError(JorlanError(_))
-              .map { identities =>
-                val idJson = identities.map { ci =>
-                  Json.Obj(
-                    "channelType"   -> Json.Str(ci.channelType.toString),
-                    "channelUserId" -> Json.Str(ci.channelUserId),
-                  )
-                }
-                Json.Obj(
-                  "userId"      -> Json.Str(u.id.value.toString),
-                  "displayName" -> Json.Str(u.displayName),
-                  "identities"  -> Json.Arr(idJson*),
-                )
-              }
+    for {
+      users   <- repo.user.search(UserSearch(nameContains = nameOpt)).mapError(JorlanError(_))
+      results <- ZIO.foreachPar(users) { u =>
+        repo.user
+          .getChannelIdentities(u.id)
+          .mapError(JorlanError(_))
+          .map { identities =>
+            val idJson = identities.map { ci =>
+              Json.Obj(
+                "channelType"   -> Json.Str(ci.channelType.toString),
+                "channelUserId" -> Json.Str(ci.channelUserId),
+              )
+            }
+            Json.Obj(
+              "userId"      -> Json.Str(u.id.value.toString),
+              "displayName" -> Json.Str(u.displayName),
+              "identities"  -> Json.Arr(idJson*),
+            )
           }
-        } yield Json.Arr(results*)
-    }
+      }
+    } yield Json.Arr(results*)
   }
 
   private def identityResolve(args: Json): IO[JorlanError, Json] = {
@@ -148,70 +145,77 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     }
   }
 
-  private def identityLink(args: Json): IO[JorlanError, Json] = {
+  private def identityLink(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
     val userIdRaw = SkillArgs.str(args, "userId")
     val channelTypeStr = SkillArgs.str(args, "channelType")
     val channelUserId = SkillArgs.str(args, "channelUserId")
-    (userIdRaw, channelTypeStr, channelUserId) match {
-      case (None, _, _)                      => ZIO.fail(JorlanError("identity.link: userId is required"))
-      case (_, None, _)                      => ZIO.fail(JorlanError("identity.link: channelType is required"))
-      case (_, _, None)                      => ZIO.fail(JorlanError("identity.link: channelUserId is required"))
-      case (Some(uid), Some(ct), Some(cuid)) =>
-        uid.toLongOption match {
-          case None     => ZIO.fail(JorlanError(s"identity.link: userId must be numeric, got '$uid'"))
-          case Some(id) =>
-            SkillArgs.parseChannelType(ct) match {
-              case None         => ZIO.fail(JorlanError(s"identity.link: unknown channelType '$ct'"))
-              case Some(chType) =>
-                Clock.instant.flatMap { now =>
-                  val ci = ChannelIdentity(
-                    id = ChannelIdentityId.empty,
-                    userId = UserId(id),
-                    channelType = chType,
-                    channelUserId = cuid,
-                    verified = false,
-                    providerData = None,
-                    createdAt = now,
+    // userId is optional — defaults to the acting user
+    val resolvedUserId: Either[String, UserId] = userIdRaw match {
+      case None      => Right(ctx.actorId)
+      case Some(uid) => uid.toLongOption.map(UserId(_)).toRight(s"identity.link: userId must be numeric, got '$uid'")
+    }
+    (resolvedUserId, channelTypeStr, channelUserId) match {
+      case (_, None, _)                       => ZIO.fail(JorlanError("identity.link: channelType is required"))
+      case (_, _, None)                       => ZIO.fail(JorlanError("identity.link: channelUserId is required"))
+      case (Left(err), _, _)                  => ZIO.fail(JorlanError(err))
+      case (Right(uid), Some(ct), Some(cuid)) =>
+        SkillArgs.parseChannelType(ct) match {
+          case None         => ZIO.fail(JorlanError(s"identity.link: unknown channelType '$ct'"))
+          case Some(chType) =>
+            Clock.instant.flatMap { now =>
+              val ci = ChannelIdentity(
+                id = ChannelIdentityId.empty,
+                userId = uid,
+                channelType = chType,
+                channelUserId = cuid,
+                verified = false,
+                providerData = None,
+                createdAt = now,
+              )
+              repo.user
+                .upsertChannelIdentity(ci)
+                .mapError(JorlanError(_))
+                .map { saved =>
+                  Json.Obj(
+                    "channelIdentityId" -> Json.Str(saved.id.value.toString),
+                    "channelType"       -> Json.Str(saved.channelType.toString),
+                    "channelUserId"     -> Json.Str(saved.channelUserId),
                   )
-                  repo.user
-                    .upsertChannelIdentity(ci)
-                    .mapError(JorlanError(_))
-                    .map { saved =>
-                      Json.Obj(
-                        "channelIdentityId" -> Json.Str(saved.id.value.toString),
-                        "channelType"       -> Json.Str(saved.channelType.toString),
-                        "channelUserId"     -> Json.Str(saved.channelUserId),
-                      )
-                    }
                 }
             }
         }
     }
   }
 
-  private def identityListAliases(args: Json): IO[JorlanError, Json] = {
-    val userIdRaw = SkillArgs.str(args, "userId")
-    userIdRaw match {
-      case None      => ZIO.fail(JorlanError("identity.listAliases: userId is required"))
+  private def identityListAliases(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
+    val resolvedId = SkillArgs.str(args, "userId") match {
+      case None      => Right(ctx.actorId)
       case Some(uid) =>
-        uid.toLongOption match {
-          case None     => ZIO.fail(JorlanError(s"identity.listAliases: userId must be numeric, got '$uid'"))
-          case Some(id) =>
-            repo.user
-              .getChannelIdentities(UserId(id))
-              .mapError(JorlanError(_))
-              .map { identities =>
-                Json.Arr(
-                  identities.map { ci =>
-                    Json.Obj(
-                      "channelType"   -> Json.Str(ci.channelType.toString),
-                      "channelUserId" -> Json.Str(ci.channelUserId),
-                      "verified"      -> Json.Bool(ci.verified),
-                    )
-                  }*,
+        uid.toLongOption.map(UserId(_)).toRight(s"identity.listAliases: userId must be numeric, got '$uid'")
+    }
+    resolvedId match {
+      case Left(err) => ZIO.fail(JorlanError(err))
+      case Right(id) =>
+        repo.user
+          .getChannelIdentities(id)
+          .mapError(JorlanError(_))
+          .map { identities =>
+            Json.Arr(
+              identities.map { ci =>
+                Json.Obj(
+                  "channelType"   -> Json.Str(ci.channelType.toString),
+                  "channelUserId" -> Json.Str(ci.channelUserId),
+                  "verified"      -> Json.Bool(ci.verified),
                 )
-              }
-        }
+              }*,
+            )
+          }
     }
   }
 

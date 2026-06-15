@@ -151,8 +151,9 @@ object Jorlan extends ZIOApp {
         case Some(zio.json.ast.Json.Bool(v)) => v
         case _                               => false
       }
-      tokenStore <- InitTokenStore.make(initialized)
-      initService = InitServiceImpl(repo, tokenStore)
+      tokenStore    <- InitTokenStore.make(initialized)
+      skillRegistry <- ZIO.service[SkillRegistry]
+      initService = InitServiceImpl(repo, tokenStore, skillRegistry)
       _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
       serverConfig = ZLayer.succeed(
         Server.Config.default
@@ -161,6 +162,7 @@ object Jorlan extends ZIOApp {
       )
       randomConnectionId <- ConnectionId.randomZIO
       _                  <- (for {
+        _      <- initService.topUpAdminCapabilities
         _      <- startServices
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
@@ -182,6 +184,7 @@ object Jorlan extends ZIOApp {
         _      <- initDone.await
         _      <- serverFiber.interrupt
         _      <- ZIO.logInfo("Server initialized — switching to full application routes")
+        _      <- initService.topUpAdminCapabilities
         _      <- startServices
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
