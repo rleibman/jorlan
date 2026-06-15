@@ -660,9 +660,12 @@ object CommandHandler {
   }
 
   private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
-    val escaped = query.replace("\"", "\\\"")
+    import zio.json.*
+    import zio.json.ast.Json
+
+    val argsJson = Json.Obj("query" -> Json.Str(query)).toJson
     gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.search", s"""{"query":"$escaped"}""")),
+      _.run(JorlanClient.Mutations.invokeTool("email.search", argsJson)),
     ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.search failed: $err")),
       {
