@@ -562,11 +562,9 @@ is missing and what needs to be built.
 2. Confirm the response lists events for today (or "no events" if the calendar is empty).
 3. Send: `/calendar list 2026-12-25` — confirm events for that date.
 
-### I6. Calendar create event
+### I6. Calendar create event (not yet wired)
 
-1. Send: `calendar.createEvent` with title "Test Event" and a future date/time via chat.
-2. Confirm the agent responds with the created event ID.
-3. Verify the event appears in Google Calendar.
+> Note: This branch does not expose a `/calendar create` (or equivalent) command yet; only `/calendar today` and `/calendar list` are implemented.
 
 ### I7. Drive list files (not yet wired)
 
