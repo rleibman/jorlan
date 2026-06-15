@@ -518,3 +518,74 @@ is missing and what needs to be built.
 2. Confirm the response has `Cache-Control: max-age=31536000`.
 3. Load `index.html` directly — confirm the response has `Cache-Control: no-cache`.
 
+---
+
+## Section I — Phase 13: Email / Calendar / Drive Skills
+
+> Last updated: 2026-06-14
+> Prerequisites: Google Cloud project with OAuth client credentials; `JORLAN_GOOGLE_CLIENT_ID`, `JORLAN_GOOGLE_CLIENT_SECRET`, and `JORLAN_GOOGLE_REDIRECT_URI` set; `JORLAN_CREDENTIAL_ENCRYPTION_KEY` (32+ chars) set.
+
+### I1. OAuth link flow
+
+1. Log in as an existing user.
+2. Navigate to **Connected Accounts** (`#/oauth`).
+3. Confirm the Google row shows "Not connected".
+4. Click **Connect** — confirm the browser redirects to `accounts.google.com` for Google OAuth consent.
+5. Complete the Google consent flow with a test account.
+6. Confirm the browser redirects back to `/?oauth=success` and a green success banner appears.
+7. Confirm the browser redirects to the app root and the banner auto-dismisses.
+8. Navigate back to **Connected Accounts** — confirm the Google row now shows "Connected".
+
+### I2. OAuth revoke flow
+
+1. With Google connected (from I1), navigate to **Connected Accounts**.
+2. Click **Disconnect** for Google.
+3. Confirm the row reverts to "Not connected".
+4. Attempt to invoke an email skill via chat (`/email list 5`) — confirm an error indicating no credentials.
+
+### I3. Email list
+
+1. With Google connected, open a chat session.
+2. Send: `/email list 5`
+3. Confirm the response lists up to 5 emails with subject, sender, and date.
+4. Edge case: Send `/email list 0` — confirm an empty list or minimum-count error.
+
+### I4. Email send
+
+1. Send: `/email send to:test@example.com subject:"Test from Jorlan" body:"Hello from Jorlan"`
+2. Confirm the agent responds with a sent message ID.
+3. Verify the email arrived in the recipient inbox (if using a real test address).
+
+### I5. Calendar list today
+
+1. With Google connected, send: `/calendar today`
+2. Confirm the response lists events for today (or "no events" if the calendar is empty).
+3. Send: `/calendar list 2026-12-25` — confirm events for that date.
+
+### I6. Calendar create event (not yet wired)
+
+> Note: This branch does not expose a `/calendar create` (or equivalent) command yet; only `/calendar today` and `/calendar list` are implemented.
+
+### I7. Drive list files (not yet wired)
+
+> Note: This branch does not implement `/drive` slash commands yet. Drive tools exist (`drive.listFiles`, `drive.readFile`, `drive.downloadFile`) but are not exposed via `/drive ...` commands in the shell.
+
+### I8. OAuth error handling
+
+1. Revoke the Google OAuth app from Google's account settings page (outside Jorlan).
+2. Trigger an email operation in Jorlan (`/email list 5`).
+3. Confirm a user-facing error indicating credentials are invalid or expired.
+4. Confirm the error does not expose raw credential data.
+
+### I9. Capability gates
+
+1. As a user without `email.read` capability, attempt `/email list`.
+2. Confirm the agent responds with "Access denied" (not a skill error).
+3. As a user without `calendar.read` capability, attempt `/calendar today`.
+4. Confirm "Access denied" is returned.
+
+### I10. OAuth callback error
+
+1. Manually navigate to `/api/oauth/callback/google?error=access_denied&state=invalid`.
+2. Confirm the browser is redirected to `/?oauth=error` and the error banner appears.
+

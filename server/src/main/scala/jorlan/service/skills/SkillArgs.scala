@@ -46,6 +46,15 @@ private[service] object SkillArgs {
       case _                => None
     }
 
+  def bool(
+    args: Json,
+    key:  String,
+  ): Option[Boolean] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Bool(b)) => b }
+      case _                => None
+    }
+
   def parseChannelType(s: String): Option[ChannelType] =
     ChannelType.values.find(_.toString.equalsIgnoreCase(s))
 

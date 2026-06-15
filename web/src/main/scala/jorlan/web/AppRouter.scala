@@ -44,6 +44,7 @@ enum AppPage(
   case Skills extends AppPage("#/skills", "Skills", "extension")
   case Users extends AppPage("#/users", "Users", "group")
   case Settings extends AppPage("#/settings", "Settings", "settings")
+  case OAuth extends AppPage("#/oauth", "Connected Accounts", "link")
 
 }
 
@@ -97,6 +98,7 @@ object AppRouter {
               case AppPage.Skills    => SkillsPage(user)
               case AppPage.Users     => UsersPage(user)
               case AppPage.Settings  => SettingsPage(user)
+              case AppPage.OAuth     => OAuthManagementPage(user)
             },
           )
       }

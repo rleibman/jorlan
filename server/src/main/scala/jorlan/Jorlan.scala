@@ -15,6 +15,8 @@ import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.*
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
+import jorlan.email.{ImapSmtpProvider, PgpService}
+import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.routes.*
 import jorlan.service.*
@@ -32,11 +34,12 @@ import java.util.concurrent.TimeUnit
 type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService &
   OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub &
   ToolEventHub & ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine &
-  ConnectorManager & NotificationRouter & Client
+  ConnectorManager & NotificationRouter & Client & jorlan.service.OAuthCredentialService
 
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & ConfigurationService
+  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
+  ConfigurationService & jorlan.service.OAuthCredentialService
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -44,11 +47,8 @@ object Jorlan extends ZIOApp {
   override type Environment = JorlanEnvironment
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
-  // Configure ZIO to use SLF4J (logback) instead of console logging
-  // This routes all ZIO logs through logback, which writes to both file and console
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> EnvironmentBuilder.live
-//    Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> EnvironmentBuilder.withContainer
 
   private case class AllTogether(startTime: Long) extends AppRoutes[JorlanEnvironment, JorlanSession, JorlanError] {
 
@@ -99,34 +99,76 @@ object Jorlan extends ZIOApp {
     */
   def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, Nothing]] =
     for {
-      allTogether = AllTogether(startTime)
       _                <- ZIO.log("Initializing Web Routes")
+      config           <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
       authServer       <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      authServerApi    <- authServer.authRoutes
-      authServerUnauth <- authServer.unauthRoutes
-      unauth           <- allTogether.unauth
-      api              <- allTogether.api
+      authConfig       <- ZIO.service[AuthConfig]
+      oauthCredSvc     <- ZIO.service[jorlan.service.OAuthCredentialService]
+      httpClient       <- ZIO.service[Client]
+      repo             <- ZIO.service[ZIORepositories]
+      authR            <- authServer.authRoutes // TODO move into allTogether
+      unauthR          <- authServer.unauthRoutes // TODO move into allTogether
+      authServerApi    <- authServer.authRoutes // TODO move into allTogether
+      authServerUnauth <- authServer.unauthRoutes // TODO move into allTogether
+      allTogether = AllTogether(startTime)
+      unauth     <- allTogether.unauth
+      api        <- allTogether.api
+      nonceStore <- Ref.make(Map.empty[String, Long])
+      oauthAuthR = OAuthRoutes.authenticatedRoutes(authConfig, config.jorlan.google, nonceStore)
+      oauthUnauthR = OAuthRoutes.unauthenticatedRoutes(
+        authConfig,
+        config.jorlan.google,
+        oauthCredSvc,
+        httpClient,
+        nonceStore,
+      )
     } yield (
-      ((api ++ authServerApi) @@ authServer.bearerSessionProvider) ++
-        authServerUnauth ++ unauth
+      ((api ++ authR ++ authServerApi ++ oauthAuthR) @@ authServer.bearerSessionProvider) ++
+        authServerUnauth ++ unauthR ++ unauth ++ oauthUnauthR
     )
       .handleErrorCauseZIO(mapError)
 
   private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
     for {
-      registry    <- ZIO.service[SkillRegistry]
-      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      memService  <- ZIO.service[MemoryService]
-      jobManager  <- ZIO.service[JobManager]
-      repos       <- ZIO.service[ZIORepositories]
-      notifRouter <- ZIO.service[NotificationRouter]
-      workRoot    <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
-      _           <- registry.register(new MemorySkill(memService))
-      _           <- registry.register(new SchedulerSkill(jobManager))
-      _           <- registry.register(new ContactsSkill(repos))
-      _           <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
-      _           <- registry.register(new ShellSkill(config.jorlan.shell, repos))
-      _           <- registry.register(new NotifySkill(notifRouter))
+      registry     <- ZIO.service[SkillRegistry]
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      memService   <- ZIO.service[MemoryService]
+      jobManager   <- ZIO.service[JobManager]
+      repos        <- ZIO.service[ZIORepositories]
+      notifRouter  <- ZIO.service[NotificationRouter]
+      httpClient   <- ZIO.service[Client]
+      oauthCredSvc <- ZIO.service[OAuthCredentialService]
+      workRoot     <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
+      pgpService = PgpService.noOp
+      emailCfg = config.jorlan.email
+      emailProvider <-
+        if (emailCfg.defaultProvider.toLowerCase == "gmail") {
+          GmailProvider(oauthCredSvc).orDie
+        } else {
+          ZIO.succeed(
+            ImapSmtpProvider(
+              imapHost = emailCfg.imap.host,
+              imapPort = emailCfg.imap.port,
+              imapSsl = emailCfg.imap.ssl,
+              smtpHost = emailCfg.smtp.host,
+              smtpPort = emailCfg.smtp.port,
+              smtpTls = emailCfg.smtp.startTls,
+              username = "",
+              password = "",
+            ),
+          )
+        }
+      calProvider   <- GoogleCalendarProvider(oauthCredSvc).orDie
+      driveProvider <- GoogleDriveProvider(oauthCredSvc).orDie
+      _             <- registry.register(new MemorySkill(memService))
+      _             <- registry.register(new SchedulerSkill(jobManager))
+      _             <- registry.register(new ContactsSkill(repos))
+      _             <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _             <- registry.register(new ShellSkill(config.jorlan.shell, repos))
+      _             <- registry.register(new NotifySkill(notifRouter))
+      _             <- registry.register(new EmailSkill(emailProvider, repos))
+      _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
+      _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =

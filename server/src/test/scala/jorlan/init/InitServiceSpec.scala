@@ -209,6 +209,12 @@ object InitServiceSpec extends ZIOSpecDefault {
           "permission.revoke",
           "approval.decide",
           "agent.skill.invoke",
+          "email.read",
+          "email.write",
+          "email.send",
+          "calendar.read",
+          "calendar.write",
+          "drive.read",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]

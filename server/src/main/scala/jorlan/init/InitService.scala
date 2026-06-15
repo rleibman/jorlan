@@ -12,7 +12,6 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
@@ -210,6 +209,21 @@ class InitServiceImpl(
     CapabilityName("permission.revoke"),
     CapabilityName("approval.decide"),
     CapabilityName("agent.skill.invoke"),
+    // Email
+    CapabilityName("email.read"),
+    CapabilityName("email.write"),
+    CapabilityName("email.send"),
+    // Calendar
+    CapabilityName("calendar.read"),
+    CapabilityName("calendar.write"),
+    // Drive
+    CapabilityName("drive.read"),
+  )
+
+  // email.send and calendar.write require per-invocation approval per design spec.
+  private val perInvocationCapabilities: Set[CapabilityName] = Set(
+    CapabilityName("email.send"),
+    CapabilityName("calendar.write"),
   )
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
@@ -222,6 +236,9 @@ class InitServiceImpl(
     allAdminCaps.flatMap { caps =>
       ZIO
         .foreachDiscard(caps) { cap =>
+          val mode =
+            if (perInvocationCapabilities.contains(cap)) ApprovalMode.PerInvocation
+            else ApprovalMode.Persistent
           repo.permission.upsertCapabilityGrant(
             CapabilityGrant(
               id = CapabilityGrantId.empty,
@@ -229,7 +246,7 @@ class InitServiceImpl(
               scopeJson = None,
               granteeId = userId,
               grantorId = None,
-              approvalMode = ApprovalMode.Persistent,
+              approvalMode = mode,
               expiresAt = None,
               resourceConstraints = None,
               createdAt = now,

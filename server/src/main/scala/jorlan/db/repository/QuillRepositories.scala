@@ -88,6 +88,28 @@ object JorlanSchema {
   )
   inline def qUserRoles = quote(querySchema[UserRoleRow]("userRole"))
 
+  case class ExternalCredentialRow(
+    id:             ExternalCredentialId,
+    userId:         UserId,
+    provider:       String,
+    credentialData: Json,
+    expiresAt:      Option[Instant],
+    scopes:         Option[String],
+    createdAt:      Instant,
+    updatedAt:      Instant,
+  )
+  inline def qExternalCredentials =
+    quote(
+      querySchema[ExternalCredentialRow](
+        "external_credentials",
+        _.credentialData -> "credential_data",
+        _.expiresAt      -> "expires_at",
+        _.createdAt      -> "created_at",
+        _.updatedAt      -> "updated_at",
+        _.userId         -> "user_id",
+      ),
+    )
+
 }
 
 // Shared Quill context carrier — one context per datasource, shared across all repos.
@@ -146,6 +168,8 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
   override def permission: ZIOPermissionRepository = QuillPermissionRepository(qc)
 
   override def setting: ZIOServerSettingsRepository = QuillServerSettingsRepository(qc)
+
+  override def extCredential: ZIOExternalCredentialRepository = QuillExternalCredentialRepository(qc)
 
 }
 
@@ -1357,5 +1381,101 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
       ),
     ).unit.orDie
   }
+
+}
+
+// ─── ExternalCredential ───────────────────────────────────────────────────────
+
+private class QuillExternalCredentialRepository(qc: QuillCtx)
+    extends QuillRepoBase(qc) with ZIOExternalCredentialRepository {
+
+  import JorlanSchema.*
+  import qc.ctx.{*, given}
+
+  private def rowToCredential(row: ExternalCredentialRow): ExternalCredential =
+    ExternalCredential(
+      id = row.id,
+      userId = row.userId,
+      provider = row.provider,
+      credentialData = row.credentialData,
+      expiresAt = row.expiresAt,
+      scopes = row.scopes,
+      createdAt = row.createdAt,
+      updatedAt = row.updatedAt,
+    )
+
+  override def upsert(
+    userId:        UserId,
+    provider:      String,
+    encryptedData: Json,
+    expiresAt:     Option[Instant],
+    scopes:        Option[String],
+  ): RepositoryTask[Unit] = {
+    Clock.instant.flatMap { now =>
+      val row = ExternalCredentialRow(
+        id = ExternalCredentialId.empty,
+        userId = userId,
+        provider = provider,
+        credentialData = encryptedData,
+        expiresAt = expiresAt,
+        scopes = scopes,
+        createdAt = now,
+        updatedAt = now,
+      )
+      exec(
+        qc.ctx.run(
+          qExternalCredentials
+            .insertValue(lift(row))
+            .onConflictUpdate(
+              (
+                t,
+                e,
+              ) => t.credentialData -> e.credentialData,
+              (
+                t,
+                e,
+              ) => t.expiresAt -> e.expiresAt,
+              (
+                t,
+                e,
+              ) => t.scopes -> e.scopes,
+            ),
+        ),
+      ).unit
+    }
+  }
+
+  override def find(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Option[ExternalCredential]] =
+    exec(
+      qc.ctx
+        .run(
+          qExternalCredentials
+            .filter(r => r.userId == lift(userId) && r.provider == lift(provider)),
+        )
+        .map(_.headOption.map(rowToCredential)),
+    )
+
+  override def delete(
+    userId:   UserId,
+    provider: String,
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qExternalCredentials
+            .filter(r => r.userId == lift(userId) && r.provider == lift(provider))
+            .delete,
+        ),
+    ).unit
+
+  override def listByUser(userId: UserId): RepositoryTask[List[ExternalCredential]] =
+    exec(
+      qc.ctx
+        .run(qExternalCredentials.filter(_.userId == lift(userId)))
+        .map(_.map(rowToCredential)),
+    )
 
 }

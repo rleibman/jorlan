@@ -442,7 +442,7 @@ trait ServerSettingsRepository[F[_]] {
 
 }
 
-/** Repository for [[jorlan.domain.ExternalCredential]] records (OAuth tokens and similar). */
+/** Repository for [[jorlan.ExternalCredential]] records (OAuth tokens and similar). */
 trait ExternalCredentialRepository[F[_]] {
 
   def upsert(
@@ -467,15 +467,16 @@ trait ExternalCredentialRepository[F[_]] {
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
-  def user:         UserRepository[F]
-  def agent:        AgentRepository[F]
-  def conversation: ConversationRepository[F]
-  def skill:        SkillRepository[F]
-  def memory:       MemoryRepository[F]
-  def eventLog:     EventLogRepository[F]
-  def scheduler:    SchedulerRepository[F]
-  def artifact:     ArtifactRepository[F]
-  def permission:   PermissionRepository[F]
-  def setting:      ServerSettingsRepository[F]
+  def user:          UserRepository[F]
+  def agent:         AgentRepository[F]
+  def conversation:  ConversationRepository[F]
+  def skill:         SkillRepository[F]
+  def memory:        MemoryRepository[F]
+  def eventLog:      EventLogRepository[F]
+  def scheduler:     SchedulerRepository[F]
+  def artifact:      ArtifactRepository[F]
+  def permission:    PermissionRepository[F]
+  def setting:       ServerSettingsRepository[F]
+  def extCredential: ExternalCredentialRepository[F]
 
 }

@@ -8,3 +8,4 @@
 - [Phase 11 Telegram Connector Performance Findings](phase11_perf.md) — resolveOrCreateSession in-memory chatRef filter, sequential update dispatch, ZLayer.succeed per-call, multipart triple-copy, Instant.now() in pure fn, startAll sequential
 - [Phase 12 Built-in Skills Performance Findings](phase12_perf.md) — ContactsSkill N+1 + full-table scan, blocking I/O unwrapped, allToolSpecs double-traversal, connector linear scan, Instant.now() in pure code, loadPersonality uncached
 - [Phase 15 Web Frontend Performance Findings](phase15_perf.md) — adapter/URI reconstruction per render, client-side filters, missing cache headers, double-filter approvals, no fullOpt stage, unbounded event prepend
+- [Phase 13 Email/Calendar/Drive Performance Findings](phase13_perf.md) — N+1 token refresh in listMessages, no access-token expiry check, new-client-per-call, blocking transport init, SecureRandom.getInstanceStrong per-encrypt, double-fetch on updateEvent

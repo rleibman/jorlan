@@ -175,6 +175,19 @@ type: project
 - `listCapabilities` in `JorlanAPI` (line 462) queries grants for the authenticated user without a `requireCapability` guard. Every other query in the new scheduler block is guarded. Intentional (a user listing their own grants needs no additional cap) but inconsistent with surrounding code; a comment clarifying the intent would prevent future confusion.
 - `Schema.scalarSchema("SchedulerJobId", None, None, None, id => Value.IntValue(id.value))` and 4 similar ID/enum schemas (lines 336-351) follow the same pre-existing pattern found throughout JorlanAPI. The Phase 10 additions are consistent with the pattern — not a new issue, but the accumulation now means ~25 `scalarSchema` lines in this file. A previous note flagged this in Phase 6; still open.
 
+## Phase 13 Email/Calendar/Drive Skills Observations (2026-06-12)
+- `private val transport` + `private val jsonFactory` + `private def makeXxx(accessToken)` + `private def withXxx[A](userId)(f)` are copy-pasted identically across GmailProvider, GoogleCalendarProvider, GoogleDriveProvider. An abstract `GoogleApiProvider` base class with the shared infrastructure would remove ~15 duplicate lines across 3 files.
+- `logEvent` private method is copy-pasted identically across EmailSkill, GoogleCalendarSkill, GoogleDriveSkill, ShellSkill (and named `logShellEvent` in ShellSkill). A trait `SkillEventLogger { val repo: ZIORepositories; def logEvent(...) }` mixed into all skills would eliminate the repetition.
+- `emailDelete` uses `EventType.EmailMessageArchived` — there is no `EmailMessageDeleted` event type; the copy-paste from `emailArchive` preserved the wrong event type. This is a correctness bug, not just a style issue.
+- `emailReply` uses two nested `match` on `Option` instead of a for-comprehension; flattening with `ZIO.fromOption` + `.orElseFail` would remove one level of nesting.
+- `GmailProvider.listMessages` calls `withGmail(userId)` once to get refs, then `withGmail(userId)` again for each message — N+1 token refresh calls for a list operation. Should hold a single Gmail client for the full operation.
+- `ImapSmtpProvider.pgp` constructor parameter is declared but never referenced in any method body — dead field (all methods immediately fail with "not yet implemented").
+- `OAuthCredentialServiceImpl.extractField`, `extractExpiresAt`, `extractScopes` all have the same `json match { case Json.Obj(fields) => fields.collectFirst { ... }; case _ => None }` shape; `extractField` is already general enough to serve all three if the matcher is parameterised.
+- `OAuthRoutes.verifyStateJwt` calls `Instant.now()` (impure) instead of `Clock.instant` — untestable. The method is pure-looking but has a hidden side-effect.
+- `GoogleDriveProvider.listFiles` introduces a `null` local val (`val q = ... else null`) inside a `ZIO.attemptBlocking` scope even though it could use `Option.fold` on the already-optional `qParts` to call `req.setQ` conditionally.
+- `buildRfc822` in GmailProvider is missing the `From:` header; RFC 822 requires it and Gmail API will reject messages without it.
+- `ToolDescriptor.inputSchema` in all three skills uses `Json.decoder.decodeJson("""...""").getOrElse(Json.Obj())` — silently falls back to empty schema on malformed literals. 16 occurrences across EmailSkill, GoogleCalendarSkill, GoogleDriveSkill. Should be a compile-time literal check or at minimum a `.getOrElse` that logs a warning.
+
 ## Phase 8.5 Manual Testing Branch Observations (2026-06-02)
 - `logErrors` / `logRequests` wrappers in JorlanAPI: inline `new OverallWrapper[Any]` bodies are verbose; Caliban supports `wrapper` via `OverallWrapper.apply` or the `wrap` DSL. Both wrappers currently use nearly identical boilerplate.
 - `AgentRunnerImpl.processMessage` uses nested `Ref.make.flatMap { … Ref.make.flatMap { … } }` — extracting both Refs before the for-comp is cleaner.

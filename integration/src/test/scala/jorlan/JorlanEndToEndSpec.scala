@@ -17,15 +17,19 @@ import jorlan.db.JorlanContainer
 import jorlan.db.repository.QuillRepositories
 import jorlan.*
 import jorlan.graphql.JorlanAPI
+import jorlan.db.repository.ZIORepositories
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
-import jorlan.service.skills.SkillRegistry
+import jorlan.service.skills.{EmailSkill, GoogleCalendarSkill, GoogleDriveSkill, SkillRegistry}
+import jorlan.service.{CalendarProvider, DriveProvider, EmailProvider}
 import zio.*
 import zio.http.Client
+import zio.json.ast.Json
 import zio.test.*
 
+import java.time.Instant
 import scala.language.unsafeNulls
 
 /** End-to-end integration tests using a real MariaDB (Testcontainers) and the full service stack via
@@ -60,6 +64,141 @@ object JorlanEndToEndSpec
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
+  private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
+    new OAuthCredentialService {
+      override def store(
+        userId:    UserId,
+        provider:  String,
+        plainJson: Json,
+      ): IO[JorlanError, Unit] = ZIO.unit
+      override def load(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(
+        userId:   UserId,
+        provider: String,
+      ):                                          IO[JorlanError, Unit] = ZIO.unit
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def refreshAccessToken(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+      override def getExpiresAt(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    },
+  )
+
+  // Stub providers for Phase 13 skills — fail with a clear error so the dispatch path is exercised without real APIs
+  private val stubEmailProvider: EmailProvider[[A] =>> IO[JorlanError, A]] =
+    new EmailProvider[[A] =>> IO[JorlanError, A]] {
+      override def listMessages(
+        userId:     UserId,
+        maxResults: Int,
+        query:      Option[String],
+      ): IO[JorlanError, List[domain.EmailMessage]] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def getMessage(
+        userId:    UserId,
+        messageId: domain.EmailMessageId,
+      ): IO[JorlanError, domain.EmailMessage] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def sendDraft(
+        userId: UserId,
+        draft:  domain.EmailDraft,
+      ): IO[JorlanError, domain.EmailMessageId] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def createDraft(
+        userId: UserId,
+        draft:  domain.EmailDraft,
+      ): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def archiveMessage(
+        userId:    UserId,
+        messageId: domain.EmailMessageId,
+      ): IO[JorlanError, Unit] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def deleteMessage(
+        userId:    UserId,
+        messageId: domain.EmailMessageId,
+      ): IO[JorlanError, Unit] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+    }
+
+  private val stubCalendarProvider: CalendarProvider[[A] =>> IO[JorlanError, A]] =
+    new CalendarProvider[[A] =>> IO[JorlanError, A]] {
+      override def listCalendars(userId: UserId): IO[JorlanError, List[domain.UserCalendar]] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+      override def listEvents(
+        userId:     UserId,
+        calendarId: domain.CalendarId,
+        maxResults: Int,
+        timeMin:    Option[Instant],
+        timeMax:    Option[Instant],
+      ): IO[JorlanError, List[domain.CalendarEntry]] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+      override def getEvent(
+        userId:     UserId,
+        calendarId: domain.CalendarId,
+        eventId:    domain.CalendarEventId,
+      ): IO[JorlanError, domain.CalendarEntry] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+      override def createEvent(
+        userId:     UserId,
+        calendarId: domain.CalendarId,
+        entry:      domain.CalendarEntry,
+      ): IO[JorlanError, domain.CalendarEntry] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+      override def updateEvent(
+        userId:     UserId,
+        calendarId: domain.CalendarId,
+        entry:      domain.CalendarEntry,
+      ): IO[JorlanError, domain.CalendarEntry] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+      override def deleteEvent(
+        userId:     UserId,
+        calendarId: domain.CalendarId,
+        eventId:    domain.CalendarEventId,
+      ): IO[JorlanError, Unit] =
+        ZIO.fail(JorlanError("No calendar credentials in test environment"))
+    }
+
+  private val stubDriveProvider: DriveProvider[[A] =>> IO[JorlanError, A]] =
+    new DriveProvider[[A] =>> IO[JorlanError, A]] {
+      override def listFiles(
+        userId:     UserId,
+        folderId:   Option[String],
+        query:      Option[String],
+        maxResults: Int,
+      ): IO[JorlanError, List[domain.DriveFile]] =
+        ZIO.fail(JorlanError("No drive credentials in test environment"))
+      override def readTextFile(
+        userId: UserId,
+        fileId: domain.DriveFileId,
+      ): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No drive credentials in test environment"))
+      override def downloadFile(
+        userId: UserId,
+        fileId: domain.DriveFileId,
+      ): IO[JorlanError, Array[Byte]] =
+        ZIO.fail(JorlanError("No drive credentials in test environment"))
+    }
+
+  private val skillRegistryLayer: URLayer[ZIORepositories, SkillRegistry] =
+    (SkillRegistry.live ++ ZLayer.environment[ZIORepositories]) >>>
+      ZLayer.fromZIO {
+        for {
+          repos <- ZIO.service[ZIORepositories]
+          reg   <- ZIO.service[SkillRegistry]
+          _     <- reg.register(new EmailSkill(stubEmailProvider, repos))
+          _     <- reg.register(new GoogleCalendarSkill(stubCalendarProvider, repos))
+          _     <- reg.register(new GoogleDriveSkill(stubDriveProvider, repos))
+        } yield reg
+      }
+
   private val envLayer: TaskLayer[JorlanEnvironment] =
     ZLayer.make[JorlanEnvironment](
       configLayer,
@@ -75,12 +214,13 @@ object JorlanEndToEndSpec
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
-      SkillRegistry.live,
+      skillRegistryLayer,
       AgentRunnerImpl.live,
       JobManagerImpl.live,
       TriggerEngine.live,
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
+      stubOAuthCredentialService,
       Client.default,
     )
 

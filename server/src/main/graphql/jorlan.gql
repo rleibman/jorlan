@@ -172,6 +172,18 @@ type Mutations {
   decideApproval(requestId: ApprovalRequestId!, approved: Boolean!, note: String): Boolean
   terminateSession(value: AgentSessionId!): Boolean
   notifyUser(userId: UserId!, message: String!): Boolean
+  startOAuth(value: String!): OAuthStartResult
+  revokeOAuth(value: String!): Boolean
+  invokeTool(toolName: String!, argsJson: String!): String
+}
+
+type OAuthStartResult {
+  authUrl: String!
+}
+
+type OAuthStatus {
+  connected: Boolean!
+  expiresAt: Instant
 }
 
 type Permission {
@@ -208,6 +220,8 @@ type Queries {
   availableModels: [ModelInfo!]
   skills: [SkillInfo!]
   contacts(value: String!): [ContactResult!]
+  oauthStatus(value: String!): OAuthStatus
+  listOAuthProviders: [String!]
 }
 
 type ResponseChunk {

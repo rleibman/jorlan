@@ -8,4 +8,5 @@
 - [Phase 10 Findings](phase10_findings.md) — Durable Scheduler conformance review (2026-06-04)
 - [Phase 11 Findings](phase11_findings.md) — Telegram Connector conformance review (2026-06-07)
 - [Phase 12 Findings](phase12_findings.md) — Built-in Skills, ReAct loop, SkillRegistry, skill conformance review (2026-06-10)
+- [Phase 13 Findings](phase13_findings.md) — Email/Calendar/Drive Skills conformance review (2026-06-12)
 - [Recurring Patterns](recurring_patterns.md) — Architectural violations and patterns seen across reviews

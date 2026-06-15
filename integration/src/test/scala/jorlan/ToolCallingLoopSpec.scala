@@ -66,31 +66,48 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
   private val stubCapabilityEvaluator: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
-  /** Stub skill registered in the registry so that `echo.run` invocations succeed rather than returning an error. */
+  private val stubOAuthCredentialService: ULayer[OAuthCredentialService] = ZLayer.succeed(
+    new OAuthCredentialService {
+      override def store(
+        userId:    UserId,
+        provider:  String,
+        plainJson: Json,
+      ): IO[JorlanError, Unit] = ZIO.unit
+      override def load(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[Json]] = ZIO.none
+      override def revoke(
+        userId:   UserId,
+        provider: String,
+      ):                                          IO[JorlanError, Unit] = ZIO.unit
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def refreshAccessToken(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.fail(JorlanError("No OAuth credentials configured in test environment"))
+      override def getExpiresAt(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    },
+  )
+
   private val echoSkill: Skill = new Skill {
-
-    override val descriptor: SkillDescriptor = SkillDescriptor(
-      name = "echo",
-      tier = SkillTier.BuiltIn,
-      tools = List(
-        ToolDescriptor(
-          name = "echo.run",
-          description = "Echo the tool name back",
-          inputSchema = Json.decoder
-            .decodeJson("""{"type":"object","properties":{},"required":[]}""")
-            .getOrElse(Json.Obj()),
-          outputSchema = Json.Obj("type" -> Json.Str("string")),
-          requiredCapabilities = Nil,
+    override def descriptor: SkillDescriptor =
+      SkillDescriptor(
+        name = "echo",
+        tier = SkillTier.BuiltIn,
+        tools = List(
+          ToolDescriptor("echo.run", "Echo a tool call", Json.Obj(zio.Chunk.empty), Json.Obj(zio.Chunk.empty), Nil),
         ),
-      ),
-    )
-
+      )
     override def invoke(
       ctx:  InvocationContext,
       tool: String,
       args: Json,
     ): IO[JorlanError, Json] = ZIO.succeed(Json.Str(s"echo:$tool"))
-
   }
 
   /** Builds the full service stack above the shared DB layer for a given sequence of model steps.
@@ -119,6 +136,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       TriggerEngine.live,
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
+      stubOAuthCredentialService,
       Client.default,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
