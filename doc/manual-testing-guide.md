@@ -582,7 +582,7 @@ is missing and what needs to be built.
 
 ### I9. Capability gates
 
-1. As a user without `email.use` capability, attempt `/email list`.
+1. As a user without `email.read` capability, attempt `/email list`.
 2. Confirm the agent responds with "Access denied" (not a skill error).
 3. As a user without `calendar.read` capability, attempt `/calendar today`.
 4. Confirm "Access denied" is returned.
