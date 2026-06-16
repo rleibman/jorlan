@@ -208,15 +208,13 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
               ZIO
                 .fromEither(Json.decoder.decodeJson(bodyStr))
                 .mapError(e => JorlanError(s"Lyrion: JSON parse error: $e"))
-                .flatMap { json =>
-                  json match {
-                    case Json.Obj(fields) =>
-                      fields.collectFirst { case ("result", v) => v } match {
-                        case Some(result) => ZIO.succeed(result)
-                        case None         => ZIO.fail(JorlanError(s"Lyrion: no 'result' field in response: $bodyStr"))
-                      }
-                    case _ => ZIO.fail(JorlanError(s"Lyrion: unexpected response shape: $bodyStr"))
-                  }
+                .flatMap {
+                  case Json.Obj(fields) =>
+                    fields.collectFirst { case ("result", v) => v } match {
+                      case Some(result) => ZIO.succeed(result)
+                      case None => ZIO.fail(JorlanError(s"Lyrion: no 'result' field in response: $bodyStr"))
+                    }
+                  case _ => ZIO.fail(JorlanError(s"Lyrion: unexpected response shape: $bodyStr"))
                 }
             }
           }
