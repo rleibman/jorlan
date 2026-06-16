@@ -46,6 +46,10 @@ class GoogleCalendarSkill(
         inputSchema = parseSchema("""{"type":"object","properties":{},"required":[]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
+        examplePrompts = List(
+          "What calendars do I have?",
+          "Show me all my Google calendars",
+        ),
       ),
       ToolDescriptor(
         name = "calendar.listEvents",
@@ -54,6 +58,11 @@ class GoogleCalendarSkill(
           parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID (default: 'primary')"},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format"},"timeMax":{"type":"string","description":"End time in ISO 8601 format"}}}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
+        examplePrompts = List(
+          "What meetings do I have this week?",
+          "Show me my calendar for tomorrow",
+          "List events between Monday and Friday",
+        ),
       ),
       ToolDescriptor(
         name = "calendar.getEvent",
@@ -62,6 +71,10 @@ class GoogleCalendarSkill(
           parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID"}},"required":["calendarId","eventId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
+        examplePrompts = List(
+          "Get the details of the standup meeting event",
+          "Show me the full info for event abc123",
+        ),
       ),
       ToolDescriptor(
         name = "calendar.createEvent",
@@ -70,6 +83,11 @@ class GoogleCalendarSkill(
           parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format"},"end":{"type":"string","description":"End time in ISO 8601 format"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
+        examplePrompts = List(
+          "Schedule a team meeting for Friday at 2pm",
+          "Add a dentist appointment tomorrow at 10am",
+          "Create a reminder event for the quarterly review",
+        ),
       ),
       ToolDescriptor(
         name = "calendar.updateEvent",
@@ -78,6 +96,11 @@ class GoogleCalendarSkill(
           parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string"},"summary":{"type":"string"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"}},"required":["calendarId","eventId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
+        examplePrompts = List(
+          "Move the standup meeting to 3pm",
+          "Update the sprint review to include Alice as attendee",
+          "Change the location of tomorrow's lunch meeting",
+        ),
       ),
       ToolDescriptor(
         name = "calendar.deleteEvent",
@@ -86,6 +109,10 @@ class GoogleCalendarSkill(
           parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID to delete"}},"required":["calendarId","eventId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
+        examplePrompts = List(
+          "Cancel the weekly sync for next week",
+          "Delete the dentist appointment event",
+        ),
       ),
     ),
   )

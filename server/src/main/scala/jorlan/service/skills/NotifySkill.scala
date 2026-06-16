@@ -39,6 +39,11 @@ class NotifySkill(router: NotificationRouter) extends Skill {
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("notify.send")),
+        examplePrompts = List(
+          "Send a message to Alice saying the report is ready",
+          "Notify me when the task is done",
+          "Tell user 5 that their order has shipped",
+        ),
       ),
       ToolDescriptor(
         name = "notify.channel",
@@ -50,6 +55,10 @@ class NotifySkill(router: NotificationRouter) extends Skill {
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("notify.send")),
+        examplePrompts = List(
+          "Send a Telegram message to chat ID 123456",
+          "Notify Telegram user 987654 that the build succeeded",
+        ),
       ),
     ),
   )

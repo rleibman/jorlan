@@ -203,6 +203,11 @@ class TelegramApiClientLive(
                   }
             }
         }
+    }.catchAll { err =>
+      if (err.msg.contains("ReadTimeoutException"))
+        ZIO.logDebug("[telegram] long-poll read timeout (expected, continuing)") *> ZIO.succeed(Nil)
+      else
+        ZIO.fail(err)
     }
   }
 

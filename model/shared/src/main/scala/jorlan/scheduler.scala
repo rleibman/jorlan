@@ -83,7 +83,9 @@ enum RetryBackoffPolicy derives JsonEncoder, JsonDecoder {
   * @param skillId
   *   Reserved for Phase 12 skill-registry integration; always `None` for now.
   * @param name
-  *   Human-readable label. Not a unique key.
+  *   Human-readable unique label for this job.
+  * @param prompt
+  *   The message sent to the LLM when the job fires. This is the primary input to the agent on each trigger.
   * @param inputJson
   *   JSON payload passed to the agent when the job fires; `None` means no input.
   * @param status
@@ -119,6 +121,7 @@ case class SchedulerJob(
   userId:          UserId,
   skillId:         Option[SkillId],
   name:            String,
+  prompt:          String,
   inputJson:       Option[String],
   status:          JobStatus,
   scheduledAt:     Instant,

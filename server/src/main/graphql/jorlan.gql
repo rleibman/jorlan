@@ -8,26 +8,18 @@ scalar AgentId
 
 scalar AgentSessionId
 
-scalar ApprovalMode
-
 scalar ApprovalRequestId
-
-scalar ApprovalStatus
 
 scalar CapabilityGrantId
 
 scalar CapabilityName
 
+scalar ChannelIdentityId
+
 scalar EventLogId
-
-scalar EventType
-
-scalar Formality
 
 "An instantaneous point on the time-line represented by a standard date time string"
 scalar Instant
-
-scalar JobStatus
 
 scalar Long
 
@@ -49,8 +41,6 @@ scalar SchedulerJobId
 
 scalar SchedulerTriggerId
 
-scalar SessionStatus
-
 scalar SkillId
 
 scalar TriggerType
@@ -61,11 +51,139 @@ scalar UserId
 
 scalar WorkspaceId
 
+enum ApprovalMode {
+  Denied
+  PerInvocation
+  Once
+  Session
+  Timed
+  Persistent
+}
+
+enum ApprovalStatus {
+  Pending
+  Approved
+  Rejected
+  Expired
+  Cancelled
+}
+
+enum ChannelType {
+  Shell
+  Telegram
+  Slack
+  Email
+  WhatsApp
+  Sms
+  GraphQL
+  Google
+  GitHub
+  Discord
+}
+
+enum EventType {
+  AgentStarted
+  AgentCompleted
+  AgentFailed
+  SessionCreated
+  SessionSuspended
+  SessionTerminated
+  UserMessageReceived
+  AgentResponseCompleted
+  ModelCallStarted
+  ModelCallCompleted
+  ModelCallFailed
+  SkillInvoked
+  SkillSucceeded
+  SkillFailed
+  ToolLoopExceeded
+  ShellCommandInvoked
+  ShellCommandCompleted
+  ApprovalRequested
+  ApprovalGranted
+  ApprovalDenied
+  UserCreated
+  UserUpdated
+  UserConnected
+  UserDisconnected
+  MemoryWritten
+  MemoryDeleted
+  MemoryRescoped
+  MemoryCheckpointed
+  MemoryExpired
+  RoleAssigned
+  RoleRevoked
+  CapabilityAllowed
+  CapabilityDenied
+  CapabilityGranted
+  CapabilityRevoked
+  PermissionGranted
+  PermissionRevoked
+  SchedulerJobQueued
+  SchedulerJobStarted
+  SchedulerJobCompleted
+  SchedulerJobFailed
+  SchedulerJobCancelled
+  SchedulerJobPaused
+  SchedulerJobResumed
+  SchedulerJobTriggered
+  SchedulerJobDeleted
+  SchedulerTriggerAdded
+  EmailMessageRead
+  EmailMessageSent
+  EmailDraftCreated
+  EmailMessageArchived
+  EmailMessageDeleted
+  CalendarEventRead
+  CalendarEventCreated
+  CalendarEventUpdated
+  CalendarEventDeleted
+  DriveFileRead
+  DriveFileListed
+  SystemAlert
+  ServerInitialized
+}
+
+enum Formality {
+  Casual
+  Professional
+  Academic
+  Technical
+  Quirky
+  Fresh
+  Rude
+  Boomer
+  GenX
+  Millennial
+  GenZ
+  GenAlpha
+  Custom
+}
+
+enum JobStatus {
+  Pending
+  Running
+  Succeeded
+  Failed
+  Cancelled
+  Paused
+}
+
 enum MemoryScope {
   User
   Shared
   Workspace
   Private
+}
+
+enum SessionStatus {
+  Created
+  Active
+  Paused
+  Blocked
+  Completed
+  Failed
+  Cancelled
 }
 
 type AgentSession {
@@ -105,6 +223,23 @@ type CapabilityGrant {
   createdAt: Instant!
 }
 
+type ChannelIdentity {
+  id: ChannelIdentityId!
+  userId: UserId!
+  channelType: ChannelType!
+  channelUserId: String!
+  verified: Boolean!
+  providerData: String
+  createdAt: Instant!
+}
+
+type CheckpointPolicyConfig {
+  onSessionEnd: Boolean!
+  onUserRequest: Boolean!
+  timedIntervalTurns: Int
+  beforeExternalEffect: Boolean!
+}
+
 type ContactIdentityResult {
   channelType: String!
   channelUserId: String!
@@ -138,6 +273,7 @@ type MemoryRecord {
   ttl: Instant
   createdAt: Instant!
   updatedAt: Instant!
+  importance: Int!
 }
 
 type ModelInfo {
@@ -150,6 +286,7 @@ type ModelInfo {
 type Mutations {
   createUser(displayName: String!, email: String): User
   updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
+  deactivateUser(value: UserId!): Boolean
   createRole(name: String!, description: String): Role
   assignRole(userId: UserId!, roleId: RoleId!): Unit
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
@@ -162,7 +299,7 @@ type Mutations {
   forgetMemory(value: MemoryRecordId!): Boolean
   markMemoryShared(value: MemoryRecordId!): MemoryRecord
   markMemoryPrivate(value: MemoryRecordId!): MemoryRecord
-  createJob(name: String!, inputJson: String, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
+  createJob(name: String!, prompt: String!, inputJson: String, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
   addTrigger(jobId: SchedulerJobId!, triggerType: TriggerType!, expression: String!): SchedulerTrigger
   pauseJob(value: SchedulerJobId!): Boolean
   resumeJob(value: SchedulerJobId!): Boolean
@@ -175,6 +312,12 @@ type Mutations {
   startOAuth(value: String!): OAuthStartResult
   revokeOAuth(value: String!): Boolean
   invokeTool(toolName: String!, argsJson: String!): String
+  grantCapability(userId: UserId!, capability: CapabilityName!, approvalMode: ApprovalMode!): CapabilityGrant
+  revokeCapabilityGrant(value: CapabilityGrantId!): Boolean
+  linkChannelIdentity(userId: UserId!, channelType: String!, channelUserId: String!): ChannelIdentity
+  unlinkChannelIdentity(value: ChannelIdentityId!): Boolean
+  requestCheckpoint(value: AgentSessionId!): Boolean
+  updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
 }
 
 type OAuthStartResult {
@@ -205,7 +348,7 @@ type Personality {
 
 type Queries {
   user(value: UserId!): User
-  users(page: Int, pageSize: Int): [User!]
+  users(active: Boolean, nameContains: String, page: Int, pageSize: Int): [User!]
   role(value: RoleId!): Role
   roles(userId: UserId!, page: Int, pageSize: Int): [Role!]
   permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
@@ -222,6 +365,10 @@ type Queries {
   contacts(value: String!): [ContactResult!]
   oauthStatus(value: String!): OAuthStatus
   listOAuthProviders: [String!]
+  userCapabilityGrants(value: UserId!): [CapabilityGrant!]
+  userChannelIdentities(value: UserId!): [ChannelIdentity!]
+  allRoles(page: Int, pageSize: Int): [Role!]
+  checkpointPolicy: CheckpointPolicyConfig
 }
 
 type ResponseChunk {
@@ -243,6 +390,7 @@ type SchedulerJob {
   userId: UserId!
   skillId: SkillId
   name: String!
+  prompt: String!
   inputJson: String
   status: JobStatus!
   scheduledAt: Instant!
@@ -278,6 +426,7 @@ type SkillToolInfo {
   name: String!
   description: String!
   requiredCapabilities: [String!]!
+  examplePrompts: [String!]!
 }
 
 type Subscriptions {

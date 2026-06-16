@@ -13,11 +13,38 @@ package jorlan.service
 import jorlan.*
 import jorlan.*
 import zio.*
+import zio.json.*
 
 /** When a checkpoint should be triggered. */
 enum CheckpointTrigger {
 
   case SessionEnd, TimedInterval, UserRequest, BeforeExternalEffect
+
+}
+
+/** Which triggers are active for checkpointing.
+  *
+  * @param onSessionEnd
+  *   fire when the agent session ends (always on by default)
+  * @param onUserRequest
+  *   fire when the user explicitly requests a checkpoint (always on by default)
+  * @param timedIntervalTurns
+  *   if `Some(n)`, fire after every n turns within a session; `None` disables timed checkpoints
+  * @param beforeExternalEffect
+  *   fire before every tool invocation; generates a safety snapshot; off by default (expensive)
+  */
+case class CheckpointPolicyConfig(
+  onSessionEnd:         Boolean = true,
+  onUserRequest:        Boolean = true,
+  timedIntervalTurns:   Option[Int] = Some(10),
+  beforeExternalEffect: Boolean = false,
+) derives JsonEncoder, JsonDecoder
+
+object CheckpointPolicyConfig {
+
+  val default: CheckpointPolicyConfig = CheckpointPolicyConfig()
+
+  val serverSettingsKey: String = "checkpoint.policy"
 
 }
 
@@ -44,6 +71,18 @@ object CheckpointPolicy {
     trigger,
     _,
   ) => ZIO.succeed(trigger == CheckpointTrigger.SessionEnd)
+
+  def fromConfig(config: CheckpointPolicyConfig): CheckpointPolicy =
+    (
+      trigger,
+      _,
+    ) =>
+      ZIO.succeed(trigger match {
+        case CheckpointTrigger.SessionEnd           => config.onSessionEnd
+        case CheckpointTrigger.UserRequest          => config.onUserRequest
+        case CheckpointTrigger.TimedInterval        => config.timedIntervalTurns.isDefined
+        case CheckpointTrigger.BeforeExternalEffect => config.beforeExternalEffect
+      })
 
 }
 
@@ -167,6 +206,21 @@ trait MemoryService {
     trigger:   CheckpointTrigger,
   ): IO[JorlanError, Unit]
 
+  /** Immediately run a [[CheckpointTrigger.UserRequest]] checkpoint for the given session, loading the most recent
+    * conversation messages from the conversation repository. No-ops if the policy has `onUserRequest = false`.
+    */
+  def requestCheckpoint(
+    sessionId: AgentSessionId,
+    userId:    UserId,
+    agentId:   AgentId,
+  ): IO[JorlanError, Unit]
+
+  /** Return the current [[CheckpointPolicyConfig]]. */
+  def getCheckpointPolicy: UIO[CheckpointPolicyConfig]
+
+  /** Persist and apply a new [[CheckpointPolicyConfig]]. */
+  def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit]
+
 }
 
 object MemoryService {
@@ -208,5 +262,18 @@ object MemoryService {
     trigger:   CheckpointTrigger,
   ): ZIO[MemoryService, JorlanError, Unit] =
     ZIO.serviceWithZIO[MemoryService](_.checkpoint(sessionId, messages, userId, agentId, trigger))
+
+  def requestCheckpoint(
+    sessionId: AgentSessionId,
+    userId:    UserId,
+    agentId:   AgentId,
+  ): ZIO[MemoryService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[MemoryService](_.requestCheckpoint(sessionId, userId, agentId))
+
+  def getCheckpointPolicy: ZIO[MemoryService, Nothing, CheckpointPolicyConfig] =
+    ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
+
+  def updateCheckpointPolicy(config: CheckpointPolicyConfig): ZIO[MemoryService, JorlanError, Unit] =
+    ZIO.serviceWithZIO[MemoryService](_.updateCheckpointPolicy(config))
 
 }

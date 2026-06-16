@@ -94,6 +94,8 @@ case class SkillDescriptor(
   *   JSON Schema for the tool's return value.
   * @param requiredCapabilities
   *   Capabilities the caller must hold before this tool may be invoked.
+  * @param examplePrompts
+  *   Example user messages that would naturally trigger this tool; shown in the skill registry UI.
   */
 case class ToolDescriptor(
   name:                 String,
@@ -101,6 +103,7 @@ case class ToolDescriptor(
   inputSchema:          Json,
   outputSchema:         Json,
   requiredCapabilities: List[CapabilityName],
+  examplePrompts:       List[String] = Nil,
 )
 
 /** The authority context a tool runs under — resolved by the runtime, never supplied by the model.

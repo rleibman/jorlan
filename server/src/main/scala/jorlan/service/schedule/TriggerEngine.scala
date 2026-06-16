@@ -182,7 +182,7 @@ class TriggerEngineImpl(
     cronCache: Ref[Map[SchedulerTriggerId, CronExpr]],
     workerId:  String,
   ): UIO[Unit] = {
-    val content = job.inputJson.getOrElse("")
+    val content = if (job.prompt.nonEmpty) job.prompt else job.inputJson.getOrElse("")
     ZIO
       .acquireReleaseWith(
         // Acquire: create session and record startedAt while preserving the Running lease state.

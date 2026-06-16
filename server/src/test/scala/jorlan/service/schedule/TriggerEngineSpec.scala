@@ -50,6 +50,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       userId = userId,
       skillId = None,
       name = name,
+      prompt = "hello",
       inputJson = Some("hello"),
       status = status,
       scheduledAt = scheduledAt,

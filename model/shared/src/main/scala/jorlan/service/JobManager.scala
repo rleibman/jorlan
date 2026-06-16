@@ -36,7 +36,9 @@ trait JobManager {
     * @param userId
     *   The user on whose behalf the job runs (used to create the execution session).
     * @param name
-    *   Human-readable label; not required to be unique.
+    *   Unique human-readable label for this job.
+    * @param prompt
+    *   The message sent to the LLM when the job fires.
     * @param inputJson
     *   Optional JSON payload passed verbatim to the agent when the job fires. Callers are responsible for ensuring this
     *   is valid JSON and within a reasonable size (recommend ≤ 64 KB).
@@ -53,6 +55,7 @@ trait JobManager {
     agentId:         AgentId,
     userId:          UserId,
     name:            String,
+    prompt:          String,
     inputJson:       Option[String],
     maxRetries:      Int,
     backoffSeconds:  Int,
@@ -120,6 +123,7 @@ object JobManager {
     agentId:         AgentId,
     userId:          UserId,
     name:            String,
+    prompt:          String,
     inputJson:       Option[String],
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
@@ -127,7 +131,7 @@ object JobManager {
     missedRunPolicy: MissedRunPolicy = MissedRunPolicy.Skip,
   ): ZIO[JobManager, JorlanError, SchedulerJob] =
     ZIO.serviceWithZIO[JobManager](
-      _.createJob(agentId, userId, name, inputJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy),
+      _.createJob(agentId, userId, name, prompt, inputJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy),
     )
 
   def addTrigger(

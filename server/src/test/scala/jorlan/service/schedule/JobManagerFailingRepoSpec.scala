@@ -36,6 +36,7 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
     userId = userId,
     skillId = None,
     name = "test-job",
+    prompt = "",
     inputJson = None,
     status = JobStatus.Pending,
     scheduledAt = Instant.EPOCH,
@@ -109,7 +110,7 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
         for {
           mgr    <- ZIO.service[JobManagerImpl]
           result <- mgr
-            .createJob(agentId, userId, "j", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip).either
+            .createJob(agentId, userId, "j", "", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip).either
         } yield assertTrue(result.isLeft)
       }.provide(managerLayer(makeRepo())),
       test("addTrigger: upsertTrigger failure covers line-68 lambda") {

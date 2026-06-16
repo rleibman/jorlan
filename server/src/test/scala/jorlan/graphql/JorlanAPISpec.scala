@@ -677,6 +677,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         userId = UserId(2L),
         skillId = None,
         name = "foreign-job",
+        prompt = "",
         inputJson = None,
         status = JobStatus.Pending,
         scheduledAt = Instant.now(),
@@ -776,7 +777,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { createJob(name: "x", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
+          """mutation { createJob(name: "x", prompt: "", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer()),
@@ -784,7 +785,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { createJob(name: "test", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
+          """mutation { createJob(name: "test", prompt: "", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
@@ -794,7 +795,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         // Create a session so resolveAgentIdStrict finds one
         sessionResult <- interp.execute("""mutation { createSession { id } }""")
         result        <- interp.execute(
-          """mutation { createJob(name: "my-job", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id name status } }""",
+          """mutation { createJob(name: "my-job", prompt: "Do your thing", maxRetries: 0, backoffSeconds: 60, backoffPolicy: "Fixed", missedRunPolicy: "Skip") { id name status } }""",
         )
       } yield assertTrue(
         sessionResult.errors.isEmpty,

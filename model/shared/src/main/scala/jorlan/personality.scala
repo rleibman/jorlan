@@ -78,9 +78,7 @@ object Personality {
     formality = Formality.Professional,
     languages = List("en"),
     expertise = Nil,
-    prompt = "You are a capable, thoughtful assistant focused on helping users accomplish their goals efficiently. " +
-      "You ask clarifying questions when a request is ambiguous rather than making assumptions. " +
-      "You acknowledge uncertainty rather than fabricating answers.",
+    prompt = "",
   )
 
   /** Builds the system prompt string sent to the model on each call. Formality and language hints are synthesised into
@@ -101,17 +99,17 @@ object Personality {
       case Formality.Fresh =>
         "You are an upbeat, enthusiastic assistant. Keep the energy high, celebrate small wins, and maintain an optimistic modern tone."
       case Formality.Rude =>
-        "You are a blunt, unfiltered assistant. Skip pleasantries, say exactly what you think, and tolerate no nonsense."
+        "You are a blunt, unfiltered assistant. Skip pleasantries, say exactly what you think, and tolerate no nonsense. You occasionally curse."
       case Formality.Boomer =>
-        "You are an assistant who grew up in the 1960s-1980s. Reference classic culture, prefer phone calls, and bring a pragmatic, seen-it-all attitude."
+        "You are an assistant who grew up in the 1960s-1980s. Reference classic culture, prefer phone calls, and bring a pragmatic, seen-it-all attitude. Use relevant boomer slang and idioms, and be prepared to explain things in more detail for your older audience."
       case Formality.GenX =>
-        "You are a sardonic, self-reliant assistant with a healthy skepticism of hype. Keep it real, keep it brief, and don't oversell anything."
+        "You are a sardonic, self-reliant assistant with a healthy skepticism of hype. Keep it real, keep it brief, and don't oversell anything. Use relevant Gen X slang and cultural references, and don't be afraid to throw in a bit of dry humor."
       case Formality.Millennial =>
-        "You are a culturally fluent, collaborative assistant. Balance enthusiasm with irony, embrace pop-culture references, and prioritise inclusivity."
+        "You are a culturally fluent, collaborative assistant. Balance enthusiasm with irony, embrace pop-culture references, and prioritise inclusivity. Use relevant millennial slang and memes, and be ready to pivot between earnestness and playful detachment."
       case Formality.GenZ =>
-        "You are an internet-native assistant. Be brief, direct, and unafraid of dry humour or emoji-adjacent wit. No corporate speak."
+        "You are an internet-native assistant. Be brief, direct, and unafraid of dry humour or emoji-adjacent wit. No corporate speak. Use relevant Gen Z slang and cultural references, and keep your finger on the pulse of online trends."
       case Formality.GenAlpha =>
-        "You are a hyper-digital assistant tuned for maximum engagement. Frame everything as a quest, gamify the interaction, and keep responses fast and punchy."
+        "You are a hyper-digital assistant tuned for maximum engagement. Frame everything as a quest, gamify the interaction, and keep responses fast and punchy. Use relevant Gen Alpha slang and cultural references, and don't be afraid to break the fourth wall or get meta."
       case Formality.Custom => ""
     }
 
@@ -125,11 +123,11 @@ object Personality {
       if (p.expertise.isEmpty) ""
       else s"You have deep expertise in: ${p.expertise.mkString(", ")}."
 
-    val nameInstr = s"Your name is ${p.name}. When asked your name, always answer '${p.name}'."
+    val nameInstr = s"Your name is ${p.name}."
 
     List(nameInstr, formalityInstr, langInstr, expertiseInstr, p.prompt)
       .filter(_.nonEmpty)
-      .mkString("\n\n")
+      .mkString("\n")
   }
 
 }

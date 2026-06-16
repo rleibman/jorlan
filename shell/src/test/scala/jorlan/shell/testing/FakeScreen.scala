@@ -42,6 +42,8 @@ class FakeScreen(
       }
     }
 
+  override def commitInProgress(): UIO[Unit] = ZIO.unit
+
   override def setStatus(text:       String): UIO[Unit] = statusRef.set(text)
   override def setModeStatus(text:   String): UIO[Unit] = modeRef.set(text)
   override def setInputPrompt(label: String): UIO[Unit] = promptRef.set(label)

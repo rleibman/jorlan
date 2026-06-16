@@ -39,6 +39,11 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
+        examplePrompts = List(
+          "Remember that my preferred language is Spanish",
+          "Store the fact that my birthday is March 15",
+          "Don't forget that I prefer dark mode in all apps",
+        ),
       ),
       ToolDescriptor(
         name = "memory.search",
@@ -49,6 +54,11 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("memory.read")),
+        examplePrompts = List(
+          "What do you remember about my preferences?",
+          "Do you know anything about my birthday?",
+          "Look up what I told you about my project deadlines",
+        ),
       ),
       ToolDescriptor(
         name = "memory.forget",
@@ -59,6 +69,11 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("memory.write")),
+        examplePrompts = List(
+          "Forget what you remember about my old address",
+          "Delete memory record 42",
+          "Remove that note about my old phone number",
+        ),
       ),
       ToolDescriptor(
         name = "memory.mark_shared",
@@ -69,6 +84,10 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
+        examplePrompts = List(
+          "Share memory 42 with all agents",
+          "Make that team standup note visible to other agents",
+        ),
       ),
       ToolDescriptor(
         name = "memory.mark_private",
@@ -79,6 +98,10 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
+        examplePrompts = List(
+          "Make memory 42 private again",
+          "That shared note about the API key should be private",
+        ),
       ),
     ),
   )
