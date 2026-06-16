@@ -34,8 +34,8 @@ case class LyrionSettings(
 
 /** Skill that interfaces with a Lyrion Music Server via its JSON-RPC API.
   *
-  * Exposes tools for listing players, checking playback status, controlling playback (play/pause/stop),
-  * adjusting volume, navigating tracks, and browsing the current playlist.
+  * Exposes tools for listing players, checking playback status, controlling playback (play/pause/stop), adjusting
+  * volume, navigating tracks, and browsing the current playlist.
   *
   * All tools require the `lyrion.control` capability.
   *
@@ -44,7 +44,10 @@ case class LyrionSettings(
   * @param client
   *   the zio-http [[Client]] used for all outbound requests
   */
-class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
+class LyrionSkill(
+  settings: LyrionSettings,
+  client:   Client,
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "lyrion",
@@ -184,7 +187,10 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
   )
 
   /** Send a JSON-RPC request to the Lyrion server and return the `result` field of the response. */
-  private def rpc(playerId: String, command: List[Json]): IO[JorlanError, Json] = {
+  private def rpc(
+    playerId: String,
+    command:  List[Json],
+  ): IO[JorlanError, Json] = {
     val body = Json.Obj(
       "id"     -> Json.Num(1),
       "method" -> Json.Str("slim.request"),
@@ -212,7 +218,7 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
                   case Json.Obj(fields) =>
                     fields.collectFirst { case ("result", v) => v } match {
                       case Some(result) => ZIO.succeed(result)
-                      case None => ZIO.fail(JorlanError(s"Lyrion: no 'result' field in response: $bodyStr"))
+                      case None         => ZIO.fail(JorlanError(s"Lyrion: no 'result' field in response: $bodyStr"))
                     }
                   case _ => ZIO.fail(JorlanError(s"Lyrion: unexpected response shape: $bodyStr"))
                 }
@@ -228,19 +234,26 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
   }
 
   /** Extract a named string field from a JSON object, returning empty string if absent. */
-  private def strField(obj: Json, key: String): String =
+  private def strField(
+    obj: Json,
+    key: String,
+  ): String =
     obj match {
       case Json.Obj(fields) =>
-        fields.collectFirst {
-          case (`key`, Json.Str(v))  => v
-          case (`key`, Json.Num(n))  => n.toString
-          case (`key`, Json.Bool(b)) => b.toString
-        }.getOrElse("")
+        fields
+          .collectFirst {
+            case (`key`, Json.Str(v))  => v
+            case (`key`, Json.Num(n))  => n.toString
+            case (`key`, Json.Bool(b)) => b.toString
+          }.getOrElse("")
       case _ => ""
     }
 
   /** Extract a named number field from a JSON object, returning 0 if absent or non-numeric. */
-  private def numField(obj: Json, key: String): Double =
+  private def numField(
+    obj: Json,
+    key: String,
+  ): Double =
     obj match {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`key`, Json.Num(n)) => n.doubleValue }.getOrElse(0.0)
@@ -248,19 +261,26 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
     }
 
   /** Extract a named boolean-ish field (0/1 int or real bool) from a JSON object. */
-  private def boolField(obj: Json, key: String): Boolean =
+  private def boolField(
+    obj: Json,
+    key: String,
+  ): Boolean =
     obj match {
       case Json.Obj(fields) =>
-        fields.collectFirst {
-          case (`key`, Json.Bool(b)) => b
-          case (`key`, Json.Num(n))  => n.intValue != 0
-          case (`key`, Json.Str(s))  => s == "1" || s.equalsIgnoreCase("true")
-        }.getOrElse(false)
+        fields
+          .collectFirst {
+            case (`key`, Json.Bool(b)) => b
+            case (`key`, Json.Num(n))  => n.intValue != 0
+            case (`key`, Json.Str(s))  => s == "1" || s.equalsIgnoreCase("true")
+          }.getOrElse(false)
       case _ => false
     }
 
   /** Extract a named array field from a JSON object, returning Nil if absent or non-array. */
-  private def arrField(obj: Json, key: String): List[Json] =
+  private def arrField(
+    obj: Json,
+    key: String,
+  ): List[Json] =
     obj match {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`key`, Json.Arr(elems)) => elems.toList }.getOrElse(Nil)
@@ -268,11 +288,17 @@ class LyrionSkill(settings: LyrionSettings, client: Client) extends Skill {
     }
 
   /** Extract a required string arg from the invocation args JSON. */
-  private def requireStr(args: Json, name: String): IO[JorlanError, String] =
+  private def requireStr(
+    args: Json,
+    name: String,
+  ): IO[JorlanError, String] =
     args match {
       case Json.Obj(fields) =>
-        fields.collectFirst { case (`name`, Json.Str(v)) => v }
-          .fold(ZIO.fail(ValidationError(s"missing required argument '$name'")): IO[JorlanError, String])(ZIO.succeed(_))
+        fields
+          .collectFirst { case (`name`, Json.Str(v)) => v }
+          .fold(ZIO.fail(ValidationError(s"missing required argument '$name'")): IO[JorlanError, String])(
+            ZIO.succeed(_),
+          )
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }
 
