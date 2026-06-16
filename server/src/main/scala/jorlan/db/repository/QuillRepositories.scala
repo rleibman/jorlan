@@ -191,10 +191,20 @@ private class QuillUserRepository(qc: QuillCtx) extends QuillRepoBase(qc) with Z
   override def search(s: UserSearch): RepositoryTask[List[User]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = s.nameContains match {
-      case None =>
+    val base = (s.nameContains, s.fuzzyName) match {
+      case (_, Some(name)) =>
+        val likePattern = s"%$name%"
+        quote(
+          qUsers.filter(u =>
+            lift(s.active).forall(a => u.active == a) &&
+              (infix"${u.displayName} LIKE ${lift(likePattern)}".as[Boolean] ||
+                infix"SOUNDEX(${u.displayName}) = SOUNDEX(${lift(name)})".as[Boolean] ||
+                infix"SOUNDEX(SUBSTRING_INDEX(${u.displayName}, ' ', -1)) = SOUNDEX(${lift(name)})".as[Boolean]),
+          ),
+        )
+      case (None, None) =>
         quote(qUsers.filter(u => lift(s.active).forall(a => u.active == a)))
-      case Some(name) =>
+      case (Some(name), None) =>
         val likePattern = s"%$name%"
         quote(
           qUsers.filter(u =>
@@ -394,7 +404,12 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
       case Some(Sort(AgentSessionOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
       case _                                                            => quote(limited.sortBy(_.id)(Ord.asc))
     }
-    exec(qc.ctx.run(sorted))
+    val terminalStatuses = Set(SessionStatus.Completed, SessionStatus.Failed, SessionStatus.Cancelled)
+    exec(qc.ctx.run(sorted)).map { sessions =>
+      s.hideOldTerminatedBefore.fold(sessions) { cutoff =>
+        sessions.filterNot(sess => terminalStatuses.contains(sess.status) && sess.updatedAt.isBefore(cutoff))
+      }
+    }
   }
 
   override def upsertSession(session: AgentSession): RepositoryTask[AgentSession] =
@@ -641,6 +656,21 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
   override def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]] =
     exec(qc.ctx.run(qMemoryRecords.filter(_.id == lift(id))).map(_.headOption))
 
+  override def getByKey(
+    key:     String,
+    userId:  Option[UserId],
+    agentId: Option[AgentId],
+  ): RepositoryTask[Option[MemoryRecord]] =
+    exec(
+      qc.ctx
+        .run(
+          qMemoryRecords
+            .filter(r => r.recordKey == lift(key))
+            .filter(r => lift(userId).forall(uid => r.userId.contains(uid)))
+            .filter(r => lift(agentId).forall(aid => r.agentId.contains(aid))),
+        ).map(_.headOption),
+    )
+
   override def search(s: MemorySearch): RepositoryTask[List[MemoryRecord]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
@@ -650,7 +680,8 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
         .filter(r => lift(s.userId).forall(uid => r.userId.contains(uid)))
         .filter(r => lift(s.workspaceId).forall(wid => r.workspaceId.contains(wid)))
         .filter(r => lift(s.agentId).forall(aid => r.agentId.contains(aid)))
-        .filter(r => lift(s.key).forall(k => r.recordKey == k)),
+        .filter(r => lift(s.key).forall(k => r.recordKey == k))
+        .filter(r => lift(s.minImportance).forall(mi => r.importance >= mi)),
     )
     // NOTE: textSearch is currently applied in-memory below; keep SQL paging to avoid unbounded fetches.
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
@@ -662,7 +693,7 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
       case Some(Sort(MemoryOrder.CreatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
       case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.updatedAt)(Ord.asc))
       case Some(Sort(MemoryOrder.UpdatedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.updatedAt)(Ord.desc))
-      case _                                                      => quote(limited.sortBy(_.id)(Ord.asc))
+      case _                                                      => quote(limited.sortBy(_.importance)(Ord.desc))
     }
     exec(qc.ctx.run(sorted)).map { records =>
       s.textSearch.fold(records) { text =>
@@ -687,6 +718,10 @@ private class QuillMemoryRepository(qc: QuillCtx) extends QuillRepoBase(qc) with
                 t,
                 e,
               ) => t.scope -> e.scope,
+              (
+                t,
+                e,
+              ) => t.importance -> e.importance,
               (
                 t,
                 e,
@@ -1097,10 +1132,15 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def searchRoles(s: RoleSearch): RepositoryTask[List[Role]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(for {
-      ur   <- qUserRoles.filter(_.userId == lift(s.userId))
-      role <- qRoles.join(_.id == ur.roleId)
-    } yield role)
+    val base: Quoted[Query[Role]] = s.userId match {
+      case Some(uid) =>
+        quote(for {
+          ur   <- qUserRoles.filter(_.userId == lift(uid))
+          role <- qRoles.join(_.id == ur.roleId)
+        } yield role)
+      case None =>
+        quote(qRoles)
+    }
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[Role]] = s.sorts match {
       case Some(Sort(RoleOrder.Name, OrderDirection.Asc))  => quote(limited.sortBy(_.name)(Ord.asc))

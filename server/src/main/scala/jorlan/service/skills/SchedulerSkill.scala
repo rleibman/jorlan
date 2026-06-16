@@ -36,13 +36,23 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "Remind me every morning at 9am to check my email",
+          "Schedule a daily summary report at 6pm",
+          "Run a cleanup job every Sunday at midnight",
+        ),
       ),
       ToolDescriptor(
         name = "scheduler.list_jobs",
-        description = "List all scheduled jobs for the current agent.",
+        description = "List all scheduled jobs for the current agent. Each job has a `status` field reflecting its LAST EXECUTION outcome (Pending=waiting to run, Running=currently executing, Success=last run succeeded, Failed=last run failed, Paused=manually paused, Cancelled=cancelled). A Failed status means the job's last execution encountered an error — the job itself still exists and may have a next run scheduled. Use this tool to report the list of scheduled jobs, including any that failed.",
         inputSchema = Json.decoder.decodeJson("""{"type":"object","properties":{}}""").getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "What scheduled jobs do I have?",
+          "Show me all my recurring tasks",
+          "List my active reminders",
+        ),
       ),
       ToolDescriptor(
         name = "scheduler.pause_job",
@@ -53,6 +63,11 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "Pause the daily report job",
+          "Stop sending me the morning reminder for now",
+          "Pause job 42 while I'm on vacation",
+        ),
       ),
       ToolDescriptor(
         name = "scheduler.resume_job",
@@ -63,6 +78,11 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "Resume the daily summary job",
+          "Start sending the morning reminders again",
+          "Unpause job 42",
+        ),
       ),
       ToolDescriptor(
         name = "scheduler.cancel_job",
@@ -73,6 +93,11 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "Cancel the weekly report job permanently",
+          "Delete the morning reminder, I don't need it anymore",
+          "Remove job 42",
+        ),
       ),
       ToolDescriptor(
         name = "scheduler.trigger_now",
@@ -83,6 +108,11 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
+        examplePrompts = List(
+          "Run the report job right now",
+          "Trigger the cleanup job immediately",
+          "Don't wait for the schedule, run job 42 now",
+        ),
       ),
     ),
   )
@@ -118,7 +148,8 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           name     <- field("name")
           cronExpr <- field("cronExpression")
           agentId = ctx.agentId.getOrElse(AgentId.empty)
-          job <- createJob(agentId, ctx.actorId, name, optField("input"))
+          prompt = optField("prompt").getOrElse(optField("input").getOrElse(""))
+          job <- createJob(agentId, ctx.actorId, name, prompt, optField("input"))
           // Add the cron trigger after job creation
           now <- Clock.instant
           _   <- jobManager
@@ -146,11 +177,17 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
           agentId <- ZIO.succeed(ctx.agentId.getOrElse(AgentId.empty))
           jobs    <- listJobs(agentId)
         } yield Json.Arr(jobs.map { j =>
-          Json.Obj(
-            "id"     -> Json.Str(j.id.value.toString),
-            "name"   -> Json.Str(j.name),
-            "status" -> Json.Str(j.status.toString),
+          val base = List(
+            "id"          -> Json.Str(j.id.value.toString),
+            "name"        -> Json.Str(j.name),
+            "status"      -> Json.Str(j.status.toString),
+            "scheduledAt" -> Json.Str(j.scheduledAt.toString),
           )
+          val withResult = j.resultJson match {
+            case Some(r) => base :+ ("lastResult" -> Json.Str(r))
+            case None    => base
+          }
+          Json.Obj(withResult*)
         }*)
 
       case "scheduler.pause_job" =>
@@ -190,13 +227,24 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
     agentId:         AgentId,
     userId:          UserId,
     name:            String,
+    prompt:          String,
     inputJson:       Option[String],
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
     backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
     missedRunPolicy: MissedRunPolicy = MissedRunPolicy.Skip,
   ): IO[JorlanError, SchedulerJob] =
-    jobManager.createJob(agentId, userId, name, inputJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
+    jobManager.createJob(
+      agentId,
+      userId,
+      name,
+      prompt,
+      inputJson,
+      maxRetries,
+      backoffSeconds,
+      backoffPolicy,
+      missedRunPolicy,
+    )
 
   def listJobs(agentId: AgentId): UIO[List[SchedulerJob]] =
     jobManager.listJobs(Some(agentId))

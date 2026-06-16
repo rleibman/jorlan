@@ -35,7 +35,7 @@ object JobManagerSpec extends ZIOSpecDefault {
   )(
     mgr: JobManager,
   ): IO[JorlanError, SchedulerJob] =
-    mgr.createJob(agentId, userId, name, None, maxRetries, backoffSecs, backoffPol, missedPol)
+    mgr.createJob(agentId, userId, name, "", None, maxRetries, backoffSecs, backoffPol, missedPol)
 
   private def makeManager = ZIO.serviceWith[ZIORepositories](JobManagerImpl(_))
 
@@ -61,6 +61,7 @@ object JobManagerSpec extends ZIOSpecDefault {
               agentId,
               userId,
               "retry-job",
+              "",
               Some("""{"key":"value"}"""),
               maxRetries = 3,
               backoffSeconds = 120,
@@ -187,9 +188,9 @@ object JobManagerSpec extends ZIOSpecDefault {
           repo <- ZIO.service[ZIORepositories]
           mgr2 = JobManagerImpl(repo)
           _ <- mgr2
-            .createJob(agentId, userId, "agent1-job", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
+            .createJob(agentId, userId, "agent1-job", "", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
           _ <- mgr2
-            .createJob(agentId2, userId, "agent2-job", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
+            .createJob(agentId2, userId, "agent2-job", "", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)
           all      <- mgr2.listJobs(None)
           filtered <- mgr2.listJobs(Some(agentId))
         } yield assertTrue(

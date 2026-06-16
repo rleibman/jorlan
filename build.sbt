@@ -483,6 +483,7 @@ lazy val debianSettings =
     Universal / javaOptions ++= Seq(
       "-Dlogback.configurationFile=/etc/jorlan-server/logback.xml",
       s"-Dconfig.file=/etc/jorlan-server/application.conf",
+      "-Djava.net.preferIPv4Stack=true",
     ),
     // Map templates into the universal (tarball) layout
     Universal / mappings += {

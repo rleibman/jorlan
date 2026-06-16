@@ -33,6 +33,7 @@ case class SkillToolInfo(
   name:                 String,
   description:          String,
   requiredCapabilities: List[String],
+  examplePrompts:       List[String],
 ) derives JsonEncoder, JsonDecoder
 
 /** A registered skill visible via the API. */

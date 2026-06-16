@@ -107,7 +107,12 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     }
 
     override def getById(id: MemoryRecordId): AsyncCallback[Option[MemoryRecord]] = AsyncCallback.pure(None)
-    override def purgeExpired:                AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def getByKey(
+      key:     String,
+      userId:  Option[UserId],
+      agentId: Option[AgentId],
+    ):                         AsyncCallback[Option[MemoryRecord]] = AsyncCallback.pure(None)
+    override def purgeExpired: AsyncCallback[Long] = AsyncCallback.pure(0L)
 
   }
 
@@ -122,26 +127,71 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
     override def searchGrants(s: GrantSearch): AsyncCallback[List[CapabilityGrant]] =
       adapter
-        .asyncCalibanCallWithAuth(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view),
+        )
         .map(_.getOrElse(Nil).map(toCapabilityGrant))
 
-    override def getRole(id:      RoleId):     AsyncCallback[Option[Role]] = AsyncCallback.pure(None)
-    override def searchRoles(s:   RoleSearch): AsyncCallback[List[Role]] = AsyncCallback.pure(Nil)
-    override def upsertRole(role: Role):       AsyncCallback[Role] = ???
-    override def deleteRole(id:   RoleId):     AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def getRole(id: RoleId):        AsyncCallback[Option[Role]] = AsyncCallback.pure(None)
+    override def searchRoles(s: RoleSearch): AsyncCallback[List[Role]] =
+      s.userId match {
+        case Some(uid) =>
+          adapter
+            .asyncCalibanCallWithAuth(JorlanClient.Queries.roles(uid)(JorlanClient.Role.view))
+            .map(_.getOrElse(Nil).map(toRole))
+        case None =>
+          adapter
+            .asyncCalibanCallWithAuth(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
+            .map(_.getOrElse(Nil).map(toRole))
+      }
+    override def upsertRole(role: Role): AsyncCallback[Role] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.createRole(role.name, role.description)(JorlanClient.Role.view),
+        )
+        .flatMap(r =>
+          r.fold(
+            AsyncCallback.throwException[JorlanClient.Role.RoleView](RuntimeException("createRole returned no role")),
+          )(AsyncCallback.pure),
+        )
+        .map(toRole)
+    override def deleteRole(id: RoleId): AsyncCallback[Long] = AsyncCallback.pure(0L)
     override def assignRole(
       userId: UserId,
       roleId: RoleId,
-    ): AsyncCallback[Unit] = AsyncCallback.pure(())
+    ): AsyncCallback[Unit] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.assignRole(userId, roleId))
+        .map(_ => ())
     override def removeRole(
       userId: UserId,
       roleId: RoleId,
-    ):                                                     AsyncCallback[Unit] = AsyncCallback.pure(())
+    ): AsyncCallback[Unit] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.revokeRole(userId, roleId))
+        .map(_ => ())
     override def searchPermissions(s:   PermissionSearch): AsyncCallback[List[Permission]] = AsyncCallback.pure(Nil)
     override def upsertPermission(perm: Permission):       AsyncCallback[Permission] = ???
     override def deletePermission(id:   PermissionId):     AsyncCallback[Long] = AsyncCallback.pure(0L)
-    override def upsertCapabilityGrant(grant:     CapabilityGrant):   AsyncCallback[CapabilityGrant] = ???
-    override def revokeGrant(id:                  CapabilityGrantId): AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def upsertCapabilityGrant(grant: CapabilityGrant): AsyncCallback[CapabilityGrant] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.grantCapability(grant.granteeId, grant.capability, grant.approvalMode)(
+            JorlanClient.CapabilityGrant.view,
+          ),
+        )
+        .flatMap(r =>
+          r.fold(
+            AsyncCallback.throwException[JorlanClient.CapabilityGrant.CapabilityGrantView](
+              RuntimeException("grantCapability returned nothing"),
+            ),
+          )(AsyncCallback.pure),
+        )
+        .map(toCapabilityGrant)
+    override def revokeGrant(id: CapabilityGrantId): AsyncCallback[Long] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.revokeCapabilityGrant(id))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
     override def createApprovalRequest(req:       ApprovalRequest):   AsyncCallback[ApprovalRequest] = ???
     override def cancelApprovalRequest(id:        ApprovalRequestId): AsyncCallback[Long] = AsyncCallback.pure(0L)
     override def expireApprovalRequest(id:        ApprovalRequestId): AsyncCallback[Long] = AsyncCallback.pure(0L)
@@ -210,10 +260,12 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
             .map(summon[Conversion[JorlanClient.SchedulerTrigger.SchedulerTriggerView, SchedulerTrigger]]),
         )
 
-    override def getJob(id:     SchedulerJobId): AsyncCallback[Option[SchedulerJob]] = AsyncCallback.pure(None)
-    override def getPendingJobs:                 AsyncCallback[List[SchedulerJob]] = AsyncCallback.pure(Nil)
-    override def upsertJob(job: SchedulerJob):   AsyncCallback[SchedulerJob] = ???
-    override def deleteJob(id: SchedulerJobId):  AsyncCallback[Boolean] =
+    override def getJob(id: SchedulerJobId):   AsyncCallback[Option[SchedulerJob]] = AsyncCallback.pure(None)
+    override def getPendingJobs:               AsyncCallback[List[SchedulerJob]] = AsyncCallback.pure(Nil)
+    override def upsertJob(job: SchedulerJob): AsyncCallback[SchedulerJob] =
+      AsyncCallback.throwException(new UnsupportedOperationException("upsertJob not available on web client"))
+
+    override def deleteJob(id: SchedulerJobId): AsyncCallback[Boolean] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
     override def pauseJob(id: SchedulerJobId): AsyncCallback[Boolean] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.pauseJob(id)).map(_.getOrElse(false))
@@ -242,21 +294,115 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
   }
 
+  def createJob(
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): AsyncCallback[SchedulerJob] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Mutations.createJob(
+          name = name,
+          prompt = prompt,
+          maxRetries = maxRetries,
+          backoffSeconds = backoffSeconds,
+          backoffPolicy = backoffPolicy,
+          missedRunPolicy = missedRunPolicy,
+        )(JorlanClient.SchedulerJob.view),
+      )
+      .flatMap {
+        case Some(v) =>
+          AsyncCallback.pure(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v))
+        case None => AsyncCallback.throwException(new RuntimeException("createJob returned no job"))
+      }
+
+  def addTrigger(
+    jobId:       SchedulerJobId,
+    triggerType: TriggerType,
+    expression:  String,
+  ): AsyncCallback[SchedulerTrigger] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Mutations.addTrigger(jobId, triggerType, expression)(JorlanClient.SchedulerTrigger.view),
+      )
+      .flatMap {
+        case Some(v) =>
+          AsyncCallback.pure(
+            summon[Conversion[JorlanClient.SchedulerTrigger.SchedulerTriggerView, SchedulerTrigger]](v),
+          )
+        case None => AsyncCallback.throwException(new RuntimeException("addTrigger returned no trigger"))
+      }
+
   // ── Sub-repo: User ─────────────────────────────────────────────────────────
 
   override val user: UserRepository[AsyncCallback] = new UserRepository[AsyncCallback] {
 
     override def search(s: UserSearch): AsyncCallback[List[User]] =
       adapter
-        .asyncCalibanCallWithAuth(JorlanClient.Queries.users()(JorlanClient.User.view))
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.users(s.active, s.nameContains, Some(s.page), Some(s.pageSize))(JorlanClient.User.view),
+        )
         .map(_.getOrElse(Nil).map(toUser))
 
-    override def getById(id:                  UserId): AsyncCallback[Option[User]] = AsyncCallback.pure(None)
-    override def upsert(u:                    User):   AsyncCallback[User] = ???
-    override def deactivate(id:               UserId): AsyncCallback[Long] = AsyncCallback.pure(0L)
-    override def getChannelIdentities(userId: UserId): AsyncCallback[List[ChannelIdentity]] = AsyncCallback.pure(Nil)
-    override def upsertChannelIdentity(ci: ChannelIdentity):   AsyncCallback[ChannelIdentity] = ???
-    override def deleteChannelIdentity(id: ChannelIdentityId): AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def getById(id: UserId): AsyncCallback[Option[User]] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Queries.user(id)(JorlanClient.User.view))
+        .map(_.map(toUser))
+
+    override def upsert(u: User): AsyncCallback[User] =
+      if (u.id == UserId.empty)
+        adapter
+          .asyncCalibanCallWithAuth(
+            JorlanClient.Mutations.createUser(u.displayName, Some(u.email))(JorlanClient.User.view),
+          )
+          .flatMap(r =>
+            r.fold(
+              AsyncCallback.throwException[JorlanClient.User.UserView](RuntimeException("createUser returned no user")),
+            )(AsyncCallback.pure),
+          )
+          .map(toUser)
+      else
+        adapter
+          .asyncCalibanCallWithAuth(
+            JorlanClient.Mutations.updateUser(u.id, u.displayName, Some(u.email), u.active)(JorlanClient.User.view),
+          )
+          .flatMap(r =>
+            r.fold(
+              AsyncCallback.throwException[JorlanClient.User.UserView](RuntimeException("updateUser returned no user")),
+            )(AsyncCallback.pure),
+          )
+          .map(toUser)
+
+    override def deactivate(id: UserId): AsyncCallback[Long] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.deactivateUser(id))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
+    override def getChannelIdentities(userId: UserId): AsyncCallback[List[ChannelIdentity]] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Queries.userChannelIdentities(userId)(JorlanClient.ChannelIdentity.view))
+        .map(_.getOrElse(Nil).map(toChannelIdentity))
+    override def upsertChannelIdentity(ci: ChannelIdentity): AsyncCallback[ChannelIdentity] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.linkChannelIdentity(ci.userId, ci.channelType.toString, ci.channelUserId)(
+            JorlanClient.ChannelIdentity.view,
+          ),
+        )
+        .flatMap(r =>
+          r.fold(
+            AsyncCallback.throwException[JorlanClient.ChannelIdentity.ChannelIdentityView](
+              RuntimeException("linkChannelIdentity returned nothing"),
+            ),
+          )(AsyncCallback.pure),
+        )
+        .map(toChannelIdentity)
+    override def deleteChannelIdentity(id: ChannelIdentityId): AsyncCallback[Long] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.unlinkChannelIdentity(id.value.toString))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
     override def login(
       email:    String,
       password: String,
@@ -514,6 +660,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       ttl = v.ttl,
       createdAt = v.createdAt,
       updatedAt = v.updatedAt,
+      importance = v.importance,
     )
 
   private def toModelInfo(v: JorlanClient.ModelInfo.ModelInfoView): ModelInfo =
@@ -566,7 +713,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     SkillInfo(
       name = v.name,
       tier = SkillTier.valueOf(v.tier),
-      tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities)),
+      tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =
@@ -577,6 +724,20 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       createdAt = v.createdAt,
       updatedAt = v.updatedAt,
       active = v.active,
+    )
+
+  private def toRole(v: JorlanClient.Role.RoleView): Role =
+    Role(id = v.id, name = v.name, description = v.description)
+
+  private def toChannelIdentity(v: JorlanClient.ChannelIdentity.ChannelIdentityView): ChannelIdentity =
+    ChannelIdentity(
+      id = ChannelIdentityId(v.id.toLong),
+      userId = v.userId,
+      channelType = v.channelType,
+      channelUserId = v.channelUserId,
+      verified = v.verified,
+      providerData = None,
+      createdAt = v.createdAt,
     )
 
   private def toEventLog(v: JorlanClient.EventLogJson.EventLogJsonView): EventLog[Json] =

@@ -48,6 +48,11 @@ class ShellSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("shell.execute")),
+        examplePrompts = List(
+          "Run ls -la in /tmp",
+          "Execute git status in the project directory",
+          "Check disk usage with df -h",
+        ),
       ),
     ),
   )

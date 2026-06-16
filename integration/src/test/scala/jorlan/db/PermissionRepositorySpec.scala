@@ -271,7 +271,7 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           userRepo <- ZIO.serviceWith[ZIORepositories](_.user)
           repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
           user     <- userRepo.upsert(User(UserId.empty, "NoRoleUser", "NoRoleUser@test.local", T0, T0))
-          roles    <- repo.searchRoles(RoleSearch(userId = user.id, pageSize = 20))
+          roles    <- repo.searchRoles(RoleSearch(userId = Some(user.id), pageSize = 20))
         } yield assertTrue(roles.isEmpty)
       },
       test("searchPermissions returns empty list when no permissions exist for user") {
@@ -342,13 +342,13 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
           user     <- userRepo.upsert(User(UserId.empty, "SortRoleUser", "SortRoleUser@test.local", T0, T0))
           byName   <- repo.searchRoles(
-            RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Asc))),
+            RoleSearch(userId = Some(user.id), pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Asc))),
           )
           byNameDesc <- repo.searchRoles(
-            RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Desc))),
+            RoleSearch(userId = Some(user.id), pageSize = 20, sorts = Some(Sort(RoleOrder.Name, OrderDirection.Desc))),
           )
           byIdDesc <- repo.searchRoles(
-            RoleSearch(userId = user.id, pageSize = 20, sorts = Some(Sort(RoleOrder.Id, OrderDirection.Desc))),
+            RoleSearch(userId = Some(user.id), pageSize = 20, sorts = Some(Sort(RoleOrder.Id, OrderDirection.Desc))),
           )
         } yield assertTrue(byName.isEmpty, byNameDesc.isEmpty, byIdDesc.isEmpty)
       },

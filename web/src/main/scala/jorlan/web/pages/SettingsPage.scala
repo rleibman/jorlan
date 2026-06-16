@@ -19,8 +19,36 @@ import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import scala.scalajs.js.JSConverters.*
 
 object SettingsPage {
+
+  private val availableLanguages: Seq[String] = Seq(
+    "English",
+    "Spanish",
+    "Esperanto",
+    "French",
+    "German",
+    "Portuguese",
+    "Japanese",
+    "Chinese",
+    "Korean",
+  )
+
+  private val languageCodeToName: Map[String, String] = Map(
+    "en" -> "English",
+    "es" -> "Spanish",
+    "eo" -> "Esperanto",
+    "fr" -> "French",
+    "de" -> "German",
+    "pt" -> "Portuguese",
+    "ja" -> "Japanese",
+    "zh" -> "Chinese",
+    "ko" -> "Korean",
+  )
+
+  private def normalizeLanguages(langs: List[String]): List[String] =
+    langs.map(l => languageCodeToName.getOrElse(l, l))
 
   case class State(
     personality: Option[Personality],
@@ -42,7 +70,8 @@ object SettingsPage {
             AsyncCallbackRepositories.setting
               .serverPersonality()
               .flatMap { personality =>
-                state.setState(State(personality, loading = false, saved = false, error = None)).asAsyncCallback
+                val normalized = personality.map(p => p.copy(languages = normalizeLanguages(p.languages)))
+                state.setState(State(normalized, loading = false, saved = false, error = None)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
@@ -106,7 +135,70 @@ object SettingsPage {
                         ),
                     ),
                     MuiTextField
-                      .label("System Prompt")
+                      .label("Personality Description (auto-generated, read-only)")
+                      .value(
+                        if (p.formality == Formality.Custom) ""
+                        else Personality.buildSystemPrompt(p.copy(prompt = "")),
+                      )
+                      .multiline(true)
+                      .rows(4)
+                      .fullWidth(true)
+                      .variant("outlined")
+                      .set("slotProps", js.Dynamic.literal(input = js.Dynamic.literal(readOnly = true)))
+                      .set("sx", js.Dynamic.literal(backgroundColor = "action.hover")), {
+                      val langItems: Seq[VdomElement] = availableLanguages.map { lang =>
+                        MuiMenuItem
+                          .value(lang)
+                          .set(
+                            "sx",
+                            js.Dynamic.literal(fontWeight = if (p.languages.contains(lang)) "bold" else "normal"),
+                          )(lang): VdomElement
+                      }
+                      FormControl.set("fullWidth", true)(
+                        <.label("Languages"),
+                        MuiSelect
+                          .label("Languages")
+                          .set("multiple", true)
+                          .set("value", p.languages.toJSArray)
+                          .set(
+                            "renderValue",
+                            (
+                              (selected: js.Any) => selected.asInstanceOf[js.Array[String]].toList.mkString(", "),
+                            ): js.Function1[js.Any, String],
+                          )
+                          .onChange(e => {
+                            val arr = e.target.value.asInstanceOf[js.Array[String]].toList
+                            state
+                              .setState(
+                                state.value.copy(
+                                  personality = Some(p.copy(languages = arr)),
+                                  saved = false,
+                                ),
+                              )
+                              .runNow()
+                          })(langItems*),
+                      )
+                    },
+                    MuiTextField
+                      .label("Expertise (comma-separated)")
+                      .value(p.expertise.mkString(", "))
+                      .fullWidth(true)
+                      .variant("outlined")
+                      .placeholder("e.g. Scala, functional programming, distributed systems")
+                      .onChange(e => {
+                        val raw = e.target.value.asInstanceOf[String]
+                        val items = raw.split(",").map(_.trim).filter(_.nonEmpty).toList
+                        state
+                          .setState(
+                            state.value.copy(
+                              personality = Some(p.copy(expertise = items)),
+                              saved = false,
+                            ),
+                          )
+                          .runNow()
+                      }),
+                    MuiTextField
+                      .label("Additional Personality Notes")
                       .value(p.prompt)
                       .multiline(true)
                       .rows(4)

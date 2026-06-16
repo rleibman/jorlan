@@ -200,6 +200,7 @@ class InitServiceImpl(
     CapabilityName("agent.session.terminate"),
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
+    CapabilityName("admin.user.list"),
     CapabilityName("user.create"),
     CapabilityName("user.update"),
     CapabilityName("role.create"),

@@ -41,7 +41,8 @@ object InMemoryRepositories {
       store.get.map(
         _.values.toList
           .filter(u => s.active.forall(_ == u.active))
-          .filter(u => s.nameContains.forall(n => u.displayName.toLowerCase.contains(n.toLowerCase))),
+          .filter(u => s.nameContains.forall(n => u.displayName.toLowerCase.contains(n.toLowerCase)))
+          .filter(u => s.fuzzyName.forall(n => jorlan.service.FuzzyNameMatch.matches(u.displayName, n))),
       )
 
     override def upsert(user: User): RepositoryTask[User] =
@@ -110,8 +111,13 @@ object InMemoryRepositories {
       for {
         rm  <- userRoles.get
         rm2 <- roles.get
-        myIds = rm.keys.filter(_._1 == s.userId.value).map(_._2).toSet
-      } yield rm2.values.toList.filter(r => myIds.contains(r.id.value))
+        result = s.userId match {
+          case Some(uid) =>
+            val myIds = rm.keys.filter(_._1 == uid.value).map(_._2).toSet
+            rm2.values.toList.filter(r => myIds.contains(r.id.value))
+          case None => rm2.values.toList
+        }
+      } yield result
 
     override def upsertRole(role: Role): RepositoryTask[Role] =
       for {
@@ -477,12 +483,25 @@ object InMemoryRepositories {
   // ─── Memory ───────────────────────────────────────────────────────────────────
 
   class InMemoryMemoryRepo(
-    idGen: Ref[Long],
     store: Ref[Map[Long, MemoryRecord]],
   ) extends ZIOMemoryRepository {
 
     override def getById(id: MemoryRecordId): RepositoryTask[Option[MemoryRecord]] =
       store.get.map(_.get(id.value))
+
+    override def getByKey(
+      key:     String,
+      userId:  Option[UserId],
+      agentId: Option[AgentId],
+    ): RepositoryTask[Option[MemoryRecord]] =
+      store.get.map { m =>
+        m.values
+          .find { r =>
+            r.recordKey == key &&
+            userId.forall(uid => r.userId.contains(uid)) &&
+            agentId.forall(aid => r.agentId.contains(aid))
+          }
+      }
 
     override def search(s: MemorySearch): RepositoryTask[List[MemoryRecord]] =
       store.get.map { m =>
@@ -492,18 +511,41 @@ object InMemoryRepositories {
           .filter(r => s.workspaceId.forall(wid => r.workspaceId.contains(wid)))
           .filter(r => s.agentId.forall(aid => r.agentId.contains(aid)))
           .filter(r => s.key.forall(_ == r.recordKey))
-        s.textSearch.fold(filtered) { text =>
+          .filter(r => s.minImportance.forall(mi => r.importance >= mi))
+        val withText = s.textSearch.fold(filtered) { text =>
           val lower = text.toLowerCase
           filtered.filter(r => r.value.toString.toLowerCase.contains(lower) || r.recordKey.toLowerCase.contains(lower))
         }
+        withText.sortBy(-_.importance)
       }
 
     override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] =
-      for {
-        id <- if (record.id == MemoryRecordId.empty) idGen.updateAndGet(_ + 1) else ZIO.succeed(record.id.value)
-        saved = record.copy(id = MemoryRecordId(id))
-        _ <- store.update(_.updated(id, saved))
-      } yield saved
+      store.modify { m =>
+        val existingOpt = if (record.id != MemoryRecordId.empty) {
+          m.get(record.id.value)
+        } else {
+          m.values.find { r =>
+            r.recordKey == record.recordKey &&
+            r.userId == record.userId &&
+            r.agentId == record.agentId
+          }
+        }
+        existingOpt match {
+          case Some(existing) =>
+            val updated = existing.copy(
+              value = record.value,
+              scope = record.scope,
+              importance = record.importance,
+              ttl = record.ttl,
+              updatedAt = record.updatedAt,
+            )
+            (updated, m.updated(existing.id.value, updated))
+          case None =>
+            val newId = m.keys.maxOption.getOrElse(0L) + 1L
+            val saved = record.copy(id = MemoryRecordId(newId))
+            (saved, m.updated(newId, saved))
+        }
+      }
 
     override def updateScope(
       id:    MemoryRecordId,
@@ -534,9 +576,7 @@ object InMemoryRepositories {
   object InMemoryMemoryRepo {
 
     def make: UIO[InMemoryMemoryRepo] =
-      (Ref.make(0L) <*> Ref.make(Map.empty[Long, MemoryRecord])).map { case (idGen, store) =>
-        InMemoryMemoryRepo(idGen, store)
-      }
+      Ref.make(Map.empty[Long, MemoryRecord]).map(store => InMemoryMemoryRepo(store))
 
     val layer: ULayer[ZIOMemoryRepository] = ZLayer(make.map(r => r: ZIOMemoryRepository))
 

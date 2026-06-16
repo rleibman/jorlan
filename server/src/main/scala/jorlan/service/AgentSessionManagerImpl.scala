@@ -124,10 +124,19 @@ class AgentSessionManagerImpl(
     userId:   UserId,
     page:     Int,
     pageSize: Int,
-  ): IO[JorlanError, List[AgentSession]] =
+  ): IO[JorlanError, List[AgentSession]] = {
+    val cutoff = java.time.Instant.now().minus(1L, java.time.temporal.ChronoUnit.DAYS)
     repo.agent
-      .searchSessions(AgentSessionSearch(userId = Some(userId), page = page, pageSize = pageSize))
+      .searchSessions(
+        AgentSessionSearch(
+          userId = Some(userId),
+          page = page,
+          pageSize = pageSize,
+          hideOldTerminatedBefore = Some(cutoff),
+        ),
+      )
       .mapError(JorlanError(_))
+  }
 
 }
 
