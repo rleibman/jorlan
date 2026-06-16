@@ -120,20 +120,31 @@ case class EmailSettings(
   pgp:             PgpSettings = PgpSettings(),
 )
 
+/** Alpha Vantage market-data API configuration.
+  *
+  * Set the API key via environment variable `JORLAN_ALPHA_VANTAGE_API_KEY` or via `application.conf` under
+  * `jorlan.alphaVantage.apiKey`. When the key is absent the market-data skill returns an error without making any
+  * network request.
+  */
+case class AlphaVantageSettings(
+  apiKey: String = "",
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:        DatabaseConfig,
-  auth:      AuthConfig,
-  flyway:    FlywayConfig = FlywayConfig(),
-  http:      HttpConfig = HttpConfig(),
-  ai:        LangChainConfig = LangChainConfig(),
-  agent:     AgentSettings = AgentSettings(),
-  scheduler: SchedulerSettings = SchedulerSettings(),
-  workspace: WorkspaceSettings = WorkspaceSettings(),
-  shell:     ShellSettings = ShellSettings(),
-  web:       WebConfig = WebConfig(),
-  google:    GoogleOAuthSettings = GoogleOAuthSettings(),
-  email:     EmailSettings = EmailSettings(),
+  db:           DatabaseConfig,
+  auth:         AuthConfig,
+  flyway:       FlywayConfig = FlywayConfig(),
+  http:         HttpConfig = HttpConfig(),
+  ai:           LangChainConfig = LangChainConfig(),
+  agent:        AgentSettings = AgentSettings(),
+  scheduler:    SchedulerSettings = SchedulerSettings(),
+  workspace:    WorkspaceSettings = WorkspaceSettings(),
+  shell:        ShellSettings = ShellSettings(),
+  web:          WebConfig = WebConfig(),
+  google:       GoogleOAuthSettings = GoogleOAuthSettings(),
+  email:        EmailSettings = EmailSettings(),
+  alphaVantage: AlphaVantageSettings = AlphaVantageSettings(),
 )
 
 /** Root application configuration. */

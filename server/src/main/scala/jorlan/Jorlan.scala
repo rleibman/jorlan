@@ -21,6 +21,7 @@ import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
+import jorlan.market.MarketDataSkill
 import jorlan.service.skills.*
 import zio.http.*
 import zio.logging.backend.SLF4J
@@ -169,6 +170,7 @@ object Jorlan extends ZIOApp {
       _             <- registry.register(new EmailSkill(emailProvider, repos))
       _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
       _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
+      _             <- registry.register(new MarketDataSkill(config.jorlan.alphaVantage.apiKey, httpClient))
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
