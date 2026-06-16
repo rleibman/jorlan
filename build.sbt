@@ -252,6 +252,29 @@ lazy val telegramConnector = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Calculator Skill — mXparser-based math expression evaluator
+
+lazy val calculatorSkill = project
+  .in(file("calculator"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-calculator",
+    libraryDependencies ++= Seq(
+      "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.0" withSources (),
+      "dev.zio"                %% "zio"                     % zioVersion withSources (),
+      "dev.zio"                %% "zio-json"                % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
 
 lazy val emailConnector = project
@@ -322,7 +345,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(modelJVM, ai, connectorApi, telegramConnector, emailConnector, googleServices)
+  .dependsOn(modelJVM, ai, connectorApi, calculatorSkill, telegramConnector, emailConnector, googleServices)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -722,6 +745,7 @@ lazy val root = project
     modelJVM,
     modelJS,
     connectorApi,
+    calculatorSkill,
     telegramConnector,
     emailConnector,
     googleServices,
