@@ -172,7 +172,7 @@ class MarketDataSkill(
   private def search(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      url = s"$baseUrl?function=SYMBOL_SEARCH&keywords=${query.replace(" ", "%20")}&apikey=$apiKey"
+      url = s"$baseUrl?function=SYMBOL_SEARCH&keywords=${java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
