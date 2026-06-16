@@ -279,6 +279,29 @@ lazy val emailConnector = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Unit Conversion Skill — squants-backed unit conversion
+
+lazy val unitConversionSkill = project
+  .in(file("unit-conversion"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-unit-conversion",
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "squants"     % "1.8.3" withSources (),
+      "dev.zio"       %% "zio"         % zioVersion withSources (),
+      "dev.zio"       %% "zio-json"    % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
 
 lazy val googleServices = project
@@ -322,7 +345,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(modelJVM, ai, connectorApi, telegramConnector, emailConnector, googleServices)
+  .dependsOn(modelJVM, ai, connectorApi, telegramConnector, emailConnector, googleServices, unitConversionSkill)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -725,6 +748,7 @@ lazy val root = project
     telegramConnector,
     emailConnector,
     googleServices,
+    unitConversionSkill,
     ai,
     server,
     shell,
