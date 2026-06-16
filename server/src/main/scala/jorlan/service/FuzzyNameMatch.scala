@@ -1,20 +1,30 @@
+/*
+ * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ *
+ * This source code is protected under international copyright law.  All rights
+ * reserved and protected by the copyright holders.
+ * This file is confidential and only available to authorized individuals with the
+ * permission of the copyright holders.  If you encounter this file and do not have
+ * permission, please contact the copyright holders and delete this file.
+ */
+
 package jorlan.service
 
 /** Word-level fuzzy matching for contact name search.
-  *
-  * Returns a match score (lower = better) or None when no word in the display name is close enough to the query. A
-  * score of 0 means an exact substring match; positive scores reflect the minimum Levenshtein distance found among the
-  * individual words.
-  *
-  * Threshold: max(1, queryLength / 4), so queries of 1–3 chars allow edit distance 1, queries of 8 chars allow 2, etc.
-  */
+ *
+ * Returns a match score (lower = better) or None when no word in the display name is close enough to the query. A
+ * score of 0 means an exact substring match; positive scores reflect the minimum Levenshtein distance found among the
+ * individual words.
+ *
+ * Threshold: max(1, queryLength / 4), so queries of 1–3 chars allow edit distance 1, queries of 8 chars allow 2, etc.
+ */
 object FuzzyNameMatch {
 
   /** Score `displayName` against `query`. `None` = no match. */
   def score(
-    displayName: String,
-    query:       String,
-  ): Option[Int] = {
+             displayName: String,
+             query: String,
+           ): Option[Int] = {
     val q = query.toLowerCase.trim
     if (q.isEmpty) return Some(0)
     val name = displayName.toLowerCase.trim
@@ -26,18 +36,18 @@ object FuzzyNameMatch {
   }
 
   def matches(
-    displayName: String,
-    query:       String,
-  ): Boolean =
+               displayName: String,
+               query: String,
+             ): Boolean =
     score(displayName, query).isDefined
 
   /** Compare and rank a list of users by fuzzy score, dropping non-matches. */
   def rank[A](
-    xs:    List[A],
-    query: String,
-  )(
-    name: A => String,
-  ): List[A] = {
+               xs: List[A],
+               query: String,
+             )(
+               name: A => String,
+             ): List[A] = {
     val q = query.trim
     if (q.isEmpty) return xs
     xs
@@ -47,9 +57,9 @@ object FuzzyNameMatch {
   }
 
   private def levenshtein(
-    s: String,
-    t: String,
-  ): Int = {
+                           s: String,
+                           t: String,
+                         ): Int = {
     val m = s.length
     val n = t.length
     val dp = Array.ofDim[Int](m + 1, n + 1)

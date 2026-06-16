@@ -13,6 +13,7 @@ package jorlan
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.*
+import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
@@ -83,9 +84,9 @@ object Jorlan extends ZIOApp {
     // We really don't want details
 
     val status = squashed match {
-      case _: NotFoundError                    => Status.NotFound
+      case _: NotFoundError => Status.NotFound
       case e: RepositoryError if e.isTransient => Status.BadGateway
-      case _: JorlanError                      => Status.InternalServerError
+      case _: JorlanError => Status.InternalServerError
       case _ => Status.InternalServerError
     }
     ZIO
@@ -95,24 +96,24 @@ object Jorlan extends ZIOApp {
   }
 
   /** Build the combined application routes. Extracted so integration tests can wire up the app with a test environment
-    * without starting a real HTTP server on a production port.
-    */
+   * without starting a real HTTP server on a production port.
+   */
   def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, Nothing]] =
     for {
-      _                <- ZIO.log("Initializing Web Routes")
-      config           <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      authServer       <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      authConfig       <- ZIO.service[AuthConfig]
-      oauthCredSvc     <- ZIO.service[jorlan.service.OAuthCredentialService]
-      httpClient       <- ZIO.service[Client]
-      repo             <- ZIO.service[ZIORepositories]
-      authR            <- authServer.authRoutes // TODO move into allTogether
-      unauthR          <- authServer.unauthRoutes // TODO move into allTogether
-      authServerApi    <- authServer.authRoutes // TODO move into allTogether
+      _ <- ZIO.log("Initializing Web Routes")
+      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      authServer <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      authConfig <- ZIO.service[AuthConfig]
+      oauthCredSvc <- ZIO.service[jorlan.service.OAuthCredentialService]
+      httpClient <- ZIO.service[Client]
+      repo <- ZIO.service[ZIORepositories]
+      authR <- authServer.authRoutes // TODO move into allTogether
+      unauthR <- authServer.unauthRoutes // TODO move into allTogether
+      authServerApi <- authServer.authRoutes // TODO move into allTogether
       authServerUnauth <- authServer.unauthRoutes // TODO move into allTogether
       allTogether = AllTogether(startTime)
-      unauth     <- allTogether.unauth
-      api        <- allTogether.api
+      unauth <- allTogether.unauth
+      api <- allTogether.api
       nonceStore <- Ref.make(Map.empty[String, Long])
       oauthAuthR = OAuthRoutes.authenticatedRoutes(authConfig, config.jorlan.google, nonceStore)
       oauthUnauthR = OAuthRoutes.unauthenticatedRoutes(
@@ -125,20 +126,20 @@ object Jorlan extends ZIOApp {
     } yield (
       ((api ++ authR ++ authServerApi ++ oauthAuthR) @@ authServer.bearerSessionProvider) ++
         authServerUnauth ++ unauthR ++ unauth ++ oauthUnauthR
-    )
+      )
       .handleErrorCauseZIO(mapError)
 
   private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
     for {
-      registry     <- ZIO.service[SkillRegistry]
-      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      memService   <- ZIO.service[MemoryService]
-      jobManager   <- ZIO.service[JobManager]
-      repos        <- ZIO.service[ZIORepositories]
-      notifRouter  <- ZIO.service[NotificationRouter]
-      httpClient   <- ZIO.service[Client]
+      registry <- ZIO.service[SkillRegistry]
+      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      memService <- ZIO.service[MemoryService]
+      jobManager <- ZIO.service[JobManager]
+      repos <- ZIO.service[ZIORepositories]
+      notifRouter <- ZIO.service[NotificationRouter]
+      httpClient <- ZIO.service[Client]
       oauthCredSvc <- ZIO.service[OAuthCredentialService]
-      workRoot     <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
+      workRoot <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
       pgpService = PgpService.noOp
       emailCfg = config.jorlan.email
       emailProvider <-
@@ -158,42 +159,43 @@ object Jorlan extends ZIOApp {
             ),
           )
         }
-      calProvider   <- GoogleCalendarProvider(oauthCredSvc).orDie
+      calProvider <- GoogleCalendarProvider(oauthCredSvc).orDie
       driveProvider <- GoogleDriveProvider(oauthCredSvc).orDie
-      _             <- registry.register(new MemorySkill(memService))
-      _             <- registry.register(new SchedulerSkill(jobManager))
-      _             <- registry.register(new ContactsSkill(repos))
-      _             <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
-      _             <- registry.register(new ShellSkill(config.jorlan.shell, repos))
-      _             <- registry.register(new NotifySkill(notifRouter))
-      _             <- registry.register(new EmailSkill(emailProvider, repos))
-      _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
-      _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
+      _ <- registry.register(new CalculatorSkill())
+      _ <- registry.register(new MemorySkill(memService))
+      _ <- registry.register(new SchedulerSkill(jobManager))
+      _ <- registry.register(new ContactsSkill(repos))
+      _ <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _ <- registry.register(new ShellSkill(config.jorlan.shell, repos))
+      _ <- registry.register(new NotifySkill(notifRouter))
+      _ <- registry.register(new EmailSkill(emailProvider, repos))
+      _ <- registry.register(new GoogleCalendarSkill(calProvider, repos))
+      _ <- registry.register(new GoogleDriveSkill(driveProvider, repos))
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
     for {
-      _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
-      _                <- registerBuiltInSkills.orDie
+      _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _ <- registerBuiltInSkills.orDie
       connectorManager <- ZIO.service[ConnectorManager]
-      registry         <- ZIO.service[SkillRegistry]
-      _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)
-      _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
+      registry <- ZIO.service[SkillRegistry]
+      _ <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)
+      _ <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
-// $COVERAGE-OFF$
+  // $COVERAGE-OFF$
   // Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
   override def run: ZIO[Environment & ZIOAppArgs & Scope, JorlanError, Unit] =
     for {
-      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      _           <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db).mapError(JorlanError.apply)
-      startTime   <- Clock.currentTime(TimeUnit.MILLISECONDS)
-      repo        <- ZIO.service[ZIORepositories]
+      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      _ <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db).mapError(JorlanError.apply)
+      startTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      repo <- ZIO.service[ZIORepositories]
       initialized <- repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {
         case Some(zio.json.ast.Json.Bool(v)) => v
-        case _                               => false
+        case _ => false
       }
-      tokenStore    <- InitTokenStore.make(initialized)
+      tokenStore <- InitTokenStore.make(initialized)
       skillRegistry <- ZIO.service[SkillRegistry]
       initService = InitServiceImpl(repo, tokenStore, skillRegistry)
       _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
@@ -203,11 +205,11 @@ object Jorlan extends ZIOApp {
           .copy(requestStreaming = Server.RequestStreaming.Enabled),
       )
       randomConnectionId <- ConnectionId.randomZIO
-      _                  <- (for {
-        _      <- initService.topUpAdminCapabilities
-        _      <- startServices
+      _ <- (for {
+        _ <- initService.topUpAdminCapabilities
+        _ <- startServices
         routes <- zapp(startTime)
-        _      <- Server.serve(routes)
+        _ <- Server.serve(routes)
       } yield ())
         .provideSome[Environment & Scope](serverConfig, Server.live)
         .mapError(JorlanError.apply)
@@ -223,13 +225,13 @@ object Jorlan extends ZIOApp {
         serverFiber <- Server
           .serve(setupApp)
           .fork
-        _      <- initDone.await
-        _      <- serverFiber.interrupt
-        _      <- ZIO.logInfo("Server initialized — switching to full application routes")
-        _      <- initService.topUpAdminCapabilities
-        _      <- startServices
+        _ <- initDone.await
+        _ <- serverFiber.interrupt
+        _ <- ZIO.logInfo("Server initialized — switching to full application routes")
+        _ <- initService.topUpAdminCapabilities
+        _ <- startServices
         routes <- zapp(startTime)
-        _      <- Server.serve(routes)
+        _ <- Server.serve(routes)
       } yield ())
         .provideSome[Environment & Scope](
           serverConfig,
@@ -239,6 +241,6 @@ object Jorlan extends ZIOApp {
         .mapError(JorlanError.apply)
         .when(!initialized)
     } yield ()
-// $COVERAGE-ON$
+  // $COVERAGE-ON$
 
 }
