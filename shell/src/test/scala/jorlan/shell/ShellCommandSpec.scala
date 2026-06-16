@@ -10,7 +10,7 @@
 
 package jorlan.shell
 
-import jorlan.domain.{AgentSessionId, ApprovalRequestId, MemoryRecordId}
+import jorlan.*
 import jorlan.shell.commands.ShellCommand
 import zio.test.*
 
@@ -103,7 +103,7 @@ object ShellCommandSpec extends ZIOSpecDefault {
         assertTrue(ShellCommand.parse("/memory list") == ShellCommand.MemoryList(None))
       },
       test("/memory list with scope") {
-        assertTrue(ShellCommand.parse("/memory list User") == ShellCommand.MemoryList(Some("User")))
+        assertTrue(ShellCommand.parse("/memory list User") == ShellCommand.MemoryList(Some(MemoryScope.User)))
       },
       test("/memory search with text") {
         assertTrue(ShellCommand.parse("/memory search my password") == ShellCommand.MemorySearch("my password"))

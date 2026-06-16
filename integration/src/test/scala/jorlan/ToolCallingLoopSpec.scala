@@ -14,10 +14,9 @@ import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.domain.SkillTier
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway

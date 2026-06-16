@@ -8,9 +8,13 @@ scalar AgentId
 
 scalar AgentSessionId
 
+scalar ApprovalMode
+
 scalar ApprovalRequestId
 
 scalar ApprovalStatus
+
+scalar CapabilityGrantId
 
 scalar CapabilityName
 
@@ -23,23 +27,46 @@ scalar Formality
 "An instantaneous point on the time-line represented by a standard date time string"
 scalar Instant
 
+scalar JobStatus
+
 scalar Long
+
+scalar MemoryRecordId
+
+scalar MissedRunPolicy
 
 scalar ModelId
 
 scalar PermissionId
 
+scalar RetryBackoffPolicy
+
 scalar RiskClass
 
 scalar RoleId
 
+scalar SchedulerJobId
+
+scalar SchedulerTriggerId
+
 scalar SessionStatus
+
+scalar SkillId
+
+scalar TriggerType
 
 scalar Unit
 
 scalar UserId
 
 scalar WorkspaceId
+
+enum MemoryScope {
+  User
+  Shared
+  Workspace
+  Private
+}
 
 type AgentSession {
   id: AgentSessionId!
@@ -48,6 +75,7 @@ type AgentSession {
   workspaceId: WorkspaceId
   status: SessionStatus!
   modelId: ModelId
+  chatRef: String
   createdAt: Instant!
   updatedAt: Instant!
 }
@@ -65,6 +93,29 @@ type ApprovalRequest {
   expiresAt: Instant
 }
 
+type CapabilityGrant {
+  id: CapabilityGrantId!
+  capability: CapabilityName!
+  scopeJson: String
+  granteeId: UserId!
+  grantorId: UserId
+  approvalMode: ApprovalMode!
+  expiresAt: Instant
+  resourceConstraints: String
+  createdAt: Instant!
+}
+
+type ContactIdentityResult {
+  channelType: String!
+  channelUserId: String!
+}
+
+type ContactResult {
+  userId: Long!
+  displayName: String!
+  identities: [ContactIdentityResult!]!
+}
+
 type EventLogJson {
   id: EventLogId!
   eventType: EventType!
@@ -76,6 +127,26 @@ type EventLogJson {
   occurredAt: Instant!
 }
 
+type MemoryRecord {
+  id: MemoryRecordId!
+  scope: MemoryScope!
+  userId: UserId
+  workspaceId: WorkspaceId
+  agentId: AgentId
+  recordKey: String!
+  value: String!
+  ttl: Instant
+  createdAt: Instant!
+  updatedAt: Instant!
+}
+
+type ModelInfo {
+  id: ModelId!
+  provider: String!
+  contextWindow: Int!
+  supportsStreaming: Boolean!
+}
+
 type Mutations {
   createUser(displayName: String!, email: String): User
   updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
@@ -84,9 +155,35 @@ type Mutations {
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
   revokePermission(value: PermissionId!): Long
-  createSession(value: ModelId): AgentSession
+  createSession(modelId: ModelId): AgentSession
   submitMessage(sessionId: AgentSessionId!, content: String!): Unit
   updatePersonality(name: String!, formality: Formality!, languages: [String!]!, expertise: [String!]!, prompt: String!): Personality
+  storeMemory(key: String!, text: String!, scope: MemoryScope!): MemoryRecord
+  forgetMemory(value: MemoryRecordId!): Boolean
+  markMemoryShared(value: MemoryRecordId!): MemoryRecord
+  markMemoryPrivate(value: MemoryRecordId!): MemoryRecord
+  createJob(name: String!, inputJson: String, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
+  addTrigger(jobId: SchedulerJobId!, triggerType: TriggerType!, expression: String!): SchedulerTrigger
+  pauseJob(value: SchedulerJobId!): Boolean
+  resumeJob(value: SchedulerJobId!): Boolean
+  cancelJob(value: SchedulerJobId!): Boolean
+  triggerNow(value: SchedulerJobId!): Boolean
+  deleteJob(value: SchedulerJobId!): Boolean
+  decideApproval(requestId: ApprovalRequestId!, approved: Boolean!, note: String): Boolean
+  terminateSession(value: AgentSessionId!): Boolean
+  notifyUser(userId: UserId!, message: String!): Boolean
+  startOAuth(value: String!): OAuthStartResult
+  revokeOAuth(value: String!): Boolean
+  invokeTool(toolName: String!, argsJson: String!): String
+}
+
+type OAuthStartResult {
+  authUrl: String!
+}
+
+type OAuthStatus {
+  connected: Boolean!
+  expiresAt: Instant
 }
 
 type Permission {
@@ -114,6 +211,17 @@ type Queries {
   permissions(userId: UserId!, page: Int, pageSize: Int): [Permission!]
   listSessions(page: Int, pageSize: Int): [AgentSession!]
   serverPersonality: Personality
+  listMemory(scope: MemoryScope!, textSearch: String): [MemoryRecord!]
+  listCapabilities: [CapabilityGrant!]
+  jobs(optAgentId: AgentId): [SchedulerJob!]
+  job(value: SchedulerJobId!): SchedulerJob
+  triggers(value: SchedulerJobId!): [SchedulerTrigger!]
+  listApprovals: [ApprovalRequest!]
+  availableModels: [ModelInfo!]
+  skills: [SkillInfo!]
+  contacts(value: String!): [ContactResult!]
+  oauthStatus(value: String!): OAuthStatus
+  listOAuthProviders: [String!]
 }
 
 type ResponseChunk {
@@ -129,16 +237,67 @@ type Role {
   description: String
 }
 
+type SchedulerJob {
+  id: SchedulerJobId!
+  agentId: AgentId!
+  userId: UserId!
+  skillId: SkillId
+  name: String!
+  inputJson: String
+  status: JobStatus!
+  scheduledAt: Instant!
+  startedAt: Instant
+  finishedAt: Instant
+  resultJson: String
+  maxRetries: Int!
+  retryCount: Int!
+  backoffSeconds: Int!
+  backoffPolicy: RetryBackoffPolicy!
+  missedRunPolicy: MissedRunPolicy!
+  leasedAt: Instant
+  leasedBy: String
+  createdAt: Instant!
+}
+
+type SchedulerTrigger {
+  id: SchedulerTriggerId!
+  jobId: SchedulerJobId!
+  triggerType: TriggerType!
+  expression: String!
+  enabled: Boolean!
+  createdAt: Instant!
+}
+
+type SkillInfo {
+  name: String!
+  tier: String!
+  tools: [SkillToolInfo!]!
+}
+
+type SkillToolInfo {
+  name: String!
+  description: String!
+  requiredCapabilities: [String!]!
+}
+
 type Subscriptions {
   approvalNotifications: ApprovalRequest
   eventLogTail: EventLogJson
   agentResponseStream(value: AgentSessionId!): ResponseChunk
+  toolEvents(value: AgentSessionId!): ToolEventResult
+}
+
+type ToolEventResult {
+  sessionId: Long!
+  eventType: String!
+  toolName: String!
+  payload: String!
 }
 
 type User {
   id: UserId!
   displayName: String!
-  email: String
+  email: String!
   createdAt: Instant!
   updatedAt: Instant!
   active: Boolean!

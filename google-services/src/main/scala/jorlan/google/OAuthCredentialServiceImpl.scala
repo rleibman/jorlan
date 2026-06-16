@@ -11,7 +11,7 @@
 package jorlan.google
 
 import jorlan.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.OAuthCredentialService
 import zio.*
 import zio.http.*
@@ -229,6 +229,15 @@ class MappedExternalCredentialRepository[E](
 
   override def listByUser(userId: UserId): IO[JorlanError, List[ExternalCredential]] =
     underlying.listByUser(userId).mapError(mapError)
+
+  override def listOAuthProviders(): IO[JorlanError, List[String]] =
+    underlying.listOAuthProviders().mapError(mapError)
+  override def startOAuth(provider: String): IO[JorlanError, Option[String]] =
+    underlying.startOAuth(provider).mapError(mapError)
+  override def revokeOAuth(provider: String): IO[JorlanError, Unit] =
+    underlying.revokeOAuth(provider).mapError(mapError)
+  override def oauthStatus(provider: String): IO[JorlanError, Option[OAuthStatus]] =
+    underlying.oauthStatus(provider).mapError(mapError)
 
 }
 

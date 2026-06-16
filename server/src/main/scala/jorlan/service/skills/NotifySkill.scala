@@ -12,7 +12,7 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.NotificationRouter
 import zio.*
 import zio.json.ast.Json
@@ -31,10 +31,10 @@ class NotifySkill(router: NotificationRouter) extends Skill {
     tools = List(
       ToolDescriptor(
         name = "notify.user",
-        description = "Send a text message to a user's preferred communication channel (Telegram preferred).",
+        description = "Send a text message to a user's preferred communication channel (Telegram preferred). If userId is omitted the message is sent to the currently authenticated user. Use contacts.find to get a numeric userId for other users.",
         inputSchema = Json.decoder
           .decodeJson(
-            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID"},"message":{"type":"string","description":"Message text to send"}},"required":["userId","message"]}""",
+            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to send to the current user"},"message":{"type":"string","description":"Message text to send"}},"required":["message"]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
@@ -71,14 +71,14 @@ class NotifySkill(router: NotificationRouter) extends Skill {
   ): IO[JorlanError, Json] = {
     val userIdRaw = SkillArgs.str(args, "userId")
     val message = SkillArgs.str(args, "message")
-    (userIdRaw, message) match {
-      case (None, _)              => ZIO.fail(JorlanError("notify.user: userId is required"))
-      case (_, None)              => ZIO.fail(JorlanError("notify.user: message is required"))
-      case (Some(uid), Some(msg)) =>
-        uid.toLongOption match {
-          case None     => ZIO.fail(JorlanError(s"notify.user: userId must be numeric, got '$uid'"))
-          case Some(id) => router.notifyUser(UserId(id), msg, ctx)
-        }
+    val resolvedUserId: Either[String, UserId] = userIdRaw match {
+      case None      => Right(ctx.actorId)
+      case Some(uid) => uid.toLongOption.map(UserId(_)).toRight(s"notify.user: userId must be numeric, got '$uid'")
+    }
+    (resolvedUserId, message) match {
+      case (_, None)               => ZIO.fail(JorlanError("notify.user: message is required"))
+      case (Left(err), _)          => ZIO.fail(JorlanError(err))
+      case (Right(uid), Some(msg)) => router.notifyUser(uid, msg, ctx)
     }
   }
 

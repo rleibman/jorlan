@@ -11,7 +11,7 @@
 package jorlan.email
 
 import jorlan.JorlanError
-import jorlan.domain.UserId
+import jorlan.UserId
 import zio.*
 
 trait PgpService {

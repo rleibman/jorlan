@@ -11,10 +11,10 @@
 package jorlan.web
 
 import auth.{AuthClient, LoginRouter}
+import caliban.ScalaJSClientAdapter
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.{ConnectionId, User, UserId}
-import jorlan.web.graphql.ScalaJSClientAdapter
+import jorlan.*
 import net.leibman.jorlan.muiMaterial.components.{Alert, CssBaseline, ThemeProvider}
 import net.leibman.jorlan.muiMaterial.stylesMod
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeMod.ThemeOptions
@@ -41,7 +41,7 @@ object JorlanWebApp {
   }
 
   /** Creates a new GraphQL client adapter for the current page load. */
-  def makeAdapter(): ScalaJSClientAdapter = ScalaJSClientAdapter(serverUri, connectionId)
+  def makeAdapter(): ScalaJSClientAdapter = ScalaJSClientAdapter(serverUri)
 
   private val theme = stylesMod.createTheme(
     js.Dynamic

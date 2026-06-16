@@ -10,7 +10,8 @@
 
 package jorlan.service
 
-import jorlan.domain.*
+import jorlan.{AgentId, AgentSessionId, EventLog, EventLogId, EventType, UserId}
+import jorlan.*
 import jorlan.service.EventLogFilter
 import jorlan.testing.InMemoryRepositories
 import zio.*

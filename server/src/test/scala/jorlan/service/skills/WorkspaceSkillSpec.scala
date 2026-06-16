@@ -12,7 +12,6 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.domain.*
 import jorlan.service.skills.WorkspaceSkill
 import zio.*
 import zio.json.ast.Json

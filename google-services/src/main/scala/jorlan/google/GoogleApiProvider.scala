@@ -13,7 +13,7 @@ package jorlan.google
 import com.google.auth.http.HttpCredentialsAdapter
 import com.google.auth.oauth2.{AccessToken, GoogleCredentials}
 import jorlan.JorlanError
-import jorlan.domain.UserId
+import jorlan.UserId
 import jorlan.service.OAuthCredentialService
 import zio.*
 

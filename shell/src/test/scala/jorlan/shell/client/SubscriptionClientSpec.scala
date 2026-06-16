@@ -10,7 +10,7 @@
 
 package jorlan.shell.client
 
-import jorlan.domain.{AgentSessionId, ResponseChunk}
+import jorlan.{AgentSessionId, ResponseChunk}
 import zio.*
 import zio.stream.ZStream
 import zio.test.*

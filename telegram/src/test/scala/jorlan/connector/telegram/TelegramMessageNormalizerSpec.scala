@@ -10,10 +10,11 @@
 
 package jorlan.connector.telegram
 
+import jorlan.ChannelType
 import jorlan.connector.*
-import jorlan.domain.*
+import jorlan.*
 import telegramium.bots.{Chat, Update}
-import telegramium.bots.{Message => TgMessage, User => TgUser}
+import telegramium.bots.{Message as TgMessage, User as TgUser}
 import zio.test.*
 
 import java.time.Instant

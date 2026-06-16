@@ -10,7 +10,7 @@
 
 package jorlan.service.skills
 
-import jorlan.domain.ChannelType
+import jorlan.ChannelType
 import zio.json.ast.Json
 
 /** Shared JSON argument extractors used by all built-in [[jorlan.connector.Skill]] implementations. */

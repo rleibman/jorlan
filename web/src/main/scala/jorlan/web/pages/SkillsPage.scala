@@ -12,7 +12,7 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
+import jorlan.*
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -42,7 +42,7 @@ object SkillsPage {
           ),
           // TODO: render table once listSkillVersions query is available:
           //   TableContainer > Table > TableHead (Name | Tier | Status | Version | "") +
-          //   TableBody rows from JorlanClient.Queries.listSkillVersions(...)
+          //   TableBody rows from AsyncCallbackRepositories.listSkills()
           //   Each row: name, Chip(tier), Chip(status), version, expand button for manifestJson
         )
       }

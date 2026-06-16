@@ -24,29 +24,40 @@ mkdir -p "$(dirname "$OUTPUT1")"
 mkdir -p "$(dirname "$OUTPUT2")"
 cd "$PROJECT_ROOT"
 SCALAR_MAPPINGS="\
-UserId:jorlan.domain.UserId,\
-RoleId:jorlan.domain.RoleId,\
-PermissionId:jorlan.domain.PermissionId,\
-AgentId:jorlan.domain.AgentId,\
-AgentSessionId:jorlan.domain.AgentSessionId,\
-ApprovalRequestId:jorlan.domain.ApprovalRequestId,\
-EventLogId:jorlan.domain.EventLogId,\
-WorkspaceId:jorlan.domain.WorkspaceId,\
-ModelId:jorlan.domain.ModelId,\
-CapabilityName:jorlan.domain.CapabilityName,\
-ChannelType:jorlan.domain.ChannelType,\
-ApprovalStatus:jorlan.domain.ApprovalStatus,\
-ApprovalMode:jorlan.domain.ApprovalMode,\
-EventType:jorlan.domain.EventType,\
-SessionStatus:jorlan.domain.SessionStatus,\
-RiskClass:jorlan.domain.RiskClass,\
+UserId:jorlan.UserId,\
+RoleId:jorlan.RoleId,\
+PermissionId:jorlan.PermissionId,\
+AgentId:jorlan.AgentId,\
+AgentSessionId:jorlan.AgentSessionId,\
+ApprovalRequestId:jorlan.ApprovalRequestId,\
+EventLogId:jorlan.EventLogId,\
+WorkspaceId:jorlan.WorkspaceId,\
+MemoryRecordId:jorlan.MemoryRecordId,\
+ModelId:jorlan.ModelId,\
+CapabilityName:jorlan.CapabilityName,\
+ChannelType:jorlan.ChannelType,\
+ApprovalStatus:jorlan.ApprovalStatus,\
+ApprovalMode:jorlan.ApprovalMode,\
+EventType:jorlan.EventType,\
+SessionStatus:jorlan.SessionStatus,\
+MemoryScope:jorlan.MemoryScope,\
+RiskClass:jorlan.RiskClass,\
+CapabilityGrantId:jorlan.CapabilityGrantId,\
+Formality:jorlan.Formality,\
+JobStatus:jorlan.JobStatus,\
+MissedRunPolicy:jorlan.MissedRunPolicy,\
+RetryBackoffPolicy:jorlan.RetryBackoffPolicy,\
+SchedulerJobId:jorlan.SchedulerJobId,\
+SchedulerTriggerId:jorlan.SchedulerTriggerId,\
+SkillId:jorlan.SkillId,\
+TriggerType:jorlan.TriggerType,\
 Instant:java.time.Instant,\
 Long:Long,\
 Unit:Unit"
 
 IMPORTS="\
-jorlan.domain._,\
-jorlan.shell.client.JorlanClientDecoders._"
+jorlan._,\
+JorlanClientDecoders.given"
 
 sbt --error \
   "project server" \

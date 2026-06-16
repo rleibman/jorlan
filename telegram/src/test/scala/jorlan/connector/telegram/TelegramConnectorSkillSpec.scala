@@ -12,7 +12,6 @@ package jorlan.connector.telegram
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.domain.*
 import telegramium.bots.{Chat, Update}
 import telegramium.bots.{Message => TgMessage, User => TgUser}
 import zio.*
@@ -306,7 +305,7 @@ object TelegramConnectorSkillSpec extends ZIOSpecDefault {
             override def getUpdates(
               offset:         Long,
               timeoutSeconds: Int,
-            ) =
+            ): IO[JorlanError, List[Update]] =
               offsets.update(_ :+ offset) *> super.getUpdates(offset, timeoutSeconds)
           }
           ingress <- NoOpIngress.make
@@ -315,7 +314,7 @@ object TelegramConnectorSkillSpec extends ZIOSpecDefault {
           _       <- ZIO.sleep(150.millis)
           _       <- skill.stop
           seen    <- offsets.get
-        } yield assertTrue(seen.contains(0L), seen.exists(_ == 21L))
+        } yield assertTrue(seen.contains(0L), seen.contains(21L))
       } @@ TestAspect.withLiveClock @@ TestAspect.timeout(5.seconds),
     )
 

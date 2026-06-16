@@ -11,7 +11,6 @@
 package jorlan.db.repository
 
 import jorlan.*
-import jorlan.domain.Personality
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -98,5 +97,7 @@ extension (settings: ZIOServerSettingsRepository) {
 }
 
 type ZIOExternalCredentialRepository = ExternalCredentialRepository[RepositoryTask]
+
+type ZIOServerInfoRepository = ServerInfoRepository[RepositoryTask]
 
 type ZIORepositories = Repositories[RepositoryTask]

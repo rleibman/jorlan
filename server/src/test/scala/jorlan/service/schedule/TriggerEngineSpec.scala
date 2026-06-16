@@ -13,7 +13,7 @@ package jorlan.service.schedule
 import cron4s.expr.CronExpr
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.schedule.{TriggerEngine, TriggerEngineImpl}
 import jorlan.service.{AgentRunner, AgentSessionManager, SessionHub}
 import jorlan.testing.InMemoryRepositories

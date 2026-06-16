@@ -10,14 +10,11 @@
 
 package jorlan.web.pages
 
-import caliban.client.SelectionBuilder
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
-import jorlan.web.JorlanWebApp
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -25,12 +22,9 @@ import scala.scalajs.js
 
 object SchedulerPage {
 
-  type JobView = JorlanClient.SchedulerJob.SchedulerJobView
-  type TriggerView = JorlanClient.SchedulerTrigger.SchedulerTriggerView
-
   case class State(
-    jobs:     scala.List[JobView],
-    triggers: Map[SchedulerJobId, scala.List[TriggerView]],
+    jobs:     scala.List[SchedulerJob],
+    triggers: Map[SchedulerJobId, scala.List[SchedulerTrigger]],
     expanded: Set[SchedulerJobId],
     loading:  Boolean,
     error:    Option[String],
@@ -56,18 +50,14 @@ object SchedulerPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.jobs(None)(JorlanClient.SchedulerJob.view),
-              )
-              .flatMap {
-                case Some(jobs) =>
-                  state.setState(state.value.copy(jobs = jobs, loading = false)).asAsyncCallback
-                case None =>
-                  state
-                    .setState(state.value.copy(loading = false, error = Some("Failed to load jobs")))
-                    .asAsyncCallback
+            AsyncCallbackRepositories.scheduler
+              .listJobs(None, 200)
+              .flatMap { jobs =>
+                state
+                  .setState(
+                    state.value
+                      .copy(jobs = jobs, loading = false),
+                  ).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Success(_)  => Callback.empty
@@ -83,22 +73,18 @@ object SchedulerPage {
           _,
           state,
         ) =>
-          val adapter = JorlanWebApp.makeAdapter()
-
           def loadTriggers(jobId: SchedulerJobId): Callback =
             if (state.value.triggers.contains(jobId)) Callback.empty
             else
               Callback {
-                adapter
-                  .asyncCalibanCallWithAuth(
-                    JorlanClient.Queries.triggers(jobId)(JorlanClient.SchedulerTrigger.view),
-                  )
-                  .flatMap {
-                    case Some(ts) =>
-                      state
-                        .setState(state.value.copy(triggers = state.value.triggers + (jobId -> ts)))
-                        .asAsyncCallback
-                    case None => AsyncCallback.unit
+                AsyncCallbackRepositories.scheduler
+                  .searchTriggers(TriggerSearch(jobId))
+                  .flatMap { ts =>
+                    state
+                      .setState(
+                        state.value.copy(triggers = state.value.triggers + (jobId -> ts)),
+                      )
+                      .asAsyncCallback
                   }
                   .completeWith(_ => Callback.empty)
                   .runNow()
@@ -111,12 +97,11 @@ object SchedulerPage {
               state.setState(state.value.copy(expanded = state.value.expanded + jobId)) >> loadTriggers(jobId)
 
           def jobAction(
-            mut:         SelectionBuilder[caliban.client.Operations.RootMutation, Option[Boolean]],
+            call:        AsyncCallback[Boolean],
             updateState: State => State,
           ): Callback =
             Callback {
-              adapter
-                .asyncCalibanCallWithAuth(mut)
+              call
                 .flatMap(_ => state.setState(updateState(state.value)).asAsyncCallback)
                 .completeWith {
                   case scala.util.Failure(ex) =>
@@ -134,14 +119,16 @@ object SchedulerPage {
                 .size("small")
                 .onClick { () =>
                   Callback {
-                    adapter
-                      .asyncCalibanCallWithAuth(
-                        JorlanClient.Queries.jobs(None)(JorlanClient.SchedulerJob.view),
-                      )
-                      .flatMap {
-                        case Some(jobs) =>
-                          state.setState(state.value.copy(jobs = jobs, loading = false)).asAsyncCallback
-                        case None => AsyncCallback.unit
+                    AsyncCallbackRepositories.scheduler
+                      .listJobs(None, 200)
+                      .flatMap { jobs =>
+                        state
+                          .setState(
+                            state.value.copy(
+                              jobs = jobs,
+                              loading = false,
+                            ),
+                          ).asAsyncCallback
                       }
                       .completeWith(_ => Callback.empty)
                       .runNow()
@@ -190,7 +177,7 @@ object SchedulerPage {
                                       .variant("outlined")
                                       .onClick(() =>
                                         jobAction(
-                                          JorlanClient.Mutations.resumeJob(job.id),
+                                          AsyncCallbackRepositories.scheduler.resumeJob(job.id),
                                           s =>
                                             s.copy(jobs =
                                               s.jobs
@@ -204,7 +191,7 @@ object SchedulerPage {
                                       .variant("outlined")
                                       .onClick(() =>
                                         jobAction(
-                                          JorlanClient.Mutations.pauseJob(job.id),
+                                          AsyncCallbackRepositories.scheduler.pauseJob(job.id),
                                           s =>
                                             s.copy(jobs =
                                               s.jobs
@@ -221,7 +208,7 @@ object SchedulerPage {
                                     .set("color", "error")
                                     .onClick(() =>
                                       jobAction(
-                                        JorlanClient.Mutations.cancelJob(job.id),
+                                        AsyncCallbackRepositories.scheduler.cancelJob(job.id),
                                         s =>
                                           s.copy(jobs =
                                             s.jobs
@@ -235,7 +222,7 @@ object SchedulerPage {
                                   .variant("outlined")
                                   .onClick(() =>
                                     jobAction(
-                                      JorlanClient.Mutations.triggerNow(job.id),
+                                      AsyncCallbackRepositories.scheduler.triggerNow(job.id),
                                       s =>
                                         s.copy(jobs =
                                           s.jobs.map(j => if (j.id == job.id) j.copy(status = JobStatus.Running) else j),
@@ -248,7 +235,7 @@ object SchedulerPage {
                                   .set("color", "error")
                                   .onClick(() =>
                                     jobAction(
-                                      JorlanClient.Mutations.deleteJob(job.id),
+                                      AsyncCallbackRepositories.scheduler.deleteJob(job.id),
                                       s =>
                                         s.copy(
                                           jobs = s.jobs.filterNot(_.id == job.id),

@@ -11,21 +11,20 @@
 package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
-import jorlan.domain.*
-import jorlan.graphql.client.JorlanClient
-import jorlan.shell.{LiveSession, ShellConfig, ShellState}
+import jorlan.*
+import jorlan.shell.*
 import jorlan.shell.client.*
-import jorlan.shell.client.JorlanClientDecoders.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
 import zio.*
+import zio.json.ast.Json
 
 import scala.language.unsafeNulls
 
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
 object CommandHandler {
 
-  private type Env = JorlanScreen & AuthClient & GraphQLClient & ShellConfig & ShellState & SubscriptionClient &
+  private type Env = JorlanScreen & AuthClient & ZIOClientRepositories & ShellConfig & ShellState & SubscriptionClient &
     InitClient
 
   def handle(
@@ -33,51 +32,56 @@ object CommandHandler {
     exit: Promise[Nothing, Unit],
   ): ZIO[Env, Nothing, Unit] = {
     cmd match {
-      case ShellCommand.Message(text)                       => handleMessage(text)
-      case ShellCommand.Help                                => showCommands
-      case ShellCommand.Commands                            => showCommands
-      case ShellCommand.Status                              => showStatus
-      case ShellCommand.About                               => showAbout
-      case ShellCommand.WhoAmI                              => showWhoAmI
-      case ShellCommand.Quit                                => exit.succeed(()).unit
-      case ShellCommand.NewSession(m)                       => handleNewSession(m)
-      case ShellCommand.ModelInfo                           => showModelInfo
-      case ShellCommand.ListModels                          => listModels
-      case ShellCommand.Trace(level)                        => setTrace(level)
-      case ShellCommand.Personality                         => showPersonality
-      case ShellCommand.PersonalitySet(field, v)            => setPersonalityField(field, v)
-      case ShellCommand.MemoryList(scope)                   => listMemory(scope)
-      case ShellCommand.MemorySearch(text)                  => searchMemory(text)
-      case ShellCommand.MemoryForget(id)                    => forgetMemory(id)
-      case ShellCommand.MemoryShare(id)                     => shareMemory(id)
-      case ShellCommand.MemoryPrivatize(id)                 => privatizeMemory(id)
-      case ShellCommand.MemoryRemember(key, text, scopeOpt) => rememberMemory(key, text, scopeOpt)
-      case ShellCommand.Skills                              => showSkills
-      case ShellCommand.ContactsFind(name)                  => findContacts(name)
-      case ShellCommand.Capabilities                        => showCapabilities
-      case ShellCommand.AgentsList                          => listAgents
-      case ShellCommand.AgentsStop(id)                      => stopAgent(id)
-      case ShellCommand.ApprovalsList                       => listApprovals
-      case ShellCommand.ApprovalsApprove(id)                => decideApproval(id, approved = true)
-      case ShellCommand.ApprovalsDeny(id)                   => decideApproval(id, approved = false)
-      case ShellCommand.OAuthStatus(provider)               => showOAuthStatus(provider)
-      case ShellCommand.OAuthConnect(provider)              => connectOAuth(provider)
-      case ShellCommand.OAuthRevoke(provider)               => revokeOAuth(provider)
-      case ShellCommand.OAuthList                           => listOAuthProviders
-      case ShellCommand.EmailList(maxResults)               => emailList(maxResults)
-      case ShellCommand.EmailRead(messageId)                => emailRead(messageId)
-      case ShellCommand.EmailSearch(query)                  => emailSearch(query)
-      case ShellCommand.CalendarToday                       => calendarToday
-      case ShellCommand.CalendarList(date)                  => calendarList(date)
+      case ShellCommand.Message(text)                    => handleMessage(text)
+      case ShellCommand.Help                             => showCommands
+      case ShellCommand.Commands                         => showCommands
+      case ShellCommand.Status                           => showStatus
+      case ShellCommand.About                            => showAbout
+      case ShellCommand.WhoAmI                           => showWhoAmI
+      case ShellCommand.Quit                             => exit.succeed(()).unit
+      case ShellCommand.NewSession(m)                    => handleNewSession(m)
+      case ShellCommand.ModelInfo                        => showModelInfo
+      case ShellCommand.ListModels                       => listModels
+      case ShellCommand.Trace(level)                     => setTrace(level)
+      case ShellCommand.Personality                      => showPersonality
+      case ShellCommand.PersonalitySet(field, v)         => setPersonalityField(field, v)
+      case ShellCommand.MemoryList(scope)                => listMemory(scope)
+      case ShellCommand.MemorySearch(text)               => searchMemory(text)
+      case ShellCommand.MemoryForget(id)                 => forgetMemory(id)
+      case ShellCommand.MemoryShare(id)                  => shareMemory(id)
+      case ShellCommand.MemoryPrivatize(id)              => privatizeMemory(id)
+      case ShellCommand.MemoryRemember(key, text, scope) =>
+        rememberMemory(
+          key,
+          text,
+          scope.flatMap(s => MemoryScope.values.find(_.toString.equalsIgnoreCase(s))).getOrElse(MemoryScope.User),
+        )
+      case ShellCommand.Skills                 => showSkills
+      case ShellCommand.ContactsFind(name)     => findContacts(name)
+      case ShellCommand.Capabilities           => showCapabilities
+      case ShellCommand.AgentsList             => listAgents
+      case ShellCommand.AgentsStop(id)         => stopAgent(id)
+      case ShellCommand.ApprovalsList          => listApprovals
+      case ShellCommand.ApprovalsApprove(id)   => decideApproval(id, approved = true)
+      case ShellCommand.ApprovalsDeny(id)      => decideApproval(id, approved = false)
+      case ShellCommand.OAuthStatus(provider)  => showOAuthStatus(provider)
+      case ShellCommand.OAuthConnect(provider) => connectOAuth(provider)
+      case ShellCommand.OAuthRevoke(provider)  => revokeOAuth(provider)
+      case ShellCommand.OAuthList              => listOAuthProviders
+      case ShellCommand.EmailList(maxResults)  => emailList(maxResults)
+      case ShellCommand.EmailRead(messageId)   => emailRead(messageId)
+      case ShellCommand.EmailSearch(query)     => emailSearch(query)
+      case ShellCommand.CalendarToday          => calendarToday
+      case ShellCommand.CalendarList(date)     => calendarList(date)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
 
   private def screen[A](f:  JorlanScreen => UIO[A]):      URIO[JorlanScreen, A] = ZIO.serviceWithZIO[JorlanScreen](f)
   private def authCli[A](f: AuthClient => IO[String, A]): ZIO[AuthClient, String, A] = ZIO.serviceWithZIO[AuthClient](f)
-  private def gql[A](f: GraphQLClient => IO[String, A]):  ZIO[GraphQLClient, String, A] =
-    ZIO.serviceWithZIO[GraphQLClient](f)
-  private def cfg[A](f: ShellConfig => A): URIO[ShellConfig, A] = ZIO.serviceWith[ShellConfig](f)
+  private def cfg[A](f:     ShellConfig => A):            URIO[ShellConfig, A] = ZIO.serviceWith[ShellConfig](f)
+  private def repo[A](f: ZIOClientRepositories => IO[String, A]): ZIO[ZIOClientRepositories, String, A] =
+    ZIO.serviceWithZIO[ZIOClientRepositories](f)
 
   // ─── Built-in command implementations ───────────────────────────────────────
 
@@ -96,7 +100,7 @@ object CommandHandler {
           _ <- ZIO.serviceWithZIO[ShellState](_.interruptDrain)
           // Clear any remaining tokens buffered since the interrupt.
           _      <- liveSession.tokenQueue.takeAll.unit
-          result <- gql(_.run(JorlanClient.Mutations.submitMessage(liveSession.sessionId, text))).either
+          result <- repo(_.agent.submitMessage(liveSession.sessionId, text)).either
           _      <- result match {
             case Left(err) => screen(_.addMessage(MessageKind.Error, s"Submit failed: $err"))
             case Right(_)  =>
@@ -169,7 +173,7 @@ object CommandHandler {
       typedUrl  <- cfg(_.typedServerUrl)
       clientVersion = jorlan.BuildInfo.version
       serverStatus <- ZIO.serviceWithZIO[InitClient](_.checkStatus(typedUrl)).either
-      gqlResult    <- gql(_.execute("{ __typename }"))
+      gqlResult    <- repo(_.serverInfo.statusCheck())
         .fold(
           err => s"✗ GraphQL unreachable: $err",
           _ => "✔ GraphQL API reachable",
@@ -203,7 +207,7 @@ object CommandHandler {
       result <- authCli(_.whoAmI).foldZIO(
         err => screen(_.addMessage(MessageKind.Error, s"Could not fetch identity: $err")),
         body =>
-          zio.json.JsonDecoder[jorlan.domain.User].decodeJson(body) match {
+          zio.json.JsonDecoder[User].decodeJson(body) match {
             case Left(_) =>
               screen(_.addMessage(MessageKind.System, body))
             case Right(u) =>
@@ -219,10 +223,8 @@ object CommandHandler {
 
   private def handleNewSession(modelId: Option[String]): ZIO[Env, Nothing, Unit] = {
     for {
-      result <- gql(
-        _.run(JorlanClient.Mutations.createSession(modelId.map(ModelId(_)))(JorlanClient.AgentSession.view)),
-      ).either
-      _ <- result match {
+      result <- repo(_.agent.createSession(modelId.map(ModelId(_)))).either
+      _      <- result match {
         case Left(err)            => screen(_.addMessage(MessageKind.Error, s"Failed to create session: $err"))
         case Right(None)          => screen(_.addMessage(MessageKind.Error, "Server returned no session"))
         case Right(Some(session)) =>
@@ -237,11 +239,17 @@ object CommandHandler {
             _         <- LiveSession.start(
               session.id,
               onToolEvent = ev =>
-                if (ev.eventType == "SkillInvoked")
-                  screenSvc.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}…")
-                else if (ev.eventType == "SkillSucceeded")
-                  screenSvc.addMessage(MessageKind.System, s"✓ ${ev.toolName} done")
-                else ZIO.unit,
+                ev.eventType match {
+                  case "SkillInvoked" =>
+                    val argsSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                    screenSvc.addMessage(MessageKind.System, s"⟳ calling ${ev.toolName}  args: $argsSummary")
+                  case "SkillSucceeded" =>
+                    val resultSummary = ev.payload.take(120).replaceAll("\\s+", " ")
+                    screenSvc.addMessage(MessageKind.System, s"✓ ${ev.toolName}  → $resultSummary")
+                  case "SkillFailed" =>
+                    screenSvc.addMessage(MessageKind.Error, s"✗ ${ev.toolName}  → ${ev.payload.take(120)}")
+                  case _ => ZIO.unit
+                },
             )
             _ <- ZIO.serviceWithZIO[JorlanScreen](
               _.setModeStatus(s" [session: $id]  [model: ${modelId.getOrElse("default")}]"),
@@ -257,18 +265,18 @@ object CommandHandler {
       case None      => screen(_.addMessage(MessageKind.System, "No active session. Use /new to start one."))
       case Some(sid) =>
         for {
-          sessionsResult <- gql(_.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))).either
-          modelsResult   <- gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).either
+          sessionsResult <- repo(_.agent.searchSessions(AgentSessionSearch())).either
+          modelsResult   <- repo(_.agent.availableModels()).either
           _              <- (sessionsResult, modelsResult) match {
-            case (Left(err), _) => screen(_.addMessage(MessageKind.Error, s"Failed to fetch session info: $err"))
-            case (Right(None | Some(Nil)), _) =>
+            case (Left(err), _)  => screen(_.addMessage(MessageKind.Error, s"Failed to fetch session info: $err"))
+            case (Right(Nil), _) =>
               screen(_.addMessage(MessageKind.System, "No sessions found on server."))
-            case (Right(Some(sessions)), modelsEither) =>
+            case (Right(sessions), modelsEither) =>
               sessions.find(_.id == sid) match {
                 case None => screen(_.addMessage(MessageKind.System, s"Session ${sid.value} not found on server."))
                 case Some(session) =>
                   val defaultModel =
-                    modelsEither.toOption.flatten.flatMap(_.headOption).map(_.id.value).getOrElse("unknown")
+                    modelsEither.toOption.flatMap(_.headOption).map(_.id.value).getOrElse("unknown")
                   val model = session.modelId.map(_.value).getOrElse(defaultModel)
                   screen(
                     _.addMessage(MessageKind.System, s"Session: ${sid.value}  Model: $model  Status: ${session.status}"),
@@ -279,11 +287,11 @@ object CommandHandler {
     }
 
   private val listModels: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfoGql.view))).foldZIO(
+    repo(_.agent.availableModels()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list models: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No models available."))
-        case Some(models)     =>
+        case Nil    => screen(_.addMessage(MessageKind.System, "No models available."))
+        case models =>
           val lines = models
             .map { m =>
               val stream = if (m.supportsStreaming) "streaming" else "no-streaming"
@@ -295,7 +303,7 @@ object CommandHandler {
     )
 
   private val showPersonality: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view))).foldZIO(
+    repo(_.setting.serverPersonality()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not fetch personality: $err")),
       {
         case None    => screen(_.addMessage(MessageKind.Error, "Server returned no personality"))
@@ -316,7 +324,7 @@ object CommandHandler {
         ),
       )
     } else {
-      gql(_.run(JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view))).foldZIO(
+      repo(_.setting.serverPersonality()).foldZIO(
         err => screen(_.addMessage(MessageKind.Error, s"Could not fetch current personality: $err")),
         {
           case None    => screen(_.addMessage(MessageKind.Error, "Server returned no personality"))
@@ -324,18 +332,15 @@ object CommandHandler {
             val f = field.toLowerCase
             val splitList = value.split(",").map(_.trim).filter(_.nonEmpty).toList
             val name = if (f == "name") value else p.name
-            val formality = if (f == "formality") value else p.formality
+            val formality =
+              if (f == "formality")
+                Formality.values.find(_.toString.equalsIgnoreCase(value)).getOrElse(Formality.Custom)
+              else p.formality
             val prompt = if (f == "prompt") value else p.prompt
             val languages = if (f == "languages") splitList else p.languages
             val expertise = if (f == "expertise") splitList else p.expertise
 
-            gql(
-              _.run(
-                JorlanClient.Mutations.updatePersonality(name, formality, languages, expertise, prompt)(
-                  JorlanClient.Personality.view,
-                ),
-              ),
-            ).foldZIO(
+            repo(_.setting.updatePersonality(name, formality, languages, expertise, prompt)).foldZIO(
               err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
               {
                 case None          => screen(_.addMessage(MessageKind.System, s"Personality $field updated to: $value"))
@@ -347,7 +352,7 @@ object CommandHandler {
     }
   }
 
-  private def formatPersonality(p: JorlanClient.Personality.PersonalityView): String = {
+  private def formatPersonality(p: Personality): String = {
     val expertiseStr = if (p.expertise.isEmpty) "(none)" else p.expertise.mkString(", ")
     s"Server personality:\n  name:       ${p.name}\n  formality:  ${p.formality}\n  languages:  ${p.languages.mkString(", ")}\n  expertise:  $expertiseStr\n  prompt:     ${p.prompt}"
   }
@@ -360,39 +365,40 @@ object CommandHandler {
     "debug"   -> Level.DEBUG,
   )
 
-  private val validMemoryScopes: Set[String] = Set("User", "Shared", "Workspace", "Private")
-
-  private def listMemory(scope: Option[String]): ZIO[Env, Nothing, Unit] =
-    scope match {
-      case Some(s) if !validMemoryScopes.exists(_.equalsIgnoreCase(s)) =>
-        screen(
-          _.addMessage(MessageKind.Error, s"Invalid scope '$s'. Valid: ${validMemoryScopes.mkString(", ")}"),
-        )
-      case _ =>
-        gql(_.run(JorlanClient.Queries.listMemory(scope, None)(JorlanClient.MemoryRecord.view))).foldZIO(
-          err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
-          {
-            case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No memory records found."))
-            case Some(records)    =>
-              val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
-              screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
-          },
-        )
+  private def memoryValueStr(v: Json): String =
+    v match {
+      case Json.Str(s) => s
+      case other       => other.toString
     }
 
+  private def listMemory(scope: Option[MemoryScope]): ZIO[Env, Nothing, Unit] = {
+    val s = scope.getOrElse(MemoryScope.User)
+    repo(_.memory.search(MemorySearch(s))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list memory: $err")),
+      {
+        case Nil     => screen(_.addMessage(MessageKind.System, "No memory records found."))
+        case records =>
+          val lines =
+            records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${memoryValueStr(r.value)}").mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
+      },
+    )
+  }
+
   private def searchMemory(text: String): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listMemory(None, Some(text))(JorlanClient.MemoryRecord.view))).foldZIO(
+    repo(_.memory.search(MemorySearch(MemoryScope.User, textSearch = Some(text)))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Memory search failed: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, s"No memory records matching '$text'."))
-        case Some(records)    =>
-          val lines = records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${r.value}").mkString("\n")
+        case Nil     => screen(_.addMessage(MessageKind.System, s"No memory records matching '$text'."))
+        case records =>
+          val lines =
+            records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${memoryValueStr(r.value)}").mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Matching records:\n$lines"))
       },
     )
 
   private def forgetMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.forgetMemory(id))).foldZIO(
+    repo(_.memory.delete(id)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Forget failed: $err")),
       _ => screen(_.addMessage(MessageKind.System, s"Memory record ${id.value} deleted.")),
     )
@@ -400,40 +406,51 @@ object CommandHandler {
   private def rememberMemory(
     key:   String,
     text:  String,
-    scope: Option[String] = None,
+    scope: MemoryScope = MemoryScope.User,
   ): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.storeMemory(key, text, scope)(JorlanClient.MemoryRecord.view))).foldZIO(
+    repo(
+      _.memory.upsert(
+        MemoryRecord(
+          MemoryRecordId.empty,
+          scope,
+          None,
+          None,
+          None,
+          key,
+          Json.Str(text),
+          None,
+          java.time.Instant.EPOCH,
+          java.time.Instant.EPOCH,
+        ),
+      ),
+    ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Remember failed: $err")),
-      {
-        case None    => screen(_.addMessage(MessageKind.System, "Memory stored."))
-        case Some(r) => screen(_.addMessage(MessageKind.System, s"Stored [${r.id.value}] ${r.recordKey}: ${r.value}"))
-      },
+      r =>
+        screen(_.addMessage(MessageKind.System, s"Stored [${r.id.value}] ${r.recordKey}: ${memoryValueStr(r.value)}")),
     )
 
   private def shareMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.markMemoryShared(id)(JorlanClient.MemoryRecord.view))).foldZIO(
+    repo(_.memory.updateScope(id, MemoryScope.Shared)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Share failed: $err")),
-      {
-        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found."))
-        case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Shared."))
-      },
+      count =>
+        if (count > 0L) screen(_.addMessage(MessageKind.System, s"Memory record ${id.value} is now Shared."))
+        else screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found.")),
     )
 
   private def privatizeMemory(id: MemoryRecordId): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.markMemoryPrivate(id)(JorlanClient.MemoryRecord.view))).foldZIO(
+    repo(_.memory.updateScope(id, MemoryScope.Private)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Privatize failed: $err")),
-      {
-        case None    => screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found."))
-        case Some(r) => screen(_.addMessage(MessageKind.System, s"Memory record ${r.id.value} is now Private."))
-      },
+      count =>
+        if (count > 0L) screen(_.addMessage(MessageKind.System, s"Memory record ${id.value} is now Private."))
+        else screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found.")),
     )
 
   private val showCapabilities: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))).foldZIO(
+    repo(_.permission.listCapabilities()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not load capabilities: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No capability grants found."))
-        case Some(grants)     =>
+        case Nil    => screen(_.addMessage(MessageKind.System, "No capability grants found."))
+        case grants =>
           val lines = grants
             .map { g =>
               val expiry = g.expiresAt.map(e => s" (expires: $e)").getOrElse("")
@@ -444,11 +461,11 @@ object CommandHandler {
     )
 
   private val listAgents: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))).foldZIO(
+    repo(_.agent.searchSessions(AgentSessionSearch())).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list sessions: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No active sessions."))
-        case Some(sessions)   =>
+        case Nil      => screen(_.addMessage(MessageKind.System, "No active sessions."))
+        case sessions =>
           val lines = sessions
             .map { s =>
               s"  [${s.id.value}] status=${s.status}  model=${s.modelId.map(_.value).getOrElse("default")}"
@@ -458,9 +475,7 @@ object CommandHandler {
     )
 
   private def stopAgent(id: AgentSessionId): ZIO[Env, Nothing, Unit] =
-    // Use raw execute so GraphQL errors (e.g. permission denied) are surfaced even when
-    // Caliban would silently decode a null result as None.
-    gql(_.execute(s"mutation { terminateSession(value: ${id.value}) }")).foldZIO(
+    repo(_.agent.terminateSession(id)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Stop failed: $err")),
       _ =>
         for {
@@ -476,11 +491,11 @@ object CommandHandler {
     )
 
   private val listApprovals: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))).foldZIO(
+    repo(_.permission.listApprovals()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list approvals: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No pending approval requests."))
-        case Some(requests)   =>
+        case Nil      => screen(_.addMessage(MessageKind.System, "No pending approval requests."))
+        case requests =>
           val lines = requests
             .map { r =>
               s"  [${r.id.value}] ${r.capability.value}  risk=${r.riskClass}  status=${r.status}"
@@ -493,7 +508,7 @@ object CommandHandler {
     id:       ApprovalRequestId,
     approved: Boolean,
   ): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.decideApproval(id, approved))).foldZIO(
+    repo(_.permission.decideApproval(id, approved)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Decision failed: $err")),
       _ =>
         screen(
@@ -525,11 +540,11 @@ object CommandHandler {
     }
 
   private val showSkills: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.skills(JorlanClient.SkillInfo.view))).foldZIO(
+    repo(_.skill.listSkills()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list skills: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No skills registered."))
-        case Some(skills)     =>
+        case Nil    => screen(_.addMessage(MessageKind.System, "No skills registered."))
+        case skills =>
           val lines = skills
             .map { s =>
               val toolLines = s.tools
@@ -542,37 +557,34 @@ object CommandHandler {
     )
 
   private def findContacts(name: String): ZIO[Env, Nothing, Unit] = {
-    val query =
-      s"""query { contacts(name: ${'"'}$name${'"'}) { userId displayName identities { channelType channelUserId } } }"""
-
     def strField(
-      fields: Seq[(String, zio.json.ast.Json)],
+      fields: Seq[(String, Json)],
       key:    String,
     ): String =
-      fields.collectFirst { case (`key`, zio.json.ast.Json.Str(v)) => v }.getOrElse("?")
+      fields.collectFirst { case (`key`, Json.Str(v)) => v }.getOrElse("?")
 
-    def renderContact(fields: Seq[(String, zio.json.ast.Json)]): String = {
+    def renderContact(fields: Seq[(String, Json)]): String = {
       val displayName = strField(fields, "displayName")
       val userId = fields
-        .collectFirst { case ("userId", zio.json.ast.Json.Num(n)) => n.longValue.toString }
+        .collectFirst { case ("userId", Json.Num(n)) => n.longValue.toString }
         .getOrElse("?")
       val ids = fields
-        .collectFirst { case ("identities", zio.json.ast.Json.Arr(is)) =>
-          is.collect { case zio.json.ast.Json.Obj(i) =>
+        .collectFirst { case ("identities", Json.Arr(is)) =>
+          is.collect { case Json.Obj(i) =>
             s"${strField(i.toSeq, "channelType")}:${strField(i.toSeq, "channelUserId")}"
           }.mkString(", ")
         }.getOrElse("")
       s"  [$userId] $displayName  $ids"
     }
 
-    gql(_.execute(query)).foldZIO(
+    repo(_.user.findContacts(Some(name))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"contacts.find failed: $err")),
       json => {
-        val users: Seq[zio.json.ast.Json] = json match {
-          case zio.json.ast.Json.Obj(root) =>
+        val users: Seq[Json] = json match {
+          case Json.Obj(root) =>
             root
-              .collectFirst { case ("data", zio.json.ast.Json.Obj(data)) =>
-                data.collectFirst { case ("contacts", zio.json.ast.Json.Arr(arr)) => arr.toSeq }.getOrElse(Seq.empty)
+              .collectFirst { case ("data", Json.Obj(data)) =>
+                data.collectFirst { case ("contacts", Json.Arr(arr)) => arr.toSeq }.getOrElse(Seq.empty)
               }.getOrElse(Seq.empty)
           case _ => Seq.empty
         }
@@ -580,7 +592,7 @@ object CommandHandler {
           screen(_.addMessage(MessageKind.System, s"No contacts found matching '$name'."))
         } else {
           val lines = users
-            .collect { case zio.json.ast.Json.Obj(fields) => renderContact(fields.toSeq) }
+            .collect { case Json.Obj(fields) => renderContact(fields.toSeq) }
             .mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Contacts matching '$name':\n$lines"))
         }
@@ -589,7 +601,7 @@ object CommandHandler {
   }
 
   private def showOAuthStatus(provider: String): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.oauthStatus(provider, JorlanClient.OAuthStatus.view))).foldZIO(
+    repo(_.extCredential.oauthStatus(provider)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not get OAuth status: $err")),
       {
         case None    => screen(_.addMessage(MessageKind.System, s"OAuth status for '$provider': not found"))
@@ -600,11 +612,11 @@ object CommandHandler {
     )
 
   private val listOAuthProviders: ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Queries.listOAuthProviders)).foldZIO(
+    repo(_.extCredential.listOAuthProviders()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list OAuth providers: $err")),
       {
-        case None | Some(Nil) => screen(_.addMessage(MessageKind.System, "No OAuth providers connected."))
-        case Some(providers)  =>
+        case Nil       => screen(_.addMessage(MessageKind.System, "No OAuth providers connected."))
+        case providers =>
           screen(_.addMessage(MessageKind.System, s"Connected OAuth providers: ${providers.mkString(", ")}"))
       },
     )
@@ -612,7 +624,7 @@ object CommandHandler {
   private def connectOAuth(provider: String): ZIO[Env, Nothing, Unit] =
     for {
       serverUrl <- cfg(_.serverUrl)
-      _ <- gql(_.run(JorlanClient.Mutations.startOAuth(provider, JorlanClient.OAuthStartResult.authUrl))).foldZIO(
+      _         <- repo(_.extCredential.startOAuth(provider)).foldZIO(
         err => screen(_.addMessage(MessageKind.Error, s"Could not start OAuth: $err")),
         {
           case None =>
@@ -629,13 +641,13 @@ object CommandHandler {
     } yield ()
 
   private def revokeOAuth(provider: String): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.revokeOAuth(provider))).foldZIO(
+    repo(_.extCredential.revokeOAuth(provider)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not revoke OAuth: $err")),
       _ => screen(_.addMessage(MessageKind.System, s"OAuth credentials for '$provider' revoked.")),
     )
 
   private def emailList(maxResults: Int): ZIO[Env, Nothing, Unit] =
-    gql(_.run(JorlanClient.Mutations.invokeTool("email.list", s"""{"maxResults":$maxResults}"""))).foldZIO(
+    repo(_.skill.invokeTool("email.list", s"""{"maxResults":$maxResults}""")).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.list failed: $err")),
       {
         case None         => screen(_.addMessage(MessageKind.System, "No response from email.list"))
@@ -645,12 +657,8 @@ object CommandHandler {
 
   private def emailRead(messageId: String): ZIO[Env, Nothing, Unit] = {
     import zio.json.*
-    import zio.json.ast.Json
-
     val argsJson = Json.Obj("messageId" -> Json.Str(messageId)).toJson
-    gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.read", argsJson)),
-    ).foldZIO(
+    repo(_.skill.invokeTool("email.read", argsJson)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.read failed: $err")),
       {
         case None         => screen(_.addMessage(MessageKind.System, "No response from email.read"))
@@ -661,12 +669,8 @@ object CommandHandler {
 
   private def emailSearch(query: String): ZIO[Env, Nothing, Unit] = {
     import zio.json.*
-    import zio.json.ast.Json
-
     val argsJson = Json.Obj("query" -> Json.Str(query)).toJson
-    gql(
-      _.run(JorlanClient.Mutations.invokeTool("email.search", argsJson)),
-    ).foldZIO(
+    repo(_.skill.invokeTool("email.search", argsJson)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"email.search failed: $err")),
       {
         case None         => screen(_.addMessage(MessageKind.System, "No response from email.search"))
@@ -679,12 +683,10 @@ object CommandHandler {
     import java.time.{LocalDate, ZoneOffset}
     val todayMin = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant
     val todayMax = todayMin.plusSeconds(86400)
-    gql(
-      _.run(
-        JorlanClient.Mutations.invokeTool(
-          "calendar.listEvents",
-          s"""{"timeMin":"$todayMin","timeMax":"$todayMax","maxResults":50}""",
-        ),
+    repo(
+      _.skill.invokeTool(
+        "calendar.listEvents",
+        s"""{"timeMin":"$todayMin","timeMax":"$todayMax","maxResults":50}""",
       ),
     ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),
@@ -704,12 +706,10 @@ object CommandHandler {
         val day = date.flatMap(d => scala.util.Try(LocalDate.parse(d)).toOption).getOrElse(LocalDate.now())
         val dayMin = day.atStartOfDay(ZoneOffset.UTC).toInstant
         val dayMax = dayMin.plusSeconds(86400)
-        gql(
-          _.run(
-            JorlanClient.Mutations.invokeTool(
-              "calendar.listEvents",
-              s"""{"timeMin":"$dayMin","timeMax":"$dayMax","maxResults":50}""",
-            ),
+        repo(
+          _.skill.invokeTool(
+            "calendar.listEvents",
+            s"""{"timeMin":"$dayMin","timeMax":"$dayMax","maxResults":50}""",
           ),
         ).foldZIO(
           err => screen(_.addMessage(MessageKind.Error, s"calendar.listEvents failed: $err")),

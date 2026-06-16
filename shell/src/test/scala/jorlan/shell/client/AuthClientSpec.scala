@@ -24,7 +24,10 @@ object AuthClientSpec extends ZIOSpecDefault {
   private val cfg = ShellConfig(serverUrl = "http://test-host:8080")
 
   private def makeClient(backend: Backend[Task]): UIO[AuthClient] =
-    Ref.make(Option.empty[String]).map(tokenRef => AuthClient.makeForTesting(cfg, tokenRef, backend))
+    for {
+      tokenRef        <- Ref.make(Option.empty[String])
+      refreshTokenRef <- Ref.make(Option.empty[String])
+    } yield AuthClient.makeForTesting(cfg, tokenRef, refreshTokenRef, backend)
 
   private val loginBody = """{"displayName":"Alice","email":"alice@test.com"}"""
   private val authHeader = Header("Authorization", "Bearer abc123")

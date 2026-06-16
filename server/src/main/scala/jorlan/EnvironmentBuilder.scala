@@ -16,7 +16,7 @@ import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.connector.telegram.*
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.{
   GmailProvider,
@@ -26,6 +26,7 @@ import jorlan.google.{
   OAuthCredentialEncryptor,
   OAuthCredentialServiceImpl,
 }
+import jorlan.*
 import jorlan.service.*
 import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.memory.MemoryServiceImpl
@@ -56,18 +57,29 @@ object EnvironmentBuilder {
           .searchConnectors(ConnectorSearch())
           .mapError(e => new RuntimeException(e.msg))
           .orDie
-        telegramSkills <- ZIO.foreach(connectors.filter(_.connectorType == ConnectorType.Telegram)) { ci =>
+        telegramInstances = connectors.filter(_.connectorType == ConnectorType.Telegram)
+        _ <- ZIO.logInfo(s"[connector] found ${telegramInstances.length} Telegram connector instance(s) in DB")
+        // Parse configs, logging any that fail
+        parsed <- ZIO.foreach(telegramInstances) { ci =>
           ZIO
             .fromEither(ci.configJson.as[TelegramConfig])
             .foldZIO(
               err => ZIO.logWarning(s"[connector:${ci.id}] Failed to parse TelegramConfig: $err").as(None),
-              cfg => {
-                val apiClient = TelegramApiClientLive(cfg, httpClient)
-                TelegramConnectorSkill.make(cfg, ci.id, apiClient, ingress).map(Some(_))
-              },
+              cfg => ZIO.some((ci, cfg)),
             )
         }
-      } yield ConnectorManager.fromSkills(telegramSkills.flatten)
+        // Deduplicate by bot token — two rows with the same token create two competing polling loops
+        deduped = parsed.flatten.distinctBy(_._2.botToken)
+        _ <- ZIO.when(deduped.length < parsed.flatten.length)(
+          ZIO.logWarning(
+            s"[connector] Skipping ${parsed.flatten.length - deduped.length} duplicate Telegram instance(s) with the same bot token",
+          ),
+        )
+        telegramSkills <- ZIO.foreach(deduped) { case (ci, cfg) =>
+          ZIO.logInfo(s"[connector:${ci.id}] creating Telegram connector") *>
+            TelegramConnectorSkill.make(cfg, ci.id, TelegramApiClientLive(cfg, httpClient), ingress)
+        }
+      } yield ConnectorManager.fromSkills(telegramSkills)
     }
 
   /** ZLayer that provides [[OAuthCredentialService]] from config + repositories + HTTP client. */

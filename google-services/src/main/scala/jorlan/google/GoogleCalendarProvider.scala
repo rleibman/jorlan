@@ -16,7 +16,7 @@ import com.google.api.client.util.DateTime
 import com.google.api.services.calendar.Calendar
 import com.google.api.services.calendar.model.{Event, EventAttendee, EventDateTime}
 import jorlan.JorlanError
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.{CalendarProvider, OAuthCredentialService}
 import zio.{IO, Ref, ZIO}
 

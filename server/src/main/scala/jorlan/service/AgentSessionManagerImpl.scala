@@ -12,7 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories}
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 
 /** Concrete [[AgentSessionManager]] implementation. Session lifecycle is managed via DB CRUD and event-log writes.

@@ -12,13 +12,12 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
-import jorlan.web.JorlanWebApp
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.WebSocketHandler
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
+import caliban.WebSocketHandler
 import net.leibman.jorlan.muiMaterial.components.*
+import zio.json.ast.Json
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -28,7 +27,7 @@ import scala.scalajs.js.timers
 object EventLogPage {
 
   case class State(
-    events:    List[JorlanClient.EventLogJson.EventLogJsonView],
+    events:    List[EventLog[Json]],
     running:   Boolean,
     expanded:  Set[EventLogId],
     wsHandler: Option[WebSocketHandler],
@@ -45,8 +44,7 @@ object EventLogPage {
           state,
         ) =>
           CallbackTo {
-            // Buffer incoming events and flush in a single setState every 100 ms to avoid per-message re-renders
-            var pendingBatch:   List[JorlanClient.EventLogJson.EventLogJsonView] = Nil
+            var pendingBatch:   List[EventLog[Json]] = Nil
             var flushScheduled: Boolean = false
 
             def scheduledFlush(): Unit = {
@@ -61,42 +59,20 @@ object EventLogPage {
               }
             }
 
-            val handler = JorlanWebApp
-              .makeAdapter().makeWebSocketClient(
-                webSocket = None,
-                query = JorlanClient.Subscriptions.eventLogTail(JorlanClient.EventLogJson.view),
-                operationId = "event-log-tail",
-                socketConnectionId = "event-log",
-                onData = {
-                  (
-                    _,
-                    dataOpt,
-                  ) =>
-                    dataOpt.flatten.fold(Callback.empty) { event =>
-                      Callback {
-                        pendingBatch = event :: pendingBatch
-                        if (!flushScheduled) {
-                          flushScheduled = true
-                          timers.setTimeout(100)(scheduledFlush())
-                        }
-                      }
-                    }
-                },
-                // Set running only when the WebSocket connection is acknowledged
-                onConnected = {
-                  (
-                    _,
-                    _,
-                  ) => state.setState(state.value.copy(running = true, error = None))
-                },
-                onDisconnected = {
-                  (
-                    _,
-                    _,
-                  ) => state.setState(state.value.copy(running = false))
-                },
-                onClientError = { ex => state.setState(state.value.copy(error = Some(ex.getMessage), running = false)) },
-              )
+            val handler = AsyncCallbackRepositories.subscribeToEventLog(
+              onData = { event =>
+                Callback {
+                  pendingBatch = event :: pendingBatch
+                  if (!flushScheduled) {
+                    flushScheduled = true
+                    timers.setTimeout(100)(scheduledFlush())
+                  }
+                }
+              },
+              onConnected = state.setState(state.value.copy(running = true, error = None)),
+              onDisconnected = state.setState(state.value.copy(running = false)),
+              onClientError = ex => state.setState(state.value.copy(error = Some(ex.getMessage), running = false)),
+            )
             state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
             // cleanup: close the subscription when the component unmounts
             handler.close()
@@ -185,7 +161,7 @@ object EventLogPage {
                                             overflow = "auto",
                                             maxHeight = "200px",
                                           ),
-                                        )(event.payloadJson.getOrElse("")),
+                                        )(event.payloadJson.fold("")(_.toString)),
                                       ),
                                   ).build,
                               )

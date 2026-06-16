@@ -105,7 +105,8 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 
 **NEVER run `stLib/publishLocal` or `cd stLib && sbt publishLocal` yourself.**
 This generates ScalablyTyped bindings and takes many minutes. The user does it manually once per stLib change.
-If the web module fails to compile due to missing stLib artifacts, tell the user to run `cd stLib && sbt publishLocal` themselves.
+If the web module fails to compile due to missing stLib artifacts, tell the user to run `cd stLib && sbt publishLocal`
+themselves.
 
 ## Phase Execution Strategy
 
@@ -137,3 +138,9 @@ Each phase follows this sequence, commanded and supervised manually by the user:
   `doc/phase-review/phaseN-review.md` following `doc/phase_review_template.md`.
 - Whenever you're working on a list of items from a document (e.g. the roadmap or a phase review) you must always check
   off the items as you go, otherwise it's really hard to figure out where you were if something goes wrong
+- NEVER make modifications directly to the graphql schema or the generated JorlanClient file, you should always modify
+  JorlanAPI and then call the scripts to generate the gql and the client. No exceptions
+- NEVER put a full copy of a trait's interface into its companion object as ZIO accessor methods (e.g. `def
+  listSessions(): ZIO[JorlanRepository, String, List[...]] = ZIO.serviceWithZIO[JorlanRepository](_.listSessions())`).
+  Use `ZIO.serviceWithZIO[Service](_.method())` at the call site instead. The companion object should only hold the
+  `live` layer factory.

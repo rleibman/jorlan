@@ -11,7 +11,7 @@
 package jorlan.google
 
 import jorlan.*
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -150,5 +150,10 @@ class InMemoryOAuthRepo(
 
   override def listByUser(userId: UserId): IO[JorlanError, List[ExternalCredential]] =
     store.get.map(_.collect { case ((uid, _), cred) if uid == userId => cred }.toList)
+
+  override def listOAuthProviders():          IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+  override def startOAuth(provider:  String): IO[JorlanError, Option[String]] = ZIO.none
+  override def revokeOAuth(provider: String): IO[JorlanError, Unit] = ZIO.unit
+  override def oauthStatus(provider: String): IO[JorlanError, Option[OAuthStatus]] = ZIO.none
 
 }

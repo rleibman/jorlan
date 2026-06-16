@@ -11,7 +11,6 @@
 package jorlan.connector
 
 import jorlan.*
-import jorlan.domain.*
 import zio.*
 import zio.json.ast.Json
 

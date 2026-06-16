@@ -13,7 +13,7 @@ package jorlan.db
 import jorlan.*
 import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.EventLogFilter
 import zio.*
 import zio.json.ast.Json

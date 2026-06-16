@@ -12,7 +12,7 @@ package jorlan.db
 
 import jorlan.db.TestFixtures.{*, given}
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

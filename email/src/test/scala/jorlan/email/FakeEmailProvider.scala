@@ -11,7 +11,7 @@
 package jorlan.email
 
 import jorlan.JorlanError
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.EmailProvider
 import zio.*
 

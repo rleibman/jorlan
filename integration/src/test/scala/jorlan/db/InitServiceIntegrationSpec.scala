@@ -12,6 +12,7 @@ package jorlan.db
 
 import jorlan.db.repository.*
 import jorlan.init.{InitService, InitServiceImpl, InitTokenStore}
+import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -35,6 +36,7 @@ object InitServiceIntegrationSpec extends ZIOSpec[ZIORepositories & InitTokenSto
     ZLayer.make[ZIORepositories & InitTokenStore & InitService](
       JorlanContainer.repositoryLayer,
       ZLayer.fromZIO(InitTokenStore.make(false)),
+      SkillRegistry.live,
       InitServiceImpl.layer,
     )
 

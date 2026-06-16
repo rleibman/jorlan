@@ -16,8 +16,8 @@ import cron4s.lib.javatime.*
 import cron4s.syntax.all.*
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
-import jorlan.domain.SchedulerJob.*
+import jorlan.*
+import SchedulerJob.*
 import jorlan.service.{AgentRunner, AgentSessionManager}
 import zio.*
 

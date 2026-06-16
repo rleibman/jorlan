@@ -13,7 +13,7 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.ZIORepositories
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.DriveProvider
 import jorlan.testing.InMemoryRepositories
 import zio.*

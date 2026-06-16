@@ -12,7 +12,8 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
+import jorlan.service.skills.SkillRegistry
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -57,11 +58,13 @@ object InitServiceSpec extends ZIOSpecDefault {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    ):                                                  RepositoryTask[Option[User]] = ZIO.die(RuntimeException("stub"))
+    override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+      ZIO.die(RuntimeException("stub"))
   })
 
-  private val initServiceLayer: URLayer[ZIORepositories & InitTokenStore, InitServiceImpl] =
-    ZLayer.fromFunction(InitServiceImpl(_, _))
+  private val initServiceLayer: URLayer[ZIORepositories & InitTokenStore & SkillRegistry, InitServiceImpl] =
+    ZLayer.fromFunction(InitServiceImpl(_, _, _))
 
   // ─── Tests ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +83,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       test("duplicate init returns JorlanError") {
@@ -93,6 +97,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> alreadyInitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(true)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       test("successful init flips initialized flag and invalidates token") {
@@ -113,6 +118,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       test("validation rejects password shorter than 12 characters") {
@@ -128,6 +134,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       test("validation rejects malformed email") {
@@ -143,6 +150,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       // P8.1-021: createUser failure leaves initialized = false
@@ -163,6 +171,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           Some(failingUserRepo),
         ) >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       // P8.1-020: blank/whitespace serverName
@@ -179,9 +188,12 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
-      // P85-033 / Phase 9 + Phase 12: all admin capability grants are seeded after successful init
+      // P85-033 / Phase 9 + Phase 12: all admin capability grants are seeded after successful init.
+      // Skill-specific caps (memory.*, notify.*, etc.) are sourced from the SkillRegistry at runtime;
+      // this test uses an empty registry so only the platform system caps are expected.
       test("successful init seeds all admin capability grants") {
         val expectedCapabilities = Set(
           "agent.session.create",
@@ -198,16 +210,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           "permission.grant",
           "permission.revoke",
           "approval.decide",
-          "memory.read",
-          "memory.write",
           "agent.skill.invoke",
-          "notify.send",
-          "contacts.read",
-          "identity.manage",
-          "workspace.read",
-          "workspace.write",
-          "shell.execute",
-          "scheduler.manage",
           "email.read",
           "email.write",
           "email.send",
@@ -222,7 +225,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
           permRepo   <- ZIO.serviceWith[ZIORepositories](_.permission)
           // Find the user that was created (id=1 from InMemoryUserRepo)
-          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.domain.UserId(1L)))
+          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.UserId(1L)))
           grantedCaps = grants.map(_.capability.value).toSet
         } yield assertTrue(
           grantedCaps == expectedCapabilities,
@@ -231,6 +234,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       // ─── InitTokenStore companion accessors ──────────────────────────────────
@@ -274,6 +278,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       test("InitService companion: complete delegates to implementation") {
@@ -284,6 +289,7 @@ object InitServiceSpec extends ZIOSpecDefault {
       }.provide(
         InMemoryRepositories.live() >>> uninitializedSettings,
         ZLayer.fromZIO(InitTokenStore.make(false)),
+        SkillRegistry.live,
         initServiceLayer,
       ),
       // ─── ZIOServerSettingsRepository companion accessors ─────────────────────────

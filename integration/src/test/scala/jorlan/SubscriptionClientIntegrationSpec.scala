@@ -15,8 +15,9 @@ import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.QuillRepositories
-import jorlan.domain.*
-import jorlan.graphql.{JorlanAPI, JorlanRoutes}
+import jorlan.*
+import jorlan.graphql.JorlanAPI
+import jorlan.routes.JorlanRoutes
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
@@ -130,6 +131,7 @@ object SubscriptionClientIntegrationSpec
       ZIO.fail("not implemented in stub")
     override def whoAmI:       IO[String, String] = ZIO.fail("not implemented in stub")
     override def currentToken: UIO[Option[String]] = ZIO.none
+    override def refresh:      IO[String, String] = ZIO.fail("not implemented in stub")
   })
 
   override def spec: Spec[FullEnv & TestEnvironment & Scope, Any] =
@@ -169,7 +171,7 @@ object SubscriptionClientIntegrationSpec
               .getOrElse(AgentSessionId(1L))
           }
           // Build the routes and start a real server on a random port
-          routes <- JorlanRoutes.routes.orDie.provideEnvironment(env)
+          routes <- JorlanRoutes.all.orDie.provideEnvironment(env)
           port   <- ZIO.attempt {
             val s = new java.net.ServerSocket(0)
             val p = s.getLocalPort
@@ -177,7 +179,7 @@ object SubscriptionClientIntegrationSpec
             p
           }.orDie
           serverFiber <- Server
-            .serve(routes.provideEnvironment(env))
+            .serve(routes.handleErrorCauseZIO(Jorlan.mapError).provideEnvironment(env))
             .provideSomeLayer(Server.defaultWithPort(port))
             .forkDaemon
           _ <- ZIO.sleep(400.millis)

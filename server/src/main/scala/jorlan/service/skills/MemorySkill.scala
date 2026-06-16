@@ -12,7 +12,7 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.MemoryService
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import zio.*

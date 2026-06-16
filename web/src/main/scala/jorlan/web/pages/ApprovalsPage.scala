@@ -12,12 +12,10 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
-import jorlan.web.JorlanWebApp
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.WebSocketHandler
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
+import caliban.WebSocketHandler
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -26,7 +24,7 @@ import scala.scalajs.js
 object ApprovalsPage {
 
   case class State(
-    approvals: List[JorlanClient.ApprovalRequest.ApprovalRequestView],
+    approvals: List[ApprovalRequest],
     loading:   Boolean,
     wsHandler: Option[WebSocketHandler],
     error:     Option[String],
@@ -42,15 +40,11 @@ object ApprovalsPage {
           state,
         ) =>
           CallbackTo {
-            // Initial load of pending approvals
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view),
-              )
+            AsyncCallbackRepositories.permission
+              .listApprovals()
               .flatMap { approvals =>
                 state
-                  .setState(state.value.copy(approvals = approvals.getOrElse(Nil), loading = false))
+                  .setState(state.value.copy(approvals = approvals, loading = false))
                   .asAsyncCallback
               }
               .completeWith {
@@ -60,27 +54,13 @@ object ApprovalsPage {
               }
               .runNow()
 
-            // Subscribe to real-time approval notifications
-            val handler = JorlanWebApp
-              .makeAdapter().makeWebSocketClient(
-                webSocket = None,
-                query = JorlanClient.Subscriptions.approvalNotifications(JorlanClient.ApprovalRequest.view),
-                operationId = "approvals-subscription",
-                socketConnectionId = "approvals",
-                onData = {
-                  (
-                    _,
-                    dataOpt,
-                  ) =>
-                    dataOpt.flatten.fold(Callback.empty) { newApproval =>
-                      // Append new pending approval if not already present
-                      val existing = state.value.approvals
-                      if (existing.exists(_.id == newApproval.id)) Callback.empty
-                      else
-                        state.setState(state.value.copy(approvals = existing :+ newApproval))
-                    }
-                },
-              )
+            val handler = AsyncCallbackRepositories.subscribeToApprovals(
+              onData = { newApproval =>
+                val existing = state.value.approvals
+                if (existing.exists(_.id == newApproval.id)) Callback.empty
+                else state.setState(state.value.copy(approvals = existing :+ newApproval))
+              },
+            )
             state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
             // cleanup: close the subscription when the component unmounts
             handler.close()
@@ -96,14 +76,10 @@ object ApprovalsPage {
             approve: Boolean,
           ): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.decideApproval(id, approve, None),
-                )
+              AsyncCallbackRepositories.permission
+                .decideApproval(id, approve)
                 .flatMap { result =>
-                  // Only remove from local state if the server confirmed success
-                  if (result.getOrElse(false))
+                  if (result)
                     state
                       .setState(
                         state.value.copy(approvals = state.value.approvals.filterNot(_.id == id)),

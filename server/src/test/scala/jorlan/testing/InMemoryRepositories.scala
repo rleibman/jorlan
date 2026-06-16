@@ -12,9 +12,10 @@ package jorlan.testing
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.EventLogFilter
 import zio.*
+import zio.json.*
 import zio.json.ast.Json
 
 import java.time.Instant
@@ -73,7 +74,8 @@ object InMemoryRepositories {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ): RepositoryTask[Option[User]] = ZIO.none
+    ):                                                  RepositoryTask[Option[User]] = ZIO.none
+    override def findContacts(nameOpt: Option[String]): RepositoryTask[Json] = ZIO.succeed(Json.Arr())
 
   }
 
@@ -263,6 +265,15 @@ object InMemoryRepositories {
         p.roleId.exists(rid => rids.contains(rid.value)) && p.resource == resource && p.action == action
       }
 
+    override def listCapabilities(): RepositoryTask[List[CapabilityGrant]] = grants.get.map(_.values.toList)
+    override def listApprovals():    RepositoryTask[List[ApprovalRequest]] = approvals.get.map(_.values.toList)
+    override def decideApproval(
+      id:       ApprovalRequestId,
+      approved: Boolean,
+      note:     Option[String] = None,
+    ): RepositoryTask[Boolean] =
+      ZIO.succeed(false)
+
   }
 
   object InMemoryPermissionRepo {
@@ -386,6 +397,14 @@ object InMemoryRepositories {
         saved = session.copy(id = AgentSessionId(id))
         _ <- sessionStore.update(_.updated(id, saved))
       } yield saved
+
+    override def createSession(modelId:      Option[ModelId]): RepositoryTask[Option[AgentSession]] = ZIO.none
+    override def terminateSession(sessionId: AgentSessionId):  RepositoryTask[Unit] = ZIO.unit
+    override def availableModels():                            RepositoryTask[List[ModelInfo]] = ZIO.succeed(Nil)
+    override def submitMessage(
+      sessionId: AgentSessionId,
+      content:   String,
+    ): RepositoryTask[Unit] = ZIO.unit
 
   }
 
@@ -534,6 +553,22 @@ object InMemoryRepositories {
       value: Json,
     ): UIO[Unit] = store.update(_.updated(key, value))
 
+    override def serverPersonality(): UIO[Option[Personality]] =
+      get(ZIOServerSettingsRepository.PersonalityKey).map(_.flatMap(_.as[Personality].toOption))
+
+    override def updatePersonality(
+      name:      String,
+      formality: Formality,
+      languages: List[String],
+      expertise: List[String],
+      prompt:    String,
+    ): UIO[Option[Personality]] = {
+      val p = Personality(name, formality, languages, expertise, prompt)
+      ZIO
+        .fromEither(p.toJsonAST.left.map(RuntimeException(_))).orDie
+        .flatMap(json => set(ZIOServerSettingsRepository.PersonalityKey, json).as(Some(p)))
+    }
+
   }
 
   object InMemoryServerSettingsRepo {
@@ -556,7 +591,11 @@ object InMemoryRepositories {
     ):                                                       RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def getPendingJobs:                             RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
     override def upsertJob(job:         SchedulerJob):       RepositoryTask[SchedulerJob] = ZIO.succeed(job)
-    override def deleteJob(id:          SchedulerJobId):     RepositoryTask[Long] = ZIO.succeed(0L)
+    override def deleteJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def pauseJob(id:           SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def resumeJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def cancelJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def triggerNow(id:         SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
     override def searchTriggers(s:      TriggerSearch):      RepositoryTask[List[SchedulerTrigger]] = ZIO.succeed(Nil)
     override def upsertTrigger(trigger: SchedulerTrigger):   RepositoryTask[SchedulerTrigger] = ZIO.succeed(trigger)
     override def deleteTrigger(id:      SchedulerTriggerId): RepositoryTask[Long] = ZIO.succeed(0L)
@@ -623,8 +662,38 @@ object InMemoryRepositories {
         jobs.update(_.updated(job.id, job)).as(job)
       }
 
-    override def deleteJob(id: SchedulerJobId): RepositoryTask[Long] =
-      jobs.modify(m => if (m.contains(id)) (1L, m - id) else (0L, m))
+    override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+      jobs.modify(m => if (m.contains(id)) (true, m - id) else (false, m))
+
+    override def pauseJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id).fold((false, m)) { j =>
+          (true, m.updated(id, j.copy(status = JobStatus.Paused)))
+        }
+      }
+
+    override def resumeJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id).fold((false, m)) { j =>
+          (true, m.updated(id, j.copy(status = JobStatus.Pending)))
+        }
+      }
+
+    override def cancelJob(id: SchedulerJobId): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id).fold((false, m)) { j =>
+          (true, m.updated(id, j.copy(status = JobStatus.Cancelled)))
+        }
+      }
+
+    override def triggerNow(id: SchedulerJobId): RepositoryTask[Boolean] =
+      Clock.instant.flatMap { now =>
+        jobs.modify { m =>
+          m.get(id).fold((false, m)) { j =>
+            (true, m.updated(id, j.copy(status = JobStatus.Pending, scheduledAt = now)))
+          }
+        }
+      }
 
     override def searchTriggers(s: TriggerSearch): RepositoryTask[List[SchedulerTrigger]] =
       triggers.get.map(_.values.toList.filter(_.jobId == s.jobId))
@@ -739,6 +808,11 @@ object InMemoryRepositories {
             saved = record.copy(id = SkillId(id))
             _ <- store.update(_.updated(id, saved))
           } yield saved
+        override def listSkills(): RepositoryTask[List[SkillInfo]] = ZIO.succeed(Nil)
+        override def invokeTool(
+          toolName: String,
+          argsJson: String,
+        ): RepositoryTask[Option[String]] = ZIO.none
       }
 
   }
@@ -757,14 +831,16 @@ object InMemoryRepositories {
           store.get.map { m =>
             val filtered = m.values.toList.filter(_.workspaceId.contains(s.workspaceId))
             val sorted = s.sorts match {
-              case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))      => filtered.sortBy(_.name)
-              case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc))     => filtered.sortBy(_.name)(Ordering[String].reverse)
-              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc)) => filtered.sortBy(_.createdAt)
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Asc))  => filtered.sortBy(_.name)
+              case Some(Sort(ArtifactOrder.Name, OrderDirection.Desc)) =>
+                filtered.sortBy(_.name)(Ordering[String].reverse)
+              case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Asc))  => filtered.sortBy(_.createdAt)
               case Some(Sort(ArtifactOrder.CreatedAt, OrderDirection.Desc)) =>
                 filtered.sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
-              case Some(Sort(ArtifactOrder.Id, OrderDirection.Asc))        => filtered.sortBy(_.id.value)
-              case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc))       => filtered.sortBy(_.id.value)(Ordering[Long].reverse)
-              case None                                                    => filtered
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Asc))  => filtered.sortBy(_.id.value)
+              case Some(Sort(ArtifactOrder.Id, OrderDirection.Desc)) =>
+                filtered.sortBy(_.id.value)(Ordering[Long].reverse)
+              case None => filtered
             }
             val from = s.page * s.pageSize
             sorted.slice(from, from + s.pageSize)
@@ -880,6 +956,7 @@ object InMemoryRepositories {
         override def permission:    ZIOPermissionRepository = permissionRepo
         override def setting:       ZIOServerSettingsRepository = settingsRepo
         override def extCredential: ZIOExternalCredentialRepository = original.extCredential
+        override def serverInfo:    ZIOServerInfoRepository = original.serverInfo
       })
     }
 
@@ -932,6 +1009,10 @@ object InMemoryRepositories {
         override def setting: ZIOServerSettingsRepository = settingsRepo
 
         override def extCredential: ZIOExternalCredentialRepository = extCredRepo
+        override def serverInfo:    ZIOServerInfoRepository =
+          new ZIOServerInfoRepository {
+            override def statusCheck(): RepositoryTask[Json] = ZIO.succeed(Json.Obj())
+          }
       }
     }
 
@@ -983,6 +1064,11 @@ private class InMemoryExtCredentialRepo(
 
   override def listByUser(userId: UserId): RepositoryTask[List[ExternalCredential]] =
     store.get.map(_.values.filter(_.userId == userId).toList)
+
+  override def listOAuthProviders():          RepositoryTask[List[String]] = ZIO.succeed(Nil)
+  override def startOAuth(provider:  String): RepositoryTask[Option[String]] = ZIO.none
+  override def revokeOAuth(provider: String): RepositoryTask[Unit] = ZIO.unit
+  override def oauthStatus(provider: String): RepositoryTask[Option[OAuthStatus]] = ZIO.none
 
 }
 

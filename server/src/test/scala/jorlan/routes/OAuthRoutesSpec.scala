@@ -10,7 +10,7 @@
 
 package jorlan.routes
 
-import jorlan.domain.UserId
+import jorlan.UserId
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*

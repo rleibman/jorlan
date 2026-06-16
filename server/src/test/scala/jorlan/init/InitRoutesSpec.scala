@@ -21,15 +21,17 @@ import zio.json.ast.Json
 import zio.test.*
 
 import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 import scala.language.unsafeNulls
 
 /** P8.1-003: HTTP-layer tests for [[StatusRoutes]] and [[SetupModeApp]].
   *
   * Tests cover: status shape, 400/403/500 distinction, malformed JSON, 503 catch-all.
   */
-object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
+object InitRoutesSpec extends ZIOSpec[ZIORepositories & JorlanSession] {
 
-  override val bootstrap: ZLayer[Any, Any, ZIORepositories] = InMemoryRepositories.live()
+  override val bootstrap: ULayer[ZIORepositories & JorlanSession] =
+    InMemoryRepositories.live() ++ ZLayer.succeed(JorlanSession.serverSession)
 
   import TestUtil.*
 
@@ -44,7 +46,8 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
       adminEmail:    String,
       adminName:     String,
       adminPassword: String,
-    ): IO[JorlanError, Unit] = result
+    ):                                   IO[JorlanError, Unit] = result
+    override def topUpAdminCapabilities: IO[JorlanError, Unit] = ZIO.unit
 
   }
 
@@ -70,52 +73,49 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
-  private def getStatus(routes: Routes[Any, JorlanError]) =
-    ZIO.scoped(routes.handleErrorCauseZIO(Jorlan.mapError).run(Method.GET, Path.decode("/api/status")))
+  private def getStatus(routes: Routes[ZIORepositories & JorlanSession, JorlanError]) =
+    routes.handleErrorCauseZIO(Jorlan.mapError).run(Method.GET, Path.decode("/api/status"))
 
   private def postInit(
-    routes: Routes[Any, Nothing],
+    routes: Routes[ZIORepositories & JorlanSession, Nothing],
     body:   String,
-  ): UIO[Response] =
-    ZIO.scoped(
-      routes.run(
-        Method.POST,
-        Path.decode("/api/init"),
-        headers = Headers(Header.ContentType(MediaType.application.json)),
-        body = Body.fromString(body),
-      ),
+  ) =
+    routes.run(
+      Method.POST,
+      Path.decode("/api/init"),
+      headers = Headers(Header.ContentType(MediaType.application.json)),
+      body = Body.fromString(body),
     )
 
   private val validInitBody = InitRequest("tok", "MyServer", "admin@example.com", "Admin", "password123!").toJson
 
   private def postInitWithAddress(
-    routes:        Routes[Any, Nothing],
+    routes:        Routes[ZIORepositories & JorlanSession, Nothing],
     body:          String,
     remoteAddress: Option[InetAddress],
-  ): UIO[Response] =
-    ZIO.scoped(
-      routes.runZIO(
-        Request(
-          method = Method.POST,
-          url = URL.root.path(Path.decode("/api/init")),
-          headers = Headers(Header.ContentType(MediaType.application.json)),
-          body = Body.fromString(body),
-          remoteAddress = remoteAddress,
-        ),
+  ) =
+    routes.runZIO(
+      Request(
+        method = Method.POST,
+        url = URL.root.path(Path.decode("/api/init")),
+        headers = Headers(Header.ContentType(MediaType.application.json)),
+        body = Body.fromString(body),
+        remoteAddress = remoteAddress,
       ),
     )
 
   // ─── Tests ──────────────────────────────────────────────────────────────────
 
-  override def spec: Spec[ZIORepositories & (TestEnvironment & Scope), Any] =
+  override def spec: Spec[ZIORepositories & JorlanSession & (TestEnvironment & Scope), Any] =
     suite("InitRoutes")(
       suite("StatusRoutes")(
         test("returns 200 with initialized=false when not yet set up") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = StatusRoutes.routes(startTime, repo)
-            resp <- getStatus(routes)
-            body <- resp.body.asString
+            repo         <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            currentTime  <- Clock.currentTime(TimeUnit.MILLISECONDS)
+            statusRoutes <- StatusRoutes(currentTime).all
+            resp         <- getStatus(statusRoutes)
+            body         <- resp.body.asString
             decoded = body.fromJson[ServerStatus]
           } yield assertTrue(
             resp.status == Status.Ok,
@@ -131,9 +131,10 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
                 ZIOServerSettingsRepository.ServerNameKey  -> Json.Str("TestServer"),
               ),
             )
-            routes = StatusRoutes.routes(startTime, repo)
-            resp <- getStatus(routes)
-            body <- resp.body.asString
+            currentTime  <- Clock.currentTime(TimeUnit.MILLISECONDS)
+            statusRoutes <- StatusRoutes(currentTime).all.provideLayer(ZLayer.succeed[ZIORepositories](repo))
+            resp         <- getStatus(statusRoutes)
+            body         <- resp.body.asString
             decoded = body.fromJson[ServerStatus]
           } yield assertTrue(
             resp.status == Status.Ok,
@@ -143,10 +144,11 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
         },
         test("serverName falls back to Jorlan when key absent") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = StatusRoutes.routes(startTime, repo)
-            resp <- getStatus(routes)
-            body <- resp.body.asString
+            repo         <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            currentTime  <- Clock.currentTime(TimeUnit.MILLISECONDS)
+            statusRoutes <- StatusRoutes(currentTime).all
+            resp         <- getStatus(statusRoutes)
+            body         <- resp.body.asString
             decoded = body.fromJson[ServerStatus]
           } yield assertTrue(decoded.toOption.exists(_.serverName == "Jorlan"))
         },
@@ -154,49 +156,49 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
       suite("SetupModeApp — POST /api/init")(
         test("malformed JSON body returns 400") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = SetupModeApp.make(startTime, repo, stubService(), noopTokenStore)
-            resp <- postInit(routes, "not json at all")
+            repo   <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            routes <- SetupModeApp.make(startTime, stubService(), noopTokenStore)
+            resp   <- postInit(routes, "not json at all")
           } yield assertTrue(resp.status == Status.BadRequest)
         },
         test("ValidationError from service returns 400") {
           for {
             repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             svc = stubService(ZIO.fail(ValidationError("Password must be at least 12 characters")))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
-            resp <- postInit(routes, validInitBody)
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore)
+            resp   <- postInit(routes, validInitBody)
           } yield assertTrue(resp.status == Status.BadRequest)
         },
         test("invalid token returns 403") {
           for {
             repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             svc = stubService(ZIO.fail(JorlanError("Invalid setup token")))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
-            resp <- postInit(routes, validInitBody)
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore)
+            resp   <- postInit(routes, validInitBody)
           } yield assertTrue(resp.status == Status.Forbidden)
         },
         test("already-initialized error returns 403") {
           for {
             repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(true)))
             svc = stubService(ZIO.fail(JorlanError("Server is already initialized")))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
-            resp <- postInit(routes, validInitBody)
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore)
+            resp   <- postInit(routes, validInitBody)
           } yield assertTrue(resp.status == Status.Forbidden)
         },
         test("RepositoryError returns 500") {
           for {
             repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             svc = stubService(ZIO.fail(RepositoryError(RuntimeException("DB failure"))))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
-            resp <- postInit(routes, validInitBody)
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore)
+            resp   <- postInit(routes, validInitBody)
           } yield assertTrue(resp.status == Status.InternalServerError)
         },
         test("successful init returns 200 with success=true") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = SetupModeApp.make(startTime, repo, stubService(), noopTokenStore)
-            resp <- postInit(routes, validInitBody)
-            body <- resp.body.asString
+            repo   <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            routes <- SetupModeApp.make(startTime, stubService(), noopTokenStore)
+            resp   <- postInit(routes, validInitBody)
+            body   <- resp.body.asString
           } yield assertTrue(
             resp.status == Status.Ok,
             body.contains("true"),
@@ -206,16 +208,16 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
       suite("SetupModeApp — catch-all")(
         test("unknown path returns 503") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = SetupModeApp.make(startTime, repo, stubService(), noopTokenStore)
-            resp <- ZIO.scoped(routes.run(Method.GET, Path.decode("/api/agents")))
+            repo   <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            routes <- SetupModeApp.make(startTime, stubService(), noopTokenStore)
+            resp   <- routes.run(Method.GET, Path.decode("/api/agents"))
           } yield assertTrue(resp.status == Status.ServiceUnavailable)
         },
         test("GET /api/status served even in setup mode") {
           for {
-            repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
-            routes = SetupModeApp.make(startTime, repo, stubService(), noopTokenStore)
-            resp <- getStatus(routes)
+            repo   <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
+            routes <- SetupModeApp.make(startTime, stubService(), noopTokenStore)
+            resp   <- getStatus(routes)
           } yield assertTrue(resp.status == Status.Ok)
         },
       ),
@@ -228,8 +230,8 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
             ts = tokenStoreWith(storedToken)
             // InitService succeeds regardless of token in this stub
             svc = stubService(ZIO.unit)
-            routes = SetupModeApp.make(startTime, repo, svc, ts)
-            resp <- postInitWithAddress(routes, bodyNoToken, Some(InetAddress.getLoopbackAddress))
+            routes <- SetupModeApp.make(startTime, svc, ts)
+            resp   <- postInitWithAddress(routes, bodyNoToken, Some(InetAddress.getLoopbackAddress))
           } yield assertTrue(resp.status == Status.Ok)
         },
         test("non-localhost with empty token returns 403 (no bypass)") {
@@ -237,8 +239,8 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
           for {
             repo <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             svc = stubService(ZIO.fail(JorlanError("Invalid setup token")))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore)
-            resp <- postInitWithAddress(routes, bodyNoToken, None) // no remote address = non-localhost
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore)
+            resp   <- postInitWithAddress(routes, bodyNoToken, None) // no remote address = non-localhost
           } yield assertTrue(resp.status == Status.Forbidden)
         },
       ),
@@ -247,9 +249,9 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
           for {
             repo     <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             initDone <- Promise.make[Nothing, Unit]
-            routes = SetupModeApp.make(startTime, repo, stubService(), noopTokenStore, Some(initDone))
-            resp <- postInit(routes, validInitBody)
-            done <- initDone.isDone
+            routes   <- SetupModeApp.make(startTime, stubService(), noopTokenStore, Some(initDone))
+            resp     <- postInit(routes, validInitBody)
+            done     <- initDone.isDone
           } yield assertTrue(resp.status == Status.Ok, done)
         },
         test("failed init does not complete the initDone Promise") {
@@ -257,9 +259,9 @@ object InitRoutesSpec extends ZIOSpec[ZIORepositories] {
             repo     <- withSettings(Map(ZIOServerSettingsRepository.InitializedKey -> Json.Bool(false)))
             initDone <- Promise.make[Nothing, Unit]
             svc = stubService(ZIO.fail(JorlanError("Invalid setup token")))
-            routes = SetupModeApp.make(startTime, repo, svc, noopTokenStore, Some(initDone))
-            resp <- postInit(routes, validInitBody)
-            done <- initDone.isDone
+            routes <- SetupModeApp.make(startTime, svc, noopTokenStore, Some(initDone))
+            resp   <- postInit(routes, validInitBody)
+            done   <- initDone.isDone
           } yield assertTrue(resp.status == Status.Forbidden, !done)
         },
       ),

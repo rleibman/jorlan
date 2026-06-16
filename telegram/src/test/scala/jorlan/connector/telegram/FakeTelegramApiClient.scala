@@ -52,6 +52,8 @@ class FakeTelegramApiClient(
     filename: String,
   ): IO[JorlanError, Unit] = ZIO.unit
 
+  override def deleteWebhook: IO[JorlanError, Unit] = ZIO.unit
+
 }
 
 object FakeTelegramApiClient {

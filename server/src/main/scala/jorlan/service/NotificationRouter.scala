@@ -13,7 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.{ConnectorSkill, InvocationContext}
 import jorlan.db.repository.ZIORepositories
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json

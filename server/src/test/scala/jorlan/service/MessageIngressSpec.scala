@@ -13,7 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.testing.*
 import zio.*
 import zio.stream.ZStream
@@ -65,6 +65,8 @@ object MessageIngressSpec extends ZIOSpecDefault {
               ct:   ChannelType,
               cuid: String,
             ): RepositoryTask[Option[User]] = ZIO.succeed(result.filter(_ => ct == ChannelType.Telegram))
+            override def findContacts(nameOpt: Option[String]): RepositoryTask[zio.json.ast.Json] =
+              ZIO.succeed(zio.json.ast.Json.Arr())
           }
         }
       },

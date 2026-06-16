@@ -12,11 +12,9 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
-import jorlan.web.JorlanWebApp
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField}
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -25,7 +23,7 @@ import scala.scalajs.js
 object SettingsPage {
 
   case class State(
-    personality: Option[JorlanClient.Personality.PersonalityView],
+    personality: Option[Personality],
     loading:     Boolean,
     saved:       Boolean,
     error:       Option[String],
@@ -41,11 +39,8 @@ object SettingsPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.serverPersonality(JorlanClient.Personality.view),
-              )
+            AsyncCallbackRepositories.setting
+              .serverPersonality()
               .flatMap { personality =>
                 state.setState(State(personality, loading = false, saved = false, error = None)).asAsyncCallback
               }
@@ -65,17 +60,8 @@ object SettingsPage {
           def update(): Callback =
             Callback {
               state.value.personality.foreach { p =>
-                JorlanWebApp
-                  .makeAdapter()
-                  .asyncCalibanCallWithAuth(
-                    JorlanClient.Mutations.updatePersonality(
-                      p.name,
-                      p.formality,
-                      p.languages,
-                      p.expertise,
-                      p.prompt,
-                    )(JorlanClient.Personality.view),
-                  )
+                AsyncCallbackRepositories.setting
+                  .updatePersonality(p.name, p.formality, p.languages, p.expertise, p.prompt)
                   .flatMap { saved =>
                     state.setState(state.value.copy(personality = saved, saved = true, error = None)).asAsyncCallback
                   }

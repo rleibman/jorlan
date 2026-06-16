@@ -10,7 +10,8 @@
 
 package jorlan.db
 
-import jorlan.domain.*
+import jorlan.{AgentId, AgentSessionId, EventLog, EventLogId, EventType, UserId}
+import jorlan.*
 import zio.json.*
 import zio.json.ast.Json
 

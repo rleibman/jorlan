@@ -12,21 +12,19 @@ package jorlan
 
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import jorlan.*
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
-import jorlan.domain.{ConnectionId, User, UserId}
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
-import jorlan.graphql.JorlanRoutes
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
-import jorlan.routes.OAuthRoutes
-import jorlan.web.StaticFileRoutes
+import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
-import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
+import zio.{config, *}
 
 import java.io.*
 import java.nio.file.Paths
@@ -41,21 +39,37 @@ type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, Connect
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
-  jorlan.service.OAuthCredentialService
+  ConfigurationService & jorlan.service.OAuthCredentialService
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
 
   override type Environment = JorlanEnvironment
-
   override val environmentTag: EnvironmentTag[Environment] = EnvironmentTag[Environment]
 
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> EnvironmentBuilder.live
 
-  private val healthRoutes: Routes[Any, Nothing] = Routes(
-    Method.GET / "health" -> Handler.ok,
-  )
+  private case class AllTogether(startTime: Long) extends AppRoutes[JorlanEnvironment, JorlanSession, JorlanError] {
+
+    private val routes: Seq[AppRoutes[JorlanEnvironment, JorlanSession, JorlanError]] =
+      Seq(
+        JorlanRoutes,
+        HealthRoutes,
+        StaticRoutes,
+        StatusRoutes(startTime),
+      )
+
+    override def api: ZIO[
+      JorlanEnvironment,
+      JorlanError,
+      Routes[JorlanEnvironment & JorlanSession, JorlanError],
+    ] = ZIO.foreach(routes)(_.api).map(_.reduce(_ ++ _) @@ Middleware.debug)
+
+    override def unauth: ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, JorlanError]] =
+      ZIO.foreach(routes)(_.unauth).map(_.reduce(_ ++ _) @@ Middleware.debug)
+
+  }
 
   def mapError(original: Cause[Throwable]): UIO[Response] = {
     lazy val contentTypeJson: Headers = Headers(Header.ContentType(MediaType.application.json).untyped)
@@ -65,7 +79,7 @@ object Jorlan extends ZIOApp {
     val pw = PrintWriter(sw)
     squashed.printStackTrace(pw)
 
-    val body = "Error in DMScreen"
+    val body = "Error in Jorlan"
     // We really don't want details
 
     val status = squashed match {
@@ -75,7 +89,7 @@ object Jorlan extends ZIOApp {
       case _ => Status.InternalServerError
     }
     ZIO
-      .logErrorCause("Error in DMScreen", original).as(
+      .logErrorCause("Error in Jorlan", original).as(
         Response.apply(body = Body.fromString(body), status = status, headers = contentTypeJson),
       )
   }
@@ -83,19 +97,22 @@ object Jorlan extends ZIOApp {
   /** Build the combined application routes. Extracted so integration tests can wire up the app with a test environment
     * without starting a real HTTP server on a production port.
     */
-  def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, Throwable, Routes[JorlanEnvironment, Nothing]] =
+  def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, Nothing]] =
     for {
-      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      authServer   <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      authConfig   <- ZIO.service[AuthConfig]
-      oauthCredSvc <- ZIO.service[jorlan.service.OAuthCredentialService]
-      httpClient   <- ZIO.service[Client]
-      repo         <- ZIO.service[ZIORepositories]
-      authR        <- authServer.authRoutes
-      unauthR      <- authServer.unauthRoutes
-      graphqlR     <- JorlanRoutes.routes
-      statusR = StatusRoutes.routes(startTime, repo)
-      staticR = StaticFileRoutes.routes(config.jorlan.web.root)
+      _                <- ZIO.log("Initializing Web Routes")
+      config           <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      authServer       <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      authConfig       <- ZIO.service[AuthConfig]
+      oauthCredSvc     <- ZIO.service[jorlan.service.OAuthCredentialService]
+      httpClient       <- ZIO.service[Client]
+      repo             <- ZIO.service[ZIORepositories]
+      authR            <- authServer.authRoutes // TODO move into allTogether
+      unauthR          <- authServer.unauthRoutes // TODO move into allTogether
+      authServerApi    <- authServer.authRoutes // TODO move into allTogether
+      authServerUnauth <- authServer.unauthRoutes // TODO move into allTogether
+      allTogether = AllTogether(startTime)
+      unauth     <- allTogether.unauth
+      api        <- allTogether.api
       nonceStore <- Ref.make(Map.empty[String, Long])
       oauthAuthR = OAuthRoutes.authenticatedRoutes(authConfig, config.jorlan.google, nonceStore)
       oauthUnauthR = OAuthRoutes.unauthenticatedRoutes(
@@ -105,20 +122,11 @@ object Jorlan extends ZIOApp {
         httpClient,
         nonceStore,
       )
-    } yield {
-      // oauthAuthR requires a session (behind bearerSessionProvider); oauthUnauthR is the Google callback
-      ((healthRoutes ++ statusR ++ authR ++ graphqlR ++ oauthAuthR).handleErrorCauseZIO(
-        mapError,
-      ) @@ authServer.bearerSessionProvider ++ unauthR ++ oauthUnauthR ++ staticR)
-        .handleErrorCause { cause =>
-          cause.squash match {
-            case ExpiredToken(msg, _) => Response.unauthorized(msg)
-            case InvalidToken(msg, _) => Response.unauthorized(msg)
-            case e: AuthError => Response.internalServerError(Option(e.getMessage).getOrElse("Authentication error"))
-            case e => Response.internalServerError(Option(e.getMessage).getOrElse("Internal server error"))
-          }
-        }
-    }
+    } yield (
+      ((api ++ authR ++ authServerApi ++ oauthAuthR) @@ authServer.bearerSessionProvider) ++
+        authServerUnauth ++ unauthR ++ unauth ++ oauthUnauthR
+    )
+      .handleErrorCauseZIO(mapError)
 
   private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
     for {
@@ -173,44 +181,64 @@ object Jorlan extends ZIOApp {
       _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
-  // $COVERAGE-OFF$ Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
-  override def run: ZIO[JorlanEnvironment & ZIOAppArgs & Scope, Any, Any] =
+// $COVERAGE-OFF$
+  // Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
+  override def run: ZIO[Environment & ZIOAppArgs & Scope, JorlanError, Unit] =
     for {
       config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      _           <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db)
+      _           <- FlywayMigration.migrate(config.jorlan.flyway, config.jorlan.db).mapError(JorlanError.apply)
       startTime   <- Clock.currentTime(TimeUnit.MILLISECONDS)
       repo        <- ZIO.service[ZIORepositories]
       initialized <- repo.setting.get(ZIOServerSettingsRepository.InitializedKey).map {
         case Some(zio.json.ast.Json.Bool(v)) => v
         case _                               => false
       }
-      tokenStore <- InitTokenStore.make(initialized)
-      initService = InitServiceImpl(repo, tokenStore)
+      tokenStore    <- InitTokenStore.make(initialized)
+      skillRegistry <- ZIO.service[SkillRegistry]
+      initService = InitServiceImpl(repo, tokenStore, skillRegistry)
       _ <- ZIO.logInfo(s"Jorlan starting on ${config.jorlan.http.host}:${config.jorlan.http.port}")
-      _ <-
-        if (initialized) {
-          for {
-            _      <- startServices
-            routes <- zapp(startTime)
-            _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
-          } yield ()
-        } else {
-          for {
-            initDone <- Promise.make[Nothing, Unit]
-            setupApp = SetupModeApp.make(startTime, repo, initService, tokenStore, Some(initDone))
-            serverFiber <- Server
-              .serve(setupApp)
-              .provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
-              .fork
-            _      <- initDone.await
-            _      <- serverFiber.interrupt
-            _      <- ZIO.logInfo("Server initialized — switching to full application routes")
-            _      <- startServices
-            routes <- zapp(startTime)
-            _      <- Server.serve(routes).provideSomeLayer(Server.defaultWithPort(config.jorlan.http.port))
-          } yield ()
-        }
+      serverConfig = ZLayer.succeed(
+        Server.Config.default
+          .binding(config.jorlan.http.host, config.jorlan.http.port)
+          .copy(requestStreaming = Server.RequestStreaming.Enabled),
+      )
+      randomConnectionId <- ConnectionId.randomZIO
+      _                  <- (for {
+        _      <- initService.topUpAdminCapabilities
+        _      <- startServices
+        routes <- zapp(startTime)
+        _      <- Server.serve(routes)
+      } yield ())
+        .provideSome[Environment & Scope](serverConfig, Server.live)
+        .mapError(JorlanError.apply)
+        .when(initialized)
+      _ <- (for {
+        initDone <- Promise.make[Nothing, Unit]
+        setupApp <- SetupModeApp.make(
+          startTime = startTime,
+          initService = initService,
+          tokenStore = tokenStore,
+          initDone = Some(initDone),
+        )
+        serverFiber <- Server
+          .serve(setupApp)
+          .fork
+        _      <- initDone.await
+        _      <- serverFiber.interrupt
+        _      <- ZIO.logInfo("Server initialized — switching to full application routes")
+        _      <- initService.topUpAdminCapabilities
+        _      <- startServices
+        routes <- zapp(startTime)
+        _      <- Server.serve(routes)
+      } yield ())
+        .provideSome[Environment & Scope](
+          serverConfig,
+          Server.live,
+          ZLayer.succeed(JorlanSession.guestSession(randomConnectionId)),
+        )
+        .mapError(JorlanError.apply)
+        .when(!initialized)
     } yield ()
-  // $COVERAGE-ON$
+// $COVERAGE-ON$
 
 }

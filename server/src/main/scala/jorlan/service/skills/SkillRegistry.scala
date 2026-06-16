@@ -12,7 +12,7 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.{CapabilityEvaluator, ToolSpec}
 import zio.*
 import zio.json.*
@@ -32,6 +32,13 @@ trait SkillRegistry {
 
   /** Return all tool descriptors from every registered skill. */
   def allTools: UIO[List[ToolDescriptor]]
+
+  /** Return the union of all capability names required by any registered tool.
+    *
+    * Used by [[jorlan.init.InitService]] to automatically grant admin users every capability that any registered skill
+    * needs — so adding a new skill doesn't require a manual update to the init service.
+    */
+  def allAdminCapabilities: UIO[List[CapabilityName]]
 
   /** Return all tools as [[ToolSpec]] values (model-module-safe view, no connector-api dependency). */
   def allToolSpecs: UIO[List[ToolSpec]]
@@ -108,6 +115,9 @@ object SkillRegistry {
   def allToolSpecs: URIO[SkillRegistry, List[ToolSpec]] =
     ZIO.serviceWithZIO[SkillRegistry](_.allToolSpecs)
 
+  def allAdminCapabilities: URIO[SkillRegistry, List[CapabilityName]] =
+    ZIO.serviceWithZIO[SkillRegistry](_.allAdminCapabilities)
+
   def invoke(
     toolName: String,
     argsJson: String,
@@ -137,6 +147,9 @@ class SkillRegistryLive(
 
   override def allTools: UIO[List[ToolDescriptor]] =
     skills.get.map(_.values.toList.flatMap(_.descriptor.tools))
+
+  override def allAdminCapabilities: UIO[List[CapabilityName]] =
+    allTools.map(_.flatMap(_.requiredCapabilities).distinct)
 
   override def allToolSpecs: UIO[List[ToolSpec]] =
     toolSpecsCache.get.flatMap {
@@ -171,7 +184,7 @@ class SkillRegistryLive(
                 case None         =>
                   skill
                     .invoke(ctx, toolName, args)
-                    .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg}"))
+                    .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg} (args: $argsJson)"))
                     .fold(
                       e => Json.Str(s"Error: ${e.msg}"),
                       identity,
@@ -238,7 +251,7 @@ class SkillRegistryLive(
             }.getOrElse(Nil)
         case _ => Nil
       }
-      missingKeys = requiredKeys.filterNot(k => obj.fields.exists(_._1 == k))
+      missingKeys = requiredKeys.filterNot(k => obj.fields.exists { case (field, v) => field == k && v != Json.Null })
       _ <-
         if (missingKeys.isEmpty) Right(())
         else Left(s"missing required fields: ${missingKeys.mkString(", ")}")

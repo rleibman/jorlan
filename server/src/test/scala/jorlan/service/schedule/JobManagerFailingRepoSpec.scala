@@ -12,7 +12,7 @@ package jorlan.service.schedule
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -59,7 +59,7 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
   private def makeRepo(
     getJobFn:        SchedulerJobId => RepositoryTask[Option[SchedulerJob]] = _ => alwaysFail,
     upsertJobFn:     SchedulerJob => RepositoryTask[SchedulerJob] = _ => alwaysFail,
-    deleteJobFn:     SchedulerJobId => RepositoryTask[Long] = _ => alwaysFail,
+    deleteJobFn:     SchedulerJobId => RepositoryTask[Boolean] = _ => alwaysFail,
     searchTriggerFn: TriggerSearch => RepositoryTask[List[SchedulerTrigger]] = _ => alwaysFail,
     upsertTriggerFn: SchedulerTrigger => RepositoryTask[SchedulerTrigger] = _ => alwaysFail,
     releaseJobFn:    (SchedulerJobId, JobStatus, Option[String], Instant) => RepositoryTask[Unit] = (
@@ -72,7 +72,11 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
     new ZIOSchedulerRepository {
       override def getJob(id:             SchedulerJobId):   RepositoryTask[Option[SchedulerJob]] = getJobFn(id)
       override def upsertJob(job:         SchedulerJob):     RepositoryTask[SchedulerJob] = upsertJobFn(job)
-      override def deleteJob(id:          SchedulerJobId):   RepositoryTask[Long] = deleteJobFn(id)
+      override def deleteJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = deleteJobFn(id)
+      override def pauseJob(id:           SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
+      override def resumeJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
+      override def cancelJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
+      override def triggerNow(id:         SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
       override def searchTriggers(s:      TriggerSearch):    RepositoryTask[List[SchedulerTrigger]] = searchTriggerFn(s)
       override def upsertTrigger(trigger: SchedulerTrigger): RepositoryTask[SchedulerTrigger] = upsertTriggerFn(trigger)
       override def listJobs(

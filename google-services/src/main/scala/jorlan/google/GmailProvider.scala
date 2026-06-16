@@ -15,7 +15,7 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.gmail.Gmail
 import com.google.api.services.gmail.model.{Draft, Message, MessagePartHeader}
 import jorlan.JorlanError
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.{EmailProvider, OAuthCredentialService}
 import zio.IO
 import zio.*

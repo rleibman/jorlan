@@ -10,7 +10,7 @@
 
 package jorlan.service
 
-import jorlan.domain.{AgentSessionId, UserId}
+import jorlan.{AgentSessionId, UserId}
 import zio.*
 import zio.test.*
 

@@ -156,36 +156,54 @@ lazy val commonSettings = Seq(
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Model
-lazy val model = project
-  .enablePlugins(
-    AutomateHeaderPlugin,
-    com.github.sbt.git.GitVersioning,
-    BuildInfoPlugin,
-  )
-  .settings(
-    scalacOptions ++= scala3Opts :+ "-Werror",
-    name             := "jorlan-model",
-    buildInfoPackage := "jorlan",
-    buildInfoKeys ++= Seq[BuildInfoKey](
-      BuildInfoKey.action("buildTime") {
-        System.currentTimeMillis
-      },
-    ),
-    commonSettings,
-    libraryDependencies ++= Seq(
-      "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
-    ),
-    libraryDependencies ++= Seq(
-      "dev.zio"     %% "zio"                 % zioVersion withSources (),
-      "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
-      "dev.zio"     %% "zio-config-magnolia" % zioConfigVersion withSources (),
-      "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
-      "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
-      "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
-      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
-      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
-    ),
-  )
+lazy val modelJVM = model.jvm
+lazy val modelJS = model.js
+
+lazy val model =
+  crossProject(JSPlatform, JVMPlatform)
+    .enablePlugins(
+      AutomateHeaderPlugin,
+      com.github.sbt.git.GitVersioning,
+      BuildInfoPlugin,
+    )
+    .settings(
+      name             := "jorlan-model",
+      buildInfoPackage := "jorlan",
+      commonSettings,
+      buildInfoKeys ++= Seq[BuildInfoKey](
+        BuildInfoKey.action("buildTime") {
+          System.currentTimeMillis
+        },
+      ),
+      libraryDependencies ++= Seq(
+        "net.leibman" % "zio-auth_3" % zioAuth withSources () // I don't know why %% isn't working.
+      )
+    )
+    .jvmSettings(
+      scalacOptions ++= scala3Opts :+ "-Werror",
+      libraryDependencies ++= Seq(
+        "dev.zio"     %% "zio"                 % zioVersion withSources (),
+        "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
+        "dev.zio"     %% "zio-config-magnolia" % zioConfigVersion withSources (),
+        "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
+        "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
+        "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
+        "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
+        "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+      ),
+    )
+    .jsSettings(
+      scalacOptions ++= scala3Opts,
+      libraryDependencies ++= Seq(
+        "net.leibman"               % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %% isn't working.
+        "dev.zio" %%% "zio"         % zioVersion withSources (),
+        "dev.zio" %%% "zio-json"    % zioJsonVersion withSources (),
+        "dev.zio" %%% "zio-prelude" % zioPreludeVersion withSources (),
+        "io.kevinlee" %%% "just-semver-core"                                % justSemverCoreVersion withSources (),
+        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-core"   % jsoniterVersion,
+        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-macros" % jsoniterVersion
+      )
+    )
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Connector API — plugin trait seam (Skill, ConnectorSkill, MessageIngress, InboundMessage, ...)
@@ -194,7 +212,7 @@ lazy val connectorApi = project
   .in(file("connector-api"))
   .enablePlugins(AutomateHeaderPlugin)
   .settings(commonSettings)
-  .dependsOn(model)
+  .dependsOn(modelJVM)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-connector-api",
@@ -215,7 +233,7 @@ lazy val telegramConnector = project
   .in(file("telegram"))
   .enablePlugins(AutomateHeaderPlugin)
   .settings(commonSettings)
-  .dependsOn(model, connectorApi)
+  .dependsOn(modelJVM, connectorApi)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-telegram",
@@ -240,7 +258,7 @@ lazy val emailConnector = project
   .in(file("email"))
   .enablePlugins(AutomateHeaderPlugin)
   .settings(commonSettings)
-  .dependsOn(model, connectorApi)
+  .dependsOn(modelJVM, connectorApi)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-email",
@@ -267,7 +285,7 @@ lazy val googleServices = project
   .in(file("google-services"))
   .enablePlugins(AutomateHeaderPlugin)
   .settings(commonSettings)
-  .dependsOn(model, connectorApi)
+  .dependsOn(modelJVM, connectorApi)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-google-services",
@@ -288,34 +306,6 @@ lazy val googleServices = project
     Test / fork := true,
   )
 
-////////////////////////////////////////////////////////////////////////////////////
-// Analytics
-
-lazy val analytics = project
-  .enablePlugins(
-    AutomateHeaderPlugin,
-    com.github.sbt.git.GitVersioning,
-  )
-  .settings(
-    scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "jorlan-analytics",
-    commonSettings,
-    libraryDependencies ++= Seq(
-      "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
-    ),
-    libraryDependencies ++= Seq(
-      "dev.zio"     %% "zio"                 % zioVersion withSources (),
-      "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
-      "dev.zio"     %% "zio-config-magnolia" % zioConfigVersion withSources (),
-      "dev.zio"     %% "zio-config-typesafe" % zioConfigVersion withSources (),
-      "dev.zio"     %% "zio-json"            % zioJsonVersion withSources (),
-      "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
-      "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
-      "io.getquill" %% "quill-jdbc-zio"      % quillVersion withSources (),
-      "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
-    ),
-  )
-  .dependsOn(model)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Server
@@ -332,7 +322,7 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(model, ai, analytics, connectorApi, telegramConnector, emailConnector, googleServices)
+  .dependsOn(modelJVM, ai, connectorApi, telegramConnector, emailConnector, googleServices)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -377,7 +367,7 @@ lazy val server = project
     Test / fork           := true,
     coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
-    Compile / doc / sources          := Seq.empty,
+    Compile / doc / sources := Seq.empty,
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -388,7 +378,7 @@ lazy val integration = project
     com.github.sbt.git.GitVersioning,
   )
   .settings(commonSettings)
-  .dependsOn(model, server, shell, connectorApi, telegramConnector)
+  .dependsOn(modelJVM, server, shell, connectorApi, telegramConnector)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-integration",
@@ -435,7 +425,7 @@ lazy val shell = project
   .settings(shellDebianSettings, commonSettings)
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
-    name := "jorlan-shell",
+    name                := "jorlan-shell",
     Compile / mainClass := Some("jorlan.shell.JorlanShell"),
     libraryDependencies ++= Seq(
       "dev.zio"                       %% "zio"                 % zioVersion withSources (),
@@ -467,28 +457,28 @@ lazy val shell = project
       case x                             => MergeStrategy.preferProject
     },
   )
-  .dependsOn(model)
+  .dependsOn(modelJVM)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Utility
 lazy val debianSettings =
   Seq(
-    Compile / mainClass                   := Some("jorlan.Jorlan"),
-    Debian / name                         := "jorlan-server",
+    Compile / mainClass := Some("jorlan.Jorlan"),
+    Debian / name       := "jorlan-server",
     // Debian versions must start with a digit; sbt-git uses git hash in dev
-    Debian / version                      := {
+    Debian / version := {
       val v = version.value
       if (v.headOption.exists(_.isDigit)) v else "0.1.0-SNAPSHOT"
     },
-    Debian / packageDescription           := "Jorlan Secure Agent Runtime",
-    Debian / packageSummary               := "Jorlan Secure Agent Runtime",
-    Debian / debianChangelog              := Some(file("debian/changelog")),
-    Debian / debianPackageDependencies    += "default-jre-headless (>= 2:1.21)",
-    Linux / maintainer                    := "Roberto Leibman <roberto@leibman.net>",
-    Linux / daemonUser                    := "jorlan",
-    Linux / daemonGroup                   := "jorlan",
-    Linux / defaultLinuxInstallLocation   := "/usr/lib",
-    Debian / serverLoading                := Some(ServerLoader.Systemd),
+    Debian / packageDescription := "Jorlan Secure Agent Runtime",
+    Debian / packageSummary     := "Jorlan Secure Agent Runtime",
+    Debian / debianChangelog    := Some(file("debian/changelog")),
+    Debian / debianPackageDependencies += "default-jre-headless (>= 2:1.21)",
+    Linux / maintainer                  := "Roberto Leibman <roberto@leibman.net>",
+    Linux / daemonUser                  := "jorlan",
+    Linux / daemonGroup                 := "jorlan",
+    Linux / defaultLinuxInstallLocation := "/usr/lib",
+    Debian / serverLoading              := Some(ServerLoader.Systemd),
     // JVM flags picked up by the generated launch script
     Universal / javaOptions ++= Seq(
       "-Dlogback.configurationFile=/etc/jorlan-server/logback.xml",
@@ -575,15 +565,15 @@ lazy val debianSettings =
 
 lazy val shellDebianSettings =
   Seq(
-    Debian / name                       := "jorlan-shell",
-    Debian / version                    := {
+    Debian / name    := "jorlan-shell",
+    Debian / version := {
       val v = version.value
       if (v.headOption.exists(_.isDigit)) v else "0.1.0-SNAPSHOT"
     },
-    Debian / packageDescription         := "Jorlan Shell — CLI client for the Jorlan server",
-    Debian / packageSummary             := "Jorlan Shell CLI client",
-    Debian / debianChangelog            := Some(file("debian/changelog")),
-    Debian / debianPackageDependencies  += "default-jre-headless (>= 2:1.21)",
+    Debian / packageDescription := "Jorlan Shell — CLI client for the Jorlan server",
+    Debian / packageSummary     := "Jorlan Shell CLI client",
+    Debian / debianChangelog    := Some(file("debian/changelog")),
+    Debian / debianPackageDependencies += "default-jre-headless (>= 2:1.21)",
     Linux / maintainer                  := "Roberto Leibman <roberto@leibman.net>",
     Linux / defaultLinuxInstallLocation := "/usr/lib",
     executableScriptName                := "jorlan",
@@ -624,7 +614,7 @@ lazy val ai = project
 lazy val bundlerSettings: Project => Project =
   _.enablePlugins(ScalaJSBundlerPlugin)
     .settings(
-      webpack / version := "5.96.1",
+      webpack / version                  := "5.96.1",
       Compile / fastOptJS / artifactPath := ((Compile / fastOptJS / crossTarget).value /
         ((fastOptJS / moduleName).value + "-opt.js")),
       Compile / fullOptJS / artifactPath := ((Compile / fullOptJS / crossTarget).value /
@@ -654,7 +644,7 @@ lazy val withCssLoading: Project => Project =
 lazy val commonWeb: Project => Project =
   _.settings(
     libraryDependencies ++= Seq(
-      "net.leibman" %%% "jorlan-stlib"          % stlibVersion withSources (),
+      "net.leibman" %%% "jorlan-stlib" % stlibVersion withSources (),
       "net.leibman" % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %%% isn't working.
       "com.github.ghostdogpr" %%% "caliban-client"    % calibanClientVersion withSources (),
       "dev.zio" %%% "zio"                             % zioVersion withSources (),
@@ -686,7 +676,7 @@ lazy val commonWeb: Project => Project =
   )
 
 lazy val web: Project = project
-  .dependsOn(model)
+  .dependsOn(modelJS)
   .configure(bundlerSettings)
   .configure(withCssLoading)
   .configure(commonWeb)
@@ -698,7 +688,7 @@ lazy val web: Project = project
   )
   .settings(
     scalacOptions ++= scala3Opts,
-    name            := "jorlan-web",
+    name := "jorlan-web",
     // The entire web module compiles to JavaScript (Scala.js) and requires a
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
     // doesn't instrument Scala.js bytecode or report 0% coverage.
@@ -728,7 +718,8 @@ lazy val web: Project = project
 lazy val root = project
   .in(file("."))
   .aggregate(
-    model,
+    modelJVM,
+    modelJS,
     connectorApi,
     telegramConnector,
     emailConnector,
@@ -736,7 +727,6 @@ lazy val root = project
     ai,
     server,
     shell,
-    analytics,
     integration,
     web,
   )

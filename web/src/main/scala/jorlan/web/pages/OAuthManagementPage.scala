@@ -12,10 +12,9 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.User
-import jorlan.web.JorlanWebApp
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import jorlan.web.graphql.client.JorlanClient
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -46,13 +45,12 @@ object OAuthManagementPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(JorlanClient.Queries.listOAuthProviders)
+            AsyncCallbackRepositories.extCredential
+              .listOAuthProviders()
               .flatMap { result =>
                 state
                   .setState(
-                    state.value.copy(connectedProviders = result.getOrElse(Nil), loading = false),
+                    state.value.copy(connectedProviders = result, loading = false),
                   ).asAsyncCallback
               }
               .completeWith {
@@ -70,14 +68,11 @@ object OAuthManagementPage {
         ) =>
           def handleConnect(provider: String): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(
-                  JorlanClient.Mutations.startOAuth(provider)(JorlanClient.OAuthStartResult.view),
-                )
+              AsyncCallbackRepositories.extCredential
+                .startOAuth(provider)
                 .completeWith {
-                  case scala.util.Success(Some(result)) =>
-                    Callback { org.scalajs.dom.window.location.href = result.authUrl }
+                  case scala.util.Success(Some(authUrl)) =>
+                    Callback { org.scalajs.dom.window.location.href = authUrl }
                   case scala.util.Success(None) =>
                     state.setState(state.value.copy(error = Some(s"Failed to start $provider OAuth")))
                   case scala.util.Failure(err) =>
@@ -88,9 +83,8 @@ object OAuthManagementPage {
 
           def handleRevoke(provider: String): Callback =
             Callback {
-              JorlanWebApp
-                .makeAdapter()
-                .asyncCalibanCallWithAuth(JorlanClient.Mutations.revokeOAuth(provider))
+              AsyncCallbackRepositories.extCredential
+                .revokeOAuth(provider)
                 .completeWith {
                   case scala.util.Success(_) =>
                     state.modState(s => s.copy(connectedProviders = s.connectedProviders.filterNot(_ == provider)))

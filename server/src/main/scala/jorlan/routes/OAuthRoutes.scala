@@ -12,7 +12,7 @@ package jorlan.routes
 
 import auth.{AuthConfig, AuthenticatedSession, key}
 import jorlan.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.OAuthCredentialService
 import zio.*
 import zio.http.*

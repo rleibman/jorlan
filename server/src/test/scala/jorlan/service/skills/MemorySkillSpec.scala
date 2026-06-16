@@ -12,7 +12,7 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.MemoryService
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl

@@ -12,7 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.domain.*
+import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

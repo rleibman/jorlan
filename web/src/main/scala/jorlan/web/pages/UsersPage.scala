@@ -12,10 +12,8 @@ package jorlan.web.pages
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
-import jorlan.domain.*
-import jorlan.web.JorlanWebApp
-import jorlan.web.graphql.client.JorlanClient
-import jorlan.web.graphql.client.JorlanClientDecoders._
+import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -24,7 +22,7 @@ import scala.scalajs.js
 object UsersPage {
 
   case class State(
-    users:   List[JorlanClient.User.UserView],
+    users:   List[User],
     loading: Boolean,
     error:   Option[String],
   )
@@ -39,14 +37,9 @@ object UsersPage {
           state,
         ) =>
           Callback {
-            JorlanWebApp
-              .makeAdapter()
-              .asyncCalibanCallWithAuth(
-                JorlanClient.Queries.users()(JorlanClient.User.view),
-              )
-              .flatMap(users =>
-                state.setState(State(users.getOrElse(Nil), loading = false, error = None)).asAsyncCallback,
-              )
+            AsyncCallbackRepositories.user
+              .search(UserSearch())
+              .flatMap(users => state.setState(State(users, loading = false, error = None)).asAsyncCallback)
               .completeWith {
                 case scala.util.Failure(ex) =>
                   state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
@@ -81,7 +74,7 @@ object UsersPage {
                     state.value.users.map { user =>
                       TableRow.withKey(user.id.value.toString)(
                         TableCell()(user.displayName),
-                        TableCell()(user.email.getOrElse("—")),
+                        TableCell()(user.email),
                         TableCell()(
                           Chip
                             .set("label", if (user.active) "Active" else "Inactive")

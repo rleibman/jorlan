@@ -13,7 +13,7 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
-import jorlan.domain.*
+import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.*
@@ -132,57 +132,67 @@ class AgentRunnerImpl(
       logEvent(sessionId, EventType.ToolLoopExceeded, actorId, agentId) *>
         sessionHub.publish(ResponseChunk(sessionId, errMsg, finished = false)).unit
     } else {
-      modelGateway
-        .chatStep(sessionId, messages, tools)
-        .mapError(e => JorlanError(e.msg, Some(e)))
-        .flatMap {
-          case FinalAnswer(stream) =>
-            ZIO.scoped {
-              stream
-                .mapError(e => JorlanError(e.msg, Some(e)))
-                .tapError(e => errorRef.set(Some(e.getMessage)))
-                .foreach { chunk =>
-                  chunksRef.update(_ :+ chunk) *>
-                    sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
-                }
-            }
+      ZIO.logDebug(
+        s"[react:${sessionId.value}] chatStep stepsLeft=$stepsLeft messages=${messages.length} tools=${tools.length}",
+      ) *>
+        modelGateway
+          .chatStep(sessionId, messages, tools)
+          .mapError(e => JorlanError(e.msg, Some(e)))
+          .flatMap {
+            case FinalAnswer(stream) =>
+              ZIO.scoped {
+                stream
+                  .mapError(e => JorlanError(e.msg, Some(e)))
+                  .tapError(e => errorRef.set(Some(e.getMessage)))
+                  .foreach { chunk =>
+                    chunksRef.update(_ :+ chunk) *>
+                      sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
+                  }
+              }
 
-          case ToolCallRequested(id, name, argsJson) =>
-            val toolFeedback = s"⟳ calling $name…\n"
-            for {
-              _ <- sessionHub.publish(ResponseChunk(sessionId, toolFeedback, finished = false))
-              _ <- toolEventHub.publish(ToolEvent.ToolInvokedEvent(sessionId, name, argsJson))
-              _ <- logEvent(
-                sessionId,
-                EventType.SkillInvoked,
-                actorId,
-                agentId,
-                Some(
-                  zio.json.ast.Json
-                    .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(argsJson)),
-                ),
-              )
-              resultJson <- skillRegistry.invoke(name, argsJson, ctx)
-              _          <- toolEventHub.publish(
-                ToolEvent.ToolResultEvent(sessionId, name, resultJson.toString, succeeded = true),
-              )
-              _ <- logEvent(
-                sessionId,
-                EventType.SkillSucceeded,
-                actorId,
-                agentId,
-                Some(
-                  zio.json.ast.Json
-                    .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(resultJson.toString)),
-                ),
-              )
-              newMessages = messages ++ List(
-                ToolCallMsg(id, name, argsJson),
-                ToolResultMsg(id, name, resultJson.toString),
-              )
-              _ <- reactLoop(env, newMessages, stepsLeft - 1)
-            } yield ()
-        }
+            case ToolCallRequested(id, name, argsJson) =>
+              val toolFeedback = s"⟳ calling $name…\n"
+              for {
+                _ <- ZIO.logDebug(s"[react:${sessionId.value}] tool call → $name args=$argsJson")
+                _ <- sessionHub.publish(ResponseChunk(sessionId, toolFeedback, finished = false))
+                _ <- toolEventHub.publish(ToolEvent.ToolInvokedEvent(sessionId, name, argsJson))
+                _ <- logEvent(
+                  sessionId,
+                  EventType.SkillInvoked,
+                  actorId,
+                  agentId,
+                  Some(
+                    zio.json.ast.Json
+                      .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(argsJson)),
+                  ),
+                )
+                resultJson <- skillRegistry.invoke(name, argsJson, ctx)
+                resultJsonStr = resultJson.toJson
+                _ <- ZIO.logDebug(s"[react:${sessionId.value}] tool result ← $name result=${resultJsonStr.take(200)}")
+                isError = resultJson match {
+                  case zio.json.ast.Json.Str(s) if s.startsWith("Error:") => true
+                  case _                                                  => false
+                }
+                _ <- toolEventHub.publish(
+                  ToolEvent.ToolResultEvent(sessionId, name, resultJsonStr, succeeded = !isError),
+                )
+                _ <- logEvent(
+                  sessionId,
+                  if (isError) EventType.SkillFailed else EventType.SkillSucceeded,
+                  actorId,
+                  agentId,
+                  Some(
+                    zio.json.ast.Json
+                      .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(resultJsonStr)),
+                  ),
+                )
+                newMessages = messages ++ List(
+                  ToolCallMsg(id, name, argsJson),
+                  ToolResultMsg(id, name, resultJsonStr),
+                )
+                _ <- reactLoop(env, newMessages, stepsLeft - 1)
+              } yield ()
+          }
     }
   }
 
