@@ -144,7 +144,7 @@ class MarketDataSkill(
   private def quote(args: Json): IO[JorlanError, Json] =
     for {
       symbol <- field(args, "symbol")
-      url = s"$baseUrl?function=GLOBAL_QUOTE&symbol=$symbol&apikey=$apiKey"
+      url = s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
