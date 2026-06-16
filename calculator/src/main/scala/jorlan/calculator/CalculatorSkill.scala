@@ -17,15 +17,14 @@ import zio.*
 import zio.json.ast.Json
 
 /** Tier 0 calculator skill — evaluates mathematical expressions via mXparser.
- *
- * Exposes a single `calculator.evaluate` tool that accepts a math expression string and returns
- * the numeric result. No capabilities are required — math is a safe, capability-free operation.
- */
+  *
+  * Exposes a single `calculator.evaluate` tool that accepts a math expression string and returns the numeric result. No
+  * capabilities are required — math is a safe, capability-free operation.
+  */
 class CalculatorSkill extends Skill {
 
   // Suppress mXparser license warnings — this project is non-commercial research/internal use.
   License.iConfirmNonCommercialUse("Jorlan")
-
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "calculator",
@@ -33,8 +32,7 @@ class CalculatorSkill extends Skill {
     tools = List(
       ToolDescriptor(
         name = "calculator.evaluate",
-        description =
-          "Evaluate a mathematical expression and return the numeric result. Supports arithmetic, algebra, trigonometry, logarithms, and common math functions (e.g. sqrt, sin, cos, log). Returns an error if the expression is invalid or produces an undefined result (NaN or Infinity).",
+        description = "Evaluate a mathematical expression and return the numeric result. Supports arithmetic, algebra, trigonometry, logarithms, and common math functions (e.g. sqrt, sin, cos, log). Returns an error if the expression is invalid or produces an undefined result (NaN or Infinity).",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"expression":{"type":"string","description":"The mathematical expression to evaluate, e.g. \"2 + 2 * sqrt(9)\""}},"required":["expression"]}""",
@@ -56,35 +54,38 @@ class CalculatorSkill extends Skill {
   )
 
   override def invoke(
-                       ctx: InvocationContext,
-                       tool: String,
-                       args: Json,
-                     ): IO[JorlanError, Json] =
+    ctx:  InvocationContext,
+    tool: String,
+    args: Json,
+  ): IO[JorlanError, Json] =
     tool match {
       case "calculator.evaluate" =>
         val expressionStrOpt: Option[String] = args match {
           case Json.Obj(fields) => fields.collectFirst { case ("expression", Json.Str(v)) => v }
-          case _ => None
+          case _                => None
         }
         expressionStrOpt match {
           case None =>
             ZIO.fail(ValidationError("missing field 'expression'"))
           case Some(expressionStr) =>
-            ZIO.attempt {
-              val expr = new Expression(expressionStr)
-              val result = expr.calculate()
-              if (result.isNaN || result.isInfinite) {
-                Json.Obj(
-                  "error" -> Json.Str(s"Expression '$expressionStr' yielded an undefined result (${if (result.isNaN) "NaN" else "Infinity"})"),
-                  "expression" -> Json.Str(expressionStr),
-                )
-              } else {
-                Json.Obj(
-                  "result" -> Json.Num(result),
-                  "expression" -> Json.Str(expressionStr),
-                )
-              }
-            }.mapError(e => JorlanError(s"Calculator error: ${Option(e.getMessage).getOrElse("unknown error")}"))
+            ZIO
+              .attempt {
+                val expr = new Expression(expressionStr)
+                val result = expr.calculate()
+                if (result.isNaN || result.isInfinite) {
+                  Json.Obj(
+                    "error" -> Json.Str(s"Expression '$expressionStr' yielded an undefined result (${
+                        if (result.isNaN) "NaN" else "Infinity"
+                      })"),
+                    "expression" -> Json.Str(expressionStr),
+                  )
+                } else {
+                  Json.Obj(
+                    "result"     -> Json.Num(result),
+                    "expression" -> Json.Str(expressionStr),
+                  )
+                }
+              }.mapError(e => JorlanError(s"Calculator error: ${Option(e.getMessage).getOrElse("unknown error")}"))
         }
 
       case other =>

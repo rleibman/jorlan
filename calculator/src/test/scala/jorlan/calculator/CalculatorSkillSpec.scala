@@ -38,7 +38,7 @@ object CalculatorSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(ctx, "calculator.evaluate", args("2 + 2"))
         } yield result match {
           case Json.Obj(fields) =>
-            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.toDouble }
+            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.doubleValue() }
             assertTrue(resultVal.exists(v => (v - 4.0).abs < 1e-9))
           case _ => assertTrue(false)
         }
@@ -48,7 +48,7 @@ object CalculatorSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(ctx, "calculator.evaluate", args("sqrt(16)"))
         } yield result match {
           case Json.Obj(fields) =>
-            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.toDouble }
+            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.doubleValue() }
             assertTrue(resultVal.exists(v => (v - 4.0).abs < 1e-9))
           case _ => assertTrue(false)
         }
@@ -59,7 +59,7 @@ object CalculatorSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(ctx, "calculator.evaluate", args("2 + 2 * sqrt(9)"))
         } yield result match {
           case Json.Obj(fields) =>
-            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.toDouble }
+            val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.doubleValue() }
             assertTrue(resultVal.exists(v => (v - 8.0).abs < 1e-9))
           case _ => assertTrue(false)
         }
