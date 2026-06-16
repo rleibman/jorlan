@@ -22,9 +22,9 @@ import zio.json.ast.Json
   * @param serverUrl
   *   Base URL of the Lyrion Music Server (formerly Logitech Media Server / Squeezebox Server)
   * @param username
-  *   Optional username for HTTP basic auth (leave empty if auth is disabled)
+  *   Username for HTTP basic auth (currently unused; reserved for future support)
   * @param password
-  *   Optional password for HTTP basic auth (leave empty if auth is disabled)
+  *   Password for HTTP basic auth (currently unused; reserved for future support)
   */
 case class LyrionSettings(
   serverUrl: String = "http://localhost:9000",
