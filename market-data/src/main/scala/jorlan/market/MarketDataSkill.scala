@@ -202,7 +202,7 @@ class MarketDataSkill(
   private def news(args: Json): IO[JorlanError, Json] =
     for {
       symbol <- field(args, "symbol")
-      url = s"$baseUrl?function=NEWS_SENTIMENT&tickers=$symbol&apikey=$apiKey&limit=5"
+      url = s"$baseUrl?function=NEWS_SENTIMENT&tickers=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey&limit=5"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
