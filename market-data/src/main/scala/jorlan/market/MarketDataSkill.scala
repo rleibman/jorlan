@@ -118,13 +118,18 @@ class MarketDataSkill(
   private def fetchJson(url: String): IO[JorlanError, Json] =
     client
       .batched(Request.get(url))
-      .flatMap(_.body.asString)
-      .mapError(e => JorlanError(Option(e.getMessage).getOrElse("HTTP error")))
-      .flatMap { body =>
-        Json.decoder.decodeJson(body) match {
-          case Right(json) => ZIO.succeed(json)
-          case Left(err)   => ZIO.fail(JorlanError(s"Failed to parse Alpha Vantage response: $err"))
-        }
+      .mapError(e => JorlanError("HTTP error", Some(e)))
+      .flatMap { resp =>
+        resp.body.asString
+          .mapError(e => JorlanError("Failed to read Alpha Vantage response body", Some(e)))
+          .flatMap { body =>
+            if (!resp.status.isSuccess)
+              ZIO.fail(JorlanError(s"Alpha Vantage HTTP ${resp.status.code}: $body"))
+            else
+              ZIO
+                .fromEither(Json.decoder.decodeJson(body))
+                .mapError(err => JorlanError(s"Failed to parse Alpha Vantage response: $err"))
+          }
       }
 
   private def checkRateLimit(json: Json): IO[JorlanError, Json] =
