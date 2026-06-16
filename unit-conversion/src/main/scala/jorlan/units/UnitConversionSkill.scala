@@ -401,7 +401,7 @@ class UnitConversionSkill extends Skill {
       case "units.convert" =>
         args match {
           case Json.Obj(fields) =>
-            val valueOpt = fields.collectFirst { case ("value", Json.Num(n)) => n.toDouble }
+            val valueOpt = fields.collectFirst { case ("value", Json.Num(n)) => n.doubleValue() }
             val fromUnitOpt = fields.collectFirst { case ("fromUnit", Json.Str(s)) => s }
             val toUnitOpt = fields.collectFirst { case ("toUnit", Json.Str(s)) => s }
 
@@ -411,10 +411,10 @@ class UnitConversionSkill extends Skill {
                   case Right(result) =>
                     ZIO.succeed(
                       Json.Obj(
-                        "result"     -> Json.Num(result),
+                        "result"     -> Json.Num(result: Double),
                         "fromUnit"   -> Json.Str(fromUnit),
                         "toUnit"     -> Json.Str(toUnit),
-                        "inputValue" -> Json.Num(value),
+                        "inputValue" -> Json.Num(value: Double),
                       ),
                     )
                   case Left(error) =>

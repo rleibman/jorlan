@@ -105,7 +105,12 @@ class MessageIngressImpl(
                 .flatMap { stream =>
                   stream
                     .takeUntil(_.finished)
-                    .runFold("") { (acc, chunk) => acc + chunk.content }
+                    .runFold("") {
+                      (
+                        acc,
+                        chunk,
+                      ) => acc + chunk.content
+                    }
                     .flatMap(text => if (text.trim.isEmpty) ZIO.unit else cb(text))
                     .catchAllCause(cause =>
                       ZIO.logWarning(
