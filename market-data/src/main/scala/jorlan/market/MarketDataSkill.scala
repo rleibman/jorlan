@@ -20,14 +20,17 @@ import zio.json.ast.Json
 /** Built-in skill for fetching market data via the Alpha Vantage API.
   *
   * Exposes three tools:
-  *   - `market.quote`  — real-time quote for a ticker symbol
+  *   - `market.quote` — real-time quote for a ticker symbol
   *   - `market.search` — symbol search by keyword
-  *   - `market.news`   — news sentiment for a ticker symbol
+  *   - `market.news` — news sentiment for a ticker symbol
   *
   * All tools require the `market.read` capability. When the API key is absent every call returns an error JSON without
   * making a network request.
   */
-class MarketDataSkill(apiKey: String, client: Client) extends Skill {
+class MarketDataSkill(
+  apiKey: String,
+  client: Client,
+) extends Skill {
 
   private val baseUrl = "https://www.alphavantage.co/query"
 
@@ -37,8 +40,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
     tools = List(
       ToolDescriptor(
         name = "market.quote",
-        description =
-          "Fetch a real-time stock quote for a ticker symbol. Returns price, change, change percentage, volume, and the latest trading day.",
+        description = "Fetch a real-time stock quote for a ticker symbol. Returns price, change, change percentage, volume, and the latest trading day.",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
@@ -53,8 +55,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
       ),
       ToolDescriptor(
         name = "market.search",
-        description =
-          "Search for ticker symbols matching a keyword query. Returns up to 5 matching securities with symbol, name, type, and region.",
+        description = "Search for ticker symbols matching a keyword query. Returns up to 5 matching securities with symbol, name, type, and region.",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"query":{"type":"string","description":"Search keyword, e.g. Apple or Tesla"}},"required":["query"]}""",
@@ -69,8 +70,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
       ),
       ToolDescriptor(
         name = "market.news",
-        description =
-          "Fetch the latest news headlines and sentiment for a ticker symbol. Returns up to 5 recent news items with title, URL, summary, sentiment, and relevance score.",
+        description = "Fetch the latest news headlines and sentiment for a ticker symbol. Returns up to 5 recent news items with title, URL, summary, sentiment, and relevance score.",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
@@ -103,7 +103,10 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
     }
   }
 
-  private def field(args: Json, name: String): IO[JorlanError, String] =
+  private def field(
+    args: Json,
+    name: String,
+  ): IO[JorlanError, String] =
     args match {
       case Json.Obj(fields) =>
         fields
@@ -113,18 +116,16 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
     }
 
   private def fetchJson(url: String): IO[JorlanError, Json] =
-    ZIO.scoped {
-      client
-        .request(Request.get(url))
-        .flatMap(_.body.asString)
-        .mapError(e => JorlanError(Option(e.getMessage).getOrElse("HTTP error")))
-        .flatMap { body =>
-          Json.decoder.decodeJson(body) match {
-            case Right(json) => ZIO.succeed(json)
-            case Left(err)   => ZIO.fail(JorlanError(s"Failed to parse Alpha Vantage response: $err"))
-          }
+    client
+      .batched(Request.get(url))
+      .flatMap(_.body.asString)
+      .mapError(e => JorlanError(Option(e.getMessage).getOrElse("HTTP error")))
+      .flatMap { body =>
+        Json.decoder.decodeJson(body) match {
+          case Right(json) => ZIO.succeed(json)
+          case Left(err)   => ZIO.fail(JorlanError(s"Failed to parse Alpha Vantage response: $err"))
         }
-    }
+      }
 
   private def checkRateLimit(json: Json): IO[JorlanError, Json] =
     json match {
@@ -143,7 +144,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
       limited <- checkRateLimit(raw)
     } yield limited match {
       case obj @ Json.Obj(fields) if fields.exists { case ("error", _) => true; case _ => false } => obj
-      case Json.Obj(fields) =>
+      case Json.Obj(fields)                                                                       =>
         fields
           .collectFirst { case ("Global Quote", Json.Obj(quote)) => quote }
           .map { quote =>
@@ -151,11 +152,11 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
               quote.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
 
             Json.Obj(
-              "symbol"          -> qfield("01. symbol"),
-              "price"           -> qfield("05. price"),
-              "change"          -> qfield("09. change"),
-              "changePercent"   -> qfield("10. change percent"),
-              "volume"          -> qfield("06. volume"),
+              "symbol"           -> qfield("01. symbol"),
+              "price"            -> qfield("05. price"),
+              "change"           -> qfield("09. change"),
+              "changePercent"    -> qfield("10. change percent"),
+              "volume"           -> qfield("06. volume"),
               "latestTradingDay" -> qfield("07. latest trading day"),
             )
           }
@@ -171,7 +172,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
       limited <- checkRateLimit(raw)
     } yield limited match {
       case obj @ Json.Obj(fields) if fields.exists { case ("error", _) => true; case _ => false } => obj
-      case Json.Obj(fields) =>
+      case Json.Obj(fields)                                                                       =>
         fields
           .collectFirst { case ("bestMatches", Json.Arr(matches)) => matches }
           .map { matches =>
@@ -201,7 +202,7 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
       limited <- checkRateLimit(raw)
     } yield limited match {
       case obj @ Json.Obj(fields) if fields.exists { case ("error", _) => true; case _ => false } => obj
-      case Json.Obj(fields) =>
+      case Json.Obj(fields)                                                                       =>
         fields
           .collectFirst { case ("feed", Json.Arr(items)) => items }
           .map { items =>
@@ -216,7 +217,8 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
                   .flatMap { ts =>
                     ts.collectFirst {
                       case Json.Obj(t)
-                          if t.collectFirst { case ("ticker", Json.Str(s)) => s }
+                          if t
+                            .collectFirst { case ("ticker", Json.Str(s)) => s }
                             .exists(_.equalsIgnoreCase(symbol)) =>
                         t.collectFirst { case ("ticker_sentiment_label", Json.Str(l)) => l }
                           .getOrElse("Neutral")
@@ -228,7 +230,8 @@ class MarketDataSkill(apiKey: String, client: Client) extends Skill {
                   .flatMap { ts =>
                     ts.collectFirst {
                       case Json.Obj(t)
-                          if t.collectFirst { case ("ticker", Json.Str(s)) => s }
+                          if t
+                            .collectFirst { case ("ticker", Json.Str(s)) => s }
                             .exists(_.equalsIgnoreCase(symbol)) =>
                         t.collectFirst { case ("relevance_score", v) => v }
                     }.flatten
