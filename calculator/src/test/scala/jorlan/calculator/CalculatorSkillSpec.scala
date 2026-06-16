@@ -49,7 +49,7 @@ object CalculatorSkillSpec extends ZIOSpecDefault {
         } yield result match {
           case Json.Obj(fields) =>
             val resultVal = fields.collectFirst { case ("result", Json.Num(n)) => n.toDouble }
-            assertTrue(resultVal.contains(4.0))
+            assertTrue(resultVal.exists(v => (v - 4.0).abs < 1e-9))
           case _ => assertTrue(false)
         }
       },
