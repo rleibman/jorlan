@@ -15,6 +15,7 @@ import jorlan.connector.*
 import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
 import jorlan.*
 import zio.*
+import zio.stream.*
 
 /** Connector-agnostic ingress pipeline.
   *
@@ -42,6 +43,7 @@ class MessageIngressImpl(
   override def receive(
     msg:                InboundMessage,
     unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
+    onResponse:         Option[String => UIO[Unit]] = None,
   ): IO[JorlanError, Unit] =
     for {
       userOpt <- repo.user
@@ -49,7 +51,7 @@ class MessageIngressImpl(
         .mapError(JorlanError(_))
       _ <- userOpt match {
         case None       => handleUnrecognized(msg, unrecognizedPolicy)
-        case Some(user) => handleKnown(msg, user)
+        case Some(user) => handleKnown(msg, user, onResponse)
       }
     } yield ()
 
@@ -69,8 +71,9 @@ class MessageIngressImpl(
     }
 
   private def handleKnown(
-    msg:  InboundMessage,
-    user: User,
+    msg:        InboundMessage,
+    user:       User,
+    onResponse: Option[String => UIO[Unit]],
   ): IO[JorlanError, Unit] =
     for {
       evalResult <- evaluator.evaluate(
@@ -94,8 +97,26 @@ class MessageIngressImpl(
         case _ =>
           for {
             sessionId <- resolveOrCreateSession(user, msg)
-            _         <- agentRunner.processMessage(sessionId, msg.content, Some(user.id))
-            _         <- logInboundEvent(msg, actorId = Some(user.id), sessionId = Some(sessionId))
+            // Subscribe before processMessage so no tokens are missed.
+            _ <- onResponse.fold(ZIO.unit) { cb =>
+              val connId = ConnectionId.unsafeRandom
+              agentRunner
+                .subscribeToSession(sessionId, connId)
+                .flatMap { stream =>
+                  stream
+                    .takeUntil(_.finished)
+                    .runFold("") { (acc, chunk) => acc + chunk.content }
+                    .flatMap(text => if (text.trim.isEmpty) ZIO.unit else cb(text))
+                    .catchAllCause(cause =>
+                      ZIO.logWarning(
+                        s"[ingress:${msg.channelType}] onResponse callback failed: ${cause.squash.getMessage}",
+                      ),
+                    )
+                    .forkDaemon
+                }.unit
+            }
+            _ <- agentRunner.processMessage(sessionId, msg.content, Some(user.id))
+            _ <- logInboundEvent(msg, actorId = Some(user.id), sessionId = Some(sessionId))
           } yield ()
       }
     } yield ()

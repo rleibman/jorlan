@@ -34,6 +34,7 @@ object TelegramConnectorSkillSpec extends ZIOSpecDefault {
     override def receive(
       msg:                InboundMessage,
       unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
+      onResponse:         Option[String => UIO[Unit]] = None,
     ): IO[JorlanError, Unit] = received.update(_ :+ msg)
 
   }

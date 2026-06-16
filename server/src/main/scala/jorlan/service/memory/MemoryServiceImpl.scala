@@ -15,13 +15,15 @@ import jorlan.db.repository.ZIORepositories
 import jorlan.*
 import jorlan.service.*
 import zio.*
+import zio.json.*
+import zio.json.ast.Json
 
 class MemoryServiceImpl(
   repo:         ZIORepositories,
   accessPolicy: MemoryAccessPolicy,
   summarizer:   CheckpointSummarizer,
   classifier:   MemoryClassifier,
-  policy:       CheckpointPolicy,
+  policyRef:    Ref[CheckpointPolicyConfig],
 ) extends MemoryService {
 
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
@@ -33,7 +35,6 @@ class MemoryServiceImpl(
     agentId: AgentId,
     text:    Option[String] = None,
   ): IO[JorlanError, List[MemoryRecord]] = {
-    // For Shared/Workspace scopes, skip the DB-level userId filter — the access policy enforces visibility.
     val userFilter = scope match {
       case MemoryScope.Shared | MemoryScope.Workspace => None
       case _                                          => Some(userId)
@@ -95,7 +96,8 @@ class MemoryServiceImpl(
     trigger:   CheckpointTrigger,
   ): IO[JorlanError, Unit] =
     for {
-      should  <- policy.shouldCheckpoint(trigger, None)
+      config  <- policyRef.get
+      should  <- CheckpointPolicy.fromConfig(config).shouldCheckpoint(trigger, None)
       records <- ZIO.when(should)(summarizer.summarize(messages, userId, agentId))
       _       <- ZIO.foreachParDiscard(records.getOrElse(Nil)) { record =>
         val contentText = record.value.asObject
@@ -108,23 +110,70 @@ class MemoryServiceImpl(
       }
     } yield ()
 
+  override def requestCheckpoint(
+    sessionId: AgentSessionId,
+    userId:    UserId,
+    agentId:   AgentId,
+  ): IO[JorlanError, Unit] =
+    for {
+      convOpt <- repo.conversation
+        .search(
+          ConversationSearch(
+            sessionId = sessionId,
+            pageSize = 1,
+            sorts = Some(Sort(ConversationOrder.StartedAt, OrderDirection.Desc)),
+          ),
+        )
+        .mapError(JorlanError(_))
+      messages <- convOpt.headOption match {
+        case None    => ZIO.succeed(Nil)
+        case Some(c) =>
+          repo.conversation
+            .searchMessages(
+              MessageSearch(
+                conversationId = c.id,
+                pageSize = 100,
+                sorts = Some(Sort(MessageOrder.CreatedAt, OrderDirection.Asc)),
+              ),
+            )
+            .mapError(JorlanError(_))
+      }
+      _ <- checkpoint(sessionId, messages, userId, agentId, CheckpointTrigger.UserRequest)
+    } yield ()
+
+  override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = policyRef.get
+
+  override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] =
+    policyRef.set(config) *>
+      config.toJsonAST.fold(
+        err => ZIO.fail(JorlanError(s"Failed to serialise CheckpointPolicyConfig: $err")),
+        json => repo.setting.set(CheckpointPolicyConfig.serverSettingsKey, json).mapError(JorlanError(_)),
+      )
+
 }
 
 object MemoryServiceImpl {
 
   val live: URLayer[ZIORepositories & ModelGateway, MemoryService] =
-    ZLayer.fromFunction {
-      (
-        repo:    ZIORepositories,
-        gateway: ModelGateway,
-      ) =>
-        MemoryServiceImpl(
-          repo,
-          MemoryAccessPolicyImpl(),
-          CheckpointSummarizerImpl(gateway),
-          MemoryClassifierImpl(),
-          CheckpointPolicy.onSessionEnd,
-        )
-    }
+    ZLayer.fromZIO(
+      for {
+        repo        <- ZIO.service[ZIORepositories]
+        gateway     <- ZIO.service[ModelGateway]
+        savedConfig <- repo.setting
+          .get(CheckpointPolicyConfig.serverSettingsKey)
+          .mapError(JorlanError(_))
+          .map {
+            case Some(json) => json.as[CheckpointPolicyConfig].getOrElse(CheckpointPolicyConfig.default)
+            case None       => CheckpointPolicyConfig.default
+          }.orElseSucceed(CheckpointPolicyConfig.default)
+        policyRef <- Ref.make(savedConfig)
+      } yield MemoryServiceImpl(
+        repo,
+        MemoryAccessPolicyImpl(),
+        CheckpointSummarizerImpl(gateway),
+        MemoryClassifierImpl(),
+        policyRef,
+      ),
+    )
 
 }

@@ -64,6 +64,11 @@ trait JorlanScreen {
   /** Replace the prompt label shown in the input line (default "❯ "). Thread-safe. */
   def setInputPrompt(label: String): UIO[Unit]
 
+  /** Flush [[inProgressMessage]] into the messages list without adding a new entry. Called at the start of a new
+    * response drain to prevent chunks from being appended to the previous response.
+    */
+  def commitInProgress(): UIO[Unit]
+
   /** Update the mode/status bar at the bottom of the screen. Thread-safe. */
   def setModeStatus(text: String): UIO[Unit]
 
@@ -91,6 +96,11 @@ private case class ScreenState(
   inputPrompt:       String,
   modeText:          String,
   scrollOffset:      Int,
+  history:           Vector[String],
+  historyIdx:        Int,
+  draftInput:        String,
+  tabCandidates:     Vector[String],
+  tabIdx:            Int,
 )
 
 object JorlanScreen {
@@ -122,6 +132,11 @@ object JorlanScreen {
               inputPrompt = "❯ ",
               modeText = " [no session]  [disconnected]",
               scrollOffset = 0,
+              history = Vector.empty,
+              historyIdx = -1,
+              draftInput = "",
+              tabCandidates = Vector.empty,
+              tabIdx = 0,
             ),
           )
           inputBuf   <- Ref.make("")
@@ -194,6 +209,15 @@ private class LanternaScreen(
       }
     }
 
+  override def commitInProgress(): UIO[Unit] =
+    state.update { s =>
+      s.inProgressMessage.fold(s) { ip =>
+        val next = s.messages :+ ip
+        val msgs = if (next.size > JorlanScreen.maxMessages) next.drop(next.size - JorlanScreen.maxMessages) else next
+        s.copy(messages = msgs, inProgressMessage = None)
+      }
+    }
+
   override def setStatus(text: String): UIO[Unit] = state.update(_.copy(statusText = text))
 
   override def setInputPrompt(label: String): UIO[Unit] = state.update(_.copy(inputPrompt = label))
@@ -209,17 +233,10 @@ private class LanternaScreen(
       .repeatWhileZIO(_ => running.get)
       .unit
 
-  // ─── Per-frame work: read state → poll input → draw → refresh ──────────────
-  // Capped at ~30 fps: after each draw we yield for one frame period via
-  // ZIO.sleep so the ZIO scheduler thread is not held and the screen does not
-  // flash at thousands of redraws per second.
-
   private val frameDuration: Duration = 33.millis // ~30 fps
 
   private def oneFrame: UIO[Boolean] = {
     for {
-      // P7-023: Single atomic Ref.get replaces 5 separate reads, eliminating
-      // the partial-observation window in the render fiber.
       s     <- state.get
       input <- inputBuf.get
       cont  <- ZIO.blocking {
@@ -232,7 +249,7 @@ private class LanternaScreen(
             drawFrame(tg, sz.getColumns, sz.getRows, s, input)
             screen.refresh()
             keyOpt
-          }.fold(_ => Option.empty[KeyStroke], identity) // survive Lanterna IOExceptions
+          }.fold(_ => Option.empty[KeyStroke], identity)
       }
       _ <- cont.fold(ZIO.unit)(handleKey)
       _ <- ZIO.sleep(frameDuration)
@@ -246,31 +263,106 @@ private class LanternaScreen(
     key.getKeyType match {
       case KeyType.Character =>
         val ch = key.getCharacter
-        if (ch == null) ZIO.unit
-        else
+        {
           ch.toInt match {
-            case 3  => inputQueue.offer("/quit").unit // Ctrl-C — let quit handler shut down cleanly
-            case 4  => inputQueue.offer("/quit").unit // Ctrl-D
+            case 3       => inputQueue.offer("/quit").unit // Ctrl-C — let quit handler shut down cleanly
+            case 4       => inputQueue.offer("/quit").unit // Ctrl-D
+            case 9       => handleTab // Tab — autocomplete
+            case 10 | 13 =>
+              // Some terminals send Enter as \n (10) or \r (13) rather than KeyType.Enter
+              submitLine
             case 12 => ZIO.unit // Ctrl-L
-            case _  => inputBuf.update(_ + ch.toString)
+            case _  =>
+              // Any typing resets tab completion state, then appends character
+              state.update(_.copy(tabCandidates = Vector.empty, tabIdx = 0)) *>
+                inputBuf.update(_ + ch.toString)
           }
+        }.unless(ch == null).unit
       case KeyType.Backspace =>
-        inputBuf.update(s => if (s.isEmpty) "" else s.dropRight(1))
+        state.update(_.copy(tabCandidates = Vector.empty, tabIdx = 0)) *>
+          inputBuf.update(s => if (s.isEmpty) "" else s.dropRight(1))
       case KeyType.Delete =>
         ZIO.unit // cursor is always end-of-line; no character to delete forward
-      case KeyType.Enter =>
-        inputBuf.getAndSet("").flatMap(line => inputQueue.offer(line.trim).unit)
-      // TODO Arrow up and down should be for going through the command history, not for scrolling, use the mouse fo that, or maybe a controlkey?
-      case KeyType.ArrowUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 1))
-      case KeyType.ArrowDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 1) max 0))
-      case KeyType.PageUp    => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
-      case KeyType.PageDown  => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
-      case KeyType.Home      => state.update(_.copy(scrollOffset = Int.MaxValue))
-      case KeyType.End       => state.update(_.copy(scrollOffset = 0))
-      case KeyType.EOF       => inputQueue.offer("/quit").unit
-      case _                 => ZIO.unit
+      case KeyType.Enter   => submitLine
+      case KeyType.ArrowUp =>
+        // History navigation: go to previous entry
+        for {
+          buf <- inputBuf.get
+          s   <- state.get
+          _   <-
+            if (s.history.isEmpty) ZIO.unit
+            else {
+              val newIdx =
+                if (s.historyIdx == -1) s.history.size - 1
+                else (s.historyIdx - 1) max 0
+              val draft = if (s.historyIdx == -1) buf else s.draftInput
+              inputBuf.set(s.history(newIdx)) *>
+                state.update(_.copy(historyIdx = newIdx, draftInput = draft, tabCandidates = Vector.empty, tabIdx = 0))
+            }
+        } yield ()
+      case KeyType.ArrowDown =>
+        // History navigation: go forward (toward present)
+        for {
+          s <- state.get
+          _ <-
+            if (s.historyIdx == -1) ZIO.unit
+            else {
+              val newIdx = s.historyIdx + 1
+              if (newIdx >= s.history.size) {
+                // Back to draft
+                inputBuf.set(s.draftInput) *>
+                  state.update(_.copy(historyIdx = -1, tabCandidates = Vector.empty, tabIdx = 0))
+              } else {
+                inputBuf.set(s.history(newIdx)) *>
+                  state.update(_.copy(historyIdx = newIdx, tabCandidates = Vector.empty, tabIdx = 0))
+              }
+            }
+        } yield ()
+      case KeyType.PageUp   => state.update(s => s.copy(scrollOffset = s.scrollOffset + 10))
+      case KeyType.PageDown => state.update(s => s.copy(scrollOffset = (s.scrollOffset - 10) max 0))
+      case KeyType.Home     => state.update(_.copy(scrollOffset = Int.MaxValue))
+      case KeyType.End      => state.update(_.copy(scrollOffset = 0))
+      case KeyType.EOF      => inputQueue.offer("/quit").unit
+      case _                => ZIO.unit
     }
   }
+
+  private val submitLine: UIO[Unit] =
+    for {
+      line <- inputBuf.getAndSet("")
+      trimmed = line.trim
+      _ <- state.update { s =>
+        val newHistory =
+          if (trimmed.isEmpty || s.history.lastOption.contains(trimmed)) s.history
+          else if (s.history.size >= 500) s.history.drop(1) :+ trimmed
+          else s.history :+ trimmed
+        s.copy(history = newHistory, historyIdx = -1, draftInput = "", tabCandidates = Vector.empty, tabIdx = 0)
+      }
+      _ <- inputQueue.offer(trimmed)
+    } yield ()
+
+  private val handleTab: UIO[Unit] =
+    for {
+      buf <- inputBuf.get
+      s   <- state.get
+      _   <- {
+        val candidates =
+          if (s.tabCandidates.nonEmpty) s.tabCandidates
+          else CommandCompletions.completions(buf)
+        if (candidates.isEmpty) ZIO.unit
+        else if (candidates.size == 1) {
+          // Single match: complete fully (add trailing space if no parameter placeholder)
+          val completed = candidates.head
+          inputBuf.set(completed) *>
+            state.update(_.copy(tabCandidates = Vector.empty, tabIdx = 0))
+        } else {
+          // Multiple matches: cycle through them on repeated Tab
+          val idx = s.tabIdx % candidates.size
+          inputBuf.set(candidates(idx)) *>
+            state.update(_.copy(tabCandidates = candidates, tabIdx = idx + 1))
+        }
+      }
+    } yield ()
 
   // ─── Drawing ────────────────────────────────────────────────────────────────
 

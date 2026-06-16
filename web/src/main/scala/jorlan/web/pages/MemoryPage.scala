@@ -14,7 +14,8 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTextField}
+import jorlan.web.pages.PageUtils
+import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTablePagination, MuiTextField}
 import net.leibman.jorlan.muiMaterial.components.*
 import zio.json.ast.Json
 
@@ -31,12 +32,15 @@ object MemoryPage {
   )
 
   case class State(
-    memories:  List[MemoryRecord],
-    search:    String,
-    loading:   Boolean,
-    error:     Option[String],
-    showStore: Boolean,
-    storeForm: StoreForm,
+    memories:    List[MemoryRecord],
+    search:      String,
+    scopeFilter: MemoryScope,
+    loading:     Boolean,
+    error:       Option[String],
+    showStore:   Boolean,
+    storeForm:   StoreForm,
+    page:        Int,
+    rowsPerPage: Int,
   )
 
   private def valueString(v: Json): String =
@@ -48,7 +52,19 @@ object MemoryPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, "", loading = true, error = None, showStore = false, StoreForm("", "", MemoryScope.User)))
+      .useState(
+        State(
+          Nil,
+          "",
+          scopeFilter = MemoryScope.User,
+          loading = true,
+          error = None,
+          showStore = false,
+          StoreForm("", "", MemoryScope.User),
+          page = 0,
+          rowsPerPage = 10,
+        ),
+      )
       .useEffectOnMountBy {
         (
           _,
@@ -58,7 +74,7 @@ object MemoryPage {
             AsyncCallbackRepositories.memory
               .search(MemorySearch(MemoryScope.User))
               .flatMap { memories =>
-                state.setState(state.value.copy(memories = memories, loading = false)).asAsyncCallback
+                state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
@@ -79,7 +95,7 @@ object MemoryPage {
               AsyncCallbackRepositories.memory
                 .search(MemorySearch(MemoryScope.User, textSearch = search))
                 .flatMap { memories =>
-                  state.setState(state.value.copy(memories = memories, loading = false)).asAsyncCallback
+                  state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
@@ -93,13 +109,16 @@ object MemoryPage {
             Callback {
               AsyncCallbackRepositories.memory
                 .delete(id)
-                .flatMap(_ =>
-                  state.setState(state.value.copy(memories = state.value.memories.filter(_.id != id))).asAsyncCallback,
-                )
-                .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
-                  case _                      => Callback.empty
+                .flatMap { _ =>
+                  val newMems = state.value.memories.filter(_.id != id)
+                  val maxPage = math.max(0, (newMems.size - 1) / state.value.rowsPerPage)
+                  state
+                    .setState(
+                      state.value.copy(memories = newMems, page = math.min(state.value.page, maxPage)),
+                    )
+                    .asAsyncCallback
                 }
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
                 .runNow()
             }
 
@@ -186,6 +205,9 @@ object MemoryPage {
             }
           }
 
+          val pageItems = state.value.memories
+            .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
+
           <.div(
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
               Typography.set("variant", "h5")("Memory"),
@@ -206,55 +228,76 @@ object MemoryPage {
                 (state.setState(state.value.copy(search = q, loading = true)) >> runSearch(q)).runNow()
               }),
             if (state.value.loading) CircularProgress()
+            else if (state.value.memories.isEmpty)
+              Alert.set("severity", "info")("No memories found.")
             else
-              TableContainer()(
-                Table()(
-                  TableHead()(
-                    TableRow()(
-                      TableCell()("Key"),
-                      TableCell()("Scope"),
-                      TableCell()("Value"),
-                      TableCell()("Created"),
-                      TableCell()("Actions"),
+              <.div(
+                TableContainer()(
+                  Table()(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Key"),
+                        TableCell()("Scope"),
+                        TableCell()("Value"),
+                        TableCell()("Created"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      pageItems.map { mem =>
+                        val v = valueString(mem.value)
+                        TableRow.withKey(mem.id.value.toString)(
+                          TableCell()(mem.recordKey),
+                          TableCell()(
+                            Chip.set("label", mem.scope.toString).set("size", "small")(),
+                          ),
+                          TableCell()(
+                            <.span(^.title := v)(
+                              if (v.length > 60) v.take(60) + "…" else v,
+                            ),
+                          ),
+                          TableCell()(mem.createdAt.toString.take(19)),
+                          TableCell()(
+                            Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
+                              if (mem.scope != MemoryScope.Shared)
+                                MuiButton
+                                  .variant("outlined")
+                                  .size("small")
+                                  .onClick(() => markShared(mem.id).runNow())("Share")
+                              else
+                                MuiButton
+                                  .variant("outlined")
+                                  .size("small")
+                                  .onClick(() => markPrivate(mem.id).runNow())("Privatize"),
+                              MuiButton
+                                .variant("outlined")
+                                .color("error")
+                                .size("small")
+                                .onClick(() => forget(mem.id).runNow())("Forget"),
+                            ),
+                          ),
+                        )
+                      }*,
                     ),
                   ),
-                  TableBody()(
-                    state.value.memories.map { mem =>
-                      val v = valueString(mem.value)
-                      TableRow.withKey(mem.id.value.toString)(
-                        TableCell()(mem.recordKey),
-                        TableCell()(
-                          Chip.set("label", mem.scope.toString).set("size", "small")(),
-                        ),
-                        TableCell()(
-                          <.span(^.title := v)(
-                            if (v.length > 60) v.take(60) + "…" else v,
-                          ),
-                        ),
-                        TableCell()(mem.createdAt.toString.take(19)),
-                        TableCell()(
-                          Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
-                            if (mem.scope != MemoryScope.Shared)
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => markShared(mem.id).runNow())("Share")
-                            else
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => markPrivate(mem.id).runNow())("Privatize"),
-                            MuiButton
-                              .variant("outlined")
-                              .color("error")
-                              .size("small")
-                              .onClick(() => forget(mem.id).runNow())("Forget"),
-                          ),
-                        ),
-                      )
-                    }*,
-                  ),
                 ),
+                MuiTablePagination
+                  .component("div")
+                  .count(state.value.memories.size)
+                  .page(state.value.page)
+                  .rowsPerPage(state.value.rowsPerPage)
+                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
+                  .onPageChange(
+                    (
+                      _,
+                      p,
+                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                  )
+                  .onRowsPerPageChange(e =>
+                    state
+                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .runNow(),
+                  )(),
               ),
             // Store Memory dialog
             Dialog(state.value.showStore)(

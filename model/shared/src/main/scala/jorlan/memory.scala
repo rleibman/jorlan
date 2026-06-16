@@ -37,6 +37,14 @@ enum MemoryScope derives JsonEncoder, JsonDecoder {
   * @param ttl
   *   If set, the record is eligible for automatic purging after this instant.
   */
+/** Importance of a [[MemoryRecord]] on a 1–10 scale.
+  *
+  *   - 9–10: Critical — always injected into every prompt (language preference, timezone, etc.)
+  *   - 7–8: Persistent fact — injected unless the prompt budget is already full
+  *   - 5–6: Contextual — injected when space allows
+  *   - 3–4: Session context — short-lived, gets a default TTL if none is set
+  *   - 1–2: Transient — very short TTL, rarely injected
+  */
 case class MemoryRecord(
   id:          MemoryRecordId,
   scope:       MemoryScope,
@@ -48,6 +56,7 @@ case class MemoryRecord(
   ttl:         Option[Instant],
   createdAt:   Instant,
   updatedAt:   Instant,
+  importance:  Int = 5,
 ) derives JsonEncoder, JsonDecoder
 
 /** A vector embedding of a [[MemoryRecord]], used for semantic (similarity) search.

@@ -13,38 +13,174 @@ package jorlan.web.pages
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
+import jorlan.web.AsyncCallbackRepositories
+import jorlan.web.pages.PageUtils
+import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
-/** Skill registry browser.
-  *
-  * TODO: implement fully once `listSkillVersions` (and related mutations) are added to the GraphQL API
-  * (`JorlanAPI.scala` `Queries` / `Mutations`) and the generated client (`JorlanClient.scala`). Planned fields per row:
-  *   - name, tier badge (Built-in / User / Agent), status (Active / Deprecated / Sandboxed), version string,
-  *     `manifestJson` expandable detail
-  * Planned mutations: promote, deprecate, sandbox (admin-only).
-  */
 object SkillsPage {
+
+  case class State(
+    skills:   List[SkillInfo],
+    loading:  Boolean,
+    error:    Option[String],
+    expanded: Set[String],
+  )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .render { _ =>
-        <.div(
-          Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-            Typography.set("variant", "h5")("Skill Registry"),
-          ),
-          Alert.set("severity", "info")(
-            // TODO: remove this alert and render the table below once listSkillVersions is added to the API
-            "Skill registry is not yet queryable via GraphQL. Add `listSkillVersions` to Queries in JorlanAPI.scala, regenerate JorlanClient, then implement this page.",
-          ),
-          // TODO: render table once listSkillVersions query is available:
-          //   TableContainer > Table > TableHead (Name | Tier | Status | Version | "") +
-          //   TableBody rows from AsyncCallbackRepositories.listSkills()
-          //   Each row: name, Chip(tier), Chip(status), version, expand button for manifestJson
-        )
+      .useState(State(Nil, loading = true, error = None, expanded = Set.empty))
+      .useEffectOnMountBy {
+        (
+          _,
+          state,
+        ) =>
+          Callback {
+            AsyncCallbackRepositories.skill
+              .listSkills()
+              .flatMap { skills =>
+                state.setState(state.value.copy(skills = skills, loading = false)).asAsyncCallback
+              }
+              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .runNow()
+          }
+      }
+      .render {
+        (
+          _,
+          state,
+        ) =>
+          def toggleExpand(name: String): Callback =
+            if (state.value.expanded.contains(name))
+              state.setState(state.value.copy(expanded = state.value.expanded - name))
+            else
+              state.setState(state.value.copy(expanded = state.value.expanded + name))
+
+          def renderToolCard(tool: SkillToolInfo): VdomElement = {
+            val capSection: VdomElement =
+              if (tool.requiredCapabilities.nonEmpty)
+                Box.set("sx", js.Dynamic.literal(display = "flex", flexWrap = "wrap", gap = 0.5, mb = 1))(
+                  Typography
+                    .set("variant", "caption")
+                    .set("sx", js.Dynamic.literal(mr = 0.5, alignSelf = "center", color = "text.secondary"))(
+                      "Requires:",
+                    ),
+                  <.span(
+                    tool.requiredCapabilities.map(cap =>
+                      Chip
+                        .withKey(cap)
+                        .set("label", cap)
+                        .set("size", "small")
+                        .set("variant", "outlined")(),
+                    )*,
+                  ),
+                )
+              else <.span()
+
+            val exampleSection: VdomElement =
+              if (tool.examplePrompts.nonEmpty)
+                Box.set("sx", js.Dynamic.literal(mt = 0.5))(
+                  Typography
+                    .set("variant", "caption")
+                    .set("sx", js.Dynamic.literal(color = "text.secondary", display = "block", mb = 0.5))(
+                      "Example prompts:",
+                    ),
+                  <.div(
+                    tool.examplePrompts.map(prompt =>
+                      Typography
+                        .withKey(prompt)
+                        .set("variant", "body2")
+                        .set("sx", js.Dynamic.literal(fontStyle = "italic", color = "text.secondary", pl = 1))(
+                          prompt,
+                        ),
+                    )*,
+                  ),
+                )
+              else <.span()
+
+            Box
+              .withKey(tool.name)
+              .set(
+                "sx",
+                js.Dynamic.literal(border = "1px solid", borderColor = "divider", borderRadius = 1, p = 1.5, mb = 1),
+              )(
+                Typography
+                  .set("variant", "subtitle2")
+                  .set("sx", js.Dynamic.literal(fontFamily = "monospace", mb = 0.5))(tool.name),
+                Typography
+                  .set("variant", "body2")
+                  .set("sx", js.Dynamic.literal(mb = 1, color = "text.secondary"))(tool.description),
+                capSection,
+                exampleSection,
+              )
+          }
+
+          <.div(
+            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
+              Typography.set("variant", "h5")("Skill Registry"),
+            ),
+            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            if (state.value.loading)
+              CircularProgress()
+            else if (state.value.skills.isEmpty)
+              Alert.set("severity", "info")("No skills registered.")
+            else
+              TableContainer()(
+                Table.set("size", "small")(
+                  TableHead()(
+                    TableRow()(
+                      TableCell()(),
+                      TableCell()("Skill"),
+                      TableCell()("Tier"),
+                      TableCell()("Tools"),
+                    ),
+                  ),
+                  TableBody()(
+                    state.value.skills.flatMap { skill =>
+                      val isExpanded = state.value.expanded.contains(skill.name)
+                      scala.List[VdomElement](
+                        TableRow
+                          .withKey(skill.name)(
+                            TableCell.set("sx", js.Dynamic.literal(width = "40px"))(
+                              MuiButton
+                                .size("small")
+                                .onClick(() => toggleExpand(skill.name).runNow())(if (isExpanded) "▲" else "▼"),
+                            ),
+                            TableCell()(skill.name),
+                            TableCell()(
+                              Chip.set("label", skill.tier.toString).set("size", "small")(),
+                            ),
+                            TableCell()(
+                              Typography
+                                .set("variant", "body2")
+                                .set("sx", js.Dynamic.literal(color = "text.secondary"))(
+                                  s"${skill.tools.size} tool${if (skill.tools.size == 1) "" else "s"}",
+                                ),
+                            ),
+                          ),
+                      ) ++ (
+                        if (isExpanded)
+                          scala.List[VdomElement](
+                            TableRow
+                              .withKey(s"${skill.name}-detail")(
+                                TableCell.colSpan(4)(
+                                  Box.set("sx", js.Dynamic.literal(p = 1.5))(
+                                    skill.tools.map(renderToolCard)*,
+                                  ),
+                                ),
+                              ),
+                          )
+                        else scala.Nil
+                      )
+                    }*,
+                  ),
+                ),
+              ),
+          )
       }
 
   def apply(user: User): VdomElement = component(user)

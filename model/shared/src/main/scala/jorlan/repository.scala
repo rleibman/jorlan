@@ -43,6 +43,7 @@ enum UserOrder { case Id, DisplayName, CreatedAt }
 case class UserSearch(
   active:       Option[Boolean] = None,
   nameContains: Option[String] = None,
+  fuzzyName:    Option[String] = None,
   page:         Int = 0,
   pageSize:     Int = 20,
   sorts:        Option[Sort[UserOrder]] = None,
@@ -57,12 +58,13 @@ case class AgentSearch(
 
 enum AgentSessionOrder { case Id, CreatedAt }
 case class AgentSessionSearch(
-  agentId:  Option[AgentId] = None,
-  userId:   Option[UserId] = None,
-  chatRef:  Option[String] = None,
-  page:     Int = 0,
-  pageSize: Int = 20,
-  sorts:    Option[Sort[AgentSessionOrder]] = None,
+  agentId:                 Option[AgentId] = None,
+  userId:                  Option[UserId] = None,
+  chatRef:                 Option[String] = None,
+  page:                    Int = 0,
+  pageSize:                Int = 20,
+  sorts:                   Option[Sort[AgentSessionOrder]] = None,
+  hideOldTerminatedBefore: Option[java.time.Instant] = None,
 ) extends Search[AgentSessionOrder]
 
 enum ConversationOrder { case Id, StartedAt }
@@ -122,15 +124,16 @@ enum MemoryOrder { case Id, RecordKey, CreatedAt, UpdatedAt }
   *   because the filter runs after SQL LIMIT/OFFSET
   */
 case class MemorySearch(
-  scope:       MemoryScope,
-  userId:      Option[UserId] = None,
-  workspaceId: Option[WorkspaceId] = None,
-  agentId:     Option[AgentId] = None,
-  key:         Option[String] = None,
-  textSearch:  Option[String] = None,
-  page:        Int = 0,
-  pageSize:    Int = 20,
-  sorts:       Option[Sort[MemoryOrder]] = None,
+  scope:         MemoryScope,
+  userId:        Option[UserId] = None,
+  workspaceId:   Option[WorkspaceId] = None,
+  agentId:       Option[AgentId] = None,
+  key:           Option[String] = None,
+  textSearch:    Option[String] = None,
+  minImportance: Option[Int] = None,
+  page:          Int = 0,
+  pageSize:      Int = 50,
+  sorts:         Option[Sort[MemoryOrder]] = None,
 ) extends Search[MemoryOrder]
 
 enum ArtifactOrder { case Id, Name, CreatedAt }
@@ -151,7 +154,7 @@ case class WorkspaceSearch(
 
 enum RoleOrder { case Id, Name }
 case class RoleSearch(
-  userId:   UserId,
+  userId:   Option[UserId] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[RoleOrder]] = None,
@@ -287,9 +290,14 @@ trait SkillRepository[F[_]] {
   */
 trait MemoryRepository[F[_]] {
 
-  def getById(id:    MemoryRecordId): F[Option[MemoryRecord]]
-  def search(s:      MemorySearch):   F[List[MemoryRecord]]
-  def upsert(record: MemoryRecord):   F[MemoryRecord]
+  def getById(id: MemoryRecordId): F[Option[MemoryRecord]]
+  def getByKey(
+    key:     String,
+    userId:  Option[UserId],
+    agentId: Option[AgentId],
+  ):                                F[Option[MemoryRecord]]
+  def search(s:      MemorySearch): F[List[MemoryRecord]]
+  def upsert(record: MemoryRecord): F[MemoryRecord]
   def updateScope(
     id:    MemoryRecordId,
     scope: MemoryScope,

@@ -14,6 +14,8 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
+import jorlan.web.pages.PageUtils
+import jorlan.web.components.{MuiButton, MuiTablePagination, MuiTextField}
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -21,16 +23,67 @@ import scala.scalajs.js
 
 object UsersPage {
 
+  case class EditState(
+    displayName: String,
+    email:       String,
+  )
+
   case class State(
-    users:   List[User],
-    loading: Boolean,
-    error:   Option[String],
+    users:        List[User],
+    loading:      Boolean,
+    error:        Option[String],
+    page:         Int,
+    rowsPerPage:  Int,
+    editingUser:  Option[User],
+    editState:    Option[EditState],
+    saving:       Boolean,
+    createOpen:   Boolean,
+    createName:   String,
+    createEmail:  String,
+    permsUser:    Option[User],
+    grants:       List[CapabilityGrant],
+    newCap:       String,
+    newMode:      String,
+    rolesUser:    Option[User],
+    userRoles:    List[Role],
+    allRoles:     List[Role],
+    assignRoleId: String,
+    identsUser:   Option[User],
+    identities:   List[ChannelIdentity],
+    newChType:    String,
+    newChUserId:  String,
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true, error = None))
+      .useState(
+        State(
+          users = Nil,
+          loading = true,
+          error = None,
+          page = 0,
+          rowsPerPage = 10,
+          editingUser = None,
+          editState = None,
+          saving = false,
+          createOpen = false,
+          createName = "",
+          createEmail = "",
+          permsUser = None,
+          grants = Nil,
+          newCap = "",
+          newMode = "AutoApprove",
+          rolesUser = None,
+          userRoles = Nil,
+          allRoles = Nil,
+          assignRoleId = "",
+          identsUser = None,
+          identities = Nil,
+          newChType = "Telegram",
+          newChUserId = "",
+        ),
+      )
       .useEffectOnMountBy {
         (
           _,
@@ -39,12 +92,13 @@ object UsersPage {
           Callback {
             AsyncCallbackRepositories.user
               .search(UserSearch())
-              .flatMap(users => state.setState(State(users, loading = false, error = None)).asAsyncCallback)
-              .completeWith {
-                case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
-                case _ => Callback.empty
-              }
+              .flatMap(users =>
+                state
+                  .setState(
+                    state.value.copy(users = users, loading = false, error = None, page = 0),
+                  ).asAsyncCallback,
+              )
+              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
               .runNow()
           }
       }
@@ -53,40 +107,664 @@ object UsersPage {
           _,
           state,
         ) =>
+          val pageItems = state.value.users
+            .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
+
+          def reload(): Callback =
+            Callback {
+              AsyncCallbackRepositories.user
+                .search(UserSearch())
+                .flatMap(users =>
+                  state
+                    .setState(state.value.copy(users = users, error = None, editingUser = None, editState = None))
+                    .asAsyncCallback,
+                )
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def handleDeactivate(user: User): Callback =
+            Callback {
+              AsyncCallbackRepositories.user
+                .deactivate(user.id)
+                .flatMap { count =>
+                  if (count > 0) reload().asAsyncCallback
+                  else
+                    state
+                      .setState(state.value.copy(error = Some(s"Could not deactivate ${user.displayName}")))
+                      .asAsyncCallback
+                }
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def handleReactivate(user: User): Callback =
+            Callback {
+              AsyncCallbackRepositories.user
+                .upsert(user.copy(active = true))
+                .flatMap(_ => reload().asAsyncCallback)
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def openEdit(user: User): Callback =
+            state.setState(
+              state.value.copy(
+                editingUser = Some(user),
+                editState = Some(EditState(user.displayName, user.email)),
+              ),
+            )
+
+          def closeEdit(): Callback =
+            state.setState(state.value.copy(editingUser = None, editState = None))
+
+          def saveEdit(): Callback =
+            (state.value.editingUser, state.value.editState) match {
+              case (Some(user), Some(es)) =>
+                Callback {
+                  state.setState(state.value.copy(saving = true)).runNow()
+                  AsyncCallbackRepositories.user
+                    .upsert(user.copy(displayName = es.displayName, email = es.email))
+                    .flatMap(_ =>
+                      state
+                        .setState(state.value.copy(saving = false, editingUser = None, editState = None))
+                        .asAsyncCallback
+                        .flatMap(_ => reload().asAsyncCallback),
+                    )
+                    .completeWith(
+                      PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))),
+                    )
+                    .runNow()
+                }
+              case _ => Callback.empty
+            }
+
+          def openCreate(): Callback =
+            state.setState(state.value.copy(createOpen = true, createName = "", createEmail = ""))
+
+          def closeCreate(): Callback =
+            state.setState(state.value.copy(createOpen = false))
+
+          def saveCreate(): Callback =
+            Callback {
+              import java.time.Instant
+              state.setState(state.value.copy(saving = true)).runNow()
+              AsyncCallbackRepositories.user
+                .upsert(
+                  User(
+                    id = UserId.empty,
+                    displayName = state.value.createName,
+                    email = state.value.createEmail,
+                    createdAt = Instant.now(),
+                    updatedAt = Instant.now(),
+                    active = true,
+                  ),
+                )
+                .flatMap(_ =>
+                  state
+                    .setState(state.value.copy(saving = false, createOpen = false))
+                    .asAsyncCallback
+                    .flatMap(_ => reload().asAsyncCallback),
+                )
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
+                .runNow()
+            }
+
+          def openPerms(user: User): Callback =
+            Callback {
+              AsyncCallbackRepositories.permission
+                .searchGrants(GrantSearch(userId = user.id))
+                .flatMap(grants =>
+                  state
+                    .setState(
+                      state.value.copy(permsUser = Some(user), grants = grants, newCap = "", newMode = "AutoApprove"),
+                    ).asAsyncCallback,
+                )
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def closePerms(): Callback =
+            state.setState(state.value.copy(permsUser = None, grants = Nil))
+
+          def grantCapability(): Callback =
+            state.value.permsUser match {
+              case None       => Callback.empty
+              case Some(user) =>
+                Callback {
+                  import java.time.Instant
+                  AsyncCallbackRepositories.permission
+                    .upsertCapabilityGrant(
+                      CapabilityGrant(
+                        id = CapabilityGrantId.empty,
+                        capability = CapabilityName(state.value.newCap),
+                        scopeJson = None,
+                        granteeId = user.id,
+                        grantorId = None,
+                        approvalMode = ApprovalMode.values
+                          .find(_.toString.equalsIgnoreCase(state.value.newMode))
+                          .getOrElse(ApprovalMode.Persistent),
+                        expiresAt = None,
+                        resourceConstraints = None,
+                        createdAt = Instant.now(),
+                      ),
+                    )
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchGrants(GrantSearch(userId = user.id))
+                        .flatMap(grants =>
+                          state
+                            .setState(
+                              state.value.copy(grants = grants, newCap = "", newMode = "AutoApprove"),
+                            ).asAsyncCallback,
+                        ),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+            }
+
+          def revokeGrant(grantId: CapabilityGrantId): Callback =
+            state.value.permsUser match {
+              case None       => Callback.empty
+              case Some(user) =>
+                Callback {
+                  AsyncCallbackRepositories.permission
+                    .revokeGrant(grantId)
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchGrants(GrantSearch(userId = user.id))
+                        .flatMap(grants => state.setState(state.value.copy(grants = grants)).asAsyncCallback),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+            }
+
+          def openRoles(user: User): Callback =
+            Callback {
+              (
+                AsyncCallbackRepositories.permission.searchRoles(RoleSearch(userId = Some(user.id))) zip
+                  AsyncCallbackRepositories.permission.searchRoles(RoleSearch(userId = None))
+              ).flatMap { case (userRoles, allRoles) =>
+                state
+                  .setState(
+                    state.value
+                      .copy(rolesUser = Some(user), userRoles = userRoles, allRoles = allRoles, assignRoleId = ""),
+                  ).asAsyncCallback
+              }
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def closeRoles(): Callback =
+            state.setState(state.value.copy(rolesUser = None, userRoles = Nil, allRoles = Nil))
+
+          def assignRole(): Callback =
+            (state.value.rolesUser, state.value.assignRoleId.toLongOption) match {
+              case (Some(user), Some(rid)) =>
+                Callback {
+                  AsyncCallbackRepositories.permission
+                    .assignRole(user.id, RoleId(rid))
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchRoles(RoleSearch(userId = Some(user.id)))
+                        .flatMap(roles =>
+                          state.setState(state.value.copy(userRoles = roles, assignRoleId = "")).asAsyncCallback,
+                        ),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+              case _ => Callback.empty
+            }
+
+          def removeRole(roleId: RoleId): Callback =
+            state.value.rolesUser match {
+              case None       => Callback.empty
+              case Some(user) =>
+                Callback {
+                  AsyncCallbackRepositories.permission
+                    .removeRole(user.id, roleId)
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchRoles(RoleSearch(userId = Some(user.id)))
+                        .flatMap(roles => state.setState(state.value.copy(userRoles = roles)).asAsyncCallback),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+            }
+
+          def openIdentities(user: User): Callback =
+            Callback {
+              AsyncCallbackRepositories.user
+                .getChannelIdentities(user.id)
+                .flatMap(identities =>
+                  state
+                    .setState(
+                      state.value.copy(
+                        identsUser = Some(user),
+                        identities = identities,
+                        newChType = "Telegram",
+                        newChUserId = "",
+                      ),
+                    ).asAsyncCallback,
+                )
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def closeIdentities(): Callback =
+            state.setState(state.value.copy(identsUser = None, identities = Nil))
+
+          def linkIdentity(): Callback =
+            state.value.identsUser match {
+              case None       => Callback.empty
+              case Some(user) =>
+                Callback {
+                  import java.time.Instant
+                  val chTypeOpt = ChannelType.values.find(_.toString.equalsIgnoreCase(state.value.newChType))
+                  chTypeOpt.foreach { chType =>
+                    AsyncCallbackRepositories.user
+                      .upsertChannelIdentity(
+                        ChannelIdentity(
+                          id = ChannelIdentityId.empty,
+                          userId = user.id,
+                          channelType = chType,
+                          channelUserId = state.value.newChUserId,
+                          verified = false,
+                          providerData = None,
+                          createdAt = Instant.now(),
+                        ),
+                      )
+                      .flatMap(_ =>
+                        AsyncCallbackRepositories.user
+                          .getChannelIdentities(user.id)
+                          .flatMap(ids =>
+                            state
+                              .setState(
+                                state.value.copy(identities = ids, newChType = "Telegram", newChUserId = ""),
+                              ).asAsyncCallback,
+                          ),
+                      )
+                      .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                      .runNow()
+                  }
+                }
+            }
+
+          def unlinkIdentity(identityId: ChannelIdentityId): Callback =
+            state.value.identsUser match {
+              case None       => Callback.empty
+              case Some(user) =>
+                Callback {
+                  AsyncCallbackRepositories.user
+                    .deleteChannelIdentity(identityId)
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.user
+                        .getChannelIdentities(user.id)
+                        .flatMap(ids => state.setState(state.value.copy(identities = ids)).asAsyncCallback),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+            }
+
+          val isEditOpen = state.value.editingUser.isDefined
+          val editDisplayName = state.value.editState.map(_.displayName).getOrElse("")
+          val editEmail = state.value.editState.map(_.email).getOrElse("")
+
           <.div(
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
               Typography.set("variant", "h5")("Users"),
+              MuiButton.variant("contained").onClick(() => openCreate().runNow())("Create User"),
             ),
             state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.loading) CircularProgress()
+            else if (state.value.users.isEmpty)
+              Alert.set("severity", "info")("No users found.")
             else
-              TableContainer()(
-                Table()(
-                  TableHead()(
-                    TableRow()(
-                      TableCell()("Display Name"),
-                      TableCell()("Email"),
-                      TableCell()("Active"),
-                      TableCell()("Created"),
+              <.div(
+                TableContainer()(
+                  Table()(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Display Name"),
+                        TableCell()("Email"),
+                        TableCell()("Active"),
+                        TableCell()("Created"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      pageItems.map { user =>
+                        TableRow.withKey(user.id.value.toString)(
+                          TableCell()(user.displayName),
+                          TableCell()(user.email),
+                          TableCell()(
+                            Chip
+                              .set("label", if (user.active) "Active" else "Inactive")
+                              .set("color", if (user.active) "success" else "default")
+                              .set("size", "small")(),
+                          ),
+                          TableCell()(user.createdAt.toString.take(19)),
+                          TableCell()(
+                            Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1, flexWrap = "wrap"))(
+                              MuiButton
+                                .variant("outlined")
+                                .set("size", "small")
+                                .onClick(() => openEdit(user).runNow())("Edit"),
+                              MuiButton
+                                .variant("outlined")
+                                .set("size", "small")
+                                .onClick(() => openPerms(user).runNow())("Capabilities"),
+                              MuiButton
+                                .variant("outlined")
+                                .set("size", "small")
+                                .onClick(() => openRoles(user).runNow())("Roles"),
+                              MuiButton
+                                .variant("outlined")
+                                .set("size", "small")
+                                .onClick(() => openIdentities(user).runNow())("Identities"),
+                              if (user.active)
+                                MuiButton
+                                  .variant("outlined")
+                                  .set("size", "small")
+                                  .set("color", "error")
+                                  .onClick(() => handleDeactivate(user).runNow())("Deactivate")
+                              else
+                                MuiButton
+                                  .variant("outlined")
+                                  .set("size", "small")
+                                  .set("color", "success")
+                                  .onClick(() => handleReactivate(user).runNow())("Reactivate"),
+                            ),
+                          ),
+                        )
+                      }*,
                     ),
                   ),
-                  TableBody()(
-                    state.value.users.map { user =>
-                      TableRow.withKey(user.id.value.toString)(
-                        TableCell()(user.displayName),
-                        TableCell()(user.email),
-                        TableCell()(
-                          Chip
-                            .set("label", if (user.active) "Active" else "Inactive")
-                            .set("color", if (user.active) "success" else "default")
-                            .set("size", "small")(),
-                        ),
-                        TableCell()(user.createdAt.toString.take(19)),
+                ),
+                MuiTablePagination
+                  .component("div")
+                  .count(state.value.users.size)
+                  .page(state.value.page)
+                  .rowsPerPage(state.value.rowsPerPage)
+                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
+                  .onPageChange(
+                    (
+                      _,
+                      p,
+                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                  )
+                  .onRowsPerPageChange(e =>
+                    state
+                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .runNow(),
+                  )(),
+              ),
+            Dialog(isEditOpen)(
+              DialogTitle()("Edit User"),
+              DialogContent()(
+                MuiTextField
+                  .label("Display Name")
+                  .value(editDisplayName)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .set("margin", "normal")
+                  .onChange(e =>
+                    state
+                      .setState(
+                        state.value.copy(editState = Some(EditState(e.target.value.asInstanceOf[String], editEmail))),
                       )
-                    }*,
+                      .runNow(),
                   ),
+                MuiTextField
+                  .label("Email")
+                  .value(editEmail)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .set("margin", "normal")
+                  .onChange(e =>
+                    state
+                      .setState(
+                        state.value.copy(
+                          editState = Some(EditState(editDisplayName, e.target.value.asInstanceOf[String])),
+                        ),
+                      )
+                      .runNow(),
+                  ),
+              ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closeEdit().runNow())("Cancel"),
+                MuiButton
+                  .variant("contained")
+                  .set("disabled", state.value.saving)
+                  .onClick(() => saveEdit().runNow())("Save"),
+              ),
+            ),
+            Dialog(state.value.createOpen)(
+              DialogTitle()("Create User"),
+              DialogContent()(
+                MuiTextField
+                  .label("Display Name")
+                  .value(state.value.createName)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .set("margin", "normal")
+                  .onChange(e =>
+                    state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
+                MuiTextField
+                  .label("Email")
+                  .value(state.value.createEmail)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .set("margin", "normal")
+                  .onChange(e =>
+                    state.setState(state.value.copy(createEmail = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
+              ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closeCreate().runNow())("Cancel"),
+                MuiButton
+                  .variant("contained")
+                  .set("disabled", state.value.saving)
+                  .onClick(() => saveCreate().runNow())("Create"),
+              ),
+            ),
+            Dialog(state.value.permsUser.isDefined)(
+              DialogTitle()(
+                s"Capabilities — ${state.value.permsUser.map(_.displayName).getOrElse("")}",
+              ),
+              DialogContent()(
+                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Existing grants:"),
+                if (state.value.grants.isEmpty)
+                  Typography
+                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
+                      "No capability grants.",
+                    )
+                else
+                  Table.set("size", "small")(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Capability"),
+                        TableCell()("Mode"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      state.value.grants.map { g =>
+                        TableRow.withKey(g.id.value.toString)(
+                          TableCell()(g.capability.value),
+                          TableCell()(g.approvalMode.toString),
+                          TableCell()(
+                            MuiButton
+                              .set("size", "small")
+                              .set("color", "error")
+                              .onClick(() => revokeGrant(g.id).runNow())("Revoke"),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ),
+                Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1))(
+                  MuiTextField
+                    .label("Capability")
+                    .value(state.value.newCap)
+                    .set("size", "small")
+                    .onChange(e =>
+                      state.setState(state.value.copy(newCap = e.target.value.asInstanceOf[String])).runNow(),
+                    ),
+                  MuiTextField
+                    .label("Mode")
+                    .value(state.value.newMode)
+                    .set("size", "small")
+                    .onChange(e =>
+                      state.setState(state.value.copy(newMode = e.target.value.asInstanceOf[String])).runNow(),
+                    ),
+                  MuiButton
+                    .variant("contained")
+                    .set("size", "small")
+                    .set("disabled", state.value.newCap.trim.isEmpty)
+                    .onClick(() => grantCapability().runNow())("Grant"),
                 ),
               ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closePerms().runNow())("Close"),
+              ),
+            ),
+            Dialog(state.value.rolesUser.isDefined)(
+              DialogTitle()(
+                s"Roles — ${state.value.rolesUser.map(_.displayName).getOrElse("")}",
+              ),
+              DialogContent()(
+                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Assigned roles:"),
+                if (state.value.userRoles.isEmpty)
+                  Typography
+                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
+                      "No roles assigned.",
+                    )
+                else
+                  Table.set("size", "small")(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Role"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      state.value.userRoles.map { r =>
+                        TableRow.withKey(r.id.value.toString)(
+                          TableCell()(r.name),
+                          TableCell()(
+                            MuiButton
+                              .set("size", "small")
+                              .set("color", "error")
+                              .onClick(() => removeRole(r.id).runNow())("Remove"),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ), {
+                  val roleOpts: VdomElement =
+                    <.span(
+                      state.value.allRoles.map { r =>
+                        <.option(^.key := r.id.value.toString, ^.value := r.id.value.toString)(r.name)
+                      }*,
+                    )
+                  Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1, alignItems = "center"))(
+                    Typography.set("variant", "body2")("Assign role:"),
+                    <.select(
+                      ^.value := state.value.assignRoleId,
+                      ^.onChange ==> { (e: ReactEventFromInput) =>
+                        state.setState(state.value.copy(assignRoleId = e.target.value))
+                      },
+                      roleOpts,
+                    ),
+                    MuiButton
+                      .variant("contained")
+                      .set("size", "small")
+                      .set("disabled", state.value.assignRoleId.trim.isEmpty)
+                      .onClick(() => assignRole().runNow())("Assign"),
+                  )
+                },
+              ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closeRoles().runNow())("Close"),
+              ),
+            ),
+            Dialog(state.value.identsUser.isDefined)(
+              DialogTitle()(
+                s"Channel Identities — ${state.value.identsUser.map(_.displayName).getOrElse("")}",
+              ),
+              DialogContent()(
+                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Linked identities:"),
+                if (state.value.identities.isEmpty)
+                  Typography
+                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
+                      "No channel identities.",
+                    )
+                else
+                  Table.set("size", "small")(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Channel"),
+                        TableCell()("Channel User ID"),
+                        TableCell()("Verified"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      state.value.identities.map { ci =>
+                        TableRow.withKey(ci.id.value.toString)(
+                          TableCell()(ci.channelType.toString),
+                          TableCell()(ci.channelUserId),
+                          TableCell()(if (ci.verified) "Yes" else "No"),
+                          TableCell()(
+                            MuiButton
+                              .set("size", "small")
+                              .set("color", "error")
+                              .onClick(() => unlinkIdentity(ci.id).runNow())("Unlink"),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ), {
+                  val chTypeOpts: VdomElement =
+                    <.span(
+                      ChannelType.values.map { ct =>
+                        <.option(^.key := ct.toString, ^.value := ct.toString)(ct.toString)
+                      }*,
+                    )
+                  Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1, alignItems = "center"))(
+                    <.select(
+                      ^.value := state.value.newChType,
+                      ^.onChange ==> { (e: ReactEventFromInput) =>
+                        state.setState(state.value.copy(newChType = e.target.value))
+                      },
+                      chTypeOpts,
+                    ),
+                    MuiTextField
+                      .label("Channel User ID")
+                      .value(state.value.newChUserId)
+                      .set("size", "small")
+                      .onChange(e =>
+                        state.setState(state.value.copy(newChUserId = e.target.value.asInstanceOf[String])).runNow(),
+                      ),
+                    MuiButton
+                      .variant("contained")
+                      .set("size", "small")
+                      .set("disabled", state.value.newChUserId.trim.isEmpty)
+                      .onClick(() => linkIdentity().runNow())("Link"),
+                  )
+                },
+              ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closeIdentities().runNow())("Close"),
+              ),
+            ),
           )
       }
 

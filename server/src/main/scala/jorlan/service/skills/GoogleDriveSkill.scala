@@ -42,6 +42,11 @@ class GoogleDriveSkill(
           parseSchema("""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
+        examplePrompts = List(
+          "What files do I have in Google Drive?",
+          "List files in my Documents folder",
+          "Find files about the Q4 report in Drive",
+        ),
       ),
       ToolDescriptor(
         name = "drive.readFile",
@@ -50,6 +55,10 @@ class GoogleDriveSkill(
           parseSchema("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
+        examplePrompts = List(
+          "Read the project spec document from Drive",
+          "Show me the content of my notes file",
+        ),
       ),
       ToolDescriptor(
         name = "drive.downloadFile",
@@ -58,6 +67,10 @@ class GoogleDriveSkill(
           parseSchema("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
+        examplePrompts = List(
+          "Download the PDF report from Drive",
+          "Get the spreadsheet file and save it as an artifact",
+        ),
       ),
     ),
   )

@@ -47,61 +47,93 @@ object ChatPage {
       .useEffectOnMountBy {
         (
           _,
-          _,
+          state,
           handlerRef,
         ) =>
-          CallbackTo {
-            // cleanup: close any active subscription when the component unmounts
-            handlerRef.get.flatMap(_.fold(Callback.empty)(_.close()))
+          // Reconnect to an existing active session, or create a new one if none found
+          Callback {
+            AsyncCallbackRepositories.agent
+              .searchSessions(AgentSessionSearch())
+              .flatMap { sessions =>
+                val existing = sessions.find(_.status == SessionStatus.Active)
+                val isReconnect = existing.isDefined
+                val sessionAC =
+                  existing.fold(AsyncCallbackRepositories.agent.createSession(None))(s => AsyncCallback.pure(Some(s)))
+                sessionAC.flatMap {
+                  case Some(session) =>
+                    val label = if (isReconnect) "Reconnected to existing session" else "Session started"
+                    state
+                      .modState(
+                        _.copy(
+                          sessionId = Some(session.id),
+                          messages = scala.List(ChatMessage("system", label, new js.Date().toISOString())),
+                        ),
+                      )
+                      .asAsyncCallback
+                      .flatMap { _ =>
+                        Callback {
+                          state.value.wsHandler.foreach(_.close().runNow())
+                          val handler = AsyncCallbackRepositories.subscribeToAgentStream(
+                            session.id,
+                            onClientError =
+                              ex => state.modState(_.copy(streaming = false, error = Some(ex.getMessage))),
+                            onData = { chunk =>
+                              if (chunk.finished) {
+                                state.modState { s =>
+                                  s.copy(
+                                    messages = s.messages :+
+                                      ChatMessage(
+                                        if (chunk.isError) "error" else "assistant",
+                                        s.streamBuffer + chunk.content,
+                                        new js.Date().toISOString(),
+                                      ),
+                                    streaming = false,
+                                    streamBuffer = "",
+                                  )
+                                }
+                              } else {
+                                state.modState(s =>
+                                  s.copy(streaming = true, streamBuffer = s.streamBuffer + chunk.content),
+                                )
+                              }
+                            },
+                          )
+                          handlerRef.set(Some(handler)).runNow()
+                          state.modState(_.copy(wsHandler = Some(handler))).runNow()
+                        }.asAsyncCallback
+                      }
+                  case None =>
+                    state
+                      .modState(s =>
+                        s.copy(
+                          messages = s.messages :+ ChatMessage(
+                            "error",
+                            "Failed to create session",
+                            new js.Date().toISOString(),
+                          ),
+                        ),
+                      )
+                      .asAsyncCallback
+                }
+              }
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
+              .runNow()
           }
       }
       .render {
         (
           _,
           state,
-          handlerRef,
+          _,
         ) =>
-          def openStreamSubscription(sessionId: AgentSessionId): Callback =
-            Callback {
-              state.value.wsHandler.foreach(_.close().runNow())
-              val handler = AsyncCallbackRepositories.subscribeToAgentStream(
-                sessionId,
-                onData = { chunk =>
-                  if (chunk.finished) {
-                    val completedMsg = ChatMessage(
-                      if (chunk.isError) "error" else "assistant",
-                      state.value.streamBuffer + chunk.content,
-                      new js.Date().toISOString(),
-                    )
-                    state.setState(
-                      state.value.copy(
-                        messages = state.value.messages :+ completedMsg,
-                        streaming = false,
-                        streamBuffer = "",
-                      ),
-                    )
-                  } else {
-                    state.setState(
-                      state.value.copy(
-                        streaming = true,
-                        streamBuffer = state.value.streamBuffer + chunk.content,
-                      ),
-                    )
-                  }
-                },
-              )
-              handlerRef.set(Some(handler)).runNow()
-              state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
-            }
-
           def sendMessage(): Callback = {
             val text = state.value.input.trim
             if (text.isEmpty || state.value.sessionId.isEmpty) Callback.empty
             else {
-              state.setState(
-                state.value.copy(
+              state.modState(s =>
+                s.copy(
                   input = "",
-                  messages = state.value.messages :+ ChatMessage("user", text, new js.Date().toISOString()),
+                  messages = s.messages :+ ChatMessage("user", text, new js.Date().toISOString()),
                   streaming = true,
                 ),
               ) >>
@@ -109,11 +141,9 @@ object ChatPage {
                   Callback {
                     AsyncCallbackRepositories.agent
                       .submitMessage(sessionId, text)
-                      .completeWith {
-                        case scala.util.Failure(ex) =>
-                          state.setState(state.value.copy(streaming = false, error = Some(ex.getMessage)))
-                        case _ => Callback.empty
-                      }
+                      .completeWith(
+                        PageUtils.onError(err => state.modState(_.copy(streaming = false, error = err))),
+                      )
                       .runNow()
                   }
                 }
@@ -129,46 +159,13 @@ object ChatPage {
             }
           }
 
-          def createSession(): Callback =
-            Callback {
-              AsyncCallbackRepositories.agent
-                .createSession(None)
-                .flatMap {
-                  case Some(session) =>
-                    (state
-                      .setState(
-                        state.value.copy(
-                          sessionId = Some(session.id),
-                          messages = scala.List(ChatMessage("system", "Session started", new js.Date().toISOString())),
-                        ),
-                      ) >> openStreamSubscription(session.id)).asAsyncCallback
-                  case None =>
-                    state
-                      .setState(
-                        state.value.copy(
-                          messages = state.value.messages :+ ChatMessage(
-                            "error",
-                            "Failed to create session",
-                            new js.Date().toISOString(),
-                          ),
-                        ),
-                      )
-                      .asAsyncCallback
-                }
-                .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
-                  case _                      => Callback.empty
-                }
-                .runNow()
-            }
-
           <.div(
             ^.style := js.Dynamic.literal(height = "calc(100vh - 128px)", display = "flex", flexDirection = "column"),
             state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 1, gap = 1))(
               Typography.set("variant", "h5")("Chat"),
               state.value.sessionId.fold[VdomNode](
-                MuiButton.variant("contained").onClick(() => createSession().runNow())("New Session"),
+                <.span("Connecting…"),
               )(id => <.span(s"Session: ${id.value}")),
             ),
             Box
@@ -225,7 +222,7 @@ object ChatPage {
                 .placeholder("Type a message… (Enter to send, Shift+Enter for newline)")
                 .variant("outlined")
                 .size("small")
-                .onChange(e => state.setState(state.value.copy(input = e.target.value.asInstanceOf[String])).runNow())
+                .onChange(e => state.modState(_.copy(input = e.target.value.asInstanceOf[String])).runNow())
                 .onKeyDown(handleKeyDown)
                 .disabled(state.value.streaming),
               MuiButton

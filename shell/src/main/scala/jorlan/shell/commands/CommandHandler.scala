@@ -12,6 +12,7 @@ package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
 import jorlan.*
+import jorlan.service.CheckpointPolicyConfig
 import jorlan.shell.*
 import jorlan.shell.client.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}
@@ -56,23 +57,44 @@ object CommandHandler {
           text,
           scope.flatMap(s => MemoryScope.values.find(_.toString.equalsIgnoreCase(s))).getOrElse(MemoryScope.User),
         )
-      case ShellCommand.Skills                 => showSkills
-      case ShellCommand.ContactsFind(name)     => findContacts(name)
-      case ShellCommand.Capabilities           => showCapabilities
-      case ShellCommand.AgentsList             => listAgents
-      case ShellCommand.AgentsStop(id)         => stopAgent(id)
-      case ShellCommand.ApprovalsList          => listApprovals
-      case ShellCommand.ApprovalsApprove(id)   => decideApproval(id, approved = true)
-      case ShellCommand.ApprovalsDeny(id)      => decideApproval(id, approved = false)
-      case ShellCommand.OAuthStatus(provider)  => showOAuthStatus(provider)
-      case ShellCommand.OAuthConnect(provider) => connectOAuth(provider)
-      case ShellCommand.OAuthRevoke(provider)  => revokeOAuth(provider)
-      case ShellCommand.OAuthList              => listOAuthProviders
-      case ShellCommand.EmailList(maxResults)  => emailList(maxResults)
-      case ShellCommand.EmailRead(messageId)   => emailRead(messageId)
-      case ShellCommand.EmailSearch(query)     => emailSearch(query)
-      case ShellCommand.CalendarToday          => calendarToday
-      case ShellCommand.CalendarList(date)     => calendarList(date)
+      case ShellCommand.MemoryCheckpoint                         => requestCheckpoint
+      case ShellCommand.MemoryPolicyShow                         => showCheckpointPolicy
+      case ShellCommand.MemoryPolicySetInterval(n)               => setCheckpointInterval(n)
+      case ShellCommand.MemoryPolicyToggle(t, e)                 => toggleCheckpointTrigger(t, e)
+      case ShellCommand.Skills                                   => showSkills
+      case ShellCommand.ContactsFind(name)                       => findContacts(name)
+      case ShellCommand.Capabilities                             => showCapabilities
+      case ShellCommand.AgentsList                               => listAgents
+      case ShellCommand.AgentsStop(id)                           => stopAgent(id)
+      case ShellCommand.ApprovalsList                            => listApprovals
+      case ShellCommand.ApprovalsApprove(id)                     => decideApproval(id, approved = true)
+      case ShellCommand.ApprovalsDeny(id)                        => decideApproval(id, approved = false)
+      case ShellCommand.UsersList(active)                        => listUsers(active)
+      case ShellCommand.UsersCreate(name, email)                 => createUser(name, email)
+      case ShellCommand.UsersDeactivate(id)                      => deactivateUser(id)
+      case ShellCommand.UsersUpdate(id, field, v)                => updateUser(id, field, v)
+      case ShellCommand.UsersCapabilities(uid)                   => listUserCapabilities(uid)
+      case ShellCommand.UsersGrantCapability(uid, cap, mode)     => grantUserCapability(uid, cap, mode)
+      case ShellCommand.UsersRevokeGrant(gid)                    => revokeCapabilityGrant(gid)
+      case ShellCommand.UsersRoles(uid)                          => listUserRoles(uid)
+      case ShellCommand.UsersAssignRole(uid, rid)                => assignUserRole(uid, rid)
+      case ShellCommand.UsersRevokeRole(uid, rid)                => revokeUserRole(uid, rid)
+      case ShellCommand.UsersIdentities(uid)                     => listUserIdentities(uid)
+      case ShellCommand.UsersLinkIdentity(uid, chType, chUserId) => linkUserIdentity(uid, chType, chUserId)
+      case ShellCommand.UsersUnlinkIdentity(iid)                 => unlinkUserIdentity(iid)
+      case ShellCommand.RolesList                                => listRoles
+      case ShellCommand.RolesCreate(name, desc)                  => createRole(name, desc)
+      case ShellCommand.SchedulerList                            => listSchedulerJobs
+      case ShellCommand.SchedulerResult(id)                      => showSchedulerResult(id)
+      case ShellCommand.OAuthStatus(provider)                    => showOAuthStatus(provider)
+      case ShellCommand.OAuthConnect(provider)                   => connectOAuth(provider)
+      case ShellCommand.OAuthRevoke(provider)                    => revokeOAuth(provider)
+      case ShellCommand.OAuthList                                => listOAuthProviders
+      case ShellCommand.EmailList(maxResults)                    => emailList(maxResults)
+      case ShellCommand.EmailRead(messageId)                     => emailRead(messageId)
+      case ShellCommand.EmailSearch(query)                       => emailSearch(query)
+      case ShellCommand.CalendarToday                            => calendarToday
+      case ShellCommand.CalendarList(date)                       => calendarList(date)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -107,6 +129,9 @@ object CommandHandler {
               // Fork the drain so the processLoop can accept new input (commands or messages)
               // while the LLM response is still streaming. The drain fiber is tracked in ShellState
               // so it can be interrupted by a subsequent message, /new, or /quit.
+              //
+              // commitInProgress flushes any inProgressMessage left by the previous response into
+              // the message list, so the new response starts as a fresh Server message block.
               def drain: ZIO[JorlanScreen, Nothing, Unit] =
                 liveSession.tokenQueue.take.flatMap {
                   case Left(err)          => screen(_.addMessage(MessageKind.Error, s"Streaming error: $err"))
@@ -117,7 +142,7 @@ object CommandHandler {
                       else screen(_.appendToLastMessage(MessageKind.Server, chunk.content))
                     display *> drain
                 }
-              drain
+              screen(_.commitInProgress()) *> drain
                 .ensuring(ZIO.serviceWithZIO[ShellState](_.setDrainingFiber(None)))
                 .fork
                 .flatMap(f => ZIO.serviceWithZIO[ShellState](_.setDrainingFiber(Some(f))))
@@ -128,7 +153,7 @@ object CommandHandler {
   private val showCommands: ZIO[Env, Nothing, Unit] = {
     val lines = List(
       "Jorlan Shell — type a message to talk to the agent, or use a /command.",
-      "Key bindings: Enter submit · Backspace delete · ↑↓/PgUp/PgDn scroll · Ctrl-C quit",
+      "Key bindings: Enter submit · Backspace delete · ↑↓ history · PgUp/PgDn scroll · Tab autocomplete · Ctrl-C quit",
       "",
       "/help /commands     Show this command list",
       "/status             Server connectivity and versions",
@@ -147,6 +172,24 @@ object CommandHandler {
       "/memory forget <id>                  Delete a memory record by id",
       "/memory remember <key> <text>        Store a new memory record",
       "/capabilities                        List your current capability grants",
+      "/users list [all|inactive]           List users (default: active only)",
+      "/users create <displayName> <email>  Create a new user",
+      "/users deactivate <id>               Deactivate a user account",
+      "/users update <id> name <value>      Update a user's display name",
+      "/users update <id> email <value>     Update a user's email address",
+      "/users capabilities <id>             List capability grants for a user",
+      "/users grant <id> <cap> <mode>       Grant a capability to a user (mode: Manual|AutoApprove|Deny)",
+      "/users revoke-grant <grantId>        Revoke a capability grant by id",
+      "/users roles <id>                    List roles assigned to a user",
+      "/users assign-role <userId> <roleId> Assign a role to a user",
+      "/users revoke-role <userId> <roleId> Revoke a role from a user",
+      "/users identities <id>               List channel identities for a user",
+      "/users link-identity <id> <type> <channelUserId>  Link a channel identity to a user",
+      "/users unlink-identity <identityId>  Remove a channel identity",
+      "/roles list                          List all roles",
+      "/roles create <name> [description]   Create a new role",
+      "/scheduler list                      List all scheduler jobs with status and results",
+      "/scheduler result <id>               Show full result/error for a scheduler job",
       "/agents list                         List active agent sessions",
       "/agents stop <id>                    Terminate an agent session",
       "/approvals list                      List pending approval requests",
@@ -379,7 +422,9 @@ object CommandHandler {
         case Nil     => screen(_.addMessage(MessageKind.System, "No memory records found."))
         case records =>
           val lines =
-            records.map(r => s"[${r.id.value}] (${r.scope}) ${r.recordKey}: ${memoryValueStr(r.value)}").mkString("\n")
+            records
+              .map(r => s"[${r.id.value}] (${r.scope} p${r.importance}) ${r.recordKey}: ${memoryValueStr(r.value)}")
+              .mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Memory records:\n$lines"))
       },
     )
@@ -411,16 +456,17 @@ object CommandHandler {
     repo(
       _.memory.upsert(
         MemoryRecord(
-          MemoryRecordId.empty,
-          scope,
-          None,
-          None,
-          None,
-          key,
-          Json.Str(text),
-          None,
-          java.time.Instant.EPOCH,
-          java.time.Instant.EPOCH,
+          id = MemoryRecordId.empty,
+          scope = scope,
+          userId = None,
+          workspaceId = None,
+          agentId = None,
+          recordKey = key,
+          value = Json.Str(text),
+          ttl = None,
+          createdAt = java.time.Instant.EPOCH,
+          updatedAt = java.time.Instant.EPOCH,
+          importance = 8,
         ),
       ),
     ).foldZIO(
@@ -445,6 +491,69 @@ object CommandHandler {
         else screen(_.addMessage(MessageKind.Error, s"Memory record ${id.value} not found.")),
     )
 
+  private val requestCheckpoint: ZIO[Env, Nothing, Unit] =
+    ZIO.serviceWithZIO[ShellState](_.getLiveSession).flatMap {
+      case None =>
+        screen(_.addMessage(MessageKind.Error, "No active session — start a session first with /new"))
+      case Some(session) =>
+        ZIO
+          .serviceWithZIO[ZIOClientRepositories](_.requestCheckpoint(session.sessionId))
+          .foldZIO(
+            err => screen(_.addMessage(MessageKind.Error, s"Checkpoint failed: $err")),
+            _ => screen(_.addMessage(MessageKind.System, "Checkpoint requested — memories will be saved shortly.")),
+          )
+    }
+
+  private val showCheckpointPolicy: ZIO[Env, Nothing, Unit] =
+    ZIO
+      .serviceWithZIO[ZIOClientRepositories](_.getCheckpointPolicy)
+      .foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not load checkpoint policy: $err")),
+        cfg => {
+          val interval = cfg.timedIntervalTurns.fold("disabled")(n => s"every $n turns")
+          val lines = List(
+            s"  on-session-end:    ${if (cfg.onSessionEnd) "on" else "off"}",
+            s"  on-user-request:   ${if (cfg.onUserRequest) "on" else "off"}",
+            s"  timed-interval:    $interval",
+            s"  before-effect:     ${if (cfg.beforeExternalEffect) "on" else "off"}",
+          ).mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Checkpoint policy:\n$lines"))
+        },
+      )
+
+  private def setCheckpointInterval(turns: Int): ZIO[Env, Nothing, Unit] = {
+    val newInterval = if (turns <= 0) None else Some(turns)
+    ZIO
+      .serviceWithZIO[ZIOClientRepositories](_.updateCheckpointPolicy(timedIntervalTurns = Some(newInterval)))
+      .foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not update policy: $err")),
+        cfg => {
+          val msg = cfg.timedIntervalTurns.fold("Timed interval disabled.")(n => s"Timed interval set to $n turns.")
+          screen(_.addMessage(MessageKind.System, msg))
+        },
+      )
+  }
+
+  private def toggleCheckpointTrigger(
+    trigger: String,
+    enabled: Boolean,
+  ): ZIO[Env, Nothing, Unit] = {
+    val update = trigger match {
+      case "session-end" =>
+        ZIO.serviceWithZIO[ZIOClientRepositories](_.updateCheckpointPolicy(onSessionEnd = Some(enabled)))
+      case "user-request" =>
+        ZIO.serviceWithZIO[ZIOClientRepositories](_.updateCheckpointPolicy(onUserRequest = Some(enabled)))
+      case "before-effect" =>
+        ZIO.serviceWithZIO[ZIOClientRepositories](_.updateCheckpointPolicy(beforeExternalEffect = Some(enabled)))
+      case other =>
+        ZIO.fail(s"Unknown trigger '$other'. Use session-end, user-request, or before-effect.")
+    }
+    update.foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not update policy: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Trigger '$trigger' ${if (enabled) "enabled" else "disabled"}.")),
+    )
+  }
+
   private val showCapabilities: ZIO[Env, Nothing, Unit] =
     repo(_.permission.listCapabilities()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not load capabilities: $err")),
@@ -457,6 +566,316 @@ object CommandHandler {
               s"  ${g.capability.value}  [${g.approvalMode}]$expiry"
             }.mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Your capability grants:\n$lines"))
+      },
+    )
+
+  private def listUsers(active: Option[Boolean]): ZIO[Env, Nothing, Unit] =
+    repo(_.user.search(UserSearch(active = active))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list users: $err")),
+      {
+        case Nil   => screen(_.addMessage(MessageKind.System, "No users found."))
+        case users =>
+          val header = active match {
+            case None        => "All users:"
+            case Some(true)  => "Active users:"
+            case Some(false) => "Inactive users:"
+          }
+          val lines = users
+            .map { u =>
+              val status = if (u.active) "active" else "inactive"
+              s"  [${u.id.value}] ${u.displayName}  <${u.email}>  $status"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"$header\n$lines"))
+      },
+    )
+
+  private def deactivateUser(id: UserId): ZIO[Env, Nothing, Unit] =
+    repo(_.user.deactivate(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Deactivate failed: $err")),
+      count =>
+        if (count > 0) screen(_.addMessage(MessageKind.System, s"User ${id.value} deactivated."))
+        else screen(_.addMessage(MessageKind.Error, s"User ${id.value} not found or already inactive.")),
+    )
+
+  private val validUserFields: Set[String] = Set("name", "email")
+
+  private def updateUser(
+    id:    UserId,
+    field: String,
+    value: String,
+  ): ZIO[Env, Nothing, Unit] =
+    if (!validUserFields.contains(field.toLowerCase)) {
+      screen(
+        _.addMessage(
+          MessageKind.Error,
+          s"Unknown field '$field'. Valid fields: ${validUserFields.mkString(", ")}",
+        ),
+      )
+    } else {
+      repo(_.user.getById(id)).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not fetch user: $err")),
+        {
+          case None           => screen(_.addMessage(MessageKind.Error, s"User ${id.value} not found."))
+          case Some(existing) =>
+            val updated = field.toLowerCase match {
+              case "name"  => existing.copy(displayName = value)
+              case "email" => existing.copy(email = value)
+              case _       => existing
+            }
+            repo(_.user.upsert(updated)).foldZIO(
+              err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
+              u =>
+                screen(
+                  _.addMessage(
+                    MessageKind.System,
+                    s"User ${u.id.value} updated: ${u.displayName} <${u.email}> active=${u.active}",
+                  ),
+                ),
+            )
+        },
+      )
+    }
+
+  private def createUser(
+    displayName: String,
+    email:       String,
+  ): ZIO[Env, Nothing, Unit] = {
+    import java.time.Instant
+    repo(
+      _.user.upsert(
+        User(
+          id = UserId.empty,
+          displayName = displayName,
+          email = email,
+          createdAt = Instant.now(),
+          updatedAt = Instant.now(),
+          active = true,
+        ),
+      ),
+    ).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Create user failed: $err")),
+      u => screen(_.addMessage(MessageKind.System, s"Created user [${u.id.value}] ${u.displayName} <${u.email}>")),
+    )
+  }
+
+  private def listUserCapabilities(userId: UserId): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.searchGrants(GrantSearch(userId = userId))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list capabilities: $err")),
+      {
+        case Nil    => screen(_.addMessage(MessageKind.System, s"No capability grants for user ${userId.value}."))
+        case grants =>
+          val lines = grants
+            .map { g =>
+              s"  [${g.id.value}] ${g.capability.value}  mode=${g.approvalMode}${g.expiresAt.map(t => s"  expires=$t").getOrElse("")}"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Capabilities for user ${userId.value}:\n$lines"))
+      },
+    )
+
+  private def grantUserCapability(
+    userId:       UserId,
+    capability:   String,
+    approvalMode: String,
+  ): ZIO[Env, Nothing, Unit] = {
+    import java.time.Instant
+    val modeOpt = ApprovalMode.values.find(_.toString.equalsIgnoreCase(approvalMode))
+    modeOpt match {
+      case None =>
+        screen(
+          _.addMessage(
+            MessageKind.Error,
+            s"Unknown approval mode '$approvalMode'. Valid: ${ApprovalMode.values.mkString(", ")}",
+          ),
+        )
+      case Some(mode) =>
+        repo(
+          _.permission.upsertCapabilityGrant(
+            CapabilityGrant(
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName(capability),
+              scopeJson = None,
+              granteeId = userId,
+              grantorId = None,
+              approvalMode = mode,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = Instant.now(),
+            ),
+          ),
+        ).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"Grant failed: $err")),
+          g =>
+            screen(
+              _.addMessage(
+                MessageKind.System,
+                s"Granted '${g.capability.value}' to user ${userId.value} [grant id=${g.id.value}]",
+              ),
+            ),
+        )
+    }
+  }
+
+  private def revokeCapabilityGrant(grantId: CapabilityGrantId): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.revokeGrant(grantId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Revoke failed: $err")),
+      count =>
+        if (count > 0) screen(_.addMessage(MessageKind.System, s"Grant ${grantId.value} revoked."))
+        else screen(_.addMessage(MessageKind.Error, s"Grant ${grantId.value} not found.")),
+    )
+
+  private def listUserRoles(userId: UserId): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.searchRoles(RoleSearch(userId = Some(userId)))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list roles: $err")),
+      {
+        case Nil   => screen(_.addMessage(MessageKind.System, s"No roles assigned to user ${userId.value}."))
+        case roles =>
+          val lines = roles
+            .map(r => s"  [${r.id.value}] ${r.name}${r.description.map(d => s" — $d").getOrElse("")}").mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Roles for user ${userId.value}:\n$lines"))
+      },
+    )
+
+  private def assignUserRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.assignRole(userId, roleId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Assign role failed: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Role ${roleId.value} assigned to user ${userId.value}.")),
+    )
+
+  private def revokeUserRole(
+    userId: UserId,
+    roleId: RoleId,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.removeRole(userId, roleId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Revoke role failed: $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Role ${roleId.value} revoked from user ${userId.value}.")),
+    )
+
+  private def listUserIdentities(userId: UserId): ZIO[Env, Nothing, Unit] =
+    repo(_.user.getChannelIdentities(userId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list identities: $err")),
+      {
+        case Nil =>
+          screen(_.addMessage(MessageKind.System, s"No channel identities for user ${userId.value}."))
+        case ids =>
+          val lines = ids
+            .map { ci =>
+              s"  [${ci.id.value}] ${ci.channelType} : ${ci.channelUserId}${if (ci.verified) " (verified)" else ""}"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Channel identities for user ${userId.value}:\n$lines"))
+      },
+    )
+
+  private def linkUserIdentity(
+    userId:        UserId,
+    channelType:   String,
+    channelUserId: String,
+  ): ZIO[Env, Nothing, Unit] = {
+    import java.time.Instant
+    val chTypeOpt = ChannelType.values.find(_.toString.equalsIgnoreCase(channelType))
+    chTypeOpt match {
+      case None =>
+        screen(
+          _.addMessage(
+            MessageKind.Error,
+            s"Unknown channel type '$channelType'. Valid: ${ChannelType.values.mkString(", ")}",
+          ),
+        )
+      case Some(chType) =>
+        repo(
+          _.user.upsertChannelIdentity(
+            ChannelIdentity(
+              id = ChannelIdentityId.empty,
+              userId = userId,
+              channelType = chType,
+              channelUserId = channelUserId,
+              verified = false,
+              providerData = None,
+              createdAt = Instant.now(),
+            ),
+          ),
+        ).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"Link identity failed: $err")),
+          ci =>
+            screen(
+              _.addMessage(
+                MessageKind.System,
+                s"Linked ${ci.channelType}:${ci.channelUserId} to user ${userId.value} [id=${ci.id.value}]",
+              ),
+            ),
+        )
+    }
+  }
+
+  private def unlinkUserIdentity(identityId: ChannelIdentityId): ZIO[Env, Nothing, Unit] =
+    repo(_.user.deleteChannelIdentity(identityId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Unlink failed: $err")),
+      count =>
+        if (count > 0) screen(_.addMessage(MessageKind.System, s"Identity ${identityId.value} unlinked."))
+        else screen(_.addMessage(MessageKind.Error, s"Identity ${identityId.value} not found.")),
+    )
+
+  private val listRoles: ZIO[Env, Nothing, Unit] =
+    repo(_.permission.searchRoles(RoleSearch(userId = None))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list roles: $err")),
+      {
+        case Nil   => screen(_.addMessage(MessageKind.System, "No roles defined."))
+        case roles =>
+          val lines = roles
+            .map(r => s"  [${r.id.value}] ${r.name}${r.description.map(d => s" — $d").getOrElse("")}").mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Roles:\n$lines"))
+      },
+    )
+
+  private def createRole(
+    name:        String,
+    description: Option[String],
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.upsertRole(Role(id = RoleId.empty, name = name, description = description))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Create role failed: $err")),
+      r => screen(_.addMessage(MessageKind.System, s"Created role [${r.id.value}] ${r.name}")),
+    )
+
+  private val listSchedulerJobs: ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.listJobs(None, 200)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list scheduler jobs: $err")),
+      {
+        case Nil  => screen(_.addMessage(MessageKind.System, "No scheduler jobs found."))
+        case jobs =>
+          val lines = jobs
+            .map { j =>
+              val result = j.status match {
+                case JobStatus.Failed    => j.resultJson.map(r => s"  ERROR: ${r.take(200)}").getOrElse("")
+                case JobStatus.Succeeded => j.resultJson.map(r => s"  result: ${r.take(100)}").getOrElse("")
+                case _                   => ""
+              }
+              val promptPreview = if (j.prompt.nonEmpty) s"  prompt: ${j.prompt.take(80)}" else ""
+              s"  [${j.id.value}] ${j.name}  status=${j.status}  retries=${j.retryCount}/${j.maxRetries}$promptPreview$result"
+            }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Scheduler jobs:\n$lines"))
+      },
+    )
+
+  private def showSchedulerResult(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.getJob(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch job: $err")),
+      {
+        case None      => screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found."))
+        case Some(job) =>
+          val result = job.resultJson.getOrElse("(no result)")
+          val lines = Seq(
+            s"Job: ${job.name} [${job.id.value}]",
+            s"Status: ${job.status}",
+            s"Prompt: ${job.prompt}",
+            s"Retries: ${job.retryCount}/${job.maxRetries}",
+            s"Scheduled: ${job.scheduledAt}",
+            job.startedAt.map(t => s"Started: $t").getOrElse(""),
+            job.finishedAt.map(t => s"Finished: $t").getOrElse(""),
+            s"Result:\n$result",
+          ).filter(_.nonEmpty).mkString("\n")
+          screen(_.addMessage(MessageKind.System, lines))
       },
     )
 

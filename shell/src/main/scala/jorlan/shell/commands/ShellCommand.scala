@@ -10,7 +10,17 @@
 
 package jorlan.shell.commands
 
-import jorlan.{AgentSessionId, ApprovalRequestId, MemoryRecordId, MemoryScope}
+import jorlan.{
+  AgentSessionId,
+  ApprovalRequestId,
+  CapabilityGrantId,
+  ChannelIdentityId,
+  MemoryRecordId,
+  MemoryScope,
+  RoleId,
+  SchedulerJobId,
+  UserId,
+}
 
 /** All recognised shell commands. Plain text (no leading `/`) is represented as [[Message]].
   *
@@ -45,6 +55,13 @@ enum ShellCommand {
     text:  String,
     scope: Option[String] = None,
   )
+  case MemoryCheckpoint
+  case MemoryPolicyShow
+  case MemoryPolicySetInterval(turns: Int)
+  case MemoryPolicyToggle(
+    trigger: String,
+    enabled: Boolean,
+  )
   case Skills
   case ContactsFind(name: String)
   case Capabilities
@@ -53,6 +70,47 @@ enum ShellCommand {
   case ApprovalsList
   case ApprovalsApprove(id: ApprovalRequestId)
   case ApprovalsDeny(id: ApprovalRequestId)
+  case UsersList(active: Option[Boolean])
+  case UsersCreate(
+    displayName: String,
+    email:       String,
+  )
+  case UsersDeactivate(id: UserId)
+  case UsersUpdate(
+    id:    UserId,
+    field: String,
+    value: String,
+  )
+  case UsersCapabilities(userId: UserId)
+  case UsersGrantCapability(
+    userId:       UserId,
+    capability:   String,
+    approvalMode: String,
+  )
+  case UsersRevokeGrant(grantId: CapabilityGrantId)
+  case UsersRoles(userId: UserId)
+  case UsersAssignRole(
+    userId: UserId,
+    roleId: RoleId,
+  )
+  case UsersRevokeRole(
+    userId: UserId,
+    roleId: RoleId,
+  )
+  case UsersIdentities(userId: UserId)
+  case UsersLinkIdentity(
+    userId:        UserId,
+    channelType:   String,
+    channelUserId: String,
+  )
+  case UsersUnlinkIdentity(identityId: ChannelIdentityId)
+  case RolesList
+  case RolesCreate(
+    name:        String,
+    description: Option[String],
+  )
+  case SchedulerList
+  case SchedulerResult(id: SchedulerJobId)
   case OAuthStatus(provider: String)
   case OAuthConnect(provider: String)
   case OAuthRevoke(provider: String)
@@ -101,12 +159,62 @@ object ShellCommand {
           MemoryPrivatize(MemoryRecordId(idStr.toLong))
         case "memory" :: "remember" :: key :: "--scope" :: scope :: rest if rest.nonEmpty =>
           MemoryRemember(key, rest.mkString(" "), Some(scope))
-        case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil       => Unknown(s"/memory remember")
-        case "memory" :: "remember" :: key :: rest if rest.nonEmpty           => MemoryRemember(key, rest.mkString(" "))
-        case "skills" :: _                                                    => Skills
-        case "contacts" :: "find" :: rest if rest.nonEmpty                    => ContactsFind(rest.mkString(" "))
-        case "contacts" :: _                                                  => Unknown("/contacts")
-        case "capabilities" :: _                                              => Capabilities
+        case "memory" :: "remember" :: key :: "--scope" :: scope :: Nil => Unknown(s"/memory remember")
+        case "memory" :: "remember" :: key :: rest if rest.nonEmpty     => MemoryRemember(key, rest.mkString(" "))
+        case "memory" :: "checkpoint" :: _                              => MemoryCheckpoint
+        case "memory" :: "policy" :: Nil                                => MemoryPolicyShow
+        case "memory" :: "policy" :: "interval" :: n :: _ if n.toIntOption.isDefined =>
+          MemoryPolicySetInterval(n.toInt)
+        case "memory" :: "policy" :: toggle :: _
+            if Set(
+              "on-session-end",
+              "off-session-end",
+              "on-user-request",
+              "off-user-request",
+              "on-before-effect",
+              "off-before-effect",
+            ).contains(toggle) =>
+          val enabled = toggle.startsWith("on-")
+          val trigger = toggle.stripPrefix("on-").stripPrefix("off-")
+          MemoryPolicyToggle(trigger, enabled)
+        case "skills" :: _                                    => Skills
+        case "contacts" :: "find" :: rest if rest.nonEmpty    => ContactsFind(rest.mkString(" "))
+        case "contacts" :: _                                  => Unknown("/contacts")
+        case "capabilities" :: _                              => Capabilities
+        case "users" :: "list" :: "all" :: _                  => UsersList(None)
+        case "users" :: "list" :: "inactive" :: _             => UsersList(Some(false))
+        case "users" :: "list" :: _                           => UsersList(Some(true))
+        case "users" :: "create" :: displayName :: email :: _ =>
+          UsersCreate(displayName, email)
+        case "users" :: "deactivate" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersDeactivate(UserId(idStr.toLong))
+        case "users" :: "update" :: idStr :: field :: rest if idStr.toLongOption.isDefined && rest.nonEmpty =>
+          UsersUpdate(UserId(idStr.toLong), field, rest.mkString(" "))
+        case "users" :: "capabilities" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersCapabilities(UserId(idStr.toLong))
+        case "users" :: "grant" :: idStr :: cap :: mode :: _ if idStr.toLongOption.isDefined =>
+          UsersGrantCapability(UserId(idStr.toLong), cap, mode)
+        case "users" :: "revoke-grant" :: grantIdStr :: _ if grantIdStr.toLongOption.isDefined =>
+          UsersRevokeGrant(CapabilityGrantId(grantIdStr.toLong))
+        case "users" :: "roles" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersRoles(UserId(idStr.toLong))
+        case "users" :: "assign-role" :: idStr :: roleIdStr :: _
+            if idStr.toLongOption.isDefined && roleIdStr.toLongOption.isDefined =>
+          UsersAssignRole(UserId(idStr.toLong), RoleId(roleIdStr.toLong))
+        case "users" :: "revoke-role" :: idStr :: roleIdStr :: _
+            if idStr.toLongOption.isDefined && roleIdStr.toLongOption.isDefined =>
+          UsersRevokeRole(UserId(idStr.toLong), RoleId(roleIdStr.toLong))
+        case "users" :: "identities" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersIdentities(UserId(idStr.toLong))
+        case "users" :: "link-identity" :: idStr :: chType :: chUserId :: _ if idStr.toLongOption.isDefined =>
+          UsersLinkIdentity(UserId(idStr.toLong), chType, chUserId)
+        case "users" :: "unlink-identity" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersUnlinkIdentity(ChannelIdentityId(idStr.toLong))
+        case "users" :: _                        => Unknown("/users")
+        case "roles" :: "list" :: _              => RolesList
+        case "roles" :: "create" :: name :: rest =>
+          RolesCreate(name, if (rest.nonEmpty) Some(rest.mkString(" ")) else None)
+        case "roles" :: _                                                     => Unknown("/roles")
         case "agents" :: "list" :: _                                          => AgentsList
         case "agents" :: "stop" :: idStr :: _ if idStr.toLongOption.isDefined =>
           AgentsStop(AgentSessionId(idStr.toLong))
@@ -116,7 +224,11 @@ object ShellCommand {
           ApprovalsApprove(ApprovalRequestId(idStr.toLong))
         case "approvals" :: "deny" :: idStr :: _ if idStr.toLongOption.isDefined =>
           ApprovalsDeny(ApprovalRequestId(idStr.toLong))
-        case "approvals" :: _                                       => Unknown("/approvals")
+        case "approvals" :: _                                                      => Unknown("/approvals")
+        case "scheduler" :: "list" :: _                                            => SchedulerList
+        case "scheduler" :: "result" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerResult(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: _                                       => Unknown("/scheduler")
         case "oauth" :: "status" :: provider :: _                   => OAuthStatus(provider)
         case "oauth" :: "connect" :: provider :: _                  => OAuthConnect(provider)
         case "oauth" :: "revoke" :: provider :: _                   => OAuthRevoke(provider)

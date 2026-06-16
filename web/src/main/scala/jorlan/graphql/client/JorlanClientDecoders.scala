@@ -134,6 +134,7 @@ object JorlanClientDecoders {
         userId = j.userId,
         skillId = j.skillId,
         name = j.name,
+        prompt = j.prompt,
         inputJson = j.inputJson,
         status = j.status,
         scheduledAt = j.scheduledAt,

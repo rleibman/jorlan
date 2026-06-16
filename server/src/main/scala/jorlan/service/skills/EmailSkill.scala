@@ -47,6 +47,11 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of messages to return (default 10)"},"query":{"type":"string","description":"Optional search query to filter messages"}},"required":[]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
+        examplePrompts = List(
+          "Show me my recent emails",
+          "What's in my inbox?",
+          "List the last 5 emails from Alice",
+        ),
       ),
       ToolDescriptor(
         name = "email.read",
@@ -55,6 +60,10 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
+        examplePrompts = List(
+          "Read the email from Bob about the meeting",
+          "Show me the full content of message abc123",
+        ),
       ),
       ToolDescriptor(
         name = "email.send",
@@ -63,6 +72,11 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"},"description":"Recipient email addresses"},"cc":{"type":"array","items":{"type":"string"},"description":"CC recipients"},"bcc":{"type":"array","items":{"type":"string"},"description":"BCC recipients"},"subject":{"type":"string","description":"Email subject"},"body":{"type":"string","description":"Email body text"},"replyToMessageId":{"type":"string","description":"Message ID to reply to (optional)"},"signWithPgp":{"type":"boolean","description":"Sign with PGP (default false)"}},"required":["to","subject","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.send")),
+        examplePrompts = List(
+          "Send an email to alice@example.com about the project update",
+          "Email the team that the release is ready",
+          "Reply to Bob's message saying I'll be there",
+        ),
       ),
       ToolDescriptor(
         name = "email.draft",
@@ -71,6 +85,10 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"bcc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"replyToMessageId":{"type":"string"}},"required":["to","subject","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
+        examplePrompts = List(
+          "Draft an email to the team about next week's sprint",
+          "Save a draft reply to Alice without sending yet",
+        ),
       ),
       ToolDescriptor(
         name = "email.archive",
@@ -79,6 +97,10 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to archive"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
+        examplePrompts = List(
+          "Archive the email from Bob about the old project",
+          "Move this newsletter to archive",
+        ),
       ),
       ToolDescriptor(
         name = "email.delete",
@@ -87,6 +109,10 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to delete"}},"required":["messageId"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.write")),
+        examplePrompts = List(
+          "Delete the spam email I just received",
+          "Remove that old invoice email",
+        ),
       ),
       ToolDescriptor(
         name = "email.reply",
@@ -95,6 +121,10 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"messageId":{"type":"string","description":"The message ID to reply to"},"body":{"type":"string","description":"Reply body text"},"replyAll":{"type":"boolean","description":"Reply to all recipients (default false)"}},"required":["messageId","body"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.send")),
+        examplePrompts = List(
+          "Reply to Alice's email saying I'll join the meeting",
+          "Reply to all on the project thread with my update",
+        ),
       ),
       ToolDescriptor(
         name = "email.search",
@@ -103,6 +133,11 @@ class EmailSkill(
           parseSchema("""{"type":"object","properties":{"query":{"type":"string","description":"Search query (supports Gmail-style search operators)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 10)"}},"required":["query"]}"""),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
+        examplePrompts = List(
+          "Find emails from Alice about the contract",
+          "Search for any emails mentioning the budget report",
+          "Look for emails with attachments from last week",
+        ),
       ),
     ),
   )

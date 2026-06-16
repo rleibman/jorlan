@@ -21,8 +21,8 @@ import jorlan.db.repository.*
 import jorlan.service.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
-import zio.json.{EncoderOps, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{EncoderOps, JsonEncoder}
 import zio.stream.ZStream
 
 import java.time.Instant
@@ -111,24 +111,6 @@ object JorlanAPI {
 
   private given Schema[Any, Json] = Schema.stringSchema.contramap(j => JsonEncoder[Json].encodeJson(j, None).toString)
 
-  private given Schema[Any, ChannelType] =
-    Schema.scalarSchema("ChannelType", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, ApprovalStatus] =
-    Schema.scalarSchema("ApprovalStatus", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, ApprovalMode] =
-    Schema.scalarSchema("ApprovalMode", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, EventType] =
-    Schema.scalarSchema("EventType", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, SessionStatus] =
-    Schema.scalarSchema("SessionStatus", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, Formality] =
-    Schema.scalarSchema("Formality", None, None, None, e => Value.StringValue(e.toString))
-
   private given Schema[Any, ModelInfo] = Schema.gen[Any, ModelInfo]
 
   private given Schema[Any, SkillToolInfo] = Schema.gen[Any, SkillToolInfo]
@@ -138,20 +120,6 @@ object JorlanAPI {
   private given Schema[Any, ContactIdentityResult] = Schema.gen[Any, ContactIdentityResult]
 
   private given Schema[Any, ContactResult] = Schema.gen[Any, ContactResult]
-
-  private given ArgBuilder[ChannelType] = ArgBuilder.string.map(ChannelType.valueOf)
-
-  private given ArgBuilder[ApprovalStatus] = ArgBuilder.string.map(ApprovalStatus.valueOf)
-
-  private given ArgBuilder[ApprovalMode] = ArgBuilder.string.map(ApprovalMode.valueOf)
-
-  private given ArgBuilder[EventType] = ArgBuilder.string.map(EventType.valueOf)
-
-  private given ArgBuilder[SessionStatus] = ArgBuilder.string.map(SessionStatus.valueOf)
-
-  private given ArgBuilder[RiskClass] = ArgBuilder.string.map(RiskClass.valueOf)
-
-  private given ArgBuilder[Formality] = ArgBuilder.string.map(Formality.valueOf)
 
   private given Schema[Any, User] = Schema.gen[Any, User]
 
@@ -174,6 +142,8 @@ object JorlanAPI {
 
   private given Schema[Any, MemoryRecord] = Schema.gen[Any, MemoryRecord]
 
+  private given Schema[Any, CheckpointPolicyConfig] = Schema.gen[Any, CheckpointPolicyConfig]
+
   private given Schema[Any, CapabilityGrantId] =
     Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
 
@@ -185,8 +155,125 @@ object JorlanAPI {
   private given Schema[Any, SchedulerTriggerId] =
     Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
 
+  private given Schema[Any, ChannelIdentityId] =
+    Schema.scalarSchema("ChannelIdentityId", None, None, None, id => Value.IntValue(id.value))
+
+  private given Schema[Any, ChannelIdentity] = Schema.gen[Any, ChannelIdentity]
+  private given ArgBuilder[ChannelIdentityId] = ArgBuilder.long.map(ChannelIdentityId(_))
+
+  private given ArgBuilder[CapabilityGrantId] = ArgBuilder.long.map(CapabilityGrantId(_))
+
+  private given Schema[Any, ChannelType] =
+    Schema.enumSchema[ChannelType](
+      name = "ChannelType",
+      values = ChannelType.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, ApprovalStatus] =
+    Schema.enumSchema[ApprovalStatus](
+      name = "ApprovalStatus",
+      values = ApprovalStatus.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, ApprovalMode] =
+    Schema.enumSchema[ApprovalMode](
+      name = "ApprovalMode",
+      values = ApprovalMode.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, EventType] =
+    Schema.enumSchema[EventType](
+      name = "EventType",
+      values = EventType.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, SessionStatus] =
+    Schema.enumSchema[SessionStatus](
+      name = "SessionStatus",
+      values = SessionStatus.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, Formality] =
+    Schema.enumSchema[Formality](
+      name = "Formality",
+      values = Formality.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
   private given Schema[Any, JobStatus] =
-    Schema.scalarSchema("JobStatus", None, None, None, e => Value.StringValue(e.toString))
+    Schema.enumSchema[JobStatus](
+      name = "JobStatus",
+      values = JobStatus.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
 
   private given Schema[Any, MemoryScope] =
     Schema.enumSchema[MemoryScope](
@@ -232,10 +319,53 @@ object JorlanAPI {
   private given ArgBuilder[ModelId] = ArgBuilder.string.map(ModelId(_))
   private given ArgBuilder[CapabilityName] = ArgBuilder.string.map(CapabilityName(_))
   private given ArgBuilder[Personality] = ArgBuilder.gen[Personality]
+  private given ArgBuilder[CheckpointPolicyConfig] = ArgBuilder.gen[CheckpointPolicyConfig]
   private given ArgBuilder[MemoryRecordId] = ArgBuilder.long.map(MemoryRecordId(_))
   private given ArgBuilder[SchedulerJobId] = ArgBuilder.long.map(SchedulerJobId(_))
   private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
   private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
+
+  private given ArgBuilder[ChannelType] =
+    ArgBuilder.enumString[ChannelType] { s =>
+      ChannelType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid ChannelType '$s'"))
+    }
+  private given ArgBuilder[ApprovalStatus] =
+    ArgBuilder.enumString[ApprovalStatus] { s =>
+      ApprovalStatus.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid ApprovalStatus '$s'"))
+    }
+  private given ArgBuilder[ApprovalMode] =
+    ArgBuilder.enumString[ApprovalMode] { s =>
+      ApprovalMode.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid ApprovalMode '$s'"))
+    }
+  private given ArgBuilder[EventType] =
+    ArgBuilder.enumString[EventType] { s =>
+      EventType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid EventType '$s'"))
+    }
+  private given ArgBuilder[SessionStatus] =
+    ArgBuilder.enumString[SessionStatus] { s =>
+      SessionStatus.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid SessionStatus '$s'"))
+    }
+  private given ArgBuilder[RiskClass] =
+    ArgBuilder.enumString[RiskClass] { s =>
+      RiskClass.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid RiskClass '$s'"))
+    }
+  private given ArgBuilder[Formality] =
+    ArgBuilder.enumString[Formality] { s =>
+      Formality.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid JobStatus '$s'"))
+    }
+
+  private given ArgBuilder[JobStatus] =
+    ArgBuilder.enumString[JobStatus] { s =>
+      JobStatus.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid JobStatus '$s'"))
+    }
   private given ArgBuilder[MemoryScope] =
     ArgBuilder.enumString[MemoryScope] { s =>
       MemoryScope.values
@@ -267,6 +397,7 @@ object JorlanAPI {
     name:                 String,
     description:          String,
     requiredCapabilities: List[String],
+    examplePrompts:       List[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe view of a registered skill and its tools. */
@@ -278,6 +409,20 @@ object JorlanAPI {
 
   /** GQL-safe view of one channel identity for a contact result. */
   case class ContactIdentityResult(
+    channelType:   String,
+    channelUserId: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `grantCapability` — grants a named capability directly to a user. */
+  case class GrantCapabilityInput(
+    userId:       UserId,
+    capability:   CapabilityName,
+    approvalMode: ApprovalMode,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `linkChannelIdentity` — associates an external channel identity with a user. */
+  case class LinkChannelIdentityInput(
+    userId:        UserId,
     channelType:   String,
     channelUserId: String,
   ) derives Schema.SemiAuto, ArgBuilder
@@ -301,6 +446,14 @@ object JorlanAPI {
   case class PaginationInput(
     page:     Option[Int] = None,
     pageSize: Option[Int] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `users` admin list query. */
+  case class ListUsersInput(
+    active:       Option[Boolean] = None,
+    nameContains: Option[String] = None,
+    page:         Option[Int] = None,
+    pageSize:     Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Input for `roles(userId)` — returns roles assigned to the given user. */
@@ -384,6 +537,7 @@ object JorlanAPI {
   /** Input for `createJob` — creates a new scheduler job. */
   case class CreateJobInput(
     name:            String,
+    prompt:          String,
     inputJson:       Option[String] = None,
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
@@ -431,7 +585,7 @@ object JorlanAPI {
 
   case class Queries(
     user:         UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[User]],
-    users:        PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
+    users:        ListUsersInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[User]],
     role:         RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Role]],
     roles:        RolesForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     permissions:  PermissionsForUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Permission]],
@@ -460,11 +614,20 @@ object JorlanAPI {
     oauthStatus: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, OAuthStatus],
     /** Returns the list of OAuth providers the calling user has connected credentials for. */
     listOAuthProviders: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[String]],
+    /** Returns capability grants for a specific user. Requires `admin.user.manage`. */
+    userCapabilityGrants: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
+    /** Returns channel identities for a specific user. Requires `admin.user.manage`. */
+    userChannelIdentities: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ChannelIdentity]],
+    /** Returns all roles in the system. Requires `admin.user.manage`. */
+    allRoles: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
+    /** Returns the current checkpoint policy configuration. */
+    checkpointPolicy: ZIO[JorlanApiEnv & JorlanSession, JorlanError, CheckpointPolicyConfig],
   )
 
   case class Mutations(
     createUser:        CreateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
     updateUser:        UpdateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
+    deactivateUser:    UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     createRole:        CreateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
     assignRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     revokeRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
@@ -494,6 +657,22 @@ object JorlanAPI {
     revokeOAuth: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Directly invokes a skill tool by name with JSON args; returns JSON result as a string. */
     invokeTool: InvokeToolInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, String],
+    /** Grants a named capability directly to a user. Requires `permission.grant`. */
+    grantCapability: GrantCapabilityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
+    /** Revokes a capability grant by ID. Requires `permission.revoke`. */
+    revokeCapabilityGrant: CapabilityGrantId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Associates a ch`annel identity with a user. Requires `admin.user.manage`. */
+    linkChannelIdentity: LinkChannelIdentityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, ChannelIdentity],
+    /** Removes a channel identity from a user. Requires `admin.user.manage`. */
+    unlinkChannelIdentity: ChannelIdentityId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Triggers an immediate checkpoint for the given session. Requires `memory.read`. */
+    requestCheckpoint: AgentSessionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Updates the checkpoint policy configuration. Requires `admin.settings`. */
+    updateCheckpointPolicy: CheckpointPolicyConfig => ZIO[
+      JorlanApiEnv & JorlanSession,
+      JorlanError,
+      CheckpointPolicyConfig,
+    ],
   )
 
   private case class Subscriptions(
@@ -586,15 +765,26 @@ object JorlanAPI {
         Queries(
           user = input => ZIO.serviceWithZIO[ZIORepositories](_.user.getById(input)),
           users = input =>
-            ZIO.serviceWithZIO[ZIORepositories](
-              _.user.search(UserSearch(page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(20))),
-            ),
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.list", actorId)
+              result  <- ZIO.serviceWithZIO[ZIORepositories](
+                _.user.search(
+                  UserSearch(
+                    active = input.active,
+                    nameContains = input.nameContains,
+                    page = input.page.getOrElse(0),
+                    pageSize = input.pageSize.getOrElse(20),
+                  ),
+                ),
+              )
+            } yield result,
           role = input => ZIO.serviceWithZIO[ZIORepositories](_.permission.getRole(input)),
           roles = input =>
             ZIO.serviceWithZIO[ZIORepositories](
               _.permission.searchRoles(
                 RoleSearch(
-                  userId = input.userId,
+                  userId = Some(input.userId),
                   page = input.page.getOrElse(0),
                   pageSize = input.pageSize.getOrElse(20),
                 ),
@@ -672,6 +862,7 @@ object JorlanAPI {
                     name = td.name,
                     description = td.description,
                     requiredCapabilities = td.requiredCapabilities.map(_.value),
+                    examplePrompts = td.examplePrompts,
                   ),
                 ),
               )
@@ -679,12 +870,13 @@ object JorlanAPI {
           },
           contacts = name =>
             for {
-              actorId <- actorIdFromSession
-              _       <- requireCapability("contacts.read", actorId)
-              users   <- ZIO
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("contacts.read", actorId)
+              rawUsers <- ZIO
                 .serviceWithZIO[ZIORepositories](
-                  _.user.search(UserSearch(nameContains = Some(name), active = Some(true))),
+                  _.user.search(UserSearch(fuzzyName = Some(name), active = Some(true))),
                 ).mapError(JorlanError(_))
+              users = jorlan.service.FuzzyNameMatch.rank(rawUsers, name)(_.displayName)
               results <- ZIO.foreach(users) { user =>
                 ZIO
                   .serviceWithZIO[ZIORepositories](_.user.getChannelIdentities(user.id)).mapError(JorlanError(_))
@@ -724,6 +916,38 @@ object JorlanAPI {
                 .serviceWithZIO[OAuthCredentialService](_.listProviders(actorId))
                 .mapError(e => JorlanError(s"Failed to list OAuth providers: ${e.getMessage}"))
             } yield providers,
+          userCapabilityGrants = userId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              grants  <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.searchGrants(GrantSearch(userId = userId, pageSize = 200)),
+              )
+            } yield grants,
+          userChannelIdentities = userId =>
+            for {
+              actorId    <- actorIdFromSession
+              _          <- requireCapability("admin.user.manage", actorId)
+              identities <- ZIO
+                .serviceWithZIO[ZIORepositories](_.user.getChannelIdentities(userId))
+                .mapError(JorlanError(_))
+            } yield identities,
+          allRoles = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              roles   <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.searchRoles(
+                  RoleSearch(userId = None, page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(50)),
+                ),
+              )
+            } yield roles,
+          checkpointPolicy =
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.read", actorId)
+              config  <- ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
+            } yield config,
         ),
         Mutations(
           createUser = input =>
@@ -751,6 +975,14 @@ object JorlanAPI {
               )
               _ <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
             } yield user,
+          deactivateUser = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("user.update", actorId)
+              now     <- Clock.instant
+              count   <- ZIO.serviceWithZIO[ZIORepositories](_.user.deactivate(id))
+              _       <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
+            } yield count > 0,
           createRole = input =>
             for {
               actorId <- actorIdFromSession
@@ -875,6 +1107,7 @@ object JorlanAPI {
                   agentId,
                   actorId,
                   input.name,
+                  input.prompt,
                   input.inputJson,
                   input.maxRetries,
                   input.backoffSeconds,
@@ -1001,6 +1234,84 @@ object JorlanAPI {
               ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
               result <- ZIO.serviceWithZIO[SkillRegistry](_.invoke(input.toolName, input.argsJson, ctx))
             } yield result.toJson,
+          grantCapability = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("permission.grant", actorId)
+              now     <- Clock.instant
+              grant   <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertCapabilityGrant(
+                  CapabilityGrant(
+                    id = CapabilityGrantId.empty,
+                    capability = input.capability,
+                    scopeJson = None,
+                    granteeId = input.userId,
+                    grantorId = Some(actorId),
+                    approvalMode = input.approvalMode,
+                    expiresAt = None,
+                    resourceConstraints = None,
+                    createdAt = now,
+                  ),
+                ),
+              )
+              _ <- logEvent(EventType.PermissionGranted, Some(actorId), None, now)
+            } yield grant,
+          revokeCapabilityGrant = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("permission.revoke", actorId)
+              now     <- Clock.instant
+              count   <- ZIO.serviceWithZIO[ZIORepositories](_.permission.revokeGrant(id))
+              _       <- logEvent(EventType.PermissionRevoked, Some(actorId), None, now)
+            } yield count > 0,
+          linkChannelIdentity = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              now     <- Clock.instant
+              chType  <- ZIO
+                .fromTry(scala.util.Try(ChannelType.valueOf(input.channelType)))
+                .orElseFail(JorlanError(s"Unknown channel type: ${input.channelType}"))
+              ci <- ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.user.upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = input.userId,
+                      channelType = chType,
+                      channelUserId = input.channelUserId,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ),
+                )
+                .mapError(JorlanError(_))
+            } yield ci,
+          unlinkChannelIdentity = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              count   <- ZIO
+                .serviceWithZIO[ZIORepositories](_.user.deleteChannelIdentity(id))
+                .mapError(JorlanError(_))
+            } yield count > 0,
+          requestCheckpoint = sessionId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("memory.read", actorId)
+              agentId <- ZIO
+                .serviceWithZIO[ZIORepositories](_.agent.getSession(sessionId))
+                .mapError(JorlanError(_))
+                .map(_.map(_.agentId).getOrElse(AgentId.empty))
+              _ <- ZIO.serviceWithZIO[MemoryService](_.requestCheckpoint(sessionId, actorId, agentId))
+            } yield true,
+          updateCheckpointPolicy = config =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              _       <- ZIO.serviceWithZIO[MemoryService](_.updateCheckpointPolicy(config))
+            } yield config,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

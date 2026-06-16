@@ -32,10 +32,14 @@ trait MessageIngress {
     * @param unrecognizedPolicy
     *   how to handle a sender that does not resolve to a known Jorlan user (`Reject` drops and logs; `Quarantine` is
     *   log-only in Phase 11)
+    * @param onResponse
+    *   optional callback invoked with the fully-accumulated agent response text once the response is complete.
+    *   Connectors that need to reply (e.g. Telegram) should supply this; it is called from a forked fiber.
     */
   def receive(
     msg:                InboundMessage,
     unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
+    onResponse:         Option[String => UIO[Unit]] = None,
   ): IO[JorlanError, Unit]
 
 }
@@ -45,7 +49,8 @@ object MessageIngress {
   def receive(
     msg:                InboundMessage,
     unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
+    onResponse:         Option[String => UIO[Unit]] = None,
   ): ZIO[MessageIngress, JorlanError, Unit] =
-    ZIO.serviceWithZIO[MessageIngress](_.receive(msg, unrecognizedPolicy))
+    ZIO.serviceWithZIO[MessageIngress](_.receive(msg, unrecognizedPolicy, onResponse))
 
 }

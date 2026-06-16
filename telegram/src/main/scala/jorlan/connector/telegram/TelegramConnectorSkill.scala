@@ -104,6 +104,10 @@ class TelegramConnectorSkill(
         inputSchema = Json.decoder.decodeJson(sendMessageSchema).getOrElse(Json.Null),
         outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
         requiredCapabilities = List(sendCapability),
+        examplePrompts = List(
+          "Send a Telegram message to chat 123456 saying hello",
+          "Text Roberto on Telegram that the build is done",
+        ),
       ),
       ToolDescriptor(
         name = "telegram.send_photo",
@@ -111,6 +115,10 @@ class TelegramConnectorSkill(
         inputSchema = Json.decoder.decodeJson(sendPhotoSchema).getOrElse(Json.Null),
         outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
         requiredCapabilities = List(sendCapability),
+        examplePrompts = List(
+          "Send this screenshot to Telegram chat 123456",
+          "Share the graph image with the team on Telegram",
+        ),
       ),
       ToolDescriptor(
         name = "telegram.send_file",
@@ -118,6 +126,10 @@ class TelegramConnectorSkill(
         inputSchema = Json.decoder.decodeJson(sendFileSchema).getOrElse(Json.Null),
         outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
         requiredCapabilities = List(sendCapability),
+        examplePrompts = List(
+          "Send the report PDF to Telegram chat 123456",
+          "Upload the log file to the Telegram group",
+        ),
       ),
     ),
   )
@@ -188,9 +200,15 @@ class TelegramConnectorSkill(
             .flatMap(f => pollingFiber.set(Some(f)))
     }
   // ZIO 2 fiber scheduling trampolines recursive flatMap chains — this is stack-safe.
+  // sandbox converts both typed failures and defects into a unified Cause, catchAll handles both.
   private def pollLoop(offset: Long): UIO[Unit] =
-    pollStep(offset)
-      .catchAll(e => ZIO.logWarning(s"[telegram] polling error: ${e.msg}").as(offset))
+    pollStep(offset).sandbox
+      .catchAll(cause =>
+        ZIO
+          .logWarning(
+            s"[telegram] polling error: ${Option(cause.squash.getMessage).getOrElse(cause.squash.toString)}",
+          ).as(offset),
+      )
       .flatMap(pollLoop)
 
   private def pollStep(offset: Long): IO[JorlanError, Long] =
@@ -203,8 +221,18 @@ class TelegramConnectorSkill(
               TelegramMessageNormalizer.normalize(update, now) match {
                 case None      => ZIO.unit
                 case Some(msg) =>
+                  val chatId = msg.chatRef
                   ingress
-                    .receive(msg, config.unrecognizedPolicy)
+                    .receive(
+                      msg,
+                      config.unrecognizedPolicy,
+                      onResponse = Some(text =>
+                        apiClient
+                          .sendMessage(chatId, text)
+                          .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+                          .ignore,
+                      ),
+                    )
                     .tapError(e => ZIO.logWarning(s"[telegram] ingress error for update ${update.updateId}: ${e.msg}"))
                     .ignore
               }

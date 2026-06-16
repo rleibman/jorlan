@@ -34,14 +34,19 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     tools = List(
       ToolDescriptor(
         name = "contacts.find",
-        description = "Search users by display name (case-insensitive substring match). Omit 'name' to list all users.",
+        description = "Search users by display name with fuzzy/phonetic matching. 'Roberto' matches 'Robert Leibman'; 'Sara' matches 'Sarah Smith'. Omit 'name' to list all users.",
         inputSchema = Json.decoder
           .decodeJson(
-            """|{"type":"object","properties":{"name":{"type":"string","description":"Substring to search in displayName — omit to list all users"}},"required":[]}""",
+            """|{"type":"object","properties":{"name":{"type":"string","description":"Name to search — supports partial names, phonetic variants, and minor spelling differences"}},"required":[]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("contacts.read")),
+        examplePrompts = List(
+          "Who is Alice?",
+          "Find a user named Roberto",
+          "Show me all users in the system",
+        ),
       ),
       ToolDescriptor(
         name = "identity.resolve",
@@ -53,6 +58,10 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("contacts.read")),
+        examplePrompts = List(
+          "Who has Telegram ID 123456?",
+          "Which user is associated with this Telegram handle?",
+        ),
       ),
       ToolDescriptor(
         name = "identity.link",
@@ -64,6 +73,10 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("identity.manage")),
+        examplePrompts = List(
+          "Link my Telegram account to user 7",
+          "Associate Telegram ID 987654 with my account",
+        ),
       ),
       ToolDescriptor(
         name = "identity.listAliases",
@@ -76,6 +89,11 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("contacts.read")),
+        examplePrompts = List(
+          "What channels am I connected to?",
+          "List all identities for user 3",
+          "Show me my linked accounts",
+        ),
       ),
     ),
   )
@@ -96,8 +114,9 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
   private def contactFind(args: Json): IO[JorlanError, Json] = {
     val nameOpt = SkillArgs.str(args, "name")
     for {
-      users   <- repo.user.search(UserSearch(nameContains = nameOpt)).mapError(JorlanError(_))
-      results <- ZIO.foreachPar(users) { u =>
+      users <- repo.user.search(UserSearch(fuzzyName = nameOpt, active = Some(true))).mapError(JorlanError(_))
+      ranked = nameOpt.fold(users)(q => jorlan.service.FuzzyNameMatch.rank(users, q)(_.displayName))
+      results <- ZIO.foreachPar(ranked) { u =>
         repo.user
           .getChannelIdentities(u.id)
           .mapError(JorlanError(_))

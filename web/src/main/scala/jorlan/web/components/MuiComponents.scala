@@ -168,6 +168,33 @@ object MuiIcon {
 
 }
 
+object MuiTablePagination {
+
+  @JSImport("@mui/material", "TablePagination")
+  @js.native
+  val component: js.Object = js.native
+
+  @scala.inline
+  open class Builder(val args: js.Array[Any]) extends AnyVal with StBuildingComponent[js.Object] {
+
+    inline def count(value:       Int):                  this.type = set("count", value.asInstanceOf[js.Any])
+    inline def page(value:        Int):                  this.type = set("page", value.asInstanceOf[js.Any])
+    inline def rowsPerPage(value: Int):                  this.type = set("rowsPerPage", value.asInstanceOf[js.Any])
+    inline def component(value:   String):               this.type = set("component", value.asInstanceOf[js.Any])
+    inline def rowsPerPageOptions(value: js.Array[Int]): this.type =
+      set("rowsPerPageOptions", value.asInstanceOf[js.Any])
+    inline def onPageChange(value: js.Function2[js.Dynamic, Int, Unit]): this.type =
+      set("onPageChange", value.asInstanceOf[js.Any])
+    inline def onRowsPerPageChange(value: js.Function1[js.Dynamic, Unit]): this.type =
+      set("onRowsPerPageChange", value.asInstanceOf[js.Any])
+
+  }
+
+  implicit def make(companion: MuiTablePagination.type): Builder =
+    new Builder(js.Array(this.component, js.Dictionary.empty))()
+
+}
+
 object MuiListItemButton {
 
   @JSImport("@mui/material", "ListItemButton")

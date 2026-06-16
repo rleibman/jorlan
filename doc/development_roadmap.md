@@ -523,7 +523,7 @@ See `doc/mini-designs/phase9-memory-system.md` for full design.
 - [x] `sbt scalafmtAll` clean before merge
 - [x] Update `development_roadmap.md` checkboxes as items complete
 
-**Note:** Vector/semantic search (Qdrant embeddings) deferred to Phase 16.
+**Note:** Vector/semantic search (Qdrant embeddings) deferred to Phase 14.
 
 ---
 
@@ -828,6 +828,7 @@ skill registry, notification routing, identity/contacts lookup, workspace file a
 See `doc/mini-designs/phase13-email-calendar.md` for full design.
 
 Two new SBT modules:
+
 - **`email`** — IMAP/SMTP via `emil` library + `EmailSkill` + `PgpService`
 - **`google-services`** — Gmail, Calendar, Drive via Google REST APIs + `OAuthCredentialService`
 
@@ -927,9 +928,11 @@ Two new SBT modules:
 
 ### 13.8 — `email` Module: PgpService + ImapSmtpProvider + EmailSkill
 
-- [x] `PgpService` trait in `email/src/main/scala/jorlan/email/PgpService.scala` (stub impl; full BouncyCastle impl deferred)
+- [x] `PgpService` trait in `email/src/main/scala/jorlan/email/PgpService.scala` (stub impl; full BouncyCastle impl
+  deferred)
 - [x] `ImapSmtpProvider` in `email/src/main/scala/jorlan/email/ImapSmtpProvider.scala`:
-  implements `EmailProvider`; stub methods returning `ZIO.fail(JorlanError("not yet implemented"))` (full Emil impl deferred)
+  implements `EmailProvider`; stub methods returning `ZIO.fail(JorlanError("not yet implemented"))` (full Emil impl
+  deferred)
 - [x] `EmailSkill` in `server/src/main/scala/jorlan/service/skills/EmailSkill.scala`:
   provider-injected; 8 tools:
     - `email.list { maxResults?, query? }` — `email.read`, RiskClass ReadOnly
@@ -983,13 +986,16 @@ Two new SBT modules:
 - [x] `ExternalCredentialRepositorySpec` (Testcontainers, integration module): upsert, find, delete, listByUser
 - [x] `OAuthCredentialEncryptorSpec` (google-services): encrypt/decrypt round-trip; wrong key fails
 - [x] `OAuthRoutesSpec` (server): state JWT; CSRF rejection; redirect URL
-- [~] `PgpServiceSpec` (email): sign + verify round-trip (BouncyCastle test keypair); missing key → warning — deferred: BouncyCastle impl not yet written; `PgpService.noOp` stub has no useful test surface
+- [~] `PgpServiceSpec` (email): sign + verify round-trip (BouncyCastle test keypair); missing key → warning — deferred:
+  BouncyCastle impl not yet written; `PgpService.noOp` stub has no useful test surface
 - [x] `EmailSkillSpec` (server): all 8 tools via `FakeEmailProvider`; capability gates; event log entries
-- [~] `GmailProviderSpec` (google-services): via `FakeGmailProvider`; token refresh before expiry — deferred: `FakeGmailProvider` tests require integration with OAuth refresh path; planned for Phase 14
+- [~] `GmailProviderSpec` (google-services): via `FakeGmailProvider`; token refresh before expiry — deferred:
+  `FakeGmailProvider` tests require integration with OAuth refresh path; planned for Phase 14
 - [x] `GoogleCalendarSkillSpec` (server): all 6 tools via `FakeCalendarProvider`; write blocked
   without capability; event log entries
 - [x] `GoogleDriveSkillSpec` (server): all 3 tools; download returns base64 content
-- [~] Overall test coverage ≥ 80% for all new Phase 13 code — deferred: coverage tooling not yet integrated; existing 1047 tests provide high confidence on the skill and repository layers
+- [~] Overall test coverage ≥ 80% for all new Phase 13 code — deferred: coverage tooling not yet integrated; existing
+  1047 tests provide high confidence on the skill and repository layers
 - [x] `sbt --error scalafmtAll` clean before merge
 - [x] `sbt --error test` passes with all Phase 13 tests included (1047 total)
 
@@ -1001,27 +1007,54 @@ Two new SBT modules:
 
 ---
 
-## Phase 14: Orchestrator Integration
+## Phase 14: Skills
 
-**Goal:** External orchestrators (Paperclip-style) can submit, supervise, and retrieve results from work requests via
-GraphQL.
+Each subphase should be a separate MR
 
-- [ ] **Orchestrator identity model**: first-class entity distinct from users; manifest-based registration
-- [ ] **Work request schema**: title, goal, userContext, workspaceContext, constraints, allowedCapabilities,
-  disallowedCapabilities, expectedArtifacts, successCriteria, approvalPreference, idempotencyKey
-- [ ] `submitWork` mutation → validation → execution handle
-- [ ] `ExecutionStateMachine`:
-  `created → accepted → waiting_for_approval → running → paused → blocked → completed | failed | cancelled | expired`
-- [ ] **GraphQL additions**: `execution(id)` query, `executionEvents` subscription, `decideApproval` mutation,
-  `artifacts(executionId)` query
-- [ ] Capability discovery queries: `skills`, `capabilities`, `connectors` with full metadata
-- [ ] Approval delegation policy: orchestrator vs. human boundary configurable per capability
-- [ ] Trace export service: full, redacted, summary variants in JSON and Markdown
-- [ ] Idempotency key deduplication on mutations
-- [ ] Dry-run / planning mode: `planWork` query returns capability requirements and likely effects without executing
-- [ ] Tests: full orchestrator submission → execution → artifact retrieval flow
+### 14.0
 
----
+- [x] autocomplete of / commands and command history management. When a user starts typing a command, the shell should
+  suggest available commands that match the input. This can be implemented using a simple prefix matching algorithm that
+  filters the list of available commands based on the user's input. The shell should also maintain a history of
+  previously entered commands, allowing users to easily recall and reuse them. The whole thing should work similar to a
+  bash shell experience. Implemented: Tab key cycles through prefix matches; ↑↓ arrows navigate command history with
+  draft restoration; history capped at 500 entries.
+- [ ] **Fuzzy contact search in `contacts.find`**: Phase 12 uses case-insensitive substring match on
+  `User.displayName`. Upgrade to fuzzy/phonetic matching (e.g. Levenshtein distance or MariaDB
+  `SOUNDEX`) so that "Roberto" matches "Robert Leibman" and "Sara" matches "Sarah Smith". Ensures
+  natural-language name resolution works without exact display-name spelling.
+- [x] Admin user operations (deactivate, list users, update preferences) — exposed as GraphQL mutations, call
+  `UserZIORepository` directly (no separate `UserService` layer needed), expose these in the shell and in the web UI
+- [x] Go through all the missing commands and implement those that you can given the latest state of the system.
+  Implemented: `/users create`, `/users capabilities`, `/users grant`, `/users revoke-grant`, `/users roles`,
+  `/users assign-role`, `/users revoke-role`, `/users identities`, `/users link-identity`, `/users unlink-identity`,
+  `/roles list`, `/roles create`. GQL mutations `grantCapability`, `revokeCapabilityGrant`, `linkChannelIdentity`,
+  `unlinkChannelIdentity`, and queries `userCapabilityGrants`, `userChannelIdentities`, `allRoles` also added.
+
+### Skills
+
+Most skills should be ideally independent of the server code, and server code should be mostly ignorant of the specifics
+of each skill, we should avoid having to add any of these directly to EnvironmentBuilder, though they should be
+registered into the SkillRegistry in Jorlan.scala.
+
+14.1 [ ] Add a calculator skill for the agent to perform math calculations, it shoud be in a separate module. Consider
+using mXparser library.
+14.2 [ ] Add a unit conversion skill for the agent to convert between different units of measurement, use squants
+library
+for this, it should be in a separate module.
+14.3 [ ] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
+internal format (since this is basic funcitonality it can be in the server module)
+14.4 [ ] **Market data skill**: read quotes, watchlists, alerts, news (no trading/execution in initial scope), new sbt
+module
+14.5 [ ] **Lyrion music skill**: list players, play/pause/stop, set volume, play playlist, schedule playback new sbt
+module
+14.6 [ ] **Google Contacts skill**: search, read contacts new sbt module
+14.7 [ ] ** Weather skill: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
+14.8 [ ] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
+sbt module
+14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
+persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
+dependencies.
 
 ## Phase 15: Web Frontend
 
@@ -1101,13 +1134,15 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 ### Event Log Page (`EventLogPage`)
 
-- [ ] Filterable table: session, actor, event type, date range — `eventLog` query (paginated) — deferred (no paginated eventLog query)
+- [ ] Filterable table: session, actor, event type, date range — `eventLog` query (paginated) — deferred (no paginated
+  eventLog query)
 - [x] Live-tail toggle: `eventLogTail` subscription appends rows in real time
 - [x] Expandable row for `payloadJson` details
 
 ### Skill Registry Page (`SkillsPage`)
 
-- [ ] Table of skill versions: name, tier badge, status, version — `listSkillVersions` query not yet in API; stub page shown
+- [ ] Table of skill versions: name, tier badge, status, version — `listSkillVersions` query not yet in API; stub page
+  shown
 - [ ] Filter by tier and status — deferred
 - [ ] Expandable row showing `manifestJson` — deferred
 
@@ -1116,8 +1151,9 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 - [x] Users table: display name, email, active toggle — `users` query
 - [x] Create user dialog (`createUser` mutation)
 - [x] Edit / deactivate (`updateUser` mutation)
-- [x] Roles assignment dialog (`roles` / `assignRole` / `revokeRole`)
-- [x] Permissions table with grant/revoke (`grantPermission` / `revokePermission`)
+- [x] Roles assignment dialog (`allRoles` / `roles` / `assignRole` / `revokeRole`)
+- [x] Capability grants table with grant/revoke (`userCapabilityGrants` / `grantCapability` / `revokeCapabilityGrant`)
+- [x] Channel identities dialog (`userChannelIdentities` / `linkChannelIdentity` / `unlinkChannelIdentity`)
 
 ### Settings Page (`SettingsPage`)
 
@@ -1147,19 +1183,7 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 ---
 
-## Phase 16: Additional features found during development
-
-- [ ] autocomplete of / commands. When a user starts typing a command, the shell should suggest available commands that
-  match the input. This can be implemented using a simple prefix matching algorithm that filters the list of available
-  commands based on the user's input.
-- [ ] **Fuzzy contact search in `contacts.find`**: Phase 12 uses case-insensitive substring match on
-  `User.displayName`. Upgrade to fuzzy/phonetic matching (e.g. Levenshtein distance or MariaDB
-  `SOUNDEX`) so that "Roberto" matches "Robert Leibman" and "Sara" matches "Sarah Smith". Ensures
-  natural-language name resolution works without exact display-name spelling.
-- [ ] Admin user operations (deactivate, list users, update preferences) — exposed as GraphQL mutations, call
-  `UserZIORepository` directly (no separate `UserService` layer needed)
-
-## Phase 17: Advanced Features
+## Phase 16: Advanced Features
 
 **Goal:** Full platform feature set — declarative skills, agent-authored skills, MCP import, vector memory, and
 remaining skills.
@@ -1168,17 +1192,34 @@ remaining skills.
   schema validation on install
 - [ ] **Agent-authored skill lifecycle** (Tier 5 → Active): draft → schema validated → permission reviewed → sandbox
   tested → awaiting approval → active (full state machine per design doc)
-- [ ] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
-  internal format
 - [ ] **Vector-backed memory retrieval**: MariaDB vector index, embedding job (via `ai` module),
   `MemoryService.semanticSearch`
 - [ ] **Web search skill**: `web.search`, `web.open_url`, `web.download` (granular capabilities, not a single broad
   permission)
-- [ ] **Market data skill**: read quotes, watchlists, alerts, news (no trading/execution in initial scope)
-- [ ] **Lyrion music skill**: list players, play/pause/stop, set volume, play playlist, schedule playback
-- [ ] **Google Contacts skill**: search, read contacts
 - [ ] **Slack connector**: Slack Bot API, message normalization, identity resolution
 - [ ] Workspace memory snapshots (workspace-scoped memory linked to snapshot artifacts)
+
+---
+
+## Phase 17: Orchestrator Integration
+
+**Goal:** External orchestrators (Paperclip-style) can submit, supervise, and retrieve results from work requests via
+GraphQL.
+
+- [ ] **Orchestrator identity model**: first-class entity distinct from users; manifest-based registration
+- [ ] **Work request schema**: title, goal, userContext, workspaceContext, constraints, allowedCapabilities,
+  disallowedCapabilities, expectedArtifacts, successCriteria, approvalPreference, idempotencyKey
+- [ ] `submitWork` mutation → validation → execution handle
+- [ ] `ExecutionStateMachine`:
+  `created → accepted → waiting_for_approval → running → paused → blocked → completed | failed | cancelled | expired`
+- [ ] **GraphQL additions**: `execution(id)` query, `executionEvents` subscription, `decideApproval` mutation,
+  `artifacts(executionId)` query
+- [ ] Capability discovery queries: `skills`, `capabilities`, `connectors` with full metadata
+- [ ] Approval delegation policy: orchestrator vs. human boundary configurable per capability
+- [ ] Trace export service: full, redacted, summary variants in JSON and Markdown
+- [ ] Idempotency key deduplication on mutations
+- [ ] Dry-run / planning mode: `planWork` query returns capability requirements and likely effects without executing
+- [ ] Tests: full orchestrator submission → execution → artifact retrieval flow
 
 ---
 
@@ -1254,35 +1295,58 @@ model
 
 **Status legend:** `[x]` implemented · `[~]` stub/partial (planned for a later phase) · `[ ]` not yet started
 
-| Status | Command         | Type     | Priority | Parameters                                                           | Description                                                                                                                                                                                                  |
-|:------:|-----------------|----------|----------|----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|  [x]   | `/help`         | Built-in | 0        | —                                                                    | Same as `/commands` — shows full command list with key bindings                                                                                                                                              |
-|  [x]   | `/commands`     | Built-in | 0        | —                                                                    | List all available commands with key bindings                                                                                                                                                                |
-|  [x]   | `/quit`         | Built-in | 0        | —                                                                    | Exit the shell cleanly                                                                                                                                                                                       |
-|  [x]   | `/exit`         | Built-in | 0        | —                                                                    | Alias for `/quit`                                                                                                                                                                                            |
-|  [x]   | `/about`        | Built-in | 0        | —                                                                    | Show version and platform information                                                                                                                                                                        |
-|  [x]   | `/status`       | Built-in | 0        | —                                                                    | Server connectivity, client version, server version, uptime                                                                                                                                                  |
-|  [x]   | `/whoami`       | Built-in | 0        | —                                                                    | Show current authenticated user (parsed: name, email, ID)                                                                                                                                                    |
-|  [x]   | `/trace`        | Built-in |          | `none \| error \| warning \| info \| debug`                          | Set log/trace level                                                                                                                                                                                          |
-|  [x]   | `/personality`  | Admin    |          | —                                                                    | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
-|  [ ]   | `/clear`        | Built-in |          | —                                                                    | Clear the conversation display                                                                                                                                                                               |
-|  [ ]   | `/connect`      | Built-in |          | `[url]`                                                              | Connect to a different server URL                                                                                                                                                                            |
-|  [ ]   | `/disconnect`   | Built-in |          | —                                                                    | Disconnect from the current server                                                                                                                                                                           |
-|  [ ]   | `/logs`         | Built-in |          | `[n]`                                                                | Tail the last *n* lines from `~/.jorlan/shell.log`                                                                                                                                                           |
-|  [x]   | `/new`          | Session  |          | `[model]`                                                            | Start a new agent session with optional model override                                                                                                                                                       |
-|  [x]   | `/model`        | Session  |          | —                                                                    | Show active session ID, model, and status (queries server)                                                                                                                                                   |
-|  [x]   | `/models`       | Session  |          | —                                                                    | List models available on the connected server                                                                                                                                                                |
-|  [ ]   | `/session`      | Session  |          | `list \| new \| switch <id> \| close`                                | Manage agent sessions                                                                                                                                                                                        |
-|  [ ]   | `/history`      | Session  |          | `[n]`                                                                | Show the last *n* messages in the current session                                                                                                                                                            |
-|  [ ]   | `/configure`    | Session  |          | `<name>`                                                             | Interactively configure a skill or function                                                                                                                                                                  |
-|  [ ]   | `/skill`        | Skill    |          | `<name> [args…]`                                                     | Run a skill by name                                                                                                                                                                                          |
-|  [x]   | `/capabilities` | Auth     |          | —                                                                    | List your current capability grants                                                                                                                                                                          |
-|  [x]   | `/approvals`    | Auth     |          | `list \| approve <id> \| deny <id>`                                  | View and action pending approval requests                                                                                                                                                                    |
-|  [x]   | `/agents`       | Agent    |          | `list \| stop <id>`                                                  | List and terminate running agent sessions                                                                                                                                                                    |
-|  [x]   | `/memory`       | Memory   |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries                                                                                                                                                                       |
-|  [ ]   | `/restart`      | Admin    |          | —                                                                    | Restart the Jorlan server process (Phase 10)                                                                                                                                                                 |
-|  [ ]   | `/plugins`      | Plugin   |          | `list \| inspect \| install \| enable \| disable`                    | Manage server plugins (Phase 12)                                                                                                                                                                             |
-|  [ ]   | `/mcp`          | Plugin   |          | —                                                                    | MCP protocol tools and adapter management (Phase 12)                                                                                                                                                         |
+| Status | Command                  | Type      | Priority | Parameters                                                           | Description                                                                                                                                                                                                  |
+|:------:|--------------------------|-----------|----------|----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|  [x]   | `/help`                  | Built-in  | 0        | —                                                                    | Same as `/commands` — shows full command list with key bindings                                                                                                                                              |
+|  [x]   | `/commands`              | Built-in  | 0        | —                                                                    | List all available commands with key bindings                                                                                                                                                                |
+|  [x]   | `/quit`                  | Built-in  | 0        | —                                                                    | Exit the shell cleanly                                                                                                                                                                                       |
+|  [x]   | `/exit`                  | Built-in  | 0        | —                                                                    | Alias for `/quit`                                                                                                                                                                                            |
+|  [x]   | `/about`                 | Built-in  | 0        | —                                                                    | Show version and platform information                                                                                                                                                                        |
+|  [x]   | `/status`                | Built-in  | 0        | —                                                                    | Server connectivity, client version, server version, uptime                                                                                                                                                  |
+|  [x]   | `/whoami`                | Built-in  | 0        | —                                                                    | Show current authenticated user (parsed: name, email, ID)                                                                                                                                                    |
+|  [x]   | `/trace`                 | Built-in  |          | `none \| error \| warning \| info \| debug`                          | Set log/trace level                                                                                                                                                                                          |
+|  [x]   | `/personality`           | Admin     |          | —                                                                    | Display server personality; `/personality set <field> <value>` to update a single field. Formality: Casual, Professional, Academic, Technical, Quirky, Fresh, Rude, Boomer, GenX, Millennial, GenZ, GenAlpha |
+|  [ ]   | `/clear`                 | Built-in  |          | —                                                                    | Clear the conversation display                                                                                                                                                                               |
+|  [ ]   | `/connect`               | Built-in  |          | `[url]`                                                              | Connect to a different server URL                                                                                                                                                                            |
+|  [ ]   | `/disconnect`            | Built-in  |          | —                                                                    | Disconnect from the current server                                                                                                                                                                           |
+|  [ ]   | `/logs`                  | Built-in  |          | `[n]`                                                                | Tail the last *n* lines from `~/.jorlan/shell.log`                                                                                                                                                           |
+|  [x]   | `/new`                   | Session   |          | `[model]`                                                            | Start a new agent session with optional model override                                                                                                                                                       |
+|  [x]   | `/model`                 | Session   |          | —                                                                    | Show active session ID, model, and status (queries server)                                                                                                                                                   |
+|  [x]   | `/models`                | Session   |          | —                                                                    | List models available on the connected server                                                                                                                                                                |
+|  [ ]   | `/session`               | Session   |          | `list \| new \| switch <id> \| close`                                | Manage agent sessions                                                                                                                                                                                        |
+|  [ ]   | `/history`               | Session   |          | `[n]`                                                                | Show the last *n* messages in the current session                                                                                                                                                            |
+|  [ ]   | `/configure`             | Session   |          | `<name>`                                                             | Interactively configure a skill or function                                                                                                                                                                  |
+|  [ ]   | `/skill`                 | Skill     |          | `<name> [args…]`                                                     | Run a skill by name                                                                                                                                                                                          |
+|  [x]   | `/capabilities`          | Auth      |          | —                                                                    | List your current capability grants                                                                                                                                                                          |
+|  [x]   | `/approvals`             | Auth      |          | `list \| approve <id> \| deny <id>`                                  | View and action pending approval requests                                                                                                                                                                    |
+|  [x]   | `/agents`                | Agent     |          | `list \| stop <id>`                                                  | List and terminate running agent sessions                                                                                                                                                                    |
+|  [x]   | `/memory`                | Memory    |          | `list [scope] \| search <q> \| forget <id> \| remember <key> <text>` | Browse and manage agent memory entries                                                                                                                                                                       |
+|  [x]   | `/skills`                | Skills    |          | —                                                                    | List registered skills and their tools                                                                                                                                                                       |
+|  [x]   | `/contacts`              | Contacts  |          | `find <name>`                                                        | Find contacts by display name                                                                                                                                                                                |
+|  [x]   | `/users`                 | Admin     |          | `list [all\|inactive]`                                               | List users (active by default)                                                                                                                                                                               |
+|  [x]   | `/users create`          | Admin     |          | `<displayName> <email>`                                              | Create a new user                                                                                                                                                                                            |
+|  [x]   | `/users deactivate`      | Admin     |          | `<id>`                                                               | Deactivate a user account                                                                                                                                                                                    |
+|  [x]   | `/users update`          | Admin     |          | `<id> name\|email <value>`                                           | Update a user field                                                                                                                                                                                          |
+|  [x]   | `/users capabilities`    | Admin     |          | `<id>`                                                               | List capability grants for a user                                                                                                                                                                            |
+|  [x]   | `/users grant`           | Admin     |          | `<id> <capability> <approvalMode>`                                   | Grant a named capability to a user                                                                                                                                                                           |
+|  [x]   | `/users revoke-grant`    | Admin     |          | `<grantId>`                                                          | Revoke a capability grant by id                                                                                                                                                                              |
+|  [x]   | `/users roles`           | Admin     |          | `<id>`                                                               | List roles assigned to a user                                                                                                                                                                                |
+|  [x]   | `/users assign-role`     | Admin     |          | `<userId> <roleId>`                                                  | Assign a role to a user                                                                                                                                                                                      |
+|  [x]   | `/users revoke-role`     | Admin     |          | `<userId> <roleId>`                                                  | Revoke a role from a user                                                                                                                                                                                    |
+|  [x]   | `/users identities`      | Admin     |          | `<id>`                                                               | List channel identities for a user                                                                                                                                                                           |
+|  [x]   | `/users link-identity`   | Admin     |          | `<userId> <channelType> <channelUserId>`                             | Link a channel identity to a user                                                                                                                                                                            |
+|  [x]   | `/users unlink-identity` | Admin     |          | `<identityId>`                                                       | Remove a channel identity                                                                                                                                                                                    |
+|  [x]   | `/roles list`            | Admin     |          | —                                                                    | List all roles in the system                                                                                                                                                                                 |
+|  [x]   | `/roles create`          | Admin     |          | `<name> [description]`                                               | Create a new role                                                                                                                                                                                            |
+|  [x]   | `/scheduler`             | Scheduler |          | `list`                                                               | List scheduler jobs with status                                                                                                                                                                              |
+|  [x]   | `/scheduler result`      | Scheduler |          | `<id>`                                                               | Show full result for a scheduler job                                                                                                                                                                         |
+|  [x]   | `/agents`                | Agent     |          | `list \| stop <id>`                                                  | List and terminate running agent sessions (also at top)                                                                                                                                                      |
+|  [x]   | `/oauth`                 | OAuth     |          | `list \| status <p> \| connect <p> \| revoke <p>`                    | Manage OAuth connections                                                                                                                                                                                     |
+|  [x]   | `/email`                 | Email     |          | `list [n] \| read <id> \| search <query>`                            | Browse email via Google/IMAP skill                                                                                                                                                                           |
+|  [x]   | `/calendar`              | Calendar  |          | `today \| list [YYYY-MM-DD]`                                         | Browse calendar events                                                                                                                                                                                       |
+|  [ ]   | `/restart`               | Admin     |          | —                                                                    | Restart the Jorlan server process                                                                                                                                                                            |
+|  [ ]   | `/plugins`               | Plugin    |          | `list \| inspect \| install \| enable \| disable`                    | Manage server plugins (Phase 14)                                                                                                                                                                             |
+|  [ ]   | `/mcp`                   | Plugin    |          | —                                                                    | MCP protocol tools and adapter management (Phase 14)                                                                                                                                                         |
 
 ## Appendix: Supported skills
 

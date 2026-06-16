@@ -52,6 +52,10 @@ class WorkspaceSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("workspace.read")),
+        examplePrompts = List(
+          "Read the file notes.txt from my workspace",
+          "Show me the contents of config.json",
+        ),
       ),
       ToolDescriptor(
         name = "workspace.write",
@@ -63,6 +67,10 @@ class WorkspaceSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("workspace.write")),
+        examplePrompts = List(
+          "Save this text to output.txt in my workspace",
+          "Write the report summary to workspace file summary.md",
+        ),
       ),
       ToolDescriptor(
         name = "workspace.search",
@@ -74,6 +82,11 @@ class WorkspaceSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("workspace.read")),
+        examplePrompts = List(
+          "What files are in my workspace?",
+          "List all .json files in my workspace",
+          "Show me files starting with report",
+        ),
       ),
       ToolDescriptor(
         name = "workspace.delete",
@@ -85,6 +98,10 @@ class WorkspaceSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("workspace.delete")),
+        examplePrompts = List(
+          "Delete the old output.txt file from the workspace",
+          "Remove temp.json from my workspace",
+        ),
       ),
       ToolDescriptor(
         name = "workspace.snapshot",
@@ -96,6 +113,10 @@ class WorkspaceSkill(
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("workspace.write")),
+        examplePrompts = List(
+          "Take a snapshot of my workspace",
+          "Create a backup of all workspace files",
+        ),
       ),
     ),
   )

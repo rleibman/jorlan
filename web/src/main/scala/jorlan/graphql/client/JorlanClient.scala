@@ -8,6 +8,8 @@ import JorlanClientDecoders.given
 
 object JorlanClient {
 
+  type ChannelIdentityId = String
+
   type AgentSession
   object AgentSession {
 
@@ -187,6 +189,73 @@ object JorlanClient {
 
   }
 
+  type ChannelIdentity
+  object ChannelIdentity {
+
+    final case class ChannelIdentityView(
+      id:            ChannelIdentityId,
+      userId:        jorlan.UserId,
+      channelType:   jorlan.ChannelType,
+      channelUserId: String,
+      verified:      Boolean,
+      providerData:  scala.Option[String],
+      createdAt:     java.time.Instant,
+    )
+
+    type ViewSelection = SelectionBuilder[ChannelIdentity, ChannelIdentityView]
+
+    def view: ViewSelection =
+      (id ~ userId ~ channelType ~ channelUserId ~ verified ~ providerData ~ createdAt).map {
+        case (id, userId, channelType, channelUserId, verified, providerData, createdAt) =>
+          ChannelIdentityView(id, userId, channelType, channelUserId, verified, providerData, createdAt)
+      }
+
+    def id: SelectionBuilder[ChannelIdentity, ChannelIdentityId] =
+      _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+    def userId: SelectionBuilder[ChannelIdentity, jorlan.UserId] =
+      _root_.caliban.client.SelectionBuilder.Field("userId", Scalar())
+    def channelType: SelectionBuilder[ChannelIdentity, jorlan.ChannelType] =
+      _root_.caliban.client.SelectionBuilder.Field("channelType", Scalar())
+    def channelUserId: SelectionBuilder[ChannelIdentity, String] =
+      _root_.caliban.client.SelectionBuilder.Field("channelUserId", Scalar())
+    def verified: SelectionBuilder[ChannelIdentity, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("verified", Scalar())
+    def providerData: SelectionBuilder[ChannelIdentity, scala.Option[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("providerData", OptionOf(Scalar()))
+    def createdAt: SelectionBuilder[ChannelIdentity, java.time.Instant] =
+      _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
+
+  }
+
+  type CheckpointPolicyConfig
+  object CheckpointPolicyConfig {
+
+    final case class CheckpointPolicyConfigView(
+      onSessionEnd:         Boolean,
+      onUserRequest:        Boolean,
+      timedIntervalTurns:   scala.Option[Int],
+      beforeExternalEffect: Boolean,
+    )
+
+    type ViewSelection = SelectionBuilder[CheckpointPolicyConfig, CheckpointPolicyConfigView]
+
+    def view: ViewSelection =
+      (onSessionEnd ~ onUserRequest ~ timedIntervalTurns ~ beforeExternalEffect).map {
+        case (onSessionEnd, onUserRequest, timedIntervalTurns, beforeExternalEffect) =>
+          CheckpointPolicyConfigView(onSessionEnd, onUserRequest, timedIntervalTurns, beforeExternalEffect)
+      }
+
+    def onSessionEnd: SelectionBuilder[CheckpointPolicyConfig, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("onSessionEnd", Scalar())
+    def onUserRequest: SelectionBuilder[CheckpointPolicyConfig, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("onUserRequest", Scalar())
+    def timedIntervalTurns: SelectionBuilder[CheckpointPolicyConfig, scala.Option[Int]] =
+      _root_.caliban.client.SelectionBuilder.Field("timedIntervalTurns", OptionOf(Scalar()))
+    def beforeExternalEffect: SelectionBuilder[CheckpointPolicyConfig, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("beforeExternalEffect", Scalar())
+
+  }
+
   type ContactIdentityResult
   object ContactIdentityResult {
 
@@ -290,14 +359,27 @@ object JorlanClient {
       ttl:         scala.Option[java.time.Instant],
       createdAt:   java.time.Instant,
       updatedAt:   java.time.Instant,
+      importance:  Int,
     )
 
     type ViewSelection = SelectionBuilder[MemoryRecord, MemoryRecordView]
 
     def view: ViewSelection =
-      (id ~ scope ~ userId ~ workspaceId ~ agentId ~ recordKey ~ value ~ ttl ~ createdAt ~ updatedAt).map {
-        case (id, scope, userId, workspaceId, agentId, recordKey, value, ttl, createdAt, updatedAt) =>
-          MemoryRecordView(id, scope, userId, workspaceId, agentId, recordKey, value, ttl, createdAt, updatedAt)
+      (id ~ scope ~ userId ~ workspaceId ~ agentId ~ recordKey ~ value ~ ttl ~ createdAt ~ updatedAt ~ importance).map {
+        case (id, scope, userId, workspaceId, agentId, recordKey, value, ttl, createdAt, updatedAt, importance) =>
+          MemoryRecordView(
+            id,
+            scope,
+            userId,
+            workspaceId,
+            agentId,
+            recordKey,
+            value,
+            ttl,
+            createdAt,
+            updatedAt,
+            importance,
+          )
       }
 
     def id: SelectionBuilder[MemoryRecord, jorlan.MemoryRecordId] =
@@ -319,6 +401,8 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
     def updatedAt: SelectionBuilder[MemoryRecord, java.time.Instant] =
       _root_.caliban.client.SelectionBuilder.Field("updatedAt", Scalar())
+    def importance: SelectionBuilder[MemoryRecord, Int] =
+      _root_.caliban.client.SelectionBuilder.Field("importance", Scalar())
 
   }
 
@@ -503,6 +587,7 @@ object JorlanClient {
       userId:          jorlan.UserId,
       skillId:         scala.Option[jorlan.SkillId],
       name:            String,
+      prompt:          String,
       inputJson:       scala.Option[String],
       status:          jorlan.JobStatus,
       scheduledAt:     java.time.Instant,
@@ -522,7 +607,7 @@ object JorlanClient {
     type ViewSelection = SelectionBuilder[SchedulerJob, SchedulerJobView]
 
     def view: ViewSelection =
-      (id ~ agentId ~ userId ~ skillId ~ name ~ inputJson ~ status ~ scheduledAt ~ startedAt ~ finishedAt ~ resultJson ~ maxRetries ~ retryCount ~ backoffSeconds ~ backoffPolicy ~ missedRunPolicy ~ leasedAt ~ leasedBy ~ createdAt)
+      (id ~ agentId ~ userId ~ skillId ~ name ~ prompt ~ inputJson ~ status ~ scheduledAt ~ startedAt ~ finishedAt ~ resultJson ~ maxRetries ~ retryCount ~ backoffSeconds ~ backoffPolicy ~ missedRunPolicy ~ leasedAt ~ leasedBy ~ createdAt)
         .map {
           case (
                 id,
@@ -530,6 +615,7 @@ object JorlanClient {
                 userId,
                 skillId,
                 name,
+                prompt,
                 inputJson,
                 status,
                 scheduledAt,
@@ -551,6 +637,7 @@ object JorlanClient {
               userId,
               skillId,
               name,
+              prompt,
               inputJson,
               status,
               scheduledAt,
@@ -576,7 +663,9 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field("userId", Scalar())
     def skillId: SelectionBuilder[SchedulerJob, scala.Option[jorlan.SkillId]] =
       _root_.caliban.client.SelectionBuilder.Field("skillId", OptionOf(Scalar()))
-    def name: SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+    def name:   SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+    def prompt: SelectionBuilder[SchedulerJob, String] =
+      _root_.caliban.client.SelectionBuilder.Field("prompt", Scalar())
     def inputJson: SelectionBuilder[SchedulerJob, scala.Option[String]] =
       _root_.caliban.client.SelectionBuilder.Field("inputJson", OptionOf(Scalar()))
     def status: SelectionBuilder[SchedulerJob, jorlan.JobStatus] =
@@ -672,13 +761,15 @@ object JorlanClient {
       name:                 String,
       description:          String,
       requiredCapabilities: List[String],
+      examplePrompts:       List[String],
     )
 
     type ViewSelection = SelectionBuilder[SkillToolInfo, SkillToolInfoView]
 
     def view: ViewSelection =
-      (name ~ description ~ requiredCapabilities).map { case (name, description, requiredCapabilities) =>
-        SkillToolInfoView(name, description, requiredCapabilities)
+      (name ~ description ~ requiredCapabilities ~ examplePrompts).map {
+        case (name, description, requiredCapabilities, examplePrompts) =>
+          SkillToolInfoView(name, description, requiredCapabilities, examplePrompts)
       }
 
     def name: SelectionBuilder[SkillToolInfo, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
@@ -686,6 +777,8 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder.Field("description", Scalar())
     def requiredCapabilities: SelectionBuilder[SkillToolInfo, List[String]] =
       _root_.caliban.client.SelectionBuilder.Field("requiredCapabilities", ListOf(Scalar()))
+    def examplePrompts: SelectionBuilder[SkillToolInfo, List[String]] =
+      _root_.caliban.client.SelectionBuilder.Field("examplePrompts", ListOf(Scalar()))
 
   }
 
@@ -761,16 +854,26 @@ object JorlanClient {
       _root_.caliban.client.SelectionBuilder
         .Field("user", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "UserId!")))
     def users[A](
-      page:     scala.Option[Int] = None,
-      pageSize: scala.Option[Int] = None,
+      active:       scala.Option[Boolean] = None,
+      nameContains: scala.Option[String] = None,
+      page:         scala.Option[Int] = None,
+      pageSize:     scala.Option[Int] = None,
     )(
-      innerSelection:    SelectionBuilder[User, A],
-    )(implicit encoder0: ArgEncoder[scala.Option[Int]],
+      innerSelection: SelectionBuilder[User, A],
+    )(implicit
+      encoder0: ArgEncoder[scala.Option[Boolean]],
+      encoder1: ArgEncoder[scala.Option[String]],
+      encoder2: ArgEncoder[scala.Option[Int]],
     ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
       _root_.caliban.client.SelectionBuilder.Field(
         "users",
         OptionOf(ListOf(Obj(innerSelection))),
-        arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")),
+        arguments = List(
+          Argument("active", active, "Boolean"),
+          Argument("nameContains", nameContains, "String"),
+          Argument("page", page, "Int"),
+          Argument("pageSize", pageSize, "Int"),
+        ),
       )
     def role[A](
       value: jorlan.RoleId,
@@ -910,6 +1013,43 @@ object JorlanClient {
         .Field("oauthStatus", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "String!")))
     def listOAuthProviders: SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[String]]] =
       _root_.caliban.client.SelectionBuilder.Field("listOAuthProviders", OptionOf(ListOf(Scalar())))
+    def userCapabilityGrants[A](
+      value: jorlan.UserId,
+    )(
+      innerSelection:    SelectionBuilder[CapabilityGrant, A],
+    )(implicit encoder0: ArgEncoder[jorlan.UserId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "userCapabilityGrants",
+        OptionOf(ListOf(Obj(innerSelection))),
+        arguments = List(Argument("value", value, "UserId!")),
+      )
+    def userChannelIdentities[A](
+      value: jorlan.UserId,
+    )(
+      innerSelection:    SelectionBuilder[ChannelIdentity, A],
+    )(implicit encoder0: ArgEncoder[jorlan.UserId],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "userChannelIdentities",
+        OptionOf(ListOf(Obj(innerSelection))),
+        arguments = List(Argument("value", value, "UserId!")),
+      )
+    def allRoles[A](
+      page:     scala.Option[Int] = None,
+      pageSize: scala.Option[Int] = None,
+    )(
+      innerSelection:    SelectionBuilder[Role, A],
+    )(implicit encoder0: ArgEncoder[scala.Option[Int]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "allRoles",
+        OptionOf(ListOf(Obj(innerSelection))),
+        arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")),
+      )
+    def checkpointPolicy[A](innerSelection: SelectionBuilder[CheckpointPolicyConfig, A])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field("checkpointPolicy", OptionOf(Obj(innerSelection)))
 
   }
 
@@ -953,6 +1093,10 @@ object JorlanClient {
           Argument("active", active, "Boolean!"),
         ),
       )
+    def deactivateUser(value: jorlan.UserId)(implicit encoder0: ArgEncoder[jorlan.UserId])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field("deactivateUser", OptionOf(Scalar()), arguments = List(Argument("value", value, "UserId!")))
     def createRole[A](
       name:        String,
       description: scala.Option[String] = None,
@@ -1111,6 +1255,7 @@ object JorlanClient {
       )
     def createJob[A](
       name:            String,
+      prompt:          String,
       inputJson:       scala.Option[String] = None,
       maxRetries:      Int,
       backoffSeconds:  Int,
@@ -1130,6 +1275,7 @@ object JorlanClient {
         OptionOf(Obj(innerSelection)),
         arguments = List(
           Argument("name", name, "String!"),
+          Argument("prompt", prompt, "String!"),
           Argument("inputJson", inputJson, "String"),
           Argument("maxRetries", maxRetries, "Int!"),
           Argument("backoffSeconds", backoffSeconds, "Int!"),
@@ -1232,6 +1378,84 @@ object JorlanClient {
         "invokeTool",
         OptionOf(Scalar()),
         arguments = List(Argument("toolName", toolName, "String!"), Argument("argsJson", argsJson, "String!")),
+      )
+    def grantCapability[A](
+      userId:       jorlan.UserId,
+      capability:   jorlan.CapabilityName,
+      approvalMode: jorlan.ApprovalMode,
+    )(
+      innerSelection: SelectionBuilder[CapabilityGrant, A],
+    )(implicit
+      encoder0: ArgEncoder[jorlan.UserId],
+      encoder1: ArgEncoder[jorlan.CapabilityName],
+      encoder2: ArgEncoder[jorlan.ApprovalMode],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "grantCapability",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(
+          Argument("userId", userId, "UserId!"),
+          Argument("capability", capability, "CapabilityName!"),
+          Argument("approvalMode", approvalMode, "ApprovalMode!"),
+        ),
+      )
+    def revokeCapabilityGrant(value: jorlan.CapabilityGrantId)(implicit encoder0: ArgEncoder[jorlan.CapabilityGrantId])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "revokeCapabilityGrant",
+        OptionOf(Scalar()),
+        arguments = List(Argument("value", value, "CapabilityGrantId!")),
+      )
+    def linkChannelIdentity[A](
+      userId:        jorlan.UserId,
+      channelType:   String,
+      channelUserId: String,
+    )(
+      innerSelection: SelectionBuilder[ChannelIdentity, A],
+    )(implicit
+      encoder0: ArgEncoder[jorlan.UserId],
+      encoder1: ArgEncoder[String],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "linkChannelIdentity",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(
+          Argument("userId", userId, "UserId!"),
+          Argument("channelType", channelType, "String!"),
+          Argument("channelUserId", channelUserId, "String!"),
+        ),
+      )
+    def unlinkChannelIdentity(value: ChannelIdentityId)(implicit encoder0: ArgEncoder[ChannelIdentityId])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "unlinkChannelIdentity",
+        OptionOf(Scalar()),
+        arguments = List(Argument("value", value, "ChannelIdentityId!")),
+      )
+    def requestCheckpoint(value: jorlan.AgentSessionId)(implicit encoder0: ArgEncoder[jorlan.AgentSessionId])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field("requestCheckpoint", OptionOf(Scalar()), arguments = List(Argument("value", value, "AgentSessionId!")))
+    def updateCheckpointPolicy[A](
+      onSessionEnd:         Boolean,
+      onUserRequest:        Boolean,
+      timedIntervalTurns:   scala.Option[Int] = None,
+      beforeExternalEffect: Boolean,
+    )(
+      innerSelection: SelectionBuilder[CheckpointPolicyConfig, A],
+    )(implicit
+      encoder0: ArgEncoder[Boolean],
+      encoder1: ArgEncoder[scala.Option[Int]],
+    ): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] =
+      _root_.caliban.client.SelectionBuilder.Field(
+        "updateCheckpointPolicy",
+        OptionOf(Obj(innerSelection)),
+        arguments = List(
+          Argument("onSessionEnd", onSessionEnd, "Boolean!"),
+          Argument("onUserRequest", onUserRequest, "Boolean!"),
+          Argument("timedIntervalTurns", timedIntervalTurns, "Int"),
+          Argument("beforeExternalEffect", beforeExternalEffect, "Boolean!"),
+        ),
       )
 
   }

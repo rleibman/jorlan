@@ -30,14 +30,15 @@ private case class ReactLoopEnv(
   chunksRef: Ref[Vector[String]],
 )
 
-/** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, and cached
-  * personality.
+/** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, cached personality,
+  * and per-session turn counters used by the timed-interval checkpoint trigger.
   */
 private class AgentRunnerState(
   val seeded:            Ref[Set[AgentSessionId]],
   val activeConvs:       Ref[Map[AgentSessionId, ConversationId]],
   val cachedAgentIds:    Ref[Map[AgentSessionId, AgentId]],
   val cachedPersonality: Ref[Option[Personality]],
+  val turnCounts:        Ref[Map[AgentSessionId, Int]],
 )
 
 private object AgentRunnerState {
@@ -48,7 +49,8 @@ private object AgentRunnerState {
       activeConvs       <- Ref.make(Map.empty[AgentSessionId, ConversationId])
       cachedAgentIds    <- Ref.make(Map.empty[AgentSessionId, AgentId])
       cachedPersonality <- Ref.make(Option.empty[Personality])
-    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds, cachedPersonality)
+      turnCounts        <- Ref.make(Map.empty[AgentSessionId, Int])
+    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds, cachedPersonality, turnCounts)
 
 }
 
@@ -94,8 +96,11 @@ class AgentRunnerImpl(
         for {
           _      <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars)")
           _      <- ConversationLogger.logUserMessage(sessionId, actorId, content)
-          memCtx <- buildMemoryContext(sessionId, actorId, agentId, content)
+          memCtx <- buildMemoryContext(sessionId, actorId, agentId)
           systemPrompt = Personality.buildSystemPrompt(personality) + memCtx
+          _ <- ZIO.logDebug(
+            s"[session:$sessionId] system prompt (${systemPrompt.length} chars):\n$systemPrompt",
+          )
           _     <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
           tools <- skillRegistry.allToolSpecs
           initialMessages = buildInitialMessages(systemPrompt, content)
@@ -154,6 +159,19 @@ class AgentRunnerImpl(
               val toolFeedback = s"⟳ calling $name…\n"
               for {
                 _ <- ZIO.logDebug(s"[react:${sessionId.value}] tool call → $name args=$argsJson")
+                _ <- actorId.fold(ZIO.unit) { uid =>
+                  Clock.instant.flatMap { now =>
+                    val convMsgs: List[Message] = messages.collect {
+                      case UserMsg(c) => Message(MessageId.empty, ConversationId.empty, MessageRole.User, c, None, now)
+                      case AssistantMsg(c) =>
+                        Message(MessageId.empty, ConversationId.empty, MessageRole.Assistant, c, None, now)
+                    }
+                    memoryService
+                      .checkpoint(sessionId, convMsgs, uid, agentId, CheckpointTrigger.BeforeExternalEffect)
+                      .tapError(e => ZIO.logWarning(s"[session:$sessionId] BeforeExternalEffect checkpoint failed: $e"))
+                      .ignore
+                  }
+                }
                 _ <- sessionHub.publish(ResponseChunk(sessionId, toolFeedback, finished = false))
                 _ <- toolEventHub.publish(ToolEvent.ToolInvokedEvent(sessionId, name, argsJson))
                 _ <- logEvent(
@@ -241,6 +259,7 @@ class AgentRunnerImpl(
       _ <- ZIO.logDebug(
         s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
       )
+      _ <- ZIO.logDebug(s"[session:$sessionId] full LLM response (${fullResponse.length} chars):\n$fullResponse")
       _ <- sessionHub.publish(sentinel)
       _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined)
       _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg)
@@ -381,39 +400,66 @@ class AgentRunnerImpl(
           val userMsg = Message(MessageId.empty, ConversationId.empty, MessageRole.User, userText, None, now)
           val asstMsg =
             Message(MessageId.empty, ConversationId.empty, MessageRole.Assistant, assistantText, None, now)
-          memoryService
-            .checkpoint(sessionId, List(userMsg, asstMsg), userId, agentId, CheckpointTrigger.SessionEnd)
-            .tapError(err => ZIO.logWarning(s"[session:$sessionId] Checkpoint failed: $err"))
+          val msgs = List(userMsg, asstMsg)
+          val sessionEndCheckpoint = memoryService
+            .checkpoint(sessionId, msgs, userId, agentId, CheckpointTrigger.SessionEnd)
+            .tapError(err => ZIO.logWarning(s"[session:$sessionId] SessionEnd checkpoint failed: $err"))
             .ignore
+          val timedCheckpoint = runnerState.turnCounts
+            .modify { m =>
+              val n = m.getOrElse(sessionId, 0) + 1
+              (n, m.updated(sessionId, n))
+            }.flatMap { turnCount =>
+              memoryService.getCheckpointPolicy.flatMap { cfg =>
+                cfg.timedIntervalTurns match {
+                  case Some(interval) if interval > 0 && turnCount % interval == 0 =>
+                    memoryService
+                      .checkpoint(sessionId, msgs, userId, agentId, CheckpointTrigger.TimedInterval)
+                      .tapError(err => ZIO.logWarning(s"[session:$sessionId] TimedInterval checkpoint failed: $err"))
+                      .ignore
+                  case _ => ZIO.unit
+                }
+              }
+            }
+          sessionEndCheckpoint *> timedCheckpoint
         }.unless(errMsg.isDefined && assistantText.isBlank).unit
     }
 
+  private val memoryPromptBudget = 15
+  private val alwaysInjectMinImportance = 7
+
   private def buildMemoryContext(
-    sessionId:   AgentSessionId,
-    actorId:     Option[UserId],
-    agentId:     AgentId,
-    userMessage: String,
+    sessionId: AgentSessionId,
+    actorId:   Option[UserId],
+    agentId:   AgentId,
   ): UIO[String] =
     actorId.fold(ZIO.succeed("")) { userId =>
       val queryScopes = List(MemoryScope.User, MemoryScope.Shared)
-      ZIO
-        .foreach(queryScopes) { scope =>
-          memoryService.query(scope, userId, agentId, Some(userMessage))
-        }
-        .map { results =>
-          val records = results.flatten
-          if (records.isEmpty) ""
-          else {
-            val lines = records
-              .map { r =>
-                r.value.asObject.flatMap(_.get("text")).flatMap(_.asString).getOrElse(r.value.toString)
-              }.mkString("\n- ")
-            s"\n\n[Memory context]\n- $lines"
+      Clock.instant.flatMap { now =>
+        ZIO
+          .foreach(queryScopes) { scope =>
+            memoryService.query(scope, userId, agentId, text = None)
           }
-        }
-        .catchAll { err =>
-          ZIO.logWarning(s"[session:$sessionId] Memory context unavailable: ${err.msg}") *> ZIO.succeed("")
-        }
+          .map { results =>
+            val valid = results.flatten.filter(r => r.ttl.forall(_.isAfter(now)))
+            if (valid.isEmpty) ""
+            else {
+              val sorted = valid.sortBy(-_.importance)
+              val selected = sorted
+                .filter(_.importance >= alwaysInjectMinImportance)
+                .appendedAll(sorted.filter(_.importance < alwaysInjectMinImportance))
+                .take(memoryPromptBudget)
+              val lines = selected
+                .map { r =>
+                  r.value.asObject.flatMap(_.get("text")).flatMap(_.asString).getOrElse(r.value.toString)
+                }.mkString("\n- ")
+              s"\n\n[Memory context — ${selected.length} record(s)]\n- $lines"
+            }
+          }
+          .catchAll { err =>
+            ZIO.logWarning(s"[session:$sessionId] Memory context unavailable: ${err.msg}") *> ZIO.succeed("")
+          }
+      }
     }
 
   private val loadPersonality: ZIO[Any, RepositoryError, Personality] =

@@ -13,7 +13,7 @@ package jorlan.shell.client
 import jorlan.*
 import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClientDecoders.given
-import jorlan.service.EventLogFilter
+import jorlan.service.{CheckpointPolicyConfig, EventLogFilter}
 import zio.*
 import zio.json.ast.Json
 
@@ -25,7 +25,18 @@ import scala.language.unsafeNulls
   * Sub-repos provide data-access operations; application-level operations (createSession, submitMessage, etc.) are
   * additional methods. All GQL view → domain conversions are private to [[ZIOClientRepositoriesLive]].
   */
-trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]]
+trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
+
+  def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean]
+  def getCheckpointPolicy:                          IO[String, CheckpointPolicyConfig]
+  def updateCheckpointPolicy(
+    onSessionEnd:         Option[Boolean] = None,
+    onUserRequest:        Option[Boolean] = None,
+    timedIntervalTurns:   Option[Option[Int]] = None,
+    beforeExternalEffect: Option[Boolean] = None,
+  ): IO[String, CheckpointPolicyConfig]
+
+}
 
 object ZIOClientRepositories {
 
@@ -103,7 +114,12 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     }
 
     override def getById(id: MemoryRecordId): IO[String, Option[MemoryRecord]] = ZIO.succeed(None)
-    override def purgeExpired:                IO[String, Long] = ZIO.succeed(0L)
+    override def getByKey(
+      key:     String,
+      userId:  Option[UserId],
+      agentId: Option[AgentId],
+    ):                         IO[String, Option[MemoryRecord]] = ZIO.succeed(None)
+    override def purgeExpired: IO[String, Long] = ZIO.succeed(0L)
 
   }
 
@@ -119,7 +135,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
       override def searchGrants(s: GrantSearch): IO[String, List[CapabilityGrant]] =
         gqlClient
-          .run(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))
+          .run(JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view))
           .map(_.getOrElse(Nil).map(toCapabilityGrant))
 
       override def listCapabilities(): IO[String, List[CapabilityGrant]] =
@@ -136,24 +152,50 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         note:     Option[String] = None,
       ): IO[String, Boolean] =
         gqlClient.run(JorlanClient.Mutations.decideApproval(id, approved, note)).map(_.getOrElse(false))
-      override def getRole(id:      RoleId):     IO[String, Option[Role]] = ZIO.succeed(None)
-      override def searchRoles(s:   RoleSearch): IO[String, List[Role]] = ZIO.succeed(Nil)
-      override def upsertRole(role: Role):       IO[String, Role] = ZIO.fail("not implemented")
-      override def deleteRole(id:   RoleId):     IO[String, Long] = ZIO.succeed(0L)
+      override def getRole(id: RoleId):        IO[String, Option[Role]] = ZIO.succeed(None)
+      override def searchRoles(s: RoleSearch): IO[String, List[Role]] =
+        s.userId match {
+          case Some(uid) =>
+            gqlClient
+              .run(JorlanClient.Queries.roles(uid)(JorlanClient.Role.view))
+              .map(_.getOrElse(Nil).map(toRole))
+          case None =>
+            gqlClient
+              .run(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
+              .map(_.getOrElse(Nil).map(toRole))
+        }
+      override def upsertRole(role: Role): IO[String, Role] =
+        gqlClient
+          .run(JorlanClient.Mutations.createRole(role.name, role.description)(JorlanClient.Role.view))
+          .flatMap(r => ZIO.fromOption(r).orElseFail("createRole returned no role"))
+          .map(toRole)
+      override def deleteRole(id: RoleId): IO[String, Long] = ZIO.succeed(0L)
       override def assignRole(
         userId: UserId,
         roleId: RoleId,
-      ): IO[String, Unit] = ZIO.unit
+      ): IO[String, Unit] =
+        gqlClient.run(JorlanClient.Mutations.assignRole(userId, roleId)).unit
       override def removeRole(
         userId: UserId,
         roleId: RoleId,
-      ):                                                          IO[String, Unit] = ZIO.unit
+      ): IO[String, Unit] =
+        gqlClient.run(JorlanClient.Mutations.revokeRole(userId, roleId)).unit
       override def searchPermissions(s:   PermissionSearch):      IO[String, List[Permission]] = ZIO.succeed(Nil)
       override def upsertPermission(perm: Permission):            IO[String, Permission] = ZIO.fail("not implemented")
       override def deletePermission(id:   PermissionId):          IO[String, Long] = ZIO.succeed(0L)
       override def upsertCapabilityGrant(grant: CapabilityGrant): IO[String, CapabilityGrant] =
-        ZIO.fail("not implemented")
-      override def revokeGrant(id: CapabilityGrantId):          IO[String, Long] = ZIO.succeed(0L)
+        gqlClient
+          .run(
+            JorlanClient.Mutations.grantCapability(grant.granteeId, grant.capability, grant.approvalMode)(
+              JorlanClient.CapabilityGrant.view,
+            ),
+          )
+          .flatMap(r => ZIO.fromOption(r).orElseFail("grantCapability returned nothing"))
+          .map(toCapabilityGrant)
+      override def revokeGrant(id: CapabilityGrantId): IO[String, Long] =
+        gqlClient
+          .run(JorlanClient.Mutations.revokeCapabilityGrant(id))
+          .map(r => if (r.getOrElse(false)) 1L else 0L)
       override def createApprovalRequest(req: ApprovalRequest): IO[String, ApprovalRequest] =
         ZIO.fail("not implemented")
       override def cancelApprovalRequest(id: ApprovalRequestId):       IO[String, Long] = ZIO.succeed(0L)
@@ -204,10 +246,13 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         .run(JorlanClient.Queries.triggers(s.jobId)(JorlanClient.SchedulerTrigger.view))
         .map(_.getOrElse(Nil).map(toSchedulerTrigger))
 
-    override def getJob(id:     SchedulerJobId): IO[String, Option[SchedulerJob]] = ZIO.succeed(None)
-    override def getPendingJobs:                 IO[String, List[SchedulerJob]] = ZIO.succeed(Nil)
-    override def upsertJob(job: SchedulerJob):   IO[String, SchedulerJob] = ZIO.fail("not implemented")
-    override def deleteJob(id: SchedulerJobId):  IO[String, Boolean] =
+    override def getJob(id: SchedulerJobId): IO[String, Option[SchedulerJob]] =
+      gqlClient
+        .run(JorlanClient.Queries.job(id)(JorlanClient.SchedulerJob.view))
+        .map(_.map(toSchedulerJob))
+    override def getPendingJobs:                IO[String, List[SchedulerJob]] = ZIO.succeed(Nil)
+    override def upsertJob(job: SchedulerJob):  IO[String, SchedulerJob] = ZIO.fail("not implemented")
+    override def deleteJob(id: SchedulerJobId): IO[String, Boolean] =
       gqlClient.run(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
     override def pauseJob(id: SchedulerJobId): IO[String, Boolean] =
       gqlClient.run(JorlanClient.Mutations.pauseJob(id)).map(_.getOrElse(false))
@@ -242,15 +287,49 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
     override def search(s: UserSearch): IO[String, List[User]] =
       gqlClient
-        .run(JorlanClient.Queries.users()(JorlanClient.User.view))
+        .run(
+          JorlanClient.Queries.users(s.active, s.nameContains, Some(s.page), Some(s.pageSize))(JorlanClient.User.view),
+        )
         .map(_.getOrElse(Nil).map(toUser))
 
-    override def getById(id:                  UserId): IO[String, Option[User]] = ZIO.succeed(None)
-    override def upsert(u:                    User):   IO[String, User] = ZIO.fail("not implemented")
-    override def deactivate(id:               UserId): IO[String, Long] = ZIO.succeed(0L)
-    override def getChannelIdentities(userId: UserId): IO[String, List[ChannelIdentity]] = ZIO.succeed(Nil)
-    override def upsertChannelIdentity(ci: ChannelIdentity):   IO[String, ChannelIdentity] = ZIO.fail("not implemented")
-    override def deleteChannelIdentity(id: ChannelIdentityId): IO[String, Long] = ZIO.succeed(0L)
+    override def getById(id: UserId): IO[String, Option[User]] =
+      gqlClient
+        .run(JorlanClient.Queries.user(id)(JorlanClient.User.view))
+        .map(_.map(toUser))
+
+    override def upsert(u: User): IO[String, User] =
+      if (u.id == UserId.empty)
+        gqlClient
+          .run(JorlanClient.Mutations.createUser(u.displayName, Some(u.email))(JorlanClient.User.view))
+          .flatMap(r => ZIO.fromOption(r).orElseFail("createUser returned no user"))
+          .map(toUser)
+      else
+        gqlClient
+          .run(JorlanClient.Mutations.updateUser(u.id, u.displayName, Some(u.email), u.active)(JorlanClient.User.view))
+          .flatMap(r => ZIO.fromOption(r).orElseFail("updateUser returned no user"))
+          .map(toUser)
+
+    override def deactivate(id: UserId): IO[String, Long] =
+      gqlClient
+        .run(JorlanClient.Mutations.deactivateUser(id))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
+    override def getChannelIdentities(userId: UserId): IO[String, List[ChannelIdentity]] =
+      gqlClient
+        .run(JorlanClient.Queries.userChannelIdentities(userId)(JorlanClient.ChannelIdentity.view))
+        .map(_.getOrElse(Nil).map(toChannelIdentity))
+    override def upsertChannelIdentity(ci: ChannelIdentity): IO[String, ChannelIdentity] =
+      gqlClient
+        .run(
+          JorlanClient.Mutations.linkChannelIdentity(ci.userId, ci.channelType.toString, ci.channelUserId)(
+            JorlanClient.ChannelIdentity.view,
+          ),
+        )
+        .flatMap(r => ZIO.fromOption(r).orElseFail("linkChannelIdentity returned nothing"))
+        .map(toChannelIdentity)
+    override def deleteChannelIdentity(id: ChannelIdentityId): IO[String, Long] =
+      gqlClient
+        .run(JorlanClient.Mutations.unlinkChannelIdentity(id.value.toString))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
     override def login(
       email:    String,
       password: String,
@@ -417,6 +496,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       ttl = v.ttl,
       createdAt = v.createdAt,
       updatedAt = v.updatedAt,
+      importance = v.importance,
     )
 
   private def toModelInfo(v: JorlanClient.ModelInfo.ModelInfoView): ModelInfo =
@@ -469,7 +549,21 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     SkillInfo(
       name = v.name,
       tier = SkillTier.valueOf(v.tier),
-      tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities)),
+      tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
+    )
+
+  private def toRole(v: JorlanClient.Role.RoleView): Role =
+    Role(id = v.id, name = v.name, description = v.description)
+
+  private def toChannelIdentity(v: JorlanClient.ChannelIdentity.ChannelIdentityView): ChannelIdentity =
+    ChannelIdentity(
+      id = ChannelIdentityId(v.id.toLong),
+      userId = v.userId,
+      channelType = v.channelType,
+      channelUserId = v.channelUserId,
+      verified = v.verified,
+      providerData = None,
+      createdAt = v.createdAt,
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =
@@ -489,6 +583,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       userId = v.userId,
       skillId = v.skillId,
       name = v.name,
+      prompt = v.prompt,
       inputJson = v.inputJson,
       status = v.status,
       scheduledAt = v.scheduledAt,
@@ -514,5 +609,48 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       enabled = v.enabled,
       createdAt = v.createdAt,
     )
+
+  private def toPolicyConfig(
+    v: JorlanClient.CheckpointPolicyConfig.CheckpointPolicyConfigView,
+  ): jorlan.service.CheckpointPolicyConfig =
+    jorlan.service.CheckpointPolicyConfig(
+      onSessionEnd = v.onSessionEnd,
+      onUserRequest = v.onUserRequest,
+      timedIntervalTurns = v.timedIntervalTurns,
+      beforeExternalEffect = v.beforeExternalEffect,
+    )
+
+  override def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean] =
+    gqlClient.run(JorlanClient.Mutations.requestCheckpoint(sessionId)).map(_.getOrElse(false))
+
+  override def getCheckpointPolicy: IO[String, jorlan.service.CheckpointPolicyConfig] =
+    gqlClient
+      .run(JorlanClient.Queries.checkpointPolicy(JorlanClient.CheckpointPolicyConfig.view))
+      .map(_.fold(jorlan.service.CheckpointPolicyConfig.default)(toPolicyConfig))
+
+  override def updateCheckpointPolicy(
+    onSessionEnd:         Option[Boolean] = None,
+    onUserRequest:        Option[Boolean] = None,
+    timedIntervalTurns:   Option[Option[Int]] = None,
+    beforeExternalEffect: Option[Boolean] = None,
+  ): IO[String, jorlan.service.CheckpointPolicyConfig] =
+    getCheckpointPolicy.flatMap { current =>
+      val updated = current.copy(
+        onSessionEnd = onSessionEnd.getOrElse(current.onSessionEnd),
+        onUserRequest = onUserRequest.getOrElse(current.onUserRequest),
+        timedIntervalTurns = timedIntervalTurns.getOrElse(current.timedIntervalTurns),
+        beforeExternalEffect = beforeExternalEffect.getOrElse(current.beforeExternalEffect),
+      )
+      gqlClient
+        .run(
+          JorlanClient.Mutations.updateCheckpointPolicy(
+            onSessionEnd = updated.onSessionEnd,
+            onUserRequest = updated.onUserRequest,
+            timedIntervalTurns = updated.timedIntervalTurns,
+            beforeExternalEffect = updated.beforeExternalEffect,
+          )(JorlanClient.CheckpointPolicyConfig.view),
+        )
+        .map(_.fold(updated)(toPolicyConfig))
+    }
 
 }

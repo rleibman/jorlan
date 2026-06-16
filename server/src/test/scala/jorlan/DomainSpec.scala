@@ -485,6 +485,7 @@ object DomainSpec extends ZIOSpecDefault {
       userId = UserId(1L),
       skillId = None,
       name = "test-job",
+      prompt = "",
       inputJson = None,
       status = JobStatus.Pending,
       scheduledAt = T0,

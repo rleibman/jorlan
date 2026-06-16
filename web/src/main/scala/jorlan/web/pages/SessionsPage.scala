@@ -14,7 +14,8 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.MuiButton
+import jorlan.web.pages.PageUtils
+import jorlan.web.components.{MuiButton, MuiTablePagination}
 import net.leibman.jorlan.muiMaterial.components.*
 
 import scala.language.unsafeNulls
@@ -29,12 +30,27 @@ object SessionsPage {
     error:           Option[String],
     showCreate:      Boolean,
     selectedModelId: Option[ModelId],
+    page:            Int,
+    rowsPerPage:     Int,
   )
+
+  private val DefaultRowsPerPage = 10
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, Nil, loading = true, error = None, showCreate = false, selectedModelId = None))
+      .useState(
+        State(
+          Nil,
+          Nil,
+          loading = true,
+          error = None,
+          showCreate = false,
+          selectedModelId = None,
+          page = 0,
+          rowsPerPage = DefaultRowsPerPage,
+        ),
+      )
       .useEffectOnMountBy {
         (
           _,
@@ -59,13 +75,28 @@ object SessionsPage {
           _,
           state,
         ) =>
+          def reload(): Callback =
+            Callback {
+              AsyncCallbackRepositories.agent
+                .searchSessions(AgentSessionSearch())
+                .flatMap(sessions =>
+                  state.setState(state.value.copy(sessions = sessions, loading = false)).asAsyncCallback,
+                )
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+                .runNow()
+            }
+
           def terminate(sessionId: AgentSessionId): Callback =
             Callback {
               AsyncCallbackRepositories.agent
                 .terminateSession(sessionId)
                 .flatMap { _ =>
+                  val newSessions = state.value.sessions.filterNot(_.id == sessionId)
+                  val maxPage = math.max(0, (newSessions.size - 1) / state.value.rowsPerPage)
                   state
-                    .setState(state.value.copy(sessions = state.value.sessions.filterNot(_.id == sessionId)))
+                    .setState(
+                      state.value.copy(sessions = newSessions, page = math.min(state.value.page, maxPage)),
+                    )
                     .asAsyncCallback
                 }
                 .completeWith {
@@ -113,6 +144,9 @@ object SessionsPage {
                 .runNow()
             }
 
+          val pageItems = state.value.sessions
+            .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
+
           <.div(
             Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
               Typography.set("variant", "h5")("Sessions"),
@@ -120,48 +154,71 @@ object SessionsPage {
                 .variant("contained")
                 .size("small")
                 .onClick(() => openCreateDialog().runNow())("+ New Session"),
+              MuiButton
+                .variant("outlined")
+                .size("small")
+                .onClick(() => reload().runNow())("Refresh"),
             ),
             state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
             if (state.value.loading)
               CircularProgress()
             else
-              TableContainer()(
-                Table()(
-                  TableHead()(
-                    TableRow()(
-                      TableCell()("ID"),
-                      TableCell()("Status"),
-                      TableCell()("Model"),
-                      TableCell()("Created"),
-                      TableCell()("Actions"),
+              <.div(
+                TableContainer()(
+                  Table()(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("ID"),
+                        TableCell()("Status"),
+                        TableCell()("Model"),
+                        TableCell()("Created"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      pageItems.map { session =>
+                        TableRow.withKey(session.id.value.toString)(
+                          TableCell()(
+                            <.span(^.title := session.id.value.toString)(
+                              session.id.value.toString.take(8) + "…",
+                            ),
+                          ),
+                          TableCell()(
+                            Chip.set("label", session.status.toString).set("size", "small")(),
+                          ),
+                          TableCell()(session.modelId.map(_.value).getOrElse("—")),
+                          TableCell()(session.createdAt.toString.take(19)),
+                          TableCell()(
+                            if (session.status == SessionStatus.Active)
+                              MuiButton
+                                .variant("outlined")
+                                .color("error")
+                                .size("small")
+                                .onClick(() => terminate(session.id).runNow())("Terminate")
+                            else EmptyVdom,
+                          ),
+                        )
+                      }*,
                     ),
                   ),
-                  TableBody()(
-                    state.value.sessions.map { session =>
-                      TableRow.withKey(session.id.value.toString)(
-                        TableCell()(
-                          <.span(^.title := session.id.value.toString)(
-                            session.id.value.toString.take(8) + "…",
-                          ),
-                        ),
-                        TableCell()(
-                          Chip.set("label", session.status.toString).set("size", "small")(),
-                        ),
-                        TableCell()(session.modelId.map(_.value).getOrElse("—")),
-                        TableCell()(session.createdAt.toString.take(19)),
-                        TableCell()(
-                          if (session.status == SessionStatus.Active)
-                            MuiButton
-                              .variant("outlined")
-                              .color("error")
-                              .size("small")
-                              .onClick(() => terminate(session.id).runNow())("Terminate")
-                          else EmptyVdom,
-                        ),
-                      )
-                    }*,
-                  ),
                 ),
+                MuiTablePagination
+                  .component("div")
+                  .count(state.value.sessions.size)
+                  .page(state.value.page)
+                  .rowsPerPage(state.value.rowsPerPage)
+                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
+                  .onPageChange(
+                    (
+                      _,
+                      p,
+                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                  )
+                  .onRowsPerPageChange(e =>
+                    state
+                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .runNow(),
+                  )(),
               ),
             // Create Session dialog
             Dialog(state.value.showCreate)(
