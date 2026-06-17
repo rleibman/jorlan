@@ -117,15 +117,21 @@ class GoogleContactsProvider private (
     resourceName: String,
   ): IO[JorlanError, Option[GoogleContact]] =
     withClient(userId) { svc =>
-      Option(
-        svc
-          .people()
-          .get(resourceName)
-          .nn
-          .setPersonFields(personFields)
-          .nn
-          .execute(),
-      ).map(toDomain)
+      try
+        Option(
+          svc
+            .people()
+            .get(resourceName)
+            .nn
+            .setPersonFields(personFields)
+            .nn
+            .execute(),
+        ).map(toDomain)
+      catch {
+        case e: com.google.api.client.googleapis.json.GoogleJsonResponseException
+            if e.getStatusCode == 404 =>
+          None
+      }
     }
 
 }
