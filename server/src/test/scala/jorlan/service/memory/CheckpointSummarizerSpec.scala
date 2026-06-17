@@ -55,7 +55,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
           records <- summarizer.summarize(messages, userId, agentId)
         } yield
           // FakeModelGateway emits "- User prefers Python\n- Project is Jorlan"
-          assertTrue(records.nonEmpty, records.forall(_.recordKey == "episodic.checkpoint"))
+          assertTrue(records.nonEmpty, records.forall(_.recordKey.startsWith("chk.")))
       },
     ) +
       suite("degenerate LLM responses")(
