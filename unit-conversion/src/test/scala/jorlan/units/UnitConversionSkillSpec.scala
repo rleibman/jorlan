@@ -41,31 +41,22 @@ object UnitConversionSkillSpec extends ZIOSpecDefault {
     skill.invoke(dummyCtx, "units.convert", args).map {
       case Json.Obj(fields) =>
         fields
-          .collectFirst { case ("result", Json.Num(n)) => n.toDouble }
+          .collectFirst { case ("result", Json.Num(n)) => n.doubleValue() }
           .getOrElse(throw new RuntimeException("No 'result' field in response"))
       case other => throw new RuntimeException(s"Unexpected response: $other")
     }
   }
 
-  /** Invoke and return the error string (if any). */
-  private def convertError(
+  private def convertArgs(
     value:    Double,
     fromUnit: String,
     toUnit:   String,
-  ): ZIO[Any, JorlanError, String] = {
-    val args = Json.Obj(
+  ): Json =
+    Json.Obj(
       "value"    -> Json.Num(value),
       "fromUnit" -> Json.Str(fromUnit),
       "toUnit"   -> Json.Str(toUnit),
     )
-    skill.invoke(dummyCtx, "units.convert", args).map {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case ("error", Json.Str(e)) => e }
-          .getOrElse("")
-      case _ => ""
-    }
-  }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("UnitConversionSkillSpec")(
@@ -89,10 +80,10 @@ object UnitConversionSkillSpec extends ZIOSpecDefault {
           result <- convert(1.0, "kg", "lb")
         } yield assertTrue(result > 2.2 && result < 2.21)
       },
-      test("1 km to kg returns incompatible units error") {
+      test("1 km to kg fails with ValidationError for incompatible units") {
         for {
-          err <- convertError(1.0, "km", "kg")
-        } yield assertTrue(err.contains("Incompatible") || err.contains("incompatible"))
+          result <- skill.invoke(dummyCtx, "units.convert", convertArgs(1.0, "km", "kg")).exit
+        } yield assert(result)(failsWithA[ValidationError])
       },
       test("'metre' alias works the same as 'm'") {
         for {
@@ -100,15 +91,15 @@ object UnitConversionSkillSpec extends ZIOSpecDefault {
           result2 <- convert(1.0, "km", "metre")
         } yield assertTrue(math.abs(result1 - result2) < 0.001)
       },
-      test("unknown unit returns error") {
+      test("unknown unit fails with ValidationError") {
         for {
-          err <- convertError(1.0, "furlongs", "m")
-        } yield assertTrue(err.contains("Unknown unit") || err.contains("unknown unit"))
+          result <- skill.invoke(dummyCtx, "units.convert", convertArgs(1.0, "furlongs", "m")).exit
+        } yield assert(result)(failsWithA[ValidationError])
       },
-      test("temperature to non-temperature returns error") {
+      test("temperature to non-temperature fails with ValidationError") {
         for {
-          err <- convertError(100.0, "C", "kg")
-        } yield assertTrue(err.nonEmpty)
+          result <- skill.invoke(dummyCtx, "units.convert", convertArgs(100.0, "C", "kg")).exit
+        } yield assert(result)(failsWithA[ValidationError])
       },
       test("0 K converts to -273.15 C") {
         for {

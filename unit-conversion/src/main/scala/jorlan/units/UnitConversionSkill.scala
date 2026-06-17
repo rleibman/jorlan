@@ -418,19 +418,19 @@ class UnitConversionSkill extends Skill {
                       ),
                     )
                   case Left(error) =>
-                    ZIO.succeed(Json.Obj("error" -> Json.Str(error)))
+                    ZIO.fail(ValidationError(error))
                 }
 
               case (None, _, _) =>
-                ZIO.succeed(Json.Obj("error" -> Json.Str("missing field 'value'")))
+                ZIO.fail(ValidationError("missing field 'value'"))
               case (_, None, _) =>
-                ZIO.succeed(Json.Obj("error" -> Json.Str("missing field 'fromUnit'")))
+                ZIO.fail(ValidationError("missing field 'fromUnit'"))
               case (_, _, None) =>
-                ZIO.succeed(Json.Obj("error" -> Json.Str("missing field 'toUnit'")))
+                ZIO.fail(ValidationError("missing field 'toUnit'"))
             }
 
           case _ =>
-            ZIO.succeed(Json.Obj("error" -> Json.Str("args must be a JSON object")))
+            ZIO.fail(ValidationError("args must be a JSON object"))
         }
 
       case other =>
