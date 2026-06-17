@@ -13,6 +13,7 @@ package jorlan
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.*
+import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
@@ -161,6 +162,7 @@ object Jorlan extends ZIOApp {
         }
       calProvider   <- GoogleCalendarProvider(oauthCredSvc).orDie
       driveProvider <- GoogleDriveProvider(oauthCredSvc).orDie
+      _             <- registry.register(new CalculatorSkill())
       _             <- registry.register(new MemorySkill(memService))
       _             <- registry.register(new SchedulerSkill(jobManager))
       _             <- registry.register(new ContactsSkill(repos))
@@ -183,7 +185,7 @@ object Jorlan extends ZIOApp {
       _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
-// $COVERAGE-OFF$
+  // $COVERAGE-OFF$
   // Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
   override def run: ZIO[Environment & ZIOAppArgs & Scope, JorlanError, Unit] =
     for {
@@ -241,6 +243,6 @@ object Jorlan extends ZIOApp {
         .mapError(JorlanError.apply)
         .when(!initialized)
     } yield ()
-// $COVERAGE-ON$
+  // $COVERAGE-ON$
 
 }

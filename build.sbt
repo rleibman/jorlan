@@ -176,8 +176,8 @@ lazy val model =
         },
       ),
       libraryDependencies ++= Seq(
-        "net.leibman" % "zio-auth_3" % zioAuth withSources () // I don't know why %% isn't working.
-      )
+        "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
+      ),
     )
     .jvmSettings(
       scalacOptions ++= scala3Opts :+ "-Werror",
@@ -201,8 +201,8 @@ lazy val model =
         "dev.zio" %%% "zio-prelude" % zioPreludeVersion withSources (),
         "io.kevinlee" %%% "just-semver-core"                                % justSemverCoreVersion withSources (),
         "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-core"   % jsoniterVersion,
-        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-macros" % jsoniterVersion
-      )
+        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-macros" % jsoniterVersion,
+      ),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -252,6 +252,29 @@ lazy val telegramConnector = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Calculator Skill — mXparser-based math expression evaluator
+
+lazy val calculatorSkill = project
+  .in(file("calculator"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-calculator",
+    libraryDependencies ++= Seq(
+      "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.0" withSources (),
+      "dev.zio"                %% "zio"                     % zioVersion withSources (),
+      "dev.zio"                %% "zio-json"                % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
 
 lazy val emailConnector = project
@@ -290,9 +313,9 @@ lazy val unitConversionSkill = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-unit-conversion",
     libraryDependencies ++= Seq(
-      "org.typelevel" %% "squants"     % "1.8.3" withSources (),
-      "dev.zio"       %% "zio"         % zioVersion withSources (),
-      "dev.zio"       %% "zio-json"    % zioJsonVersion withSources (),
+      "org.typelevel" %% "squants"  % "1.8.3" withSources (),
+      "dev.zio"       %% "zio"      % zioVersion withSources (),
+      "dev.zio"       %% "zio-json" % zioJsonVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
@@ -313,14 +336,14 @@ lazy val googleServices = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-google-services",
     libraryDependencies ++= Seq(
-      "dev.zio"                %% "zio"                               % zioVersion withSources (),
-      "dev.zio"                %% "zio-json"                          % zioJsonVersion withSources (),
-      "dev.zio"                %% "zio-http"                          % zioHttpVersion withSources (),
-      "com.google.api-client"   % "google-api-client"                 % googleApiClientVersion withSources (),
-      "com.google.apis"         % "google-api-services-gmail"         % googleApisGmailVersion withSources (),
-      "com.google.apis"         % "google-api-services-calendar"      % googleApisCalendarVersion withSources (),
-      "com.google.apis"         % "google-api-services-drive"         % googleApisDriveVersion withSources (),
-      "com.google.auth"         % "google-auth-library-oauth2-http"   % googleAuthLibraryVersion withSources (),
+      "dev.zio"              %% "zio"                             % zioVersion withSources (),
+      "dev.zio"              %% "zio-json"                        % zioJsonVersion withSources (),
+      "dev.zio"              %% "zio-http"                        % zioHttpVersion withSources (),
+      "com.google.api-client" % "google-api-client"               % googleApiClientVersion withSources (),
+      "com.google.apis"       % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
+      "com.google.apis"       % "google-api-services-calendar"    % googleApisCalendarVersion withSources (),
+      "com.google.apis"       % "google-api-services-drive"       % googleApisDriveVersion withSources (),
+      "com.google.auth"       % "google-auth-library-oauth2-http" % googleAuthLibraryVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
@@ -328,7 +351,6 @@ lazy val googleServices = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     Test / fork := true,
   )
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Server
@@ -345,7 +367,16 @@ lazy val server = project
     CalibanPlugin,
   )
   .settings(debianSettings, commonSettings)
-  .dependsOn(modelJVM, ai, connectorApi, telegramConnector, emailConnector, googleServices, unitConversionSkill)
+  .dependsOn(
+    modelJVM,
+    ai,
+    connectorApi,
+    calculatorSkill,
+    telegramConnector,
+    emailConnector,
+    googleServices,
+    unitConversionSkill,
+  )
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-server",
@@ -745,6 +776,7 @@ lazy val root = project
     modelJVM,
     modelJS,
     connectorApi,
+    calculatorSkill,
     telegramConnector,
     emailConnector,
     googleServices,
