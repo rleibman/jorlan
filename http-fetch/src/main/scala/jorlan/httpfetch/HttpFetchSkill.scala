@@ -292,8 +292,10 @@ class HttpFetchSkill(
           client
             .batched(req)
             .mapError(e => JorlanError("HTTP POST request failed", Some(e)))
+            .timeoutFail(JorlanError(s"HTTP POST request timed out after ${config.timeoutSeconds}s"))(
+              Duration.fromSeconds(config.timeoutSeconds.toLong),
+            )
             .flatMap(buildResponse)
-        }
     } yield result
 
 }
