@@ -226,11 +226,7 @@ class LyrionSkill(
           }
       }
 
-    effect
-      .provideEnvironment(ZEnvironment(client))
-      .catchAll { err =>
-        ZIO.succeed(Json.Obj("error" -> Json.Str(s"Lyrion server not configured or unreachable: ${err.msg}")))
-      }
+    effect.provideEnvironment(ZEnvironment(client))
   }
 
   /** Extract a named string field from a JSON object, returning empty string if absent. */
