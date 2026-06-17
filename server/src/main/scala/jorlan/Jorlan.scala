@@ -201,6 +201,7 @@ object Jorlan extends ZIOApp {
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
+      _ <- registry.register(new UserManagementSkill(repos))
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
