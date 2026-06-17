@@ -1055,6 +1055,8 @@ sbt module
 14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
+14.16 [x] **Web search skill**: Tavily-backed `search.web`, `search.news`, `search.extract` tools; `search.read`
+capability; optional config via `skill.search` in `server_settings`; new `search` sbt module.
 
 ## Phase 15: Web Frontend
 
