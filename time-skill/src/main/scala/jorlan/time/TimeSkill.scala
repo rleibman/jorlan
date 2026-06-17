@@ -118,7 +118,7 @@ class TimeSkill extends Skill {
   private def timeAddDuration(args: Json): IO[JorlanError, Json] = {
     val fields = args match {
       case Json.Obj(f) => f
-      case _           => Chunk.empty
+      case _           => return ZIO.fail(ValidationError("args must be a JSON object"))
     }
     val dtStrOpt = fields.collectFirst { case ("datetime", Json.Str(v)) => v }
     val tzStrOpt = fields.collectFirst { case ("timezone", Json.Str(v)) => v }
