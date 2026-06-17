@@ -143,7 +143,8 @@ class MarketDataSkill(
   private def quote(args: Json): IO[JorlanError, Json] =
     for {
       symbol <- field(args, "symbol")
-      url = s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
+      url =
+        s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
@@ -171,7 +172,8 @@ class MarketDataSkill(
   private def search(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      url = s"$baseUrl?function=SYMBOL_SEARCH&keywords=${java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
+      url =
+        s"$baseUrl?function=SYMBOL_SEARCH&keywords=${java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
@@ -201,7 +203,8 @@ class MarketDataSkill(
   private def news(args: Json): IO[JorlanError, Json] =
     for {
       symbol <- field(args, "symbol")
-      url = s"$baseUrl?function=NEWS_SENTIMENT&tickers=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey&limit=5"
+      url =
+        s"$baseUrl?function=NEWS_SENTIMENT&tickers=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey&limit=5"
       raw     <- fetchJson(url)
       limited <- checkRateLimit(raw)
     } yield limited match {
@@ -266,7 +269,9 @@ object MarketDataSkill {
   )
 
   object AlphaVantageConfig {
+
     given JsonDecoder[AlphaVantageConfig] = DeriveJsonDecoder.gen[AlphaVantageConfig]
+
   }
 
 }

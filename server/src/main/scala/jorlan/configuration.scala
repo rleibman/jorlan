@@ -122,18 +122,18 @@ case class EmailSettings(
 
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:           DatabaseConfig,
-  auth:         AuthConfig,
-  flyway:       FlywayConfig = FlywayConfig(),
-  http:         HttpConfig = HttpConfig(),
-  ai:           LangChainConfig = LangChainConfig(),
-  agent:        AgentSettings = AgentSettings(),
-  scheduler:    SchedulerSettings = SchedulerSettings(),
-  workspace:    WorkspaceSettings = WorkspaceSettings(),
-  shell:        ShellSettings = ShellSettings(),
-  web:          WebConfig = WebConfig(),
-  google:       GoogleOAuthSettings = GoogleOAuthSettings(),
-  email:        EmailSettings = EmailSettings(),
+  db:        DatabaseConfig,
+  auth:      AuthConfig,
+  flyway:    FlywayConfig = FlywayConfig(),
+  http:      HttpConfig = HttpConfig(),
+  ai:        LangChainConfig = LangChainConfig(),
+  agent:     AgentSettings = AgentSettings(),
+  scheduler: SchedulerSettings = SchedulerSettings(),
+  workspace: WorkspaceSettings = WorkspaceSettings(),
+  shell:     ShellSettings = ShellSettings(),
+  web:       WebConfig = WebConfig(),
+  google:    GoogleOAuthSettings = GoogleOAuthSettings(),
+  email:     EmailSettings = EmailSettings(),
 )
 
 /** Root application configuration. */

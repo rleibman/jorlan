@@ -13,17 +13,20 @@ package jorlan
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import jorlan.*
+import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
+import jorlan.lyrion.{LyrionSettings, LyrionSkill}
+import jorlan.market.MarketDataSkill
+import jorlan.market.MarketDataSkill.AlphaVantageConfig
 import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
-import jorlan.market.MarketDataSkill
-import jorlan.market.MarketDataSkill.AlphaVantageConfig
 import jorlan.service.skills.*
+import jorlan.units.UnitConversionSkill
 import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{config, *}
@@ -162,6 +165,7 @@ object Jorlan extends ZIOApp {
         }
       calProvider   <- GoogleCalendarProvider(oauthCredSvc).orDie
       driveProvider <- GoogleDriveProvider(oauthCredSvc).orDie
+      _             <- registry.register(new CalculatorSkill())
       _             <- registry.register(new MemorySkill(memService))
       _             <- registry.register(new SchedulerSkill(jobManager))
       _             <- registry.register(new ContactsSkill(repos))
@@ -171,19 +175,32 @@ object Jorlan extends ZIOApp {
       _             <- registry.register(new EmailSkill(emailProvider, repos))
       _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
       _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
-      _             <- repos.setting.get("skill.market")
-                         .mapError(e => new Throwable(e.msg))
-                         .flatMap {
-                           case Some(json) =>
-                             json.as[AlphaVantageConfig] match {
-                               case Right(cfg) =>
-                                 registry.register(new MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
-                               case Left(err) =>
-                                 ZIO.logWarning(s"Skipping market skill: invalid config JSON: $err")
-                             }
-                           case None =>
-                             ZIO.logDebug("Market data skill not configured (set skill.market in server_settings to enable)")
-                         }
+      _             <- repos.setting
+        .get("skill.market")
+        .mapError(e => new Throwable(e.msg))
+        .flatMap {
+          case Some(json) =>
+            json.as[AlphaVantageConfig] match {
+              case Right(cfg) =>
+                registry.register(new MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
+              case Left(err) =>
+                ZIO.logWarning(s"Skipping market skill: invalid config JSON: $err")
+            }
+          case None =>
+            ZIO.logDebug("Market data skill not configured (set skill.market in server_settings to enable)")
+        }
+      _ <- repos.setting.get("skill.lyrion").flatMap {
+        case Some(json) =>
+          json.as[LyrionSettings] match {
+            case Right(cfg) =>
+              registry.register(new LyrionSkill(cfg, httpClient))
+            case Left(err) =>
+              ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
+          }
+        case None =>
+          ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
+      }
+      _ <- registry.register(new UnitConversionSkill())
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
@@ -196,7 +213,7 @@ object Jorlan extends ZIOApp {
       _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
     } yield ()
 
-// $COVERAGE-OFF$
+  // $COVERAGE-OFF$
   // Server bootstrap requires a running MariaDB, Qdrant, and HTTP server — tested via integration suite
   override def run: ZIO[Environment & ZIOAppArgs & Scope, JorlanError, Unit] =
     for {
@@ -254,6 +271,6 @@ object Jorlan extends ZIOApp {
         .mapError(JorlanError.apply)
         .when(!initialized)
     } yield ()
-// $COVERAGE-ON$
+  // $COVERAGE-ON$
 
 }

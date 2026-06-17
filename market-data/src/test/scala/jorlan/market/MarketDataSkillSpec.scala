@@ -66,12 +66,16 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
 
   private def fixedBodyRoutes(body: String): Routes[Any, Nothing] =
     Routes(
-      Method.ANY / trailing -> handler { (_: Path, _: Request) =>
-        Response(
-          status = Status.Ok,
-          headers = Headers(Header.ContentType(MediaType.application.json).untyped),
-          body = Body.fromString(body),
-        )
+      Method.ANY / trailing -> handler {
+        (
+          _: Path,
+          _: Request,
+        ) =>
+          Response(
+            status = Status.Ok,
+            headers = Headers(Header.ContentType(MediaType.application.json).untyped),
+            body = Body.fromString(body),
+          )
       },
     )
 
@@ -88,7 +92,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       }.provide(Client.default),
       test("parses a GLOBAL_QUOTE response into the simplified schema") {
         for {
-          port <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
           client <- ZIO.service[Client]
           skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
@@ -107,7 +111,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("returns rate-limit error when Alpha Vantage Note is present") {
         for {
-          port <- Server.install(fixedBodyRoutes(rateLimitBody))
+          port   <- Server.install(fixedBodyRoutes(rateLimitBody))
           client <- ZIO.service[Client]
           skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
@@ -117,7 +121,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("parses a SYMBOL_SEARCH response and returns top match") {
         for {
-          port <- Server.install(fixedBodyRoutes(sampleSearchBody))
+          port   <- Server.install(fixedBodyRoutes(sampleSearchBody))
           client <- ZIO.service[Client]
           skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Apple")))
@@ -139,7 +143,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("fails with ValidationError for unknown tool name") {
         for {
-          port <- Server.install(fixedBodyRoutes("{}"))
+          port   <- Server.install(fixedBodyRoutes("{}"))
           client <- ZIO.service[Client]
           skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.unknown", Json.Obj()).exit
