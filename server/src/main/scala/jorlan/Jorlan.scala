@@ -24,6 +24,7 @@ import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
+import jorlan.units.UnitConversionSkill
 import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{config, *}
@@ -183,6 +184,7 @@ object Jorlan extends ZIOApp {
         case None =>
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
+      _ <- registry.register(new UnitConversionSkill())
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
