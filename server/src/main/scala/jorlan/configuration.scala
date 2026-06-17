@@ -12,7 +12,6 @@ package jorlan
 
 import _root_.ai.LangChainConfig
 import _root_.auth.{AuthConfig, SecretKey}
-import jorlan.lyrion.LyrionSettings
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
@@ -135,7 +134,6 @@ case class JorlanConfig(
   web:       WebConfig = WebConfig(),
   google:    GoogleOAuthSettings = GoogleOAuthSettings(),
   email:     EmailSettings = EmailSettings(),
-  lyrion:    LyrionSettings = LyrionSettings(),
 )
 
 /** Root application configuration. */

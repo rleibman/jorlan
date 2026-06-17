@@ -32,6 +32,12 @@ case class LyrionSettings(
   password:  String = "",
 )
 
+object LyrionSettings {
+
+  given JsonDecoder[LyrionSettings] = DeriveJsonDecoder.gen[LyrionSettings]
+
+}
+
 /** Skill that interfaces with a Lyrion Music Server via its JSON-RPC API.
   *
   * Exposes tools for listing players, checking playback status, controlling playback (play/pause/stop), adjusting
