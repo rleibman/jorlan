@@ -60,10 +60,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ),
       ToolDescriptor(
         name = "user_mgmt.get_user",
-        description = "Fetch a single user by their numeric ID. Returns null if not found.",
+        description = "Fetch a single user by their numeric ID. Returns an empty object if not found.",
         inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"}},"required":["userId"]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
