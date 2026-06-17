@@ -270,12 +270,16 @@ class SearchSkill(
           .map { items =>
             Json.Arr(
               items.collect { case Json.Obj(item) =>
-                def ifield(key: String): Json =
-                  item.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
+                def sfield(key: String): String =
+                  item.collectFirst {
+                    case (`key`, Json.Str(v))  => v
+                    case (`key`, Json.Num(n))  => n.toString
+                    case (`key`, Json.Bool(b)) => b.toString
+                  }.getOrElse("")
 
                 Json.Obj(
-                  "url"     -> ifield("url"),
-                  "content" -> ifield("raw_content"),
+                  "url"     -> Json.Str(sfield("url")),
+                  "content" -> Json.Str(sfield("raw_content")),
                 )
               }*,
             )
