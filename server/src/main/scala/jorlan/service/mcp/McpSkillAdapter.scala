@@ -34,7 +34,7 @@ class McpSkillAdapter(
         name = s"mcp_$serverName.${t.name}",
         description = t.description.getOrElse(""),
         inputSchema = t.inputSchema,
-        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("mcp.call")),
         examplePrompts = Nil,
       )
