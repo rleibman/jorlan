@@ -49,11 +49,13 @@ class TimeSkill extends Skill {
       )
       .mapError(_ => JorlanError(s"Cannot parse datetime '$dtStr'; expected ISO 8601 format"))
 
-  /** Parse an ISO 8601 duration string (`PT…` or `P…`), trying Period for pure date-durations. */
+  /** Parse an ISO 8601 duration string (`PT…` or `P…`), using Period for pure date-durations (no `T`). */
   private def parseDuration(durationStr: String): IO[JorlanError, Either[JDuration, Period]] =
-    ZIO
-      .attempt(Left(JDuration.parse(durationStr)))
-      .orElse(ZIO.attempt(Right(Period.parse(durationStr))))
+    (if (durationStr.contains("T")) ZIO.attempt(Left(JDuration.parse(durationStr)))
+     else
+       ZIO
+         .attempt(Right(Period.parse(durationStr)))
+         .orElse(ZIO.attempt(Left(JDuration.parse(durationStr)))))
       .mapError(_ =>
         JorlanError(
           s"Cannot parse duration '$durationStr'; expected ISO 8601 duration (e.g. 'PT2H30M' or 'P1D')",
