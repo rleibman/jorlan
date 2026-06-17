@@ -318,6 +318,8 @@ type Mutations {
   unlinkChannelIdentity(value: ChannelIdentityId!): Boolean
   requestCheckpoint(value: AgentSessionId!): Boolean
   updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
+  enableSkill(value: String!): Boolean
+  disableSkill(value: String!): Boolean
 }
 
 type OAuthStartResult {
@@ -420,6 +422,7 @@ type SkillInfo {
   name: String!
   tier: String!
   tools: [SkillToolInfo!]!
+  enabled: Boolean!
 }
 
 type SkillToolInfo {

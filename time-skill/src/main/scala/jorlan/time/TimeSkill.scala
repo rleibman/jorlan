@@ -94,9 +94,9 @@ class TimeSkill extends Skill {
         val fromTzOpt = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }
         val toTzOpt = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }
         (dtStrOpt, fromTzOpt, toTzOpt) match {
-          case (None, _, _)                                  => ZIO.fail(ValidationError("missing field 'datetime'"))
-          case (_, None, _)                                  => ZIO.fail(ValidationError("missing field 'fromTimezone'"))
-          case (_, _, None)                                  => ZIO.fail(ValidationError("missing field 'toTimezone'"))
+          case (None, _, _) => ZIO.fail(ValidationError("missing field 'datetime'"))
+          case (_, None, _) => ZIO.fail(ValidationError("missing field 'fromTimezone'"))
+          case (_, _, None) => ZIO.fail(ValidationError("missing field 'toTimezone'"))
           case (Some(dtStr), Some(fromTzStr), Some(toTzStr)) =>
             for {
               fromZone <- parseZone(fromTzStr)
