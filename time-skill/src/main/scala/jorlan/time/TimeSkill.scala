@@ -148,7 +148,7 @@ class TimeSkill extends Skill {
   private def timeDiff(args: Json): IO[JorlanError, Json] = {
     val fields = args match {
       case Json.Obj(f) => f
-      case _           => Chunk.empty
+      case _           => return ZIO.fail(ValidationError("args must be a JSON object"))
     }
     val fromStrOpt = fields.collectFirst { case ("from", Json.Str(v)) => v }
     val toStrOpt = fields.collectFirst { case ("to", Json.Str(v)) => v }
