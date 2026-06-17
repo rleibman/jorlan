@@ -22,6 +22,8 @@ import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.market.MarketDataSkill
 import jorlan.market.MarketDataSkill.AlphaVantageConfig
+import jorlan.weather.WeatherSkill
+import jorlan.weather.WeatherSkill.WeatherConfig
 import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
@@ -202,6 +204,17 @@ object Jorlan extends ZIOApp {
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
+      _ <- repos.setting.get("skill.weather").flatMap {
+        case Some(json) =>
+          json.as[WeatherConfig] match {
+            case Right(cfg) =>
+              registry.register(new WeatherSkill(cfg, httpClient, cfg.baseUrl))
+            case Left(err) =>
+              ZIO.logWarning(s"Skipping weather skill: invalid config JSON: $err")
+          }
+        case None =>
+          ZIO.logDebug("Weather skill not configured (set skill.weather in server_settings to enable)")
+      }
       _ <- registry.register(new UserManagementSkill(repos))
       _ <- registry.register(new TimeSkill())
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {

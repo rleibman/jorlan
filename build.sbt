@@ -348,6 +348,29 @@ lazy val unitConversionSkill = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
+
+lazy val weatherSkill = project
+  .in(file("weather"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-weather",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Time Skill — java.time-based timezone/datetime skill (no external dependencies)
 
 lazy val timeSkill = project
@@ -446,6 +469,7 @@ lazy val server = project
     unitConversionSkill,
     lyrionSkill,
     marketDataSkill,
+    weatherSkill,
     timeSkill
   )
   .settings(
@@ -852,6 +876,7 @@ lazy val root = project
     emailConnector,
     googleServices,
     marketDataSkill,
+    weatherSkill,
     lyrionSkill,
     unitConversionSkill,
     timeSkill,
