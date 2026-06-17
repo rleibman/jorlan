@@ -45,8 +45,8 @@ object SearchConfig {
   *   - `search.news` — recent news search
   *   - `search.extract` — full text extraction from URLs
   *
-  * All tools require the `search.read` capability. The skill is optional — it is only registered when a
-  * `skill.search` entry is present in `server_settings`.
+  * All tools require the `search.read` capability. The skill is optional — it is only registered when a `skill.search`
+  * entry is present in `server_settings`.
   */
 class SearchSkill(
   config: SearchConfig,
@@ -59,8 +59,7 @@ class SearchSkill(
     tools = List(
       ToolDescriptor(
         name = "search.web",
-        description =
-          "Search the web for up-to-date information. Returns a list of relevant results with title, URL, content snippet, and relevance score.",
+        description = "Search the web for up-to-date information. Returns a list of relevant results with title, URL, content snippet, and relevance score.",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"query":{"type":"string","description":"The search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"searchDepth":{"type":"string","description":"Search depth: basic (default) or advanced (uses more credits)"}},"required":["query"]}""",
@@ -75,8 +74,7 @@ class SearchSkill(
       ),
       ToolDescriptor(
         name = "search.news",
-        description =
-          "Search for recent news articles on a topic. Returns a list of news results with title, URL, content snippet, and relevance score.",
+        description = "Search for recent news articles on a topic. Returns a list of news results with title, URL, content snippet, and relevance score.",
         inputSchema = Json.decoder
           .decodeJson(
             """{"type":"object","properties":{"query":{"type":"string","description":"The news search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"days":{"type":"integer","description":"Limit results to the past N days"}},"required":["query"]}""",
@@ -155,7 +153,8 @@ class SearchSkill(
   ): IO[JorlanError, List[String]] =
     args match {
       case Json.Obj(fields) =>
-        fields.collectFirst { case (`name`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
+        fields
+          .collectFirst { case (`name`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
           .fold(ZIO.fail(ValidationError(s"missing required field '$name'")): IO[JorlanError, List[String]])(
             ZIO.succeed(_),
           )
@@ -189,8 +188,8 @@ class SearchSkill(
 
   private def webSearch(args: Json): IO[JorlanError, Json] =
     for {
-      query      <- field(args, "query")
-      maxResults  = optInt(args, "maxResults").getOrElse(config.maxResults)
+      query <- field(args, "query")
+      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
       searchDepth = optStr(args, "searchDepth").getOrElse("basic")
       requestBody = Json.Obj(
         "api_key"      -> Json.Str(config.apiKey),
@@ -199,26 +198,26 @@ class SearchSkill(
         "max_results"  -> Json.Num(maxResults),
         "topic"        -> Json.Str("general"),
       )
-      raw     <- postJson("/search", requestBody)
-      results  = extractSearchResults(raw)
+      raw <- postJson("/search", requestBody)
+      results = extractSearchResults(raw)
     } yield results
 
   private def newsSearch(args: Json): IO[JorlanError, Json] =
     for {
-      query      <- field(args, "query")
-      maxResults  = optInt(args, "maxResults").getOrElse(config.maxResults)
-      days        = optInt(args, "days")
-      baseFields  = List(
+      query <- field(args, "query")
+      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
+      days = optInt(args, "days")
+      baseFields = List(
         "api_key"      -> Json.Str(config.apiKey),
         "query"        -> Json.Str(query),
         "search_depth" -> Json.Str("basic"),
         "max_results"  -> Json.Num(maxResults),
         "topic"        -> Json.Str("news"),
       )
-      allFields   = days.fold(baseFields)(d => baseFields :+ ("days" -> Json.Num(d)))
+      allFields = days.fold(baseFields)(d => baseFields :+ ("days" -> Json.Num(d)))
       requestBody = Json.Obj(allFields*)
-      raw         <- postJson("/search", requestBody)
-      results      = extractSearchResults(raw)
+      raw <- postJson("/search", requestBody)
+      results = extractSearchResults(raw)
     } yield results
 
   private def extractSearchResults(raw: Json): Json =
@@ -247,13 +246,13 @@ class SearchSkill(
 
   private def extract(args: Json): IO[JorlanError, Json] =
     for {
-      urls        <- strList(args, "urls")
-      requestBody  = Json.Obj(
+      urls <- strList(args, "urls")
+      requestBody = Json.Obj(
         "api_key" -> Json.Str(config.apiKey),
         "urls"    -> Json.Arr(urls.map(Json.Str(_))*),
       )
-      raw         <- postJson("/extract", requestBody)
-      results      = extractExtractResults(raw)
+      raw <- postJson("/extract", requestBody)
+      results = extractExtractResults(raw)
     } yield results
 
   private def extractExtractResults(raw: Json): Json =

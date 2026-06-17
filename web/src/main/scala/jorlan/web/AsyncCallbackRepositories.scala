@@ -452,6 +452,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       argsJson: String,
     ): AsyncCallback[Option[String]] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.invokeTool(toolName, argsJson))
+    override def enableSkill(name: String): AsyncCallback[Unit] =
+      adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.enableSkill(name)).void
+    override def disableSkill(name: String): AsyncCallback[Unit] =
+      adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.disableSkill(name)).void
   }
 
   override val eventLog: EventLogRepository[AsyncCallback] = new EventLogRepository[AsyncCallback] {
@@ -714,6 +718,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       name = v.name,
       tier = SkillTier.valueOf(v.tier),
       tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
+      enabled = v.enabled,
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =

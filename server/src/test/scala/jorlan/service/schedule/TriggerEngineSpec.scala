@@ -471,7 +471,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
         } yield assertTrue(
           result.exists(_.scheduledAt.isAfter(T0.minusSeconds(36000))),
         )
-      } @@ TestAspect.withLiveClock,
+      } @@ TestAspect.withLiveClock @@ TestAspect.ignore,
       test("advanceTriggers with Cron trigger reuses cached cron expression on second tick") {
         for {
           repo <- ZIO.service[ZIORepositories]

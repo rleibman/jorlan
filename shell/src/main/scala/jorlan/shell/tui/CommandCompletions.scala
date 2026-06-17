@@ -65,6 +65,8 @@ object CommandCompletions {
     "/scheduler list",
     "/scheduler result ",
     "/skills",
+    "/skills disable ",
+    "/skills enable ",
     "/status",
     "/trace",
     "/trace debug",

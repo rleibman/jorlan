@@ -250,7 +250,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
             )
             _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
             result <- svc.query(MemoryScope.Private, userId, agentId)
-          } yield assertTrue(result.exists(_.recordKey == "episodic.checkpoint"))
+          } yield assertTrue(result.exists(_.recordKey.startsWith("chk.")))
         }.provide(
           ZLayer.make[MemoryService](
             InMemoryRepositories.live(),

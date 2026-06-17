@@ -84,7 +84,7 @@ object SearchSkillSpec extends ZIOSpecDefault {
     Routes(
       Method.ANY / trailing -> handler {
         (
-          _: Path,
+          _:   Path,
           req: Request,
         ) =>
           (for {
@@ -104,8 +104,8 @@ object SearchSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(routes(sampleSearchResponse))
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.web", Json.Obj("query" -> Json.Str("ZIO")))
         } yield result match {
           case Json.Arr(items) =>
@@ -128,9 +128,9 @@ object SearchSkillSpec extends ZIOSpecDefault {
           bodyRef <- Ref.make(Option.empty[String])
           port    <- Server.install(captureRequestRoutes(bodyRef, sampleSearchResponse))
           client  <- ZIO.service[Client]
-          cfg      = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill    = new SearchSkill(cfg, client)
-          _       <- skill.invoke(
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          _ <- skill.invoke(
             dummyCtx,
             "search.web",
             Json.Obj("query" -> Json.Str("ZIO"), "maxResults" -> Json.Num(3)),
@@ -143,9 +143,9 @@ object SearchSkillSpec extends ZIOSpecDefault {
           bodyRef <- Ref.make(Option.empty[String])
           port    <- Server.install(captureRequestRoutes(bodyRef, sampleSearchResponse))
           client  <- ZIO.service[Client]
-          cfg      = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill    = new SearchSkill(cfg, client)
-          _       <- skill.invoke(dummyCtx, "search.news", Json.Obj("query" -> Json.Str("AI news")))
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          _        <- skill.invoke(dummyCtx, "search.news", Json.Obj("query" -> Json.Str("AI news")))
           captured <- bodyRef.get
         } yield assert(captured)(isSome(containsString("\"topic\":\"news\"")))
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -153,8 +153,8 @@ object SearchSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(routes(sampleExtractResponse))
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(
             dummyCtx,
             "search.extract",
@@ -178,8 +178,8 @@ object SearchSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(routes(sampleSearchResponse))
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.web", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -187,8 +187,8 @@ object SearchSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(routes(errorResponse, Status.Unauthorized))
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "bad-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "bad-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.web", Json.Obj("query" -> Json.Str("test"))).exit
         } yield assert(result)(fails(hasField("msg", (e: JorlanError) => e.msg, containsString("401"))))
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -196,16 +196,16 @@ object SearchSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(routes("not valid json at all"))
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.web", Json.Obj("query" -> Json.Str("test"))).exit
         } yield assert(result)(failsWithA[JorlanError])
       }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("search.extract missing urls arg fails with ValidationError") {
         for {
           client <- ZIO.service[Client]
-          cfg     = SearchConfig(apiKey = "test-key", baseUrl = "http://localhost:9999", maxResults = 5)
-          skill   = new SearchSkill(cfg, client)
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = "http://localhost:9999", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.extract", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Client.default),
