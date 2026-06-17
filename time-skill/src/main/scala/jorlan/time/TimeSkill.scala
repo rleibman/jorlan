@@ -88,29 +88,30 @@ class TimeSkill extends Skill {
     }
 
   private def timeConvert(args: Json): IO[JorlanError, Json] = {
-    val fields = args match {
-      case Json.Obj(f) => f
-      case _           => Chunk.empty
-    }
-    val dtStrOpt = fields.collectFirst { case ("datetime", Json.Str(v)) => v }
-    val fromTzOpt = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }
-    val toTzOpt = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }
-    (dtStrOpt, fromTzOpt, toTzOpt) match {
-      case (None, _, _)                                  => ZIO.fail(ValidationError("missing field 'datetime'"))
-      case (_, None, _)                                  => ZIO.fail(ValidationError("missing field 'fromTimezone'"))
-      case (_, _, None)                                  => ZIO.fail(ValidationError("missing field 'toTimezone'"))
-      case (Some(dtStr), Some(fromTzStr), Some(toTzStr)) =>
-        for {
-          fromZone <- parseZone(fromTzStr)
-          toZone   <- parseZone(toTzStr)
-          fromZdt  <- parseDatetime(dtStr, fromZone)
-          converted = fromZdt.withZoneSameInstant(toZone)
-        } yield Json.Obj(
-          "original"     -> Json.Str(fromZdt.format(formatter)),
-          "converted"    -> Json.Str(converted.format(formatter)),
-          "fromTimezone" -> Json.Str(fromTzStr),
-          "toTimezone"   -> Json.Str(toTzStr),
-        )
+    args match {
+      case Json.Obj(fields) =>
+        val dtStrOpt = fields.collectFirst { case ("datetime", Json.Str(v)) => v }
+        val fromTzOpt = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }
+        val toTzOpt = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }
+        (dtStrOpt, fromTzOpt, toTzOpt) match {
+          case (None, _, _)                                  => ZIO.fail(ValidationError("missing field 'datetime'"))
+          case (_, None, _)                                  => ZIO.fail(ValidationError("missing field 'fromTimezone'"))
+          case (_, _, None)                                  => ZIO.fail(ValidationError("missing field 'toTimezone'"))
+          case (Some(dtStr), Some(fromTzStr), Some(toTzStr)) =>
+            for {
+              fromZone <- parseZone(fromTzStr)
+              toZone   <- parseZone(toTzStr)
+              fromZdt  <- parseDatetime(dtStr, fromZone)
+              converted = fromZdt.withZoneSameInstant(toZone)
+            } yield Json.Obj(
+              "original"     -> Json.Str(fromZdt.format(formatter)),
+              "converted"    -> Json.Str(converted.format(formatter)),
+              "fromTimezone" -> Json.Str(fromTzStr),
+              "toTimezone"   -> Json.Str(toTzStr),
+            )
+        }
+      case _ =>
+        ZIO.fail(ValidationError("args must be a JSON object"))
     }
   }
 
