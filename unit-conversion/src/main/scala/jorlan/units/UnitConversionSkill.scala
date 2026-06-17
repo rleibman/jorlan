@@ -300,7 +300,6 @@ class UnitConversionSkill extends Skill {
     "day"     -> timeEntry(v => v * secPerDay, v => v / secPerDay),
     "days"    -> timeEntry(v => v * secPerDay, v => v / secPerDay),
     // ── Digital Information ─────────────────────────────────────────────
-    "b"         -> infoEntry(v => v, v => v),
     "byte"      -> infoEntry(v => v, v => v),
     "bytes"     -> infoEntry(v => v, v => v),
     "kb"        -> infoEntry(v => v * bytesPerKb, v => v / bytesPerKb),
