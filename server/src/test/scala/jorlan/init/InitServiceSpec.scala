@@ -217,6 +217,9 @@ object InitServiceSpec extends ZIOSpecDefault {
           "calendar.read",
           "calendar.write",
           "drive.read",
+          "mcp.call",
+          "admin.mcp.reload",
+          "admin.user.list",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]

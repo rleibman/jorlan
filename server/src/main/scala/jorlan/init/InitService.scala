@@ -219,6 +219,9 @@ class InitServiceImpl(
     CapabilityName("calendar.write"),
     // Drive
     CapabilityName("drive.read"),
+    // MCP
+    CapabilityName("mcp.call"),
+    CapabilityName("admin.mcp.reload"),
   )
 
   // email.send and calendar.write require per-invocation approval per design spec.

@@ -54,6 +54,17 @@ class NoOpMemoryService extends MemoryService {
     trigger:   CheckpointTrigger,
   ): IO[JorlanError, Unit] = ZIO.unit
 
+  override def requestCheckpoint(
+    sessionId: AgentSessionId,
+    userId:    UserId,
+    agentId:   AgentId,
+  ): IO[JorlanError, Unit] = ZIO.unit
+
+  override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] =
+    ZIO.succeed(CheckpointPolicyConfig())
+
+  override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
+
 }
 
 object NoOpMemoryService {

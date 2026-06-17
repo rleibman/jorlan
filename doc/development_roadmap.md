@@ -1042,7 +1042,7 @@ using mXparser library.
 14.2 [ ] Add a unit conversion skill for the agent to convert between different units of measurement, use squants
 library
 for this, it should be in a separate module.
-14.3 [ ] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
+14.3 [x] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
 internal format (since this is basic funcitonality it can be in the server module)
 14.4 [ ] **Market data skill**: read quotes, watchlists, alerts, news (no trading/execution in initial scope), new sbt
 module

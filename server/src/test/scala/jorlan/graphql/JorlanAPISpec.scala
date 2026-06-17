@@ -22,6 +22,7 @@ import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
+import zio.http.Client
 import zio.test.*
 
 /** Unit tests for [[JorlanAPI]] using in-memory service stubs. No database required.
@@ -189,6 +190,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       approvalSvcLayer,
       noOpNotificationRouter,
       oauthCredSvcLayer,
+      Client.default.orDie,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
   }

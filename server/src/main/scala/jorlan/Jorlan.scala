@@ -23,6 +23,7 @@ import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.market.MarketDataSkill
 import jorlan.market.MarketDataSkill.AlphaVantageConfig
 import jorlan.routes.*
+import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
@@ -44,7 +45,7 @@ type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, Connect
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService
+  ConfigurationService & jorlan.service.OAuthCredentialService & Client
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -201,6 +202,11 @@ object Jorlan extends ZIOApp {
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
+      // Load MCP servers from server_settings
+      _ <- ZIO
+        .scoped {
+          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
+        }.mapError(e => new Throwable(e.msg))
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
