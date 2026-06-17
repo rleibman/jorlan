@@ -20,7 +20,6 @@ import zio.test.Assertion.*
 
 object MarketDataSkillSpec extends ZIOSpecDefault {
 
-  /** Sample Alpha Vantage GLOBAL_QUOTE response body. */
   private val sampleQuoteBody: String =
     """|{
        |  "Global Quote": {
@@ -37,13 +36,11 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
        |  }
        |}""".stripMargin
 
-  /** Sample Alpha Vantage rate-limit Note response. */
   private val rateLimitBody: String =
     """|{
        |  "Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 25 requests per day."
        |}""".stripMargin
 
-  /** Sample Alpha Vantage SYMBOL_SEARCH response. */
   private val sampleSearchBody: String =
     """|{
        |  "bestMatches": [
@@ -61,88 +58,39 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
        |  ]
        |}""".stripMargin
 
-  /** Build a stub [[Client]] that always returns a fixed body. */
-  private def stubClient(body: String): ZLayer[Any, Nothing, Client] = {
-    val stubResponse = Response(
-      status = Status.Ok,
-      headers = Headers(Header.ContentType(MediaType.application.json).untyped),
-      body = Body.fromString(body),
-    )
-    ZLayer.succeed(
-      new Client {
-        override def socket[Env1 <: Any](
-          version: Version,
-          url:     URL,
-          headers: Headers,
-          app:     WebSocketApp[Env1],
-        )(implicit
-          trace: Trace,
-        ): ZIO[Env1 & Scope, Throwable, Response] = ZIO.succeed(stubResponse)
-
-        override def request(
-          version:   Version,
-          method:    Method,
-          url:       URL,
-          headers:   Headers,
-          body:      Body,
-          sslConfig: Option[ClientSSLConfig],
-          proxy:     Option[Proxy],
-        )(implicit
-          trace: Trace,
-        ): ZIO[Scope, Throwable, Response] = ZIO.succeed(stubResponse)
-      },
-    )
-  }
-
   private val dummyCtx: InvocationContext = InvocationContext(
     actorId = UserId(1L),
     agentId = None,
     sessionId = None,
   )
 
+  private def fixedBodyRoutes(body: String): Routes[Any, Nothing] =
+    Routes(
+      Method.ANY / trailing -> handler { (_: Path, _: Request) =>
+        Response(
+          status = Status.Ok,
+          headers = Headers(Header.ContentType(MediaType.application.json).untyped),
+          body = Body.fromString(body),
+        )
+      },
+    )
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("MarketDataSkillSpec")(
       test("returns error JSON immediately when apiKey is empty (no HTTP call made)") {
-        // A stub that always fails if called — proves we short-circuit without HTTP
-        val neverCalledClient: ZLayer[Any, Nothing, Client] = ZLayer.succeed(
-          new Client {
-            override def socket[Env1 <: Any](
-              version: Version,
-              url:     URL,
-              headers: Headers,
-              app:     WebSocketApp[Env1],
-            )(implicit
-              trace: Trace,
-            ): ZIO[Env1 & Scope, Throwable, Response] =
-              ZIO.fail(new RuntimeException("should not be called"))
-
-            override def request(
-              version:   Version,
-              method:    Method,
-              url:       URL,
-              headers:   Headers,
-              body:      Body,
-              sslConfig: Option[ClientSSLConfig],
-              proxy:     Option[Proxy],
-            )(implicit
-              trace: Trace,
-            ): ZIO[Scope, Throwable, Response] =
-              ZIO.fail(new RuntimeException("should not be called"))
-          },
-        )
-
         for {
-          clientSvc <- ZIO.service[Client]
-          skill = new MarketDataSkill("", clientSvc)
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("", client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(
           equalTo(Json.Obj("error" -> Json.Str("Alpha Vantage API key not configured"))),
         )
-      }.provide(neverCalledClient),
+      }.provide(Client.default),
       test("parses a GLOBAL_QUOTE response into the simplified schema") {
         for {
-          clientSvc <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", clientSvc)
+          port <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield {
           val fields = result match {
@@ -156,20 +104,22 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
           assert(fields.get("volume"))(isSome(equalTo(Json.Str("45678901")))) &&
           assert(fields.get("latestTradingDay"))(isSome(equalTo(Json.Str("2024-01-15"))))
         }
-      }.provide(stubClient(sampleQuoteBody)),
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("returns rate-limit error when Alpha Vantage Note is present") {
         for {
-          clientSvc <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", clientSvc)
+          port <- Server.install(fixedBodyRoutes(rateLimitBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(
           equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
         )
-      }.provide(stubClient(rateLimitBody)),
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("parses a SYMBOL_SEARCH response and returns top match") {
         for {
-          clientSvc <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", clientSvc)
+          port <- Server.install(fixedBodyRoutes(sampleSearchBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Apple")))
         } yield result match {
           case Json.Arr(items) =>
@@ -186,14 +136,15 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
             )
           case _ => assert(result)(equalTo(Json.Arr()))
         }
-      }.provide(stubClient(sampleSearchBody)),
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
       test("fails with ValidationError for unknown tool name") {
         for {
-          clientSvc <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", clientSvc)
+          port <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.unknown", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
-      }.provide(stubClient("{}")),
-    )
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+    ) @@ TestAspect.withLiveClock
 
 }

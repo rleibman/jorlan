@@ -28,11 +28,10 @@ import zio.json.ast.Json
   * making a network request.
   */
 class MarketDataSkill(
-  apiKey: String,
-  client: Client,
+  apiKey:  String,
+  client:  Client,
+  baseUrl: String = "https://www.alphavantage.co/query",
 ) extends Skill {
-
-  private val baseUrl = "https://www.alphavantage.co/query"
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "market",
@@ -259,4 +258,15 @@ class MarketDataSkill(
 
 }
 
-object MarketDataSkill
+object MarketDataSkill {
+
+  case class AlphaVantageConfig(
+    apiKey:  String,
+    baseUrl: String = "https://www.alphavantage.co/query",
+  )
+
+  object AlphaVantageConfig {
+    given JsonDecoder[AlphaVantageConfig] = DeriveJsonDecoder.gen[AlphaVantageConfig]
+  }
+
+}
