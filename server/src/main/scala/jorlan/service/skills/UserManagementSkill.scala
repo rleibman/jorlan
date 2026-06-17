@@ -250,12 +250,16 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def listUsers(args: Json): IO[JorlanError, Json] = {
     val page = SkillArgs.int(args, "page").getOrElse(0)
     val pageSize = SkillArgs.int(args, "pageSize").getOrElse(20)
-    val nameContains = SkillArgs.str(args, "nameContains")
-    val active = SkillArgs.bool(args, "active")
-    repos.user
-      .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize))
-      .mapError(JorlanError(_))
-      .map(users => Json.Arr(users.map(userJson)*))
+    if (page < 0) ZIO.fail(JorlanError("user_mgmt.list_users: page must be >= 0"))
+    else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_users: pageSize must be > 0"))
+    else {
+      val nameContains = SkillArgs.str(args, "nameContains")
+      val active = SkillArgs.bool(args, "active")
+      repos.user
+        .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize))
+        .mapError(JorlanError(_))
+        .map(users => Json.Arr(users.map(userJson)*))
+    }
   }
 
   private def getUser(args: Json): IO[JorlanError, Json] = {
