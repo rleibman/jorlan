@@ -38,7 +38,8 @@ case class SkillToolInfo(
 
 /** A registered skill visible via the API. */
 case class SkillInfo(
-  name:  String,
-  tier:  SkillTier,
-  tools: List[SkillToolInfo],
+  name:    String,
+  tier:    SkillTier,
+  tools:   List[SkillToolInfo],
+  enabled: Boolean = true,
 ) derives JsonEncoder, JsonDecoder

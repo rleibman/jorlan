@@ -26,6 +26,7 @@ import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
+import jorlan.time.TimeSkill
 import jorlan.units.UnitConversionSkill
 import zio.http.*
 import zio.logging.backend.SLF4J
@@ -202,6 +203,13 @@ object Jorlan extends ZIOApp {
       }
       _ <- registry.register(new UnitConversionSkill())
       _ <- registry.register(new UserManagementSkill(repos))
+      _ <- registry.register(new TimeSkill())
+      _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
+        case Some(zio.json.ast.Json.Arr(elems)) =>
+          val names = elems.collect { case zio.json.ast.Json.Str(s) => s }
+          ZIO.foreachDiscard(names)(name => registry.disableSkill(name))
+        case _ => ZIO.unit
+      }
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
