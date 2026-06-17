@@ -23,6 +23,7 @@ import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
+import jorlan.units.UnitConversionSkill
 import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{config, *}
@@ -171,6 +172,7 @@ object Jorlan extends ZIOApp {
       _             <- registry.register(new EmailSkill(emailProvider, repos))
       _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
       _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
+      _             <- registry.register(new UnitConversionSkill())
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
