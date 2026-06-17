@@ -849,6 +849,8 @@ object InMemoryRepositories {
             _ <- store.update(_.updated(id, saved))
           } yield saved
         override def listSkills(): RepositoryTask[List[SkillInfo]] = ZIO.succeed(Nil)
+        override def enableSkill(name: String): RepositoryTask[Unit] = ZIO.unit
+        override def disableSkill(name: String): RepositoryTask[Unit] = ZIO.unit
         override def invokeTool(
           toolName: String,
           argsJson: String,

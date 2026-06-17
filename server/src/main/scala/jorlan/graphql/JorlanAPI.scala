@@ -402,9 +402,10 @@ object JorlanAPI {
 
   /** GQL-safe view of a registered skill and its tools. */
   case class SkillInfo(
-    name:  String,
-    tier:  String,
-    tools: List[SkillToolInfo],
+    name:    String,
+    tier:    String,
+    tools:   List[SkillToolInfo],
+    enabled: Boolean,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe view of one channel identity for a contact result. */
@@ -673,6 +674,10 @@ object JorlanAPI {
       JorlanError,
       CheckpointPolicyConfig,
     ],
+    /** Enables a previously disabled skill by name. Requires `admin.settings`. */
+    enableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Disables a skill by name (including built-in skills). Requires `admin.settings`. */
+    disableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
   )
 
   private case class Subscriptions(
@@ -689,6 +694,22 @@ object JorlanAPI {
     ZIO
       .serviceWith[JorlanSession](_.user.map(_.id))
       .someOrFail(JorlanError("Not authenticated"))
+
+  private def disabledArrayWith(
+    name:   String,
+    remove: Boolean,
+  ): ZIO[ZIORepositories, Nothing, Json] =
+    ZIO.serviceWithZIO[ZIORepositories](_.setting.get("skill.disabled")).orElseSucceed(None).map { existing =>
+      val current: List[String] = existing.flatMap {
+        case Json.Arr(elems) => Some(elems.collect { case Json.Str(s) => s }.toList)
+        case _               => None
+      }.getOrElse(Nil)
+      val updated =
+        if (remove) current.filterNot(_ == name)
+        else if (current.contains(name)) current
+        else current :+ name
+      Json.Arr(updated.map(Json.Str(_))*)
+    }
 
   private def requireCapability(
     cap:    String,
@@ -852,21 +873,23 @@ object JorlanAPI {
               .serviceWithZIO[ZIORepositories](_.permission.listPendingApprovals(actorId)).mapError(JorlanError(_))
           } yield result,
           availableModels = ZIO.serviceWithZIO[ModelGateway](_.availableModels),
-          skills = ZIO.serviceWithZIO[SkillRegistry](_.allSkills).map { skills =>
-            skills.sortBy(_.descriptor.name).map { skill =>
-              SkillInfo(
-                name = skill.descriptor.name,
-                tier = skill.descriptor.tier.toString,
-                tools = skill.descriptor.tools.map(td =>
-                  SkillToolInfo(
-                    name = td.name,
-                    description = td.description,
-                    requiredCapabilities = td.requiredCapabilities.map(_.value),
-                    examplePrompts = td.examplePrompts,
-                  ),
+          skills = for {
+            allSkills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
+            dis       <- ZIO.serviceWithZIO[SkillRegistry](_.disabledSet)
+          } yield allSkills.sortBy(_.descriptor.name).map { skill =>
+            SkillInfo(
+              name = skill.descriptor.name,
+              tier = skill.descriptor.tier.toString,
+              tools = skill.descriptor.tools.map(td =>
+                SkillToolInfo(
+                  name = td.name,
+                  description = td.description,
+                  requiredCapabilities = td.requiredCapabilities.map(_.value),
+                  examplePrompts = td.examplePrompts,
                 ),
-              )
-            }
+              ),
+              enabled = !dis.contains(skill.descriptor.name),
+            )
           },
           contacts = name =>
             for {
@@ -1312,6 +1335,22 @@ object JorlanAPI {
               _       <- requireCapability("admin.settings", actorId)
               _       <- ZIO.serviceWithZIO[MemoryService](_.updateCheckpointPolicy(config))
             } yield config,
+          enableSkill = name =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              _       <- ZIO.serviceWithZIO[SkillRegistry](_.enableSkill(name))
+              updated <- disabledArrayWith(name, remove = true)
+              _       <- ZIO.serviceWithZIO[ZIORepositories](_.setting.set("skill.disabled", updated))
+            } yield true,
+          disableSkill = name =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              _       <- ZIO.serviceWithZIO[SkillRegistry](_.disableSkill(name))
+              updated <- disabledArrayWith(name, remove = false)
+              _       <- ZIO.serviceWithZIO[ZIORepositories](_.setting.set("skill.disabled", updated))
+            } yield true,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

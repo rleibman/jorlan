@@ -276,6 +276,8 @@ trait SkillRepository[F[_]] {
   def searchConnectors(s: ConnectorSearch):     F[List[ConnectorInstance]]
   def upsertConnector(ci: ConnectorInstance):   F[ConnectorInstance]
   def listSkills():                             F[List[SkillInfo]]
+  def enableSkill(name:  String):              F[Unit]
+  def disableSkill(name: String):              F[Unit]
   def invokeTool(
     toolName: String,
     argsJson: String,

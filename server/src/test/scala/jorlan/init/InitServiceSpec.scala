@@ -202,6 +202,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           "agent.session.terminate",
           "admin.personality.read",
           "admin.personality.update",
+          "admin.user.list",
           "user.create",
           "user.update",
           "role.create",

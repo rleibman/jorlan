@@ -278,9 +278,8 @@ object SchedulerPage {
                       val policy = RetryBackoffPolicy.values.find(_.toString == v).getOrElse(RetryBackoffPolicy.Fixed)
                       state.setState(state.value.copy(createForm = f.copy(backoffPolicy = policy))).runNow()
                     }(
-                      RetryBackoffPolicy.values.map { p =>
-                        MuiMenuItem.value(p.toString)(p.toString): VdomNode
-                      }*,
+                      MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
+                      MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"): VdomNode,
                     ),
                   Typography.set("variant", "caption")("Missed Run Policy"),
                   MuiSelect
@@ -291,35 +290,39 @@ object SchedulerPage {
                       val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
                       state.setState(state.value.copy(createForm = f.copy(missedRunPolicy = policy))).runNow()
                     }(
-                      MissedRunPolicy.values.map { p =>
-                        MuiMenuItem.value(p.toString)(p.toString): VdomNode
-                      }*,
+                      MuiMenuItem.value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
+                      MuiMenuItem.value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
+                      MuiMenuItem.value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
+                    ),
+                  Typography.set("variant", "caption")("Trigger Type"),
+                  MuiSelect
+                    .value(f.triggerType.toString)
+                    .fullWidth(true)
+                    .onChange { e =>
+                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                      val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
+                      state.setState(state.value.copy(createForm = f.copy(triggerType = tt))).runNow()
+                    }(
+                      MuiMenuItem.value("Cron")("Cron — schedule with a cron expression (e.g. 0 9 * * 1-5)"): VdomNode,
+                      MuiMenuItem.value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
+                      MuiMenuItem.value("OneShot")("One Shot — run once at a specific datetime (e.g. 2026-07-01T09:00:00Z)"): VdomNode,
+                      MuiMenuItem.value("Event")("Event — fire on a named system event (e.g. agent.completed)"): VdomNode,
                     ),
                   MuiTextField
-                    .label("Trigger Expression (optional, e.g. 0 * * * * ?)")
+                    .label(
+                      f.triggerType match {
+                        case TriggerType.Cron     => "Cron Expression (optional, e.g. 0 9 * * 1-5)"
+                        case TriggerType.Interval => "Interval (optional, ISO 8601 duration, e.g. PT1H)"
+                        case TriggerType.OneShot  => "Run At (optional, ISO 8601 datetime, e.g. 2026-07-01T09:00:00Z)"
+                        case TriggerType.Event    => "Event Name (optional, e.g. agent.completed)"
+                      },
+                    )
                     .value(f.triggerExpr)
                     .fullWidth(true)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
                       state.setState(state.value.copy(createForm = f.copy(triggerExpr = v))).runNow()
                     }(),
-                  if (f.triggerExpr.trim.nonEmpty) {
-                    <.div(
-                      Typography.set("variant", "caption")("Trigger Type"),
-                      MuiSelect
-                        .value(f.triggerType.toString)
-                        .fullWidth(true)
-                        .onChange { e =>
-                          val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                          val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
-                          state.setState(state.value.copy(createForm = f.copy(triggerType = tt))).runNow()
-                        }(
-                          TriggerType.values.map { t =>
-                            MuiMenuItem.value(t.toString)(t.toString): VdomNode
-                          }*,
-                        ),
-                    )
-                  } else EmptyVdom,
                 ),
               ),
               DialogActions()(

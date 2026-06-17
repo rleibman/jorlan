@@ -633,6 +633,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           value = "Scala",
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
+          importance = 5,
         )
         for {
           fs   <- FakeScreen.make
@@ -703,6 +704,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
+          importance = 5,
         )
         for {
           fs   <- FakeScreen.make
@@ -791,6 +793,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
+          importance = 5,
         )
         for {
           fs   <- FakeScreen.make
@@ -879,6 +882,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           ttl = None,
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
+          importance = 5,
         )
         for {
           fs   <- FakeScreen.make
