@@ -26,6 +26,7 @@ import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
+import jorlan.time.TimeSkill
 import jorlan.units.UnitConversionSkill
 import zio.http.*
 import zio.logging.backend.SLF4J
@@ -201,6 +202,7 @@ object Jorlan extends ZIOApp {
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
+      _ <- registry.register(new TimeSkill())
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
           val names = elems.collect { case zio.json.ast.Json.Str(s) => s }

@@ -1055,19 +1055,14 @@ sbt module
 14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
-14.0-toggle [x] **Skill enable/disable**: Added `enabled: Boolean` to `SkillInfo`, `enableSkill`/`disableSkill` to
-`SkillRegistry` (in-memory `Ref[Set[String]]`, persisted to `server_settings` key `"skill.disabled"`). GQL mutations
-`enableSkill`/`disableSkill` (require `admin.settings`). Shell: `/skills`, `/skills enable <name>`, `/skills disable
-<name>`. Web: toggle switch per skill on `SkillsPage`. Loaded on startup from `server_settings`.
-14.10 [ ] **Time/timezone skill**: current time in a given timezone, timezone conversion, duration arithmetic (e.g. "how
-long until X", "what time is it in Tokyo"). Zero external dependencies — use `java.time`. Lives in a new `time-skill`
-module or in the server module. Tools: `time.now`, `time.convert`, `time.add_duration`, `time.diff`.
+14.10 [x] **Time/timezone skill**: query current time, convert between timezones, add ISO 8601 durations to a datetime,
+compute the diff between two datetimes. Zero external dependencies (java.time only). New sbt module `timeSkill` in
+`time-skill/`. Registers unconditionally. Capability: `time.read` (Persistent).
 14.11 [ ] **HTTP fetch skill**: let agents make HTTP GET/POST requests to external URLs. Capability-gated with an
 allowlist of permitted host patterns (configured via `server_settings` key `"skill.http_fetch"`). Tools:
 `http_fetch.get`, `http_fetch.post`. New sbt module. Enables ad-hoc REST API integration without a dedicated skill per
 service.
 14.16 [ ] Web search: Using Tavily, call it TaviliSkill, should be it's own module
-
 
 ## Phase 15: Web Frontend
 
