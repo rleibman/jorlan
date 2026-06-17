@@ -308,7 +308,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       repos.user
         .deactivate(UserId(id))
         .mapError(JorlanError(_))
-        .as(Json.Obj("success" -> Json.Bool(true)))
+        .map(count => Json.Obj("success" -> Json.Bool(count > 0)))
     }
   }
 
