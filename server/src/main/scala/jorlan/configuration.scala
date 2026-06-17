@@ -81,6 +81,7 @@ case class ShellSettings(
   allowedBinaries:  List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
   timeoutSeconds:   Int = 30,
   captureThreshold: Int = 65536,
+  sandboxRoot:      String = ".",
 )
 
 case class WebConfig(

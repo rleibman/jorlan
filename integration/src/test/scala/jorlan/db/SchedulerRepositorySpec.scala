@@ -32,6 +32,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
       userId = userId,
       skillId = None,
       name = name,
+      prompt = "",
       inputJson = None,
       status = JobStatus.Pending,
       scheduledAt = T0,
