@@ -283,14 +283,22 @@ object StdioMcpClient {
       idRef     <- Ref.make(1)
       semaphore <- Semaphore.make(1)
       client = new StdioMcpClient(stdinQ, outputQ, idRef, semaphore)
-      // Initialize: send initialize request
-      initId <- idRef.getAndUpdate(_ + 1)
-      initReq =
-        s"""{"jsonrpc":"2.0","id":$initId,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"jorlan","version":"1.0"}}}"""
-      _ <- semaphore
-        .withPermit {
-          client.writeRequest(initReq) *> client.readResponse
-        }.mapError(identity)
+      _ <- semaphore.withPermit {
+        client.writeRequest(initReq) *> client.readResponse.flatMap {
+          case Json.Obj(fields) =>
+            fields.collectFirst { case ("error", Json.Obj(errFields)) =>
+              errFields.collectFirst { case ("message", Json.Str(m)) => m }.getOrElse("unknown error")
+            } match {
+              case Some(msg) => ZIO.fail(JorlanError(s"MCP server error: $msg"))
+              case None      =>
+                fields.collectFirst { case ("result", _) => () } match {
+                  case Some(_) => ZIO.unit
+                  case None    => ZIO.fail(JorlanError("MCP stdio: initialize response has no 'result' field"))
+                }
+            }
+          case _ => ZIO.fail(JorlanError("MCP stdio: initialize returned unexpected response shape"))
+        }
+      }
       // Send initialized notification (no response expected)
       notifReq = s"""{"jsonrpc":"2.0","method":"notifications/initialized"}"""
       _ <- client.writeRequest(notifReq)
