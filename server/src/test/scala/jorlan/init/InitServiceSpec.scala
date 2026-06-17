@@ -12,7 +12,6 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -218,6 +217,9 @@ object InitServiceSpec extends ZIOSpecDefault {
           "calendar.read",
           "calendar.write",
           "drive.read",
+          "shell.read",
+          "weather.read",
+          "shell.read",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]
