@@ -136,17 +136,18 @@ object TimeSkillSpec extends ZIOSpecDefault {
           assertTrue(res.exists(_.contains("12:30:00")))
         }
       },
-      test("time.add_duration adds P1D (one day) correctly") {
+      test("time.add_duration adds P1D (one day) correctly across DST boundaries") {
         val args = Json.Obj(
-          "datetime" -> Json.Str("2026-06-16T12:00:00"),
-          "timezone" -> Json.Str("UTC"),
+          "datetime" -> Json.Str("2026-03-07T12:00:00"),
+          "timezone" -> Json.Str("America/New_York"),
           "duration" -> Json.Str("P1D"),
         )
         for {
           result <- skill.invoke(ctx, "time.add_duration", args)
         } yield {
           val res = strField(result, "result")
-          assertTrue(res.exists(_.contains("2026-06-17")))
+          // DST starts in America/New_York on 2026-03-08; adding 1 calendar day should preserve local time.
+          assertTrue(res.exists(_.contains("2026-03-08T12:00:00")))
         }
       },
       test("time.diff returns correct totalSeconds hours and humanReadable") {
