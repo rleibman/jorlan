@@ -22,6 +22,7 @@ import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.market.MarketDataSkill
 import jorlan.market.MarketDataSkill.AlphaVantageConfig
+import jorlan.search.{SearchConfig, SearchSkill}
 import jorlan.weather.WeatherSkill
 import jorlan.weather.WeatherSkill.WeatherConfig
 import jorlan.routes.*
@@ -202,6 +203,17 @@ object Jorlan extends ZIOApp {
           }
         case None =>
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
+      }
+      _ <- repos.setting.get("skill.search").flatMap {
+        case Some(json) =>
+          json.as[SearchConfig] match {
+            case Right(cfg) =>
+              registry.register(new SearchSkill(cfg, httpClient))
+            case Left(err) =>
+              ZIO.logWarning(s"Skipping search skill: invalid config JSON: $err")
+          }
+        case None =>
+          ZIO.logDebug("Search skill not configured (set skill.search in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
       _ <- repos.setting.get("skill.weather").flatMap {

@@ -1062,7 +1062,8 @@ compute the diff between two datetimes. Zero external dependencies (java.time on
 allowlist of permitted host patterns (configured via `server_settings` key `"skill.http_fetch"`). Tools:
 `http_fetch.get`, `http_fetch.post`. New sbt module. Enables ad-hoc REST API integration without a dedicated skill per
 service.
-14.16 [ ] Web search: Using Tavily, call it TaviliSkill, should be it's own module
+14.16 [x] **Web search skill**: Tavily-backed `search.web`, `search.news`, `search.extract` tools; `search.read`
+capability; optional config via `skill.search` in `server_settings`; new `search` sbt module.
 
 ## Phase 15: Web Frontend
 

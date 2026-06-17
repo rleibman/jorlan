@@ -219,6 +219,8 @@ class InitServiceImpl(
     CapabilityName("calendar.write"),
     // Drive
     CapabilityName("drive.read"),
+    // Search
+    CapabilityName("search.read"),
     // Shell read-only sandbox tools
     CapabilityName("shell.read"),
     // Weather

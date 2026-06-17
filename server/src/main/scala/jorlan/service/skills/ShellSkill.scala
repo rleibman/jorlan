@@ -22,27 +22,27 @@ import java.nio.file.{Path, Paths}
 import scala.language.unsafeNulls
 
 /** Built-in skill for executing shell commands from a configured allowlist, plus a set of pre-configured, sandboxed
- * read-only file inspection tools that require no admin allowlist configuration.
- *
- * The binary must appear in [[ShellSettings.allowedBinaries]] (exact match on the last path segment or the full value)
- * for `shell.run`. The read-only tools (`shell.ls`, `shell.cat`, `shell.grep`, `shell.find`, `shell.head`,
- * `shell.tail`, `shell.wc`) are sandboxed to [[ShellSettings.sandboxRoot]] and require only the `shell.read`
- * capability.
- *
- * Tools:
- *   - `shell.run` — execute a binary with arguments, optional cwd and timeout override
- *   - `shell.ls` — list directory contents within sandbox
- *   - `shell.cat` — read file contents within sandbox
- *   - `shell.grep` — search for a pattern in a file or directory tree within sandbox
- *   - `shell.find` — find files/directories matching criteria within sandbox
- *   - `shell.head` — return first N lines of a file within sandbox
- *   - `shell.tail` — return last N lines of a file within sandbox
- *   - `shell.wc` — word/line/char count of a file within sandbox
- */
+  * read-only file inspection tools that require no admin allowlist configuration.
+  *
+  * The binary must appear in [[ShellSettings.allowedBinaries]] (exact match on the last path segment or the full value)
+  * for `shell.run`. The read-only tools (`shell.ls`, `shell.cat`, `shell.grep`, `shell.find`, `shell.head`,
+  * `shell.tail`, `shell.wc`) are sandboxed to [[ShellSettings.sandboxRoot]] and require only the `shell.read`
+  * capability.
+  *
+  * Tools:
+  *   - `shell.run` — execute a binary with arguments, optional cwd and timeout override
+  *   - `shell.ls` — list directory contents within sandbox
+  *   - `shell.cat` — read file contents within sandbox
+  *   - `shell.grep` — search for a pattern in a file or directory tree within sandbox
+  *   - `shell.find` — find files/directories matching criteria within sandbox
+  *   - `shell.head` — return first N lines of a file within sandbox
+  *   - `shell.tail` — return last N lines of a file within sandbox
+  *   - `shell.wc` — word/line/char count of a file within sandbox
+  */
 class ShellSkill(
-                  settings: ShellSettings,
-                  repo: ZIORepositories,
-                ) extends Skill {
+  settings: ShellSettings,
+  repo:     ZIORepositories,
+) extends Skill {
 
   // Resolved once at construction; used by all sandbox tools.
   private val sandboxRoot: Path = Paths.get(settings.sandboxRoot).toAbsolutePath.normalize()
@@ -179,20 +179,20 @@ class ShellSkill(
   )
 
   override def invoke(
-                       ctx: InvocationContext,
-                       tool: String,
-                       args: Json,
-                     ): IO[JorlanError, Json] =
+    ctx:  InvocationContext,
+    tool: String,
+    args: Json,
+  ): IO[JorlanError, Json] =
     tool match {
-      case "shell.run" => shellRun(ctx, args)
-      case "shell.ls" => shellLs(args)
-      case "shell.cat" => shellCat(args)
+      case "shell.run"  => shellRun(ctx, args)
+      case "shell.ls"   => shellLs(args)
+      case "shell.cat"  => shellCat(args)
       case "shell.grep" => shellGrep(args)
       case "shell.find" => shellFind(args)
       case "shell.head" => shellHead(args)
       case "shell.tail" => shellTail(args)
-      case "shell.wc" => shellWc(args)
-      case other => ZIO.fail(JorlanError(s"ShellSkill: unknown tool '$other'"))
+      case "shell.wc"   => shellWc(args)
+      case other        => ZIO.fail(JorlanError(s"ShellSkill: unknown tool '$other'"))
     }
 
   // ─── shell.run helpers ────────────────────────────────────────────────────
@@ -205,10 +205,10 @@ class ShellSkill(
   }
 
   private def logShellEvent(
-                             ctx: InvocationContext,
-                             eventType: EventType,
-                             payloadJson: Json,
-                           ): UIO[Unit] =
+    ctx:         InvocationContext,
+    eventType:   EventType,
+    payloadJson: Json,
+  ): UIO[Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
         .append(
@@ -226,10 +226,10 @@ class ShellSkill(
     }
 
   private def captureArtifact(
-                               ctx: InvocationContext,
-                               binary: String,
-                               stdout: String,
-                             ): UIO[Option[String]] =
+    ctx:    InvocationContext,
+    binary: String,
+    stdout: String,
+  ): UIO[Option[String]] =
     if (stdout.length <= settings.captureThreshold) ZIO.none
     else
       Clock.instant.flatMap { now =>
@@ -248,19 +248,19 @@ class ShellSkill(
       }
 
   private def shellRun(
-                        ctx: InvocationContext,
-                        args: Json,
-                      ): IO[JorlanError, Json] = {
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
     val binaryOpt = SkillArgs.str(args, "binary")
     binaryOpt match {
-      case None => ZIO.fail(JorlanError("shell.run: binary is required"))
+      case None         => ZIO.fail(JorlanError("shell.run: binary is required"))
       case Some(binary) =>
         if (!isAllowed(binary)) {
           ZIO.succeed(
             Json.Obj(
               "exitCode" -> Json.Num(1),
-              "stdout" -> Json.Str(""),
-              "stderr" -> Json.Str(s"Error: binary '$binary' is not in the allowed list"),
+              "stdout"   -> Json.Str(""),
+              "stderr"   -> Json.Str(s"Error: binary '$binary' is not in the allowed list"),
             ),
           )
         } else {
@@ -268,21 +268,21 @@ class ShellSkill(
           val cwdOpt = SkillArgs.str(args, "cwd")
           val timeoutSecs = SkillArgs.int(args, "timeoutSeconds").getOrElse(settings.timeoutSeconds)
 
-          val baseCmd = Command(binary, cmdArgs *)
+          val baseCmd = Command(binary, cmdArgs*)
           val cmdWithCwd = cwdOpt.fold(baseCmd)(cwd => baseCmd.workingDirectory(Paths.get(cwd).toFile))
 
           for {
             startTime <- Clock.instant
-            _ <- logShellEvent(
+            _         <- logShellEvent(
               ctx,
               EventType.ShellCommandInvoked,
-              Json.Obj("binary" -> Json.Str(binary), "args" -> Json.Arr(cmdArgs.map(Json.Str(_)) *)),
+              Json.Obj("binary" -> Json.Str(binary), "args" -> Json.Arr(cmdArgs.map(Json.Str(_))*)),
             )
             rawResult <- cmdWithCwd.run
               .flatMap { process =>
                 for {
-                  stdout <- process.stdout.string
-                  stderr <- process.stderr.string
+                  stdout   <- process.stdout.string
+                  stderr   <- process.stderr.string
                   exitCode <- process.exitCode
                 } yield (exitCode.code, stdout, stderr)
               }
@@ -290,26 +290,26 @@ class ShellSkill(
               .mapError(e => JorlanError(s"shell.run: ${e.getMessage}"))
             (exitCode, stdout, stderr) = rawResult match {
               case Some(t) => t
-              case None => (-1, "", s"Error: command timed out after ${timeoutSecs}s")
+              case None    => (-1, "", s"Error: command timed out after ${timeoutSecs}s")
             }
             endTime <- Clock.instant
             durationMs = endTime.toEpochMilli - startTime.toEpochMilli
             artifactUri <- captureArtifact(ctx, binary, stdout)
-            _ <- logShellEvent(
+            _           <- logShellEvent(
               ctx,
               EventType.ShellCommandCompleted,
               Json.Obj(
-                "binary" -> Json.Str(binary),
-                "exitCode" -> Json.Num(exitCode),
+                "binary"     -> Json.Str(binary),
+                "exitCode"   -> Json.Num(exitCode),
                 "durationMs" -> Json.Num(durationMs),
-                "captured" -> Json.Bool(artifactUri.isDefined),
+                "captured"   -> Json.Bool(artifactUri.isDefined),
               ),
             )
             stdoutField = artifactUri.fold[Json](Json.Str(stdout))(uri => Json.Str(s"artifact:$uri"))
           } yield Json.Obj(
             "exitCode" -> Json.Num(exitCode),
-            "stdout" -> stdoutField,
-            "stderr" -> Json.Str(stderr),
+            "stdout"   -> stdoutField,
+            "stderr"   -> Json.Str(stderr),
           )
         }
     }
@@ -325,45 +325,48 @@ class ShellSkill(
       .flatMap { resolved =>
         for {
           rootReal <- ZIO.attemptBlocking(sandboxRoot.toRealPath()).orElseSucceed(sandboxRoot)
-          real <- ZIO.attemptBlocking(resolved.toRealPath()).orElseSucceed(resolved)
-          _ <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
+          real     <- ZIO.attemptBlocking(resolved.toRealPath()).orElseSucceed(resolved)
+          _        <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
         } yield resolved
       }
 
   /** Run a command (binary + args), capture its stdout+stderr, apply the 64 KB cap. */
   private def runSafeCommand(
-                              binary: String,
-                              cmdArgs: Seq[String],
-                            ): IO[JorlanError, Json] = {
-    val cmd = Command(binary, cmdArgs *)
+    binary:  String,
+    cmdArgs: Seq[String],
+  ): IO[JorlanError, Json] = {
+    val cmd = Command(binary, cmdArgs*)
     cmd.run
       .flatMap { process =>
         val limit = (MaxSafeOutputBytes + 1).toLong
         for {
           stdoutChunk <- process.stdout.stream.take(limit).runCollect
           stderrChunk <- process.stderr.stream.take(limit).runCollect
-          exitCode <- process.exitCode
+          exitCode    <- process.exitCode
         } yield (
           exitCode.code,
           truncateOutput(new String(stdoutChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
           truncateOutput(new String(stderrChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
         )
       }
-      .timeout(10.seconds).mapBoth(e => JorlanError(s"$binary: ${e.getMessage}"), {
-        case Some((code, out, err)) =>
-          val truncOut = truncateOutput(out)
-          Json.Obj(
-            "exitCode" -> Json.Num(code),
-            "stdout" -> Json.Str(truncOut),
-            "stderr" -> Json.Str(err),
-          )
-        case None =>
-          Json.Obj(
-            "exitCode" -> Json.Num(-1),
-            "stdout" -> Json.Str(""),
-            "stderr" -> Json.Str("Error: command timed out after 10s"),
-          )
-      })
+      .timeout(10.seconds).mapBoth(
+        e => JorlanError(s"$binary: ${e.getMessage}"),
+        {
+          case Some((code, out, err)) =>
+            val truncOut = truncateOutput(out)
+            Json.Obj(
+              "exitCode" -> Json.Num(code),
+              "stdout"   -> Json.Str(truncOut),
+              "stderr"   -> Json.Str(err),
+            )
+          case None =>
+            Json.Obj(
+              "exitCode" -> Json.Num(-1),
+              "stdout"   -> Json.Str(""),
+              "stderr"   -> Json.Str("Error: command timed out after 10s"),
+            )
+        },
+      )
   }
 
   private def truncateOutput(s: String): String =
@@ -387,11 +390,11 @@ class ShellSkill(
   private def shellCat(args: Json): IO[JorlanError, Json] = {
     val maxLines = SkillArgs.int(args, "maxLines").getOrElse(500)
     SkillArgs.str(args, "path") match {
-      case None => ZIO.fail(JorlanError("shell.cat: path is required"))
+      case None       => ZIO.fail(JorlanError("shell.cat: path is required"))
       case Some(path) =>
         for {
           resolved <- resolveSafePath(path)
-          result <- runSafeCommand("cat", List(resolved.toString))
+          result   <- runSafeCommand("cat", List(resolved.toString))
           limited = result match {
             case Json.Obj(fields) =>
               val newFields = fields.map {
@@ -403,7 +406,7 @@ class ShellSkill(
                   "stdout" -> Json.Str(out)
                 case other => other
               }
-              Json.Obj(newFields *)
+              Json.Obj(newFields*)
             case other => other
           }
         } yield limited
@@ -413,8 +416,8 @@ class ShellSkill(
   private def shellGrep(args: Json): IO[JorlanError, Json] = {
     val maxMatches = SkillArgs.int(args, "maxMatches").getOrElse(200)
     (SkillArgs.str(args, "pattern"), SkillArgs.str(args, "path")) match {
-      case (None, _) => ZIO.fail(JorlanError("shell.grep: pattern is required"))
-      case (_, None) => ZIO.fail(JorlanError("shell.grep: path is required"))
+      case (None, _)                   => ZIO.fail(JorlanError("shell.grep: pattern is required"))
+      case (_, None)                   => ZIO.fail(JorlanError("shell.grep: path is required"))
       case (Some(pattern), Some(path)) =>
         val recursive = SkillArgs.bool(args, "recursive").getOrElse(false)
         val caseInsensitive = SkillArgs.bool(args, "caseInsensitive").getOrElse(false)
@@ -437,7 +440,7 @@ class ShellSkill(
                   "stdout" -> Json.Str(out)
                 case other => other
               }
-              Json.Obj(newFields *)
+              Json.Obj(newFields*)
             case other => other
           }
         } yield limited
@@ -466,7 +469,7 @@ class ShellSkill(
               "stdout" -> Json.Str(out)
             case other => other
           }
-          Json.Obj(newFields *)
+          Json.Obj(newFields*)
         case other => other
       }
     } yield limited
@@ -474,29 +477,29 @@ class ShellSkill(
 
   private def shellHead(args: Json): IO[JorlanError, Json] =
     SkillArgs.str(args, "path") match {
-      case None => ZIO.fail(JorlanError("shell.head: path is required"))
+      case None       => ZIO.fail(JorlanError("shell.head: path is required"))
       case Some(path) =>
         val lines = SkillArgs.int(args, "lines").getOrElse(20)
         for {
           resolved <- resolveSafePath(path)
-          result <- runSafeCommand("head", List("-n", lines.toString, resolved.toString))
+          result   <- runSafeCommand("head", List("-n", lines.toString, resolved.toString))
         } yield result
     }
 
   private def shellTail(args: Json): IO[JorlanError, Json] =
     SkillArgs.str(args, "path") match {
-      case None => ZIO.fail(JorlanError("shell.tail: path is required"))
+      case None       => ZIO.fail(JorlanError("shell.tail: path is required"))
       case Some(path) =>
         val lines = SkillArgs.int(args, "lines").getOrElse(20)
         for {
           resolved <- resolveSafePath(path)
-          result <- runSafeCommand("tail", List("-n", lines.toString, resolved.toString))
+          result   <- runSafeCommand("tail", List("-n", lines.toString, resolved.toString))
         } yield result
     }
 
   private def shellWc(args: Json): IO[JorlanError, Json] =
     SkillArgs.str(args, "path") match {
-      case None => ZIO.fail(JorlanError("shell.wc: path is required"))
+      case None       => ZIO.fail(JorlanError("shell.wc: path is required"))
       case Some(path) =>
         val countLines = SkillArgs.bool(args, "lines").getOrElse(false)
         val countWords = SkillArgs.bool(args, "words").getOrElse(false)
