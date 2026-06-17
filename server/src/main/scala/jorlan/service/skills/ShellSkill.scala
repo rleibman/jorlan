@@ -338,11 +338,16 @@ class ShellSkill(
     val cmd = Command(binary, cmdArgs*)
     cmd.run
       .flatMap { process =>
+        val limit = (MaxSafeOutputBytes + 1).toLong
         for {
-          stdout   <- process.stdout.string
-          stderr   <- process.stderr.string
-          exitCode <- process.exitCode
-        } yield (exitCode.code, stdout, stderr)
+          stdoutChunk <- process.stdout.take(limit).runCollect
+          stderrChunk <- process.stderr.take(limit).runCollect
+          exitCode    <- process.exitCode
+        } yield (
+          exitCode.code,
+          truncateOutput(new String(stdoutChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+          truncateOutput(new String(stderrChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+        )
       }
       .timeout(10.seconds)
       .mapError(e => JorlanError(s"$binary: ${e.getMessage}"))
