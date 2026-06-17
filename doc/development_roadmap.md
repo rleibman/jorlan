@@ -1049,7 +1049,7 @@ module
 14.5 [ ] **Lyrion music skill**: list players, play/pause/stop, set volume, play playlist, schedule playback new sbt
 module
 14.6 [ ] **Google Contacts skill**: search, read contacts new sbt module
-14.7 [x] ** Weather skill: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
+14.7 [x] **Weather skill**: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
 14.8 [ ] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
 sbt module
 14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
