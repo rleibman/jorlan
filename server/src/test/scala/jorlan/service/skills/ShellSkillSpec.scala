@@ -244,9 +244,9 @@ object ShellSkillSpec extends ZIOSpec[ZIORepositories] {
                 dir,
                 skill,
               ) =>
-                Files.writeString(dir.resolve("hello.txt"), "hello")
-                for {
-                  result <- skill.invoke(ctx, "shell.ls", Json.Obj())
+                 for {
+                   _      <- ZIO.attemptBlocking(Files.writeString(dir.resolve("hello.txt"), "hello"))
+                   result <- skill.invoke(ctx, "shell.ls", Json.Obj())
                 } yield assertTrue(
                   exitCode(result).contains(0),
                   stdoutField(result).exists(_.contains("hello.txt")),
