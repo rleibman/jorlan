@@ -66,25 +66,26 @@ class TimeSkill extends Skill {
   // Tool implementations
   // ─────────────────────────────────────────────────────────────────────────
 
-  private def timeNow(args: Json): IO[JorlanError, Json] = {
-    val tzName = args match {
-      case Json.Obj(fields) => fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse("UTC")
-      case _                => "UTC"
+  private def timeNow(args: Json): IO[JorlanError, Json] =
+    args match {
+      case Json.Obj(fields) =>
+        val tzName = fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse("UTC")
+        for {
+          zone    <- parseZone(tzName)
+          instant <- Clock.instant
+          zdt = instant.atZone(zone)
+        } yield Json.Obj(
+          "datetime"  -> Json.Str(zdt.format(formatter)),
+          "timezone"  -> Json.Str(tzName),
+          "utcOffset" -> Json.Str(zdt.getOffset.getId),
+          "dayOfWeek" -> Json.Str(
+            zdt.getDayOfWeek.toString.toLowerCase.capitalize,
+          ),
+          "timestamp" -> Json.Num(instant.getEpochSecond.toDouble),
+        )
+      case _ =>
+        ZIO.fail(ValidationError("args must be a JSON object"))
     }
-    for {
-      zone    <- parseZone(tzName)
-      instant <- Clock.instant
-      zdt = instant.atZone(zone)
-    } yield Json.Obj(
-      "datetime"  -> Json.Str(zdt.format(formatter)),
-      "timezone"  -> Json.Str(tzName),
-      "utcOffset" -> Json.Str(zdt.getOffset.getId),
-      "dayOfWeek" -> Json.Str(
-        zdt.getDayOfWeek.toString.toLowerCase.capitalize,
-      ),
-      "timestamp" -> Json.Num(instant.getEpochSecond.toDouble),
-    )
-  }
 
   private def timeConvert(args: Json): IO[JorlanError, Json] = {
     val fields = args match {
