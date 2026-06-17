@@ -63,7 +63,7 @@ object SkillsPage {
 
           def toggleEnabled(skill: SkillInfo): Callback =
             Callback {
-              state.setState(state.value.copy(toggling = state.value.toggling + skill.name)).runNow()
+              state.modState(s => s.copy(toggling = s.toggling + skill.name)).runNow()
               val action =
                 if (skill.enabled) AsyncCallbackRepositories.skill.disableSkill(skill.name)
                 else AsyncCallbackRepositories.skill.enableSkill(skill.name)
@@ -72,13 +72,18 @@ object SkillsPage {
                   val updated =
                     state.value.skills.map(s => if (s.name == skill.name) s.copy(enabled = !skill.enabled) else s)
                   state
-                    .setState(state.value.copy(skills = updated, toggling = state.value.toggling - skill.name))
+                    .modState(s =>
+                      s.copy(
+                        skills = s.skills.map(existing =>
+                          if (existing.name == skill.name) existing.copy(enabled = !existing.enabled) else existing,
+                        ),
+                        toggling = s.toggling - skill.name,
+                      ),
+                    )
                     .asAsyncCallback
                 }
                 .completeWith(
-                  PageUtils.onError(err =>
-                    state.setState(state.value.copy(toggling = state.value.toggling - skill.name, error = err)),
-                  ),
+                  PageUtils.onError(err => state.modState(s => s.copy(toggling = s.toggling - skill.name, error = err))),
                 )
                 .runNow()
             }
@@ -211,7 +216,7 @@ object SkillsPage {
                           scala.List[VdomElement](
                             TableRow
                               .withKey(s"${skill.name}-detail")(
-                                TableCell.colSpan(4)(
+                                TableCell.colSpan(5)(
                                   Box.set("sx", js.Dynamic.literal(p = 1.5))(
                                     skill.tools.map(renderToolCard)*,
                                   ),
