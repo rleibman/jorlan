@@ -127,9 +127,16 @@ class WeatherSkill(
   ): IO[JorlanError, Option[Int]] =
     args match {
       case Json.Obj(fields) =>
-        ZIO.succeed(fields.collectFirst { case (`name`, Json.Num(v)) =>
-          v.intValue()
-        })
+        fields.collectFirst { case (`name`, v) => v } match {
+          case None => ZIO.succeed(None)
+          case Some(Json.Num(n)) =>
+            ZIO
+              .attempt(n.intValueExact())
+              .mapError(_ => ValidationError(s"field '$name' must be an integer"))
+              .map(Some(_))
+          case Some(_) =>
+            ZIO.fail(ValidationError(s"field '$name' must be an integer"))
+        }
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }
 
