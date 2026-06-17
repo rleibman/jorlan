@@ -405,9 +405,24 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     tool:  String,
     field: String,
   ): IO[JorlanError, Long] =
-    SkillArgs.int(args, field) match {
-      case Some(n) => ZIO.succeed(n.toLong)
-      case None    =>
+    args match {
+      case Json.Obj(fields) =>
+        fields.collectFirst { case (`field`, Json.Num(n)) => n } match {
+          case Some(n) =>
+            ZIO
+              .attempt(n.longValueExact)
+              .mapError(_ => JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
+          case None =>
+            SkillArgs.str(args, field) match {
+              case Some(s) =>
+                s.toLongOption match {
+                  case Some(n) => ZIO.succeed(n)
+                  case None    => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field must be numeric, got '$s'"))
+                }
+              case None => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
+            }
+        }
+      case _ =>
         SkillArgs.str(args, field) match {
           case Some(s) =>
             s.toLongOption match {
