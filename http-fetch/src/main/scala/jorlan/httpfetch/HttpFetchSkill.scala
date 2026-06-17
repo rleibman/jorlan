@@ -263,8 +263,10 @@ class HttpFetchSkill(
           client
             .batched(req)
             .mapError(e => JorlanError("HTTP GET request failed", Some(e)))
+            .timeoutFail(JorlanError(s"HTTP GET request timed out after ${config.timeoutSeconds}s"))(
+              Duration.fromSeconds(config.timeoutSeconds.toLong),
+            )
             .flatMap(buildResponse)
-        }
     } yield result
 
   private def post(args: Json): IO[JorlanError, Json] =
