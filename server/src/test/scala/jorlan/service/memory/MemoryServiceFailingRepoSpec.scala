@@ -69,8 +69,7 @@ object MemoryServiceFailingRepoSpec extends ZIOSpecDefault {
         key:     String,
         userId:  Option[UserId],
         agentId: Option[AgentId],
-      ):                                         RepositoryTask[Option[MemoryRecord]] = ZIO.succeed(None)
-      override def search(s:      MemorySearch): RepositoryTask[List[MemoryRecord]] = searchFn(s)
+      ):                                         RepositoryTask[Option[MemoryRecord]] = alwaysFail
       override def upsert(record: MemoryRecord): RepositoryTask[MemoryRecord] = upsertFn(record)
       override def updateScope(
         id:    MemoryRecordId,
