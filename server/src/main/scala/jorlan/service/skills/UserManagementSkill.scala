@@ -317,10 +317,13 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def listRoles(args: Json): IO[JorlanError, Json] = {
     val page = SkillArgs.int(args, "page").getOrElse(0)
     val pageSize = SkillArgs.int(args, "pageSize").getOrElse(20)
-    repos.permission
-      .searchRoles(RoleSearch(page = page, pageSize = pageSize))
-      .mapError(JorlanError(_))
-      .map(roles => Json.Arr(roles.map(roleJson)*))
+    if (page < 0) ZIO.fail(JorlanError("user_mgmt.list_roles: page must be >= 0"))
+    else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_roles: pageSize must be > 0"))
+    else
+      repos.permission
+        .searchRoles(RoleSearch(page = page, pageSize = pageSize))
+        .mapError(JorlanError(_))
+        .map(roles => Json.Arr(roles.map(roleJson)*))
   }
 
   private def createRole(args: Json): IO[JorlanError, Json] = {
