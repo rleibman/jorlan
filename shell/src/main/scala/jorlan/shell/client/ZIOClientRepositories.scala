@@ -382,6 +382,10 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       argsJson: String,
     ): IO[String, Option[String]] =
       gqlClient.run(JorlanClient.Mutations.invokeTool(toolName, argsJson))
+    override def enableSkill(name: String): IO[String, Unit] =
+      gqlClient.run(JorlanClient.Mutations.enableSkill(name)).unit
+    override def disableSkill(name: String): IO[String, Unit] =
+      gqlClient.run(JorlanClient.Mutations.disableSkill(name)).unit
   }
 
   override val eventLog: EventLogRepository[[A] =>> IO[String, A]] = new EventLogRepository[[A] =>> IO[String, A]] {
@@ -550,6 +554,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       name = v.name,
       tier = SkillTier.valueOf(v.tier),
       tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
+      enabled = v.enabled,
     )
 
   private def toRole(v: JorlanClient.Role.RoleView): Role =

@@ -638,6 +638,10 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
 
   override def listSkills(): RepositoryTask[List[SkillInfo]] =
     ZIO.fail(RepositoryError("listSkills not implemented in QuillSkillRepository"))
+  override def enableSkill(name: String): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("enableSkill not implemented in QuillSkillRepository"))
+  override def disableSkill(name: String): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("disableSkill not implemented in QuillSkillRepository"))
   override def invokeTool(
     toolName: String,
     argsJson: String,

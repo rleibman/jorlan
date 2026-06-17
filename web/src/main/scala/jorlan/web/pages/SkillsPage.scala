@@ -28,12 +28,13 @@ object SkillsPage {
     loading:  Boolean,
     error:    Option[String],
     expanded: Set[String],
+    toggling: Set[String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true, error = None, expanded = Set.empty))
+      .useState(State(Nil, loading = true, error = None, expanded = Set.empty, toggling = Set.empty))
       .useEffectOnMountBy {
         (
           _,
@@ -59,6 +60,33 @@ object SkillsPage {
               state.setState(state.value.copy(expanded = state.value.expanded - name))
             else
               state.setState(state.value.copy(expanded = state.value.expanded + name))
+
+          def toggleEnabled(skill: SkillInfo): Callback =
+            Callback {
+              state.modState(s => s.copy(toggling = s.toggling + skill.name)).runNow()
+              val action =
+                if (skill.enabled) AsyncCallbackRepositories.skill.disableSkill(skill.name)
+                else AsyncCallbackRepositories.skill.enableSkill(skill.name)
+              action
+                .flatMap { _ =>
+                  val updated =
+                    state.value.skills.map(s => if (s.name == skill.name) s.copy(enabled = !skill.enabled) else s)
+                  state
+                    .modState(s =>
+                      s.copy(
+                        skills = s.skills.map(existing =>
+                          if (existing.name == skill.name) existing.copy(enabled = !existing.enabled) else existing,
+                        ),
+                        toggling = s.toggling - skill.name,
+                      ),
+                    )
+                    .asAsyncCallback
+                }
+                .completeWith(
+                  PageUtils.onError(err => state.modState(s => s.copy(toggling = s.toggling - skill.name, error = err))),
+                )
+                .runNow()
+            }
 
           def renderToolCard(tool: SkillToolInfo): VdomElement = {
             val capSection: VdomElement =
@@ -137,11 +165,13 @@ object SkillsPage {
                       TableCell()("Skill"),
                       TableCell()("Tier"),
                       TableCell()("Tools"),
+                      TableCell()("Enabled"),
                     ),
                   ),
                   TableBody()(
                     state.value.skills.flatMap { skill =>
                       val isExpanded = state.value.expanded.contains(skill.name)
+                      val isToggling = state.value.toggling.contains(skill.name)
                       scala.List[VdomElement](
                         TableRow
                           .withKey(skill.name)(
@@ -150,7 +180,17 @@ object SkillsPage {
                                 .size("small")
                                 .onClick(() => toggleExpand(skill.name).runNow())(if (isExpanded) "▲" else "▼"),
                             ),
-                            TableCell()(skill.name),
+                            TableCell()(
+                              Typography
+                                .set("variant", "body2")
+                                .set(
+                                  "sx",
+                                  js.Dynamic.literal(
+                                    color = if (skill.enabled) "text.primary" else "text.disabled",
+                                    fontStyle = if (skill.enabled) "normal" else "italic",
+                                  ),
+                                )(skill.name),
+                            ),
                             TableCell()(
                               Chip.set("label", skill.tier.toString).set("size", "small")(),
                             ),
@@ -161,13 +201,22 @@ object SkillsPage {
                                   s"${skill.tools.size} tool${if (skill.tools.size == 1) "" else "s"}",
                                 ),
                             ),
+                            TableCell()(
+                              if (isToggling)
+                                CircularProgress.set("size", 20)()
+                              else
+                                Switch
+                                  .set("checked", skill.enabled)
+                                  .set("size", "small")
+                                  .set("onChange", (_: js.Any) => toggleEnabled(skill).runNow())(),
+                            ),
                           ),
                       ) ++ (
                         if (isExpanded)
                           scala.List[VdomElement](
                             TableRow
                               .withKey(s"${skill.name}-detail")(
-                                TableCell.colSpan(4)(
+                                TableCell.colSpan(5)(
                                   Box.set("sx", js.Dynamic.literal(p = 1.5))(
                                     skill.tools.map(renderToolCard)*,
                                   ),

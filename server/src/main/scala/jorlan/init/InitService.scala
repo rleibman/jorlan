@@ -221,6 +221,10 @@ class InitServiceImpl(
     CapabilityName("drive.read"),
     // Shell read-only sandbox tools
     CapabilityName("shell.read"),
+    // Weather
+    CapabilityName("weather.read"),
+    // Shell read-only sandbox tools
+    CapabilityName("shell.read"),
   )
 
   // email.send and calendar.write require per-invocation approval per design spec.
