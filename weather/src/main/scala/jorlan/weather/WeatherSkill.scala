@@ -128,7 +128,7 @@ class WeatherSkill(
     args match {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`name`, v) => v } match {
-          case None => ZIO.succeed(None)
+          case None              => ZIO.succeed(None)
           case Some(Json.Num(n)) =>
             ZIO
               .attempt(n.intValueExact())

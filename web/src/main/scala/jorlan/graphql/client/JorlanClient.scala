@@ -736,21 +736,26 @@ object JorlanClient {
   object SkillInfo {
 
     final case class SkillInfoView[ToolsSelection](
-      name:  String,
-      tier:  String,
-      tools: List[ToolsSelection],
+      name:    String,
+      tier:    String,
+      tools:   List[ToolsSelection],
+      enabled: Boolean,
     )
 
     type ViewSelection[ToolsSelection] = SelectionBuilder[SkillInfo, SkillInfoView[ToolsSelection]]
 
     def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection])
       : ViewSelection[ToolsSelection] =
-      (name ~ tier ~ tools(toolsSelection)).map { case (name, tier, tools) => SkillInfoView(name, tier, tools) }
+      (name ~ tier ~ tools(toolsSelection) ~ enabled).map { case (name, tier, tools, enabled) =>
+        SkillInfoView(name, tier, tools, enabled)
+      }
 
     def name: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
     def tier: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
     def tools[A](innerSelection: SelectionBuilder[SkillToolInfo, A]): SelectionBuilder[SkillInfo, List[A]] =
       _root_.caliban.client.SelectionBuilder.Field("tools", ListOf(Obj(innerSelection)))
+    def enabled: SelectionBuilder[SkillInfo, Boolean] =
+      _root_.caliban.client.SelectionBuilder.Field("enabled", Scalar())
 
   }
 
@@ -1457,6 +1462,14 @@ object JorlanClient {
           Argument("beforeExternalEffect", beforeExternalEffect, "Boolean!"),
         ),
       )
+    def enableSkill(value: String)(implicit encoder0: ArgEncoder[String])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field("enableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
+    def disableSkill(value: String)(implicit encoder0: ArgEncoder[String])
+      : SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] =
+      _root_.caliban.client.SelectionBuilder
+        .Field("disableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
 
   }
 

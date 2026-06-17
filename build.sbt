@@ -371,6 +371,28 @@ lazy val weatherSkill = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Time Skill — java.time-based timezone/datetime skill (no external dependencies)
+
+lazy val timeSkill = project
+  .in(file("time-skill"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-time-skill",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Market Data — Alpha Vantage market data skill
 
 lazy val marketDataSkill = project
@@ -447,7 +469,8 @@ lazy val server = project
     unitConversionSkill,
     lyrionSkill,
     marketDataSkill,
-    weatherSkill
+    weatherSkill,
+    timeSkill
   )
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
@@ -856,6 +879,7 @@ lazy val root = project
     weatherSkill,
     lyrionSkill,
     unitConversionSkill,
+    timeSkill,
     ai,
     server,
     shell,
