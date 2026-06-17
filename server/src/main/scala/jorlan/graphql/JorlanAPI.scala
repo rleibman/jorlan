@@ -700,10 +700,11 @@ object JorlanAPI {
     remove: Boolean,
   ): ZIO[ZIORepositories, Nothing, Json] =
     ZIO.serviceWithZIO[ZIORepositories](_.setting.get("skill.disabled")).orElseSucceed(None).map { existing =>
-      val current: List[String] = existing.flatMap {
-        case Json.Arr(elems) => Some(elems.collect { case Json.Str(s) => s }.toList)
-        case _               => None
-      }.getOrElse(Nil)
+      val current: List[String] = existing
+        .flatMap {
+          case Json.Arr(elems) => Some(elems.collect { case Json.Str(s) => s }.toList)
+          case _               => None
+        }.getOrElse(Nil)
       val updated =
         if (remove) current.filterNot(_ == name)
         else if (current.contains(name)) current

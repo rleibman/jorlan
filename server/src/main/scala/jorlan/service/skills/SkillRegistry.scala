@@ -58,7 +58,7 @@ trait SkillRegistry {
   def enableSkill(name:  String): UIO[Unit]
   def disableSkill(name: String): UIO[Unit]
   def isDisabled(name:   String): UIO[Boolean]
-  def disabledSet: UIO[Set[String]]
+  def disabledSet:                UIO[Set[String]]
 
 }
 

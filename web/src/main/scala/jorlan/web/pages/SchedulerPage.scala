@@ -279,7 +279,7 @@ object SchedulerPage {
                       state.setState(state.value.copy(createForm = f.copy(backoffPolicy = policy))).runNow()
                     }(
                       MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
-                      MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"): VdomNode,
+                      MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
                     ),
                   Typography.set("variant", "caption")("Missed Run Policy"),
                   MuiSelect
@@ -290,9 +290,12 @@ object SchedulerPage {
                       val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
                       state.setState(state.value.copy(createForm = f.copy(missedRunPolicy = policy))).runNow()
                     }(
-                      MuiMenuItem.value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
-                      MuiMenuItem.value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
-                      MuiMenuItem.value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
+                      MuiMenuItem
+                        .value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
+                      MuiMenuItem
+                        .value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
+                      MuiMenuItem
+                        .value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
                     ),
                   Typography.set("variant", "caption")("Trigger Type"),
                   MuiSelect
@@ -304,9 +307,13 @@ object SchedulerPage {
                       state.setState(state.value.copy(createForm = f.copy(triggerType = tt))).runNow()
                     }(
                       MuiMenuItem.value("Cron")("Cron — schedule with a cron expression (e.g. 0 9 * * 1-5)"): VdomNode,
-                      MuiMenuItem.value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
-                      MuiMenuItem.value("OneShot")("One Shot — run once at a specific datetime (e.g. 2026-07-01T09:00:00Z)"): VdomNode,
-                      MuiMenuItem.value("Event")("Event — fire on a named system event (e.g. agent.completed)"): VdomNode,
+                      MuiMenuItem
+                        .value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
+                      MuiMenuItem.value("OneShot")(
+                        "One Shot — run once at a specific datetime (e.g. 2026-07-01T09:00:00Z)",
+                      ): VdomNode,
+                      MuiMenuItem
+                        .value("Event")("Event — fire on a named system event (e.g. agent.completed)"): VdomNode,
                     ),
                   MuiTextField
                     .label(

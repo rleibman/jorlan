@@ -69,9 +69,8 @@ object SkillsPage {
                 else AsyncCallbackRepositories.skill.enableSkill(skill.name)
               action
                 .flatMap { _ =>
-                  val updated = state.value.skills.map(s =>
-                    if (s.name == skill.name) s.copy(enabled = !skill.enabled) else s,
-                  )
+                  val updated =
+                    state.value.skills.map(s => if (s.name == skill.name) s.copy(enabled = !skill.enabled) else s)
                   state
                     .setState(state.value.copy(skills = updated, toggling = state.value.toggling - skill.name))
                     .asAsyncCallback

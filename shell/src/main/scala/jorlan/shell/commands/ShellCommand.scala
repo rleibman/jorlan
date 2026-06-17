@@ -179,9 +179,9 @@ object ShellCommand {
           val enabled = toggle.startsWith("on-")
           val trigger = toggle.stripPrefix("on-").stripPrefix("off-")
           MemoryPolicyToggle(trigger, enabled)
-        case "skills" :: "enable" :: name :: _  => SkillsEnable(name)
-        case "skills" :: "disable" :: name :: _ => SkillsDisable(name)
-        case "skills" :: _                      => Skills
+        case "skills" :: "enable" :: name :: _                => SkillsEnable(name)
+        case "skills" :: "disable" :: name :: _               => SkillsDisable(name)
+        case "skills" :: _                                    => Skills
         case "contacts" :: "find" :: rest if rest.nonEmpty    => ContactsFind(rest.mkString(" "))
         case "contacts" :: _                                  => Unknown("/contacts")
         case "capabilities" :: _                              => Capabilities
