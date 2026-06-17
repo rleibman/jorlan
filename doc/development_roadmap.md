@@ -1052,7 +1052,7 @@ module
 14.7 [ ] ** Weather skill: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
 14.8 [x] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
 sbt module
-14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
+14.9 [x] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
 
