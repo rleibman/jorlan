@@ -1055,6 +1055,9 @@ sbt module
 14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
+14.10 [x] **Time/timezone skill**: query current time, convert between timezones, add ISO 8601 durations to a datetime,
+compute the diff between two datetimes. Zero external dependencies (java.time only). New sbt module `timeSkill` in
+`time-skill/`. Registers unconditionally. Capability: `time.read` (Persistent).
 
 ## Phase 15: Web Frontend
 
