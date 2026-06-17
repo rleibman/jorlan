@@ -275,6 +275,29 @@ lazy val calculatorSkill = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Lyrion Music Skill — JSON-RPC client for Lyrion Music Server (Squeezebox)
+
+lazy val lyrionSkill = project
+  .in(file("lyrion"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-lyrion",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
 
 lazy val emailConnector = project
@@ -376,6 +399,7 @@ lazy val server = project
     emailConnector,
     googleServices,
     unitConversionSkill,
+    lyrionSkill
   )
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
@@ -780,6 +804,7 @@ lazy val root = project
     telegramConnector,
     emailConnector,
     googleServices,
+    lyrionSkill,
     unitConversionSkill,
     ai,
     server,

@@ -19,6 +19,7 @@ import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
+import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.routes.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
@@ -172,7 +173,18 @@ object Jorlan extends ZIOApp {
       _             <- registry.register(new EmailSkill(emailProvider, repos))
       _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
       _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
-      _             <- registry.register(new UnitConversionSkill())
+      _             <- repos.setting.get("skill.lyrion").flatMap {
+        case Some(json) =>
+          json.as[LyrionSettings] match {
+            case Right(cfg) =>
+              registry.register(new LyrionSkill(cfg, httpClient))
+            case Left(err) =>
+              ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
+          }
+        case None =>
+          ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
+      }
+      _ <- registry.register(new UnitConversionSkill())
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
