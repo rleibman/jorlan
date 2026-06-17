@@ -324,10 +324,13 @@ class ShellSkill(
       .attempt(sandboxRoot.resolve(relOrAbs).normalize())
       .mapError(e => JorlanError(s"shell: invalid path: ${e.getMessage}"))
       .flatMap { resolved =>
-        if (!resolved.startsWith(sandboxRoot))
-          ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'"))
-        else
-          ZIO.succeed(resolved)
+        for {
+          rootReal <- ZIO.attemptBlocking(sandboxRoot.toRealPath()).orElseSucceed(sandboxRoot)
+          real     <- ZIO.attemptBlocking(resolved.toRealPath()).orElseSucceed(resolved)
+          _ <-
+            if (!real.startsWith(rootReal)) ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'"))
+            else ZIO.unit
+        } yield resolved
       }
 
   /** Run a command (binary + args), capture its stdout+stderr, apply the 64 KB cap. */
