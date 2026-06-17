@@ -1050,9 +1050,9 @@ module
 module
 14.6 [ ] **Google Contacts skill**: search, read contacts new sbt module
 14.7 [ ] ** Weather skill: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
-14.8 [ ] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
+14.8 [x] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
 sbt module
-14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
+14.9 [x] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
 14.10 [x] **Time/timezone skill**: query current time, convert between timezones, add ISO 8601 durations to a datetime,

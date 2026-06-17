@@ -202,6 +202,7 @@ object Jorlan extends ZIOApp {
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
       _ <- registry.register(new UnitConversionSkill())
+      _ <- registry.register(new UserManagementSkill(repos))
       _ <- registry.register(new TimeSkill())
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
