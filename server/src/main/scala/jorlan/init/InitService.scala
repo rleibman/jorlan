@@ -219,6 +219,8 @@ class InitServiceImpl(
     CapabilityName("calendar.write"),
     // Drive
     CapabilityName("drive.read"),
+    // Weather
+    CapabilityName("weather.read"),
   )
 
   // email.send and calendar.write require per-invocation approval per design spec.
