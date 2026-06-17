@@ -317,10 +317,13 @@ private[mcp] def parseToolsList(result: Json): IO[JorlanError, List[McpTool]] = 
         case Some(tools) =>
           ZIO.foreach(tools.toList) {
             case Json.Obj(toolFields) =>
-              val name = toolFields.collectFirst { case ("name", Json.Str(n)) => n }.getOrElse("")
+              val name = toolFields.collectFirst { case ("name", Json.Str(n)) if n.nonEmpty => n }
               val desc = toolFields.collectFirst { case ("description", Json.Str(d)) => d }
               val schema = toolFields.collectFirst { case ("inputSchema", s) => s }.getOrElse(Json.Obj())
-              ZIO.succeed(McpTool(name, desc, schema))
+              name match {
+                case Some(n) => ZIO.succeed(McpTool(n, desc, schema))
+                case None    => ZIO.fail(JorlanError(s"MCP: tool entry missing non-empty 'name': ${Json.Obj(toolFields*).toJson}"))
+              }
             case other =>
               ZIO.fail(JorlanError(s"MCP: unexpected tool shape: $other"))
           }
