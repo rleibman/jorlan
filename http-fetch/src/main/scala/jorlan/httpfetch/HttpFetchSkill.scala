@@ -69,8 +69,7 @@ class HttpFetchSkill(
     tools = List(
       ToolDescriptor(
         name = "http_fetch.get",
-        description =
-          "Make an HTTP GET request to a URL and return the response status, body, and content type. Only hosts in the configured allowlist are permitted.",
+        description = "Make an HTTP GET request to a URL and return the response status, body, and content type. Only hosts in the configured allowlist are permitted.",
         inputSchema = Json.decoder
           .decodeJson(
             """|{
@@ -98,8 +97,7 @@ class HttpFetchSkill(
       ),
       ToolDescriptor(
         name = "http_fetch.post",
-        description =
-          "Make an HTTP POST request to a URL and return the response status, body, and content type. Only hosts in the configured allowlist are permitted.",
+        description = "Make an HTTP POST request to a URL and return the response status, body, and content type. Only hosts in the configured allowlist are permitted.",
         inputSchema = Json.decoder
           .decodeJson(
             """|{
@@ -163,7 +161,7 @@ class HttpFetchSkill(
           if (pattern == "*") {
             true
           } else if (pattern.startsWith("*.")) {
-            val suffix = pattern.stripPrefix("*")   // e.g. ".example.com"
+            val suffix = pattern.stripPrefix("*") // e.g. ".example.com"
             host.endsWith(suffix) || host == pattern.stripPrefix("*.")
           } else {
             host == pattern
@@ -217,18 +215,22 @@ class HttpFetchSkill(
   // ---------------------------------------------------------------------------
 
   private def buildResponse(resp: Response): IO[JorlanError, Json] =
-    resp.body.asString
-      .mapError(e => JorlanError("Failed to read response body", Some(e)))
-      .map { raw =>
+    resp.body.asString.mapBoth(
+      e => JorlanError("Failed to read response body", Some(e)),
+      { raw =>
         val rawBytes = raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)
         val body =
           if (rawBytes.length > config.maxResponseBytes) {
-            new String(rawBytes.take(config.maxResponseBytes), java.nio.charset.StandardCharsets.UTF_8) + "\n[truncated]"
+            new String(
+              rawBytes.take(config.maxResponseBytes),
+              java.nio.charset.StandardCharsets.UTF_8,
+            ) + "\n[truncated]"
           } else {
             raw
           }
 
-        val contentType = resp.header(Header.ContentType)
+        val contentType = resp
+          .header(Header.ContentType)
           .map(_.mediaType.fullType)
           .getOrElse("application/octet-stream")
 
@@ -237,7 +239,8 @@ class HttpFetchSkill(
           "body"        -> Json.Str(body),
           "contentType" -> Json.Str(contentType),
         )
-      }
+      },
+    )
 
   // ---------------------------------------------------------------------------
   // Tool implementations
@@ -268,6 +271,7 @@ class HttpFetchSkill(
               Duration.fromSeconds(config.timeoutSeconds.toLong),
             )
             .flatMap(buildResponse)
+        }
     } yield result
 
   private def post(args: Json): IO[JorlanError, Json] =
@@ -297,6 +301,7 @@ class HttpFetchSkill(
               Duration.fromSeconds(config.timeoutSeconds.toLong),
             )
             .flatMap(buildResponse)
+        }
     } yield result
 
 }
