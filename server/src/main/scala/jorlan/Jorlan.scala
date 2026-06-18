@@ -17,7 +17,7 @@ import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
-import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
+import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleCalendarSkill, GoogleDriveProvider, GoogleDriveSkill}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.market.MarketDataSkill

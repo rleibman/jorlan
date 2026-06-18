@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.ZIORepositories
 import jorlan.*
+import jorlan.google.GoogleContactsSkill
 import jorlan.service.{GoogleContact, GoogleContactsProvider as GoogleContactsProviderTrait}
 import jorlan.testing.InMemoryRepositories
 import zio.*

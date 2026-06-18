@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.ZIORepositories
 import jorlan.*
+import jorlan.google.GoogleCalendarSkill
 import jorlan.service.CalendarProvider
 import jorlan.testing.InMemoryRepositories
 import zio.*
