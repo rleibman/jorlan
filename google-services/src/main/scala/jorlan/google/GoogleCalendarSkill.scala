@@ -8,12 +8,11 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.service.skills
+package jorlan.google
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import jorlan.service.CalendarProvider
 import zio.*
 import zio.json.*

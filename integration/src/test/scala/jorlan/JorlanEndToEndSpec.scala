@@ -18,11 +18,12 @@ import jorlan.db.repository.QuillRepositories
 import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.db.repository.ZIORepositories
+import jorlan.google.{GoogleCalendarSkill, GoogleDriveSkill}
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
-import jorlan.service.skills.{EmailSkill, GoogleCalendarSkill, GoogleDriveSkill, SkillRegistry}
+import jorlan.service.skills.{EmailSkill, SkillRegistry}
 import jorlan.service.{CalendarProvider, DriveProvider, EmailProvider}
 import zio.*
 import zio.http.Client
