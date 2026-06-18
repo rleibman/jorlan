@@ -208,7 +208,7 @@ class ShellSkill(
     ctx:         InvocationContext,
     eventType:   EventType,
     payloadJson: Json,
-  ): UIO[Unit] =
+  ): IO[JorlanError, Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
         .append(
@@ -222,14 +222,14 @@ class ShellSkill(
             payloadJson = Some(payloadJson),
             occurredAt = now,
           ),
-        ).orDie.unit
+        ).unit
     }
 
   private def captureArtifact(
     ctx:    InvocationContext,
     binary: String,
     stdout: String,
-  ): UIO[Option[String]] =
+  ): IO[JorlanError, Option[String]] =
     if (stdout.length <= settings.captureThreshold) ZIO.none
     else
       Clock.instant.flatMap { now =>
@@ -244,7 +244,7 @@ class ShellSkill(
           metadataJson = Some(Json.Obj("binary" -> Json.Str(binary), "bytes" -> Json.Num(stdout.length))),
           createdAt = now,
         )
-        repo.artifact.upsert(artifact).orDie.map(a => Some(a.storageUri.toString))
+        repo.artifact.upsert(artifact).map(a => Some(a.storageUri.toString))
       }
 
   private def shellRun(

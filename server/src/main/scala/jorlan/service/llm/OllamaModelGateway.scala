@@ -26,7 +26,6 @@ import dev.langchain4j.model.chat.response.{ChatResponse, StreamingChatResponseH
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
-import jorlan.*
 import jorlan.service.*
 import zio.*
 import zio.json.JsonDecoder
@@ -82,30 +81,31 @@ private class OllamaModelGateway(
   private def buildAssistant(
     sessionId:    AgentSessionId,
     systemPrompt: String,
-  ): UIO[StreamAssistant] =
-    ZIO.attempt {
-      val memory = ChatMemory.fromJava(
-        MessageWindowChatMemory
-          .builder()
-          .id(sessionId.value.toString)
-          .maxMessages(config.maxMessages)
-          .chatMemoryStore(InMemoryChatMemoryStore())
-          .build(),
-      )
-      val builder = dev.langchain4j.service.AiServices
-        .builder(classOf[StreamAssistant])
-        .streamingChatModel(sharedModel.toJava)
-        .chatMemory(memory)
-      val withPrompt =
-        if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
-        else builder
-      withPrompt.build(): StreamAssistant
-    }.orDie
+  ): IO[JorlanError, StreamAssistant] =
+    ZIO
+      .attempt {
+        val memory = ChatMemory.fromJava(
+          MessageWindowChatMemory
+            .builder()
+            .id(sessionId.value.toString)
+            .maxMessages(config.maxMessages)
+            .chatMemoryStore(InMemoryChatMemoryStore())
+            .build(),
+        )
+        val builder = dev.langchain4j.service.AiServices
+          .builder(classOf[StreamAssistant])
+          .streamingChatModel(sharedModel.toJava)
+          .chatMemory(memory)
+        val withPrompt =
+          if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
+          else builder
+        withPrompt.build(): StreamAssistant
+      }.mapError(JorlanError.apply)
 
   private def getOrCreate(
     sessionId:    AgentSessionId,
     systemPrompt: String,
-  ): UIO[StreamAssistant] =
+  ): IO[JorlanError, StreamAssistant] =
     sessions.get.flatMap { map =>
       map.get(sessionId) match {
         case Some(SessionEntry(existing, storedPrompt)) if storedPrompt == systemPrompt =>
@@ -128,7 +128,7 @@ private class OllamaModelGateway(
     sessionId:    AgentSessionId,
     message:      String,
     systemPrompt: String = "",
-  ): ZStream[Any, ModelError, String] = {
+  ): ZStream[Any, JorlanError, String] = {
     def logEvent(eventType: EventType): UIO[Unit] =
       Clock.instant.flatMap { now =>
         eventLogRepo
@@ -171,7 +171,7 @@ private class OllamaModelGateway(
     sessionId: AgentSessionId,
     messages:  List[AgentMessage],
     tools:     List[ToolSpec],
-  ): IO[ModelError, ChatStep] = {
+  ): IO[JorlanError, ChatStep] = {
     val lcMessages: jutil.List[LCChatMessage] = messages.map {
       case SystemMsg(c)                => SystemMessage.from(c): LCChatMessage
       case UserMsg(c)                  => LCUserMessage.from(c): LCChatMessage
@@ -194,7 +194,7 @@ private class OllamaModelGateway(
     for {
       runtime    <- ZIO.runtime[Any]
       tokenQueue <- Queue.unbounded[Option[String]]
-      done       <- Promise.make[ModelError, ChatStep]
+      done       <- Promise.make[JorlanError, ChatStep]
       _          <- ZIO
         .attempt {
           sharedModel.chat(
@@ -229,18 +229,23 @@ private class OllamaModelGateway(
 
               override def onError(e: Throwable): Unit = {
                 val msg = Option(e.getMessage).getOrElse(e.getClass.getName)
+                val modelError: ModelError = e match {
+                  case _: java.net.http.HttpTimeoutException => ModelTimeout(msg)
+                  case e if e.getMessage != null && e.getMessage.toLowerCase.contains("timed") => ModelTimeout(msg)
+                  case _                                                                       => ModelUnavailable(msg)
+                }
                 Unsafe.unsafe { implicit u =>
-                  runtime.unsafe.run(tokenQueue.shutdown *> done.fail(ModelUnavailable(msg)))
+                  runtime.unsafe.run(tokenQueue.shutdown *> done.fail(modelError))
                 }
               }
             },
           )
-        }.mapError(e => ModelUnavailable(e.getMessage): ModelError)
+        }.mapError(e => ModelUnavailable(e.getMessage): JorlanError)
       step <- done.await
     } yield step
   }
 
-  override def availableModels: UIO[List[ModelInfo]] = {
+  override def availableModels: IO[JorlanError, List[ModelInfo]] = {
     // OllamaClient is package-private in LangChain4j, so we call Ollama's REST API directly.
     // GET /api/tags returns all locally downloaded models (equivalent to `ollama list`).
     ZIO
@@ -280,63 +285,67 @@ private class OllamaModelGateway(
     sessionId:    AgentSessionId,
     messages:     List[Message],
     systemPrompt: String,
-  ): UIO[Unit] =
-    sessions.get.flatMap { map =>
-      ZIO
-        .attempt {
-          val store = InMemoryChatMemoryStore()
-          val memory = MessageWindowChatMemory
-            .builder()
-            .id(sessionId.value.toString)
-            .maxMessages(config.maxMessages)
-            .chatMemoryStore(store)
-            .build()
-          messages.foreach { msg =>
-            val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
-              case MessageRole.Assistant => AiMessage.from(msg.content)
-              case MessageRole.System    => SystemMessage.from(msg.content)
-              case _                     => LCUserMessage.from(msg.content)
+  ): IO[JorlanError, Unit] =
+    sessions.get
+      .flatMap { map =>
+        ZIO
+          .attempt {
+            val store = InMemoryChatMemoryStore()
+            val memory = MessageWindowChatMemory
+              .builder()
+              .id(sessionId.value.toString)
+              .maxMessages(config.maxMessages)
+              .chatMemoryStore(store)
+              .build()
+            messages.foreach { msg =>
+              val lc4j: dev.langchain4j.data.message.ChatMessage = msg.role match {
+                case MessageRole.Assistant => AiMessage.from(msg.content)
+                case MessageRole.System    => SystemMessage.from(msg.content)
+                case _                     => LCUserMessage.from(msg.content)
+              }
+              memory.add(lc4j)
             }
-            memory.add(lc4j)
-          }
-          val scalaMem = ChatMemory.fromJava(memory)
-          val builder = dev.langchain4j.service.AiServices
-            .builder(classOf[StreamAssistant])
-            .streamingChatModel(sharedModel.toJava)
-            .chatMemory(scalaMem)
-          val withPrompt =
-            if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
-            else builder
-          SessionEntry(withPrompt.build(): StreamAssistant, systemPrompt)
-        }.orDie.flatMap { entry =>
-          sessions.update(m => if (m.contains(sessionId)) m else m + (sessionId -> entry))
-        }.unless(map.contains(sessionId) || messages.isEmpty).unit
-    }
+            val scalaMem = ChatMemory.fromJava(memory)
+            val builder = dev.langchain4j.service.AiServices
+              .builder(classOf[StreamAssistant])
+              .streamingChatModel(sharedModel.toJava)
+              .chatMemory(scalaMem)
+            val withPrompt =
+              if (systemPrompt.nonEmpty) builder.systemMessageProvider(_ => systemPrompt)
+              else builder
+            SessionEntry(withPrompt.build(): StreamAssistant, systemPrompt)
+          }.flatMap { entry =>
+            sessions.update(m => if (m.contains(sessionId)) m else m + (sessionId -> entry))
+          }.unless(map.contains(sessionId) || messages.isEmpty).unit
+      }.mapError(JorlanError.apply)
 
-  override def invalidateSession(sessionId: AgentSessionId): UIO[Unit] =
+  override def invalidateSession(sessionId: AgentSessionId): IO[JorlanError, Unit] =
     sessions.update(_.removed(sessionId))
 
 }
 
 object OllamaModelGateway {
 
-  val live: URLayer[ConfigurationService & ZIORepositories, ModelGateway] =
+  val live: ZLayer[ConfigurationService & ZIORepositories, JorlanError, ModelGateway] =
     ZLayer.fromZIO(
       for {
-        config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai).orDie
+        config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai)
         eventLogRepo <- ZIO.serviceWith[ZIORepositories](_.eventLog)
-        model        <- ZIO.attempt {
-          StreamingChatLanguageModel.fromJava(
-            dev.langchain4j.model.ollama.OllamaStreamingChatModel.builder
-              .baseUrl(config.ollamaBaseUrl)
-              .modelName(config.ollamaModel)
-              .timeout(ai.timeout)
-              .temperature(config.temperature)
-              .topK(config.topK)
-              .topP(config.topP)
-              .build,
-          )
-        }.orDie
+        model        <- ZIO
+          .attempt {
+            StreamingChatLanguageModel.fromJava(
+              dev.langchain4j.model.ollama.OllamaStreamingChatModel.builder
+                .baseUrl(config.ollamaBaseUrl)
+                .modelName(config.ollamaModel)
+                .timeout(ai.timeout) // TODO add to config
+                .temperature(config.temperature)
+                .topK(config.topK)
+                .topP(config.topP)
+                .think(false) // TODO need to think this through
+                .numCtx(4096) // TODO add to config, need to think this through as well
+                .build,
+            )
+          }.mapError(JorlanError.apply)
         sessions <- Ref.make(Map.empty[AgentSessionId, SessionEntry])
       } yield OllamaModelGateway(config, model, sessions, eventLogRepo),
     )

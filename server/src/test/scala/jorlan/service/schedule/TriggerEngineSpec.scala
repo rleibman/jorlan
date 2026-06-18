@@ -147,7 +147,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
     } yield (engine, invoked)
 
   /** Run a single tick on the engine using a deterministic worker ID and fresh cron cache. */
-  private def runTick(engine: TriggerEngineImpl): UIO[Unit] =
+  private def runTick(engine: TriggerEngineImpl): IO[JorlanError, Unit] =
     for {
       cronCache <- Ref.make(Map.empty[SchedulerTriggerId, CronExpr])
       _         <- engine.tick("test-worker", cronCache)

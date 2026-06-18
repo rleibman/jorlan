@@ -229,11 +229,12 @@ class SearchSkill(
             Json.Arr(
               items.collect { case Json.Obj(item) =>
                 def sfield(key: String): String =
-                  item.collectFirst {
-                    case (`key`, Json.Str(v))  => v
-                    case (`key`, Json.Num(n))  => n.toString
-                    case (`key`, Json.Bool(b)) => b.toString
-                  }.getOrElse("")
+                  item
+                    .collectFirst {
+                      case (`key`, Json.Str(v))  => v
+                      case (`key`, Json.Num(n))  => n.toString
+                      case (`key`, Json.Bool(b)) => b.toString
+                    }.getOrElse("")
 
                 def nfield(key: String): Double =
                   item.collectFirst { case (`key`, Json.Num(n)) => n.doubleValue }.getOrElse(0.0)
@@ -271,11 +272,12 @@ class SearchSkill(
             Json.Arr(
               items.collect { case Json.Obj(item) =>
                 def sfield(key: String): String =
-                  item.collectFirst {
-                    case (`key`, Json.Str(v))  => v
-                    case (`key`, Json.Num(n))  => n.toString
-                    case (`key`, Json.Bool(b)) => b.toString
-                  }.getOrElse("")
+                  item
+                    .collectFirst {
+                      case (`key`, Json.Str(v))  => v
+                      case (`key`, Json.Num(n))  => n.toString
+                      case (`key`, Json.Bool(b)) => b.toString
+                    }.getOrElse("")
 
                 Json.Obj(
                   "url"     -> Json.Str(sfield("url")),

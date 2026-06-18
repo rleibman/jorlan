@@ -142,11 +142,11 @@ case class AppConfig(jorlan: JorlanConfig)
 
 object AppConfig {
 
-  def read(typesafeConfig: TypesafeConfig): UIO[AppConfig] =
+  def read(typesafeConfig: TypesafeConfig): IO[ConfigurationError, AppConfig] =
     TypesafeConfigProvider
       .fromTypesafeConfig(typesafeConfig)
       .load(DeriveConfig.derived[AppConfig].desc)
-      .orDie
+      .mapError(e => ConfigLoadError("", Option(e)))
 
 }
 

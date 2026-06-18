@@ -24,12 +24,12 @@ package ai
   */
 case class LangChainConfig(
   ollamaBaseUrl: String = "http://localhost:11434",
-  ollamaModel:   String = "llama3.2:3b",
+  ollamaModel:   String = "qwen3:8b", // TODO this should be required
   qdrantHost:    String = "localhost",
   qdrantRPCPort: Int = 6334,
-  temperature:   Double = 1.1,
-  topK:          Int = 40,
-  topP:          Double = 0.9,
+  temperature:   Double = 0.1,
+  topK:          Int = 20,
+  topP:          Double = 0.8,
   maxMessages:   Int = 1000,
 )
 // $COVERAGE-ON$
