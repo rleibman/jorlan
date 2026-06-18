@@ -129,39 +129,7 @@ class SearchSkill(
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }
 
-  private def optInt(
-    args: Json,
-    name: String,
-  ): Option[Int] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Num(n)) => n.intValue }
-      case _                => None
-    }
-
-  private def optStr(
-    args: Json,
-    name: String,
-  ): Option[String] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Str(v)) => v }
-      case _                => None
-    }
-
-  private def strList(
-    args: Json,
-    name: String,
-  ): IO[JorlanError, List[String]] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`name`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
-          .fold(ZIO.fail(ValidationError(s"missing required field '$name'")): IO[JorlanError, List[String]])(
-            ZIO.succeed(_),
-          )
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
-
-  private def postJson(
+  def postJson(
     path: String,
     body: Json,
   ): IO[JorlanError, Json] =
@@ -254,7 +222,7 @@ class SearchSkill(
 
   private def extract(args: Json): IO[JorlanError, Json] =
     for {
-      urls <- strList(args, "urls")
+      urls = strList(args, "urls")
       requestBody = Json.Obj(
         "api_key" -> Json.Str(config.apiKey),
         "urls"    -> Json.Arr(urls.map(Json.Str(_))*),

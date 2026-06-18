@@ -22,14 +22,6 @@ private[service] trait SkillEventLogger {
 
   protected def repo: ZIORepositories
 
-  /** Parse a hard-coded JSON schema literal, failing at startup if the literal is malformed. */
-  protected def parseSchema(literal: String): Json =
-    Json.decoder
-      .decodeJson(literal).fold(
-        err => throw new IllegalArgumentException(s"Malformed tool schema literal: $err"),
-        identity,
-      )
-
   protected def logEvent(
     ctx:       InvocationContext,
     eventType: EventType,

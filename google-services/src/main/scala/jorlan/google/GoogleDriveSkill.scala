@@ -12,7 +12,6 @@ package jorlan.google
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.db.repository.ZIORepositories
 import jorlan.service.DriveProvider
 import zio.*
 import zio.json.*
@@ -26,9 +25,8 @@ import zio.json.ast.Json
   *   - `drive.downloadFile` — download file bytes (stores as Artifact)
   */
 class GoogleDriveSkill(
-  driveProvider:      DriveProvider[[A] =>> IO[JorlanError, A]],
-  protected val repo: ZIORepositories,
-) extends Skill with SkillEventLogger {
+  driveProvider: DriveProvider[[A] =>> IO[JorlanError, A]],
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "drive",
@@ -99,16 +97,11 @@ class GoogleDriveSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val folderId = SkillArgs.str(args, "folderId")
-    val query = SkillArgs.str(args, "query")
-    val maxResults = SkillArgs.int(args, "maxResults").getOrElse(10)
+    val folderId = str(args, "folderId")
+    val query = str(args, "query")
+    val maxResults = int(args, "maxResults").getOrElse(10)
     for {
       files <- driveProvider.listFiles(ctx.actorId, folderId, query, maxResults)
-      _     <- logEvent(
-        ctx,
-        EventType.DriveFileListed,
-        Json.Obj("count" -> Json.Num(files.size), "folderId" -> folderId.fold[Json](Json.Null)(Json.Str(_))),
-      )
     } yield Json.Obj(
       "files" -> Json.Arr(files.map(fileToJson)*),
       "count" -> Json.Num(files.size),
@@ -119,12 +112,11 @@ class GoogleDriveSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "fileId") match {
+    str(args, "fileId") match {
       case None         => ZIO.fail(JorlanError("drive.readFile: fileId is required"))
       case Some(fileId) =>
         for {
           content <- driveProvider.readTextFile(ctx.actorId, DriveFileId(fileId))
-          _       <- logEvent(ctx, EventType.DriveFileRead, Json.Obj("fileId" -> Json.Str(fileId)))
         } yield Json.Obj("fileId" -> Json.Str(fileId), "content" -> Json.Str(content))
     }
 
@@ -132,12 +124,11 @@ class GoogleDriveSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "fileId") match {
+    str(args, "fileId") match {
       case None         => ZIO.fail(JorlanError("drive.downloadFile: fileId is required"))
       case Some(fileId) =>
         for {
           bytes <- driveProvider.downloadFile(ctx.actorId, DriveFileId(fileId))
-          _     <- logEvent(ctx, EventType.DriveFileRead, Json.Obj("fileId" -> Json.Str(fileId)))
         } yield Json.Obj(
           "fileId"    -> Json.Str(fileId),
           "sizeBytes" -> Json.Num(bytes.length),

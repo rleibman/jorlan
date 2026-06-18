@@ -251,7 +251,7 @@ class ShellSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val binaryOpt = SkillArgs.str(args, "binary")
+    val binaryOpt = str(args, "binary")
     binaryOpt match {
       case None         => ZIO.fail(JorlanError("shell.run: binary is required"))
       case Some(binary) =>
@@ -264,9 +264,9 @@ class ShellSkill(
             ),
           )
         } else {
-          val cmdArgs = SkillArgs.strList(args, "args")
-          val cwdOpt = SkillArgs.str(args, "cwd")
-          val timeoutSecs = SkillArgs.int(args, "timeoutSeconds").getOrElse(settings.timeoutSeconds)
+          val cmdArgs = strList(args, "args")
+          val cwdOpt = str(args, "cwd")
+          val timeoutSecs = int(args, "timeoutSeconds").getOrElse(settings.timeoutSeconds)
 
           val baseCmd = Command(binary, cmdArgs*)
           val cmdWithCwd = cwdOpt.fold(baseCmd)(cwd => baseCmd.workingDirectory(Paths.get(cwd).toFile))
@@ -376,9 +376,9 @@ class ShellSkill(
   // ─── individual safe tools ────────────────────────────────────────────────
 
   private def shellLs(args: Json): IO[JorlanError, Json] = {
-    val pathStr = SkillArgs.str(args, "path").getOrElse(".")
-    val all = SkillArgs.bool(args, "all").getOrElse(false)
-    val long = SkillArgs.bool(args, "long").getOrElse(false)
+    val pathStr = str(args, "path").getOrElse(".")
+    val all = bool(args, "all").getOrElse(false)
+    val long = bool(args, "long").getOrElse(false)
     for {
       resolved <- resolveSafePath(pathStr)
       flags = (if (all) "a" else "") + (if (long) "l" else "")
@@ -388,8 +388,8 @@ class ShellSkill(
   }
 
   private def shellCat(args: Json): IO[JorlanError, Json] = {
-    val maxLines = SkillArgs.int(args, "maxLines").getOrElse(500)
-    SkillArgs.str(args, "path") match {
+    val maxLines = int(args, "maxLines").getOrElse(500)
+    str(args, "path") match {
       case None       => ZIO.fail(JorlanError("shell.cat: path is required"))
       case Some(path) =>
         for {
@@ -414,13 +414,13 @@ class ShellSkill(
   }
 
   private def shellGrep(args: Json): IO[JorlanError, Json] = {
-    val maxMatches = SkillArgs.int(args, "maxMatches").getOrElse(200)
-    (SkillArgs.str(args, "pattern"), SkillArgs.str(args, "path")) match {
+    val maxMatches = int(args, "maxMatches").getOrElse(200)
+    (str(args, "pattern"), str(args, "path")) match {
       case (None, _)                   => ZIO.fail(JorlanError("shell.grep: pattern is required"))
       case (_, None)                   => ZIO.fail(JorlanError("shell.grep: path is required"))
       case (Some(pattern), Some(path)) =>
-        val recursive = SkillArgs.bool(args, "recursive").getOrElse(false)
-        val caseInsensitive = SkillArgs.bool(args, "caseInsensitive").getOrElse(false)
+        val recursive = bool(args, "recursive").getOrElse(false)
+        val caseInsensitive = bool(args, "caseInsensitive").getOrElse(false)
         for {
           resolved <- resolveSafePath(path)
           flags = List(
@@ -448,12 +448,12 @@ class ShellSkill(
   }
 
   private def shellFind(args: Json): IO[JorlanError, Json] = {
-    val maxResults = SkillArgs.int(args, "maxResults").getOrElse(200)
-    val pathStr = SkillArgs.str(args, "path").getOrElse(".")
+    val maxResults = int(args, "maxResults").getOrElse(200)
+    val pathStr = str(args, "path").getOrElse(".")
     for {
       resolved <- resolveSafePath(pathStr)
-      nameOpt = SkillArgs.str(args, "name")
-      typeOpt = SkillArgs.str(args, "type_")
+      nameOpt = str(args, "name")
+      typeOpt = str(args, "type_")
       nameArgs = nameOpt.toList.flatMap(n => List("-name", n))
       typeArgs = typeOpt.toList.flatMap(t => List("-type", t))
       cmdArgs = List(resolved.toString) ++ nameArgs ++ typeArgs
@@ -476,10 +476,10 @@ class ShellSkill(
   }
 
   private def shellHead(args: Json): IO[JorlanError, Json] =
-    SkillArgs.str(args, "path") match {
+    str(args, "path") match {
       case None       => ZIO.fail(JorlanError("shell.head: path is required"))
       case Some(path) =>
-        val lines = SkillArgs.int(args, "lines").getOrElse(20)
+        val lines = int(args, "lines").getOrElse(20)
         for {
           resolved <- resolveSafePath(path)
           result   <- runSafeCommand("head", List("-n", lines.toString, resolved.toString))
@@ -487,10 +487,10 @@ class ShellSkill(
     }
 
   private def shellTail(args: Json): IO[JorlanError, Json] =
-    SkillArgs.str(args, "path") match {
+    str(args, "path") match {
       case None       => ZIO.fail(JorlanError("shell.tail: path is required"))
       case Some(path) =>
-        val lines = SkillArgs.int(args, "lines").getOrElse(20)
+        val lines = int(args, "lines").getOrElse(20)
         for {
           resolved <- resolveSafePath(path)
           result   <- runSafeCommand("tail", List("-n", lines.toString, resolved.toString))
@@ -498,12 +498,12 @@ class ShellSkill(
     }
 
   private def shellWc(args: Json): IO[JorlanError, Json] =
-    SkillArgs.str(args, "path") match {
+    str(args, "path") match {
       case None       => ZIO.fail(JorlanError("shell.wc: path is required"))
       case Some(path) =>
-        val countLines = SkillArgs.bool(args, "lines").getOrElse(false)
-        val countWords = SkillArgs.bool(args, "words").getOrElse(false)
-        val countChars = SkillArgs.bool(args, "chars").getOrElse(false)
+        val countLines = bool(args, "lines").getOrElse(false)
+        val countWords = bool(args, "words").getOrElse(false)
+        val countChars = bool(args, "chars").getOrElse(false)
         for {
           resolved <- resolveSafePath(path)
           flags = List(

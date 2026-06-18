@@ -78,8 +78,8 @@ class NotifySkill(router: NotificationRouter) extends Skill {
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val userIdRaw = SkillArgs.str(args, "userId")
-    val message = SkillArgs.str(args, "message")
+    val userIdRaw = str(args, "userId")
+    val message = str(args, "message")
     val resolvedUserId: Either[String, UserId] = userIdRaw match {
       case None      => Right(ctx.actorId)
       case Some(uid) => uid.toLongOption.map(UserId(_)).toRight(s"notify.user: userId must be numeric, got '$uid'")
@@ -95,15 +95,15 @@ class NotifySkill(router: NotificationRouter) extends Skill {
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val channelUserId = SkillArgs.str(args, "channelUserId")
-    val channelTypeStr = SkillArgs.str(args, "channelType")
-    val message = SkillArgs.str(args, "message")
+    val channelUserId = str(args, "channelUserId")
+    val channelTypeStr = str(args, "channelType")
+    val message = str(args, "message")
     (channelUserId, channelTypeStr, message) match {
       case (None, _, _)                      => ZIO.fail(JorlanError("notify.channel: channelUserId is required"))
       case (_, None, _)                      => ZIO.fail(JorlanError("notify.channel: channelType is required"))
       case (_, _, None)                      => ZIO.fail(JorlanError("notify.channel: message is required"))
       case (Some(cuid), Some(ct), Some(msg)) =>
-        SkillArgs.parseChannelType(ct) match {
+        parseChannelType(ct) match {
           case None         => ZIO.fail(JorlanError(s"notify.channel: unknown channelType '$ct'"))
           case Some(chType) => router.notifyChannel(cuid, chType, msg, ctx)
         }

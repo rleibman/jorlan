@@ -42,6 +42,76 @@ trait Skill {
     args: Json,
   ): IO[JorlanError, Json]
 
+  ///////////////////////////////////////////////////////////////////////////////////
+  // Some utility methods used to parse tool arguments from JSON; skills are free to use their own approach, but this keeps things consistent and DRY across skills.
+
+  def str(
+    args: Json,
+    key:  String,
+  ): Option[String] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
+      case _                => None
+    }
+
+  def strList(
+    args: Json,
+    key:  String,
+  ): List[String] =
+    args match {
+      case Json.Obj(fields) =>
+        fields
+          .collectFirst { case (`key`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
+          .getOrElse(Nil)
+      case _ => Nil
+    }
+
+  def int(
+    args: Json,
+    key:  String,
+  ): Option[Int] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Num(n)) => n.intValue }
+      case _                => None
+    }
+
+  def bool(
+    args: Json,
+    key:  String,
+  ): Option[Boolean] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Bool(b)) => b }
+      case _                => None
+    }
+
+  def optInt(
+    args: Json,
+    name: String,
+  ): Option[Int] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Num(n)) => n.intValue }
+      case _                => None
+    }
+
+  def optStr(
+    args: Json,
+    name: String,
+  ): Option[String] =
+    args match {
+      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Str(v)) => v }
+      case _                => None
+    }
+
+  def parseChannelType(s: String): Option[ChannelType] =
+    ChannelType.values.find(_.toString.equalsIgnoreCase(s))
+
+  def parseSchema(literal: String): Json =
+    Json.decoder
+      .decodeJson(literal).fold(
+        err => throw new IllegalArgumentException(s"Malformed tool schema literal: $err"),
+        identity,
+      )
+
 }
 
 /** A [[Skill]] that also bridges an external system, adding an ingress lifecycle.

@@ -166,7 +166,7 @@ class WorkspaceSkill(
     root: Path,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "path") match {
+    str(args, "path") match {
       case None      => ZIO.fail(JorlanError("workspace.read: path is required"))
       case Some(rel) =>
         for {
@@ -181,8 +181,8 @@ class WorkspaceSkill(
     root: Path,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val pathOpt = SkillArgs.str(args, "path")
-    val contentOpt = SkillArgs.str(args, "content")
+    val pathOpt = str(args, "path")
+    val contentOpt = str(args, "content")
     (pathOpt, contentOpt) match {
       case (None, _)                  => ZIO.fail(JorlanError("workspace.write: path is required"))
       case (_, None)                  => ZIO.fail(JorlanError("workspace.write: content is required"))
@@ -202,7 +202,7 @@ class WorkspaceSkill(
     root: Path,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val prefix = SkillArgs.str(args, "prefix").getOrElse("")
+    val prefix = str(args, "prefix").getOrElse("")
     for {
       baseDir <-
         if (prefix.isEmpty) ZIO.succeed(root)
@@ -234,7 +234,7 @@ class WorkspaceSkill(
     root: Path,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "path") match {
+    str(args, "path") match {
       case None      => ZIO.fail(JorlanError("workspace.delete: path is required"))
       case Some(rel) =>
         for {
@@ -250,7 +250,7 @@ class WorkspaceSkill(
     args: Json,
   ): IO[JorlanError, Json] = {
     import java.time.Instant
-    val tag = SkillArgs.str(args, "tag").filter(_.nonEmpty).getOrElse(Instant.now().toString.replace(':', '-'))
+    val tag = str(args, "tag").filter(_.nonEmpty).getOrElse(Instant.now().toString.replace(':', '-'))
     val snapshotDir = root.resolve("__snapshots")
     val zipName = s"$tag.zip"
     val zipPath = snapshotDir.resolve(zipName)

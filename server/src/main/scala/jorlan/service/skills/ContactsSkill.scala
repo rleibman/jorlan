@@ -112,7 +112,7 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     }
 
   private def contactFind(args: Json): IO[JorlanError, Json] = {
-    val nameOpt = SkillArgs.str(args, "name")
+    val nameOpt = str(args, "name")
     for {
       users <- repo.user.search(UserSearch(fuzzyName = nameOpt, active = Some(true))).mapError(JorlanError(_))
       ranked = nameOpt.fold(users)(q => jorlan.service.FuzzyNameMatch.rank(users, q)(_.displayName))
@@ -138,13 +138,13 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
   }
 
   private def identityResolve(args: Json): IO[JorlanError, Json] = {
-    val channelTypeStr = SkillArgs.str(args, "channelType")
-    val channelUserId = SkillArgs.str(args, "channelUserId")
+    val channelTypeStr = str(args, "channelType")
+    val channelUserId = str(args, "channelUserId")
     (channelTypeStr, channelUserId) match {
       case (None, _)              => ZIO.fail(JorlanError("identity.resolve: channelType is required"))
       case (_, None)              => ZIO.fail(JorlanError("identity.resolve: channelUserId is required"))
       case (Some(ct), Some(cuid)) =>
-        SkillArgs.parseChannelType(ct) match {
+        parseChannelType(ct) match {
           case None         => ZIO.fail(JorlanError(s"identity.resolve: unknown channelType '$ct'"))
           case Some(chType) =>
             repo.user
@@ -168,9 +168,9 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val userIdRaw = SkillArgs.str(args, "userId")
-    val channelTypeStr = SkillArgs.str(args, "channelType")
-    val channelUserId = SkillArgs.str(args, "channelUserId")
+    val userIdRaw = str(args, "userId")
+    val channelTypeStr = str(args, "channelType")
+    val channelUserId = str(args, "channelUserId")
     // userId is optional — defaults to the acting user
     val resolvedUserId: Either[String, UserId] = userIdRaw match {
       case None      => Right(ctx.actorId)
@@ -181,7 +181,7 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
       case (_, _, None)                       => ZIO.fail(JorlanError("identity.link: channelUserId is required"))
       case (Left(err), _, _)                  => ZIO.fail(JorlanError(err))
       case (Right(uid), Some(ct), Some(cuid)) =>
-        SkillArgs.parseChannelType(ct) match {
+        parseChannelType(ct) match {
           case None         => ZIO.fail(JorlanError(s"identity.link: unknown channelType '$ct'"))
           case Some(chType) =>
             Clock.instant.flatMap { now =>
@@ -213,7 +213,7 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val resolvedId = SkillArgs.str(args, "userId") match {
+    val resolvedId = str(args, "userId") match {
       case None      => Right(ctx.actorId)
       case Some(uid) =>
         uid.toLongOption.map(UserId(_)).toRight(s"identity.listAliases: userId must be numeric, got '$uid'")

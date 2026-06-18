@@ -12,7 +12,6 @@ package jorlan.google
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.db.repository.ZIORepositories
 import jorlan.service.{GoogleContact, GoogleContactsProvider as GoogleContactsProviderTrait}
 import zio.*
 import zio.json.*
@@ -26,9 +25,8 @@ import zio.json.ast.Json
   *   - `google_contacts.get_contact` — retrieve a single contact by resource name
   */
 class GoogleContactsSkill(
-  contactsProvider:   GoogleContactsProviderTrait[[A] =>> IO[JorlanError, A]],
-  protected val repo: ZIORepositories,
-) extends Skill with SkillEventLogger {
+  contactsProvider: GoogleContactsProviderTrait[[A] =>> IO[JorlanError, A]],
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "google_contacts",
@@ -99,14 +97,9 @@ class GoogleContactsSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val maxResults = SkillArgs.int(args, "maxResults").getOrElse(50)
+    val maxResults = int(args, "maxResults").getOrElse(50)
     for {
       contacts <- contactsProvider.listContacts(ctx.actorId, maxResults)
-      _        <- logEvent(
-        ctx,
-        EventType.ContactRead,
-        Json.Obj("action" -> Json.Str("listContacts"), "count" -> Json.Num(contacts.size)),
-      )
     } yield Json.Obj(
       "contacts" -> Json.Arr(contacts.map(contactToJson)*),
       "count"    -> Json.Num(contacts.size),
@@ -117,21 +110,12 @@ class GoogleContactsSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "query") match {
+    str(args, "query") match {
       case None        => ZIO.fail(JorlanError("google_contacts.search_contacts: query is required"))
       case Some(query) =>
-        val maxResults = SkillArgs.int(args, "maxResults").getOrElse(20)
+        val maxResults = int(args, "maxResults").getOrElse(20)
         for {
           contacts <- contactsProvider.searchContacts(ctx.actorId, query, maxResults)
-          _        <- logEvent(
-            ctx,
-            EventType.ContactRead,
-            Json.Obj(
-              "action" -> Json.Str("searchContacts"),
-              "query"  -> Json.Str(query),
-              "count"  -> Json.Num(contacts.size),
-            ),
-          )
         } yield Json.Obj(
           "contacts" -> Json.Arr(contacts.map(contactToJson)*),
           "count"    -> Json.Num(contacts.size),
@@ -143,16 +127,11 @@ class GoogleContactsSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "resourceName") match {
+    str(args, "resourceName") match {
       case None               => ZIO.fail(JorlanError("google_contacts.get_contact: resourceName is required"))
       case Some(resourceName) =>
         for {
           contactOpt <- contactsProvider.getContact(ctx.actorId, resourceName)
-          _          <- logEvent(
-            ctx,
-            EventType.ContactRead,
-            Json.Obj("action" -> Json.Str("getContact"), "resourceName" -> Json.Str(resourceName)),
-          )
         } yield contactOpt match {
           case None          => Json.Obj("found" -> Json.Bool(false), "resourceName" -> Json.Str(resourceName))
           case Some(contact) => Json.Obj("found" -> Json.Bool(true), "contact" -> contactToJson(contact))

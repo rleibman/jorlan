@@ -12,7 +12,6 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.db.repository.ZIORepositories
 import jorlan.*
 import jorlan.service.EmailProvider
 import zio.*
@@ -32,8 +31,7 @@ import zio.json.ast.Json
   *   - `email.search` — search for messages
   */
 class EmailSkill(
-  emailProvider:      EmailProvider[[A] =>> IO[JorlanError, A]],
-  protected val repo: ZIORepositories,
+  emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
 ) extends Skill with SkillEventLogger {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
@@ -163,20 +161,20 @@ class EmailSkill(
     args:      Json,
     replyToId: Option[String] = None,
   ): Option[EmailDraft] = {
-    val to = SkillArgs.strList(args, "to")
-    val subject = SkillArgs.str(args, "subject")
-    val body = SkillArgs.str(args, "body")
+    val to = strList(args, "to")
+    val subject = str(args, "subject")
+    val body = str(args, "body")
     (subject, body) match {
       case (Some(subj), Some(b)) =>
         Some(
           EmailDraft(
             to = to,
-            cc = SkillArgs.strList(args, "cc"),
-            bcc = SkillArgs.strList(args, "bcc"),
+            cc = strList(args, "cc"),
+            bcc = strList(args, "bcc"),
             subject = subj,
             body = b,
-            replyToMessageId = replyToId.orElse(SkillArgs.str(args, "replyToMessageId")),
-            signWithPgp = SkillArgs.bool(args, "signWithPgp").getOrElse(false),
+            replyToMessageId = replyToId.orElse(str(args, "replyToMessageId")),
+            signWithPgp = bool(args, "signWithPgp").getOrElse(false),
           ),
         )
       case _ => None
@@ -187,7 +185,7 @@ class EmailSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val maxResults = SkillArgs.int(args, "maxResults").getOrElse(10)
+    val maxResults = int(args, "maxResults").getOrElse(10)
     for {
       msgs <- emailProvider.listMessages(ctx.actorId, maxResults, None)
       _    <- logEvent(
@@ -214,7 +212,7 @@ class EmailSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "messageId") match {
+    str(args, "messageId") match {
       case None     => ZIO.fail(JorlanError("email.read: messageId is required"))
       case Some(id) =>
         for {
@@ -274,7 +272,7 @@ class EmailSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "messageId") match {
+    str(args, "messageId") match {
       case None     => ZIO.fail(JorlanError("email.archive: messageId is required"))
       case Some(id) =>
         for {
@@ -287,7 +285,7 @@ class EmailSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "messageId") match {
+    str(args, "messageId") match {
       case None     => ZIO.fail(JorlanError("email.delete: messageId is required"))
       case Some(id) =>
         for {
@@ -302,8 +300,8 @@ class EmailSkill(
   ): IO[JorlanError, Json] =
     for {
       id <- ZIO
-        .fromOption(SkillArgs.str(args, "messageId")).orElseFail(JorlanError("email.reply: messageId is required"))
-      body     <- ZIO.fromOption(SkillArgs.str(args, "body")).orElseFail(JorlanError("email.reply: body is required"))
+        .fromOption(str(args, "messageId")).orElseFail(JorlanError("email.reply: messageId is required"))
+      body     <- ZIO.fromOption(str(args, "body")).orElseFail(JorlanError("email.reply: body is required"))
       original <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
       draft = EmailDraft(
         to = List(original.from),
@@ -326,10 +324,10 @@ class EmailSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    SkillArgs.str(args, "query") match {
+    str(args, "query") match {
       case None        => ZIO.fail(JorlanError("email.search: query is required"))
       case Some(query) =>
-        val maxResults = SkillArgs.int(args, "maxResults").getOrElse(10)
+        val maxResults = int(args, "maxResults").getOrElse(10)
         for {
           msgs <- emailProvider.listMessages(ctx.actorId, maxResults, Some(query))
           _    <- logEvent(

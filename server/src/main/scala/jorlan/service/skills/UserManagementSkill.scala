@@ -249,13 +249,13 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   // ─── User operations ─────────────────────────────────────────────────────────
 
   private def listUsers(args: Json): IO[JorlanError, Json] = {
-    val page = SkillArgs.int(args, "page").getOrElse(0)
-    val pageSize = SkillArgs.int(args, "pageSize").getOrElse(20)
+    val page = int(args, "page").getOrElse(0)
+    val pageSize = int(args, "pageSize").getOrElse(20)
     if (page < 0) ZIO.fail(JorlanError("user_mgmt.list_users: page must be >= 0"))
     else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_users: pageSize must be > 0"))
     else {
-      val nameContains = SkillArgs.str(args, "nameContains")
-      val active = SkillArgs.bool(args, "active").orElse(Some(true))
+      val nameContains = str(args, "nameContains")
+      val active = bool(args, "active").orElse(Some(true))
       repos.user
         .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize)).mapBoth(
           JorlanError(_),
@@ -296,8 +296,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       user     <- ZIO
         .fromOption(existing)
         .orElseFail(JorlanError(s"user_mgmt.update_user: user $id not found"))
-      displayName = SkillArgs.str(args, "displayName").getOrElse(user.displayName)
-      email = SkillArgs.str(args, "email").getOrElse(user.email)
+      displayName = str(args, "displayName").getOrElse(user.displayName)
+      email = str(args, "email").getOrElse(user.email)
       now     <- Clock.instant
       updated <- repos.user
         .upsert(user.copy(displayName = displayName, email = email, updatedAt = now))
@@ -317,8 +317,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   // ─── Role operations ─────────────────────────────────────────────────────────
 
   private def listRoles(args: Json): IO[JorlanError, Json] = {
-    val page = SkillArgs.int(args, "page").getOrElse(0)
-    val pageSize = SkillArgs.int(args, "pageSize").getOrElse(20)
+    val page = int(args, "page").getOrElse(0)
+    val pageSize = int(args, "pageSize").getOrElse(20)
     if (page < 0) ZIO.fail(JorlanError("user_mgmt.list_roles: page must be >= 0"))
     else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_roles: pageSize must be > 0"))
     else
@@ -330,7 +330,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
 
   private def createRole(args: Json): IO[JorlanError, Json] = {
     requireStr(args, "create_role", "name").flatMap { name =>
-      val description = SkillArgs.str(args, "description")
+      val description = str(args, "description")
       repos.permission
         .upsertRole(Role(RoleId.empty, name, description))
         .mapError(JorlanError(_))
@@ -369,7 +369,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     for {
       userId     <- requireLong(args, "grant_capability", "userId")
       capability <- requireStr(args, "grant_capability", "capability")
-      approvalMode = SkillArgs.str(args, "approvalMode").flatMap(parseApprovalMode).getOrElse(ApprovalMode.Persistent)
+      approvalMode = str(args, "approvalMode").flatMap(parseApprovalMode).getOrElse(ApprovalMode.Persistent)
       now     <- Clock.instant
       created <- repos.permission
         .upsertCapabilityGrant(
@@ -404,7 +404,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     field: String,
   ): IO[JorlanError, String] =
     ZIO
-      .fromOption(SkillArgs.str(args, field))
+      .fromOption(str(args, field))
       .orElseFail(JorlanError(s"user_mgmt.$tool: $field is required"))
 
   private def requireLong(
@@ -419,7 +419,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
             ZIO
               .attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
           case None =>
-            SkillArgs.str(args, field) match {
+            str(args, field) match {
               case Some(s) =>
                 s.toLongOption match {
                   case Some(n) => ZIO.succeed(n)
@@ -429,7 +429,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
             }
         }
       case _ =>
-        SkillArgs.str(args, field) match {
+        str(args, field) match {
           case Some(s) =>
             s.toLongOption match {
               case Some(n) => ZIO.succeed(n)

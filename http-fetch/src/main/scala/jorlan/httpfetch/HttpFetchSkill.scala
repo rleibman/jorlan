@@ -186,15 +186,6 @@ class HttpFetchSkill(
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }
 
-  private def optStr(
-    args: Json,
-    key:  String,
-  ): Option[String] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`key`, Json.Str(v)) => v }
-      case _                => None
-    }
-
   /** Extract optional headers from the `"headers"` field (object of string-string pairs). */
   private def extractHeaders(
     args: Json,

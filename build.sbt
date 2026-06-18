@@ -92,6 +92,7 @@ val googleApiClientVersion = "2.9.0"
 val googleApisGmailVersion = "v1-rev20260525-2.0.0"
 val googleApisCalendarVersion = "v3-rev20260517-2.0.0"
 val googleApisDriveVersion = "v3-rev20260428-2.0.0"
+val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
 val telegramiumVersion = "10.1000.0"
 val calibanClientVersion = "3.1.2"
@@ -100,10 +101,10 @@ val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val cron4sVersion = "0.8.2"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "12.8.1"
+val flywayVersion = "12.9.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
-val jsoniterVersion = "2.38.14"
+val jsoniterVersion = "2.38.15"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
@@ -480,6 +481,7 @@ lazy val googleServices = project
       "com.google.apis"       % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
       "com.google.apis"       % "google-api-services-calendar"    % googleApisCalendarVersion withSources (),
       "com.google.apis"       % "google-api-services-drive"       % googleApisDriveVersion withSources (),
+      "com.google.apis" %"google-api-services-people" %googleApisPeopleVersion withSources (),
       "com.google.auth"       % "google-auth-library-oauth2-http" % googleAuthLibraryVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),

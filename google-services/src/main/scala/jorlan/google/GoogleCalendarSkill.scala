@@ -12,7 +12,6 @@ package jorlan.google
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.db.repository.ZIORepositories
 import jorlan.service.CalendarProvider
 import zio.*
 import zio.json.*
@@ -31,9 +30,8 @@ import java.time.Instant
   *   - `calendar.deleteEvent` — delete an event
   */
 class GoogleCalendarSkill(
-  calendarProvider:   CalendarProvider[[A] =>> IO[JorlanError, A]],
-  protected val repo: ZIORepositories,
-) extends Skill with SkillEventLogger {
+  calendarProvider: CalendarProvider[[A] =>> IO[JorlanError, A]],
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "calendar",
@@ -154,7 +152,6 @@ class GoogleCalendarSkill(
   ): IO[JorlanError, Json] =
     for {
       cals <- calendarProvider.listCalendars(ctx.actorId)
-      _    <- logEvent(ctx, EventType.CalendarEventRead, Json.Obj("action" -> Json.Str("listCalendars")))
     } yield Json.Obj(
       "calendars" -> Json.Arr(
         cals.map(c =>
@@ -172,23 +169,16 @@ class GoogleCalendarSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val calId = SkillArgs.str(args, "calendarId").getOrElse("primary")
-    val maxResults = SkillArgs.int(args, "maxResults").getOrElse(10)
+    val calId = str(args, "calendarId").getOrElse("primary")
+    val maxResults = int(args, "maxResults").getOrElse(10)
     for {
-      timeMin <- SkillArgs
-        .str(args, "timeMin").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
-          ZIO.fromEither(parseInstant(s)).map(Some(_)),
-        )
-      timeMax <- SkillArgs
-        .str(args, "timeMax").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
-          ZIO.fromEither(parseInstant(s)).map(Some(_)),
-        )
-      events <- calendarProvider.listEvents(ctx.actorId, CalendarId(calId), maxResults, timeMin, timeMax)
-      _      <- logEvent(
-        ctx,
-        EventType.CalendarEventRead,
-        Json.Obj("calendarId" -> Json.Str(calId), "count" -> Json.Num(events.size)),
+      timeMin <- str(args, "timeMin").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
+        ZIO.fromEither(parseInstant(s)).map(Some(_)),
       )
+      timeMax <- str(args, "timeMax").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
+        ZIO.fromEither(parseInstant(s)).map(Some(_)),
+      )
+      events <- calendarProvider.listEvents(ctx.actorId, CalendarId(calId), maxResults, timeMin, timeMax)
     } yield Json.Obj(
       "events" -> Json.Arr(events.map(entryToJson)*),
       "count"  -> Json.Num(events.size),
@@ -199,15 +189,10 @@ class GoogleCalendarSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    (SkillArgs.str(args, "calendarId"), SkillArgs.str(args, "eventId")) match {
+    (str(args, "calendarId"), str(args, "eventId")) match {
       case (Some(calId), Some(evId)) =>
         for {
           event <- calendarProvider.getEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
-          _     <- logEvent(
-            ctx,
-            EventType.CalendarEventRead,
-            Json.Obj("calendarId" -> Json.Str(calId), "eventId" -> Json.Str(evId)),
-          )
         } yield entryToJson(event)
       case _ => ZIO.fail(JorlanError("calendar.getEvent: calendarId and eventId are required"))
     }
@@ -216,23 +201,24 @@ class GoogleCalendarSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val calIdOpt = SkillArgs.str(args, "calendarId")
-    val summaryOpt = SkillArgs.str(args, "summary")
-    val startOpt = SkillArgs.str(args, "start")
-    val endOpt = SkillArgs.str(args, "end")
+    val calIdOpt = str(args, "calendarId")
+    val summaryOpt = str(args, "summary")
+    val startOpt = str(args, "start")
+    val endOpt = str(args, "end")
     (calIdOpt, summaryOpt, startOpt, endOpt) match {
       case (Some(calId), Some(summary), Some(startStr), Some(endStr)) =>
         for {
           start <- ZIO.fromEither(parseInstant(startStr))
           end   <- ZIO.fromEither(parseInstant(endStr))
-          attendees = SkillArgs
-            .strList(args, "attendees").map(email => CalendarAttendee(email, None, AttendeeResponse.NeedsAction))
+          attendees = strList(args, "attendees").map(email =>
+            CalendarAttendee(email, None, AttendeeResponse.NeedsAction),
+          )
           entry = CalendarEntry(
             id = CalendarEventId(""), // empty-string sentinel: provider assigns the real ID on create
             calendarId = CalendarId(calId),
             summary = summary,
-            description = SkillArgs.str(args, "description"),
-            location = SkillArgs.str(args, "location"),
+            description = str(args, "description"),
+            location = str(args, "location"),
             start = start,
             end = end,
             allDay = false,
@@ -241,15 +227,6 @@ class GoogleCalendarSkill(
             status = CalendarEventStatus.Confirmed,
           )
           created <- calendarProvider.createEvent(ctx.actorId, CalendarId(calId), entry)
-          _       <- logEvent(
-            ctx,
-            EventType.CalendarEventCreated,
-            Json.Obj(
-              "calendarId" -> Json.Str(calId),
-              "eventId"    -> Json.Str(created.id.value),
-              "summary"    -> Json.Str(summary),
-            ),
-          )
         } yield entryToJson(created)
       case _ => ZIO.fail(JorlanError("calendar.createEvent: calendarId, summary, start, and end are required"))
     }
@@ -259,31 +236,24 @@ class GoogleCalendarSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    (SkillArgs.str(args, "calendarId"), SkillArgs.str(args, "eventId")) match {
+    (str(args, "calendarId"), str(args, "eventId")) match {
       case (Some(calId), Some(evId)) =>
         for {
           existing <- calendarProvider.getEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
-          start    <- SkillArgs
-            .str(args, "start").fold[IO[JorlanError, Instant]](ZIO.succeed(existing.start))(s =>
-              ZIO.fromEither(parseInstant(s)),
-            )
-          end <- SkillArgs
-            .str(args, "end").fold[IO[JorlanError, Instant]](ZIO.succeed(existing.end))(s =>
-              ZIO.fromEither(parseInstant(s)),
-            )
+          start    <- str(args, "start").fold[IO[JorlanError, Instant]](ZIO.succeed(existing.start))(s =>
+            ZIO.fromEither(parseInstant(s)),
+          )
+          end <- str(args, "end").fold[IO[JorlanError, Instant]](ZIO.succeed(existing.end))(s =>
+            ZIO.fromEither(parseInstant(s)),
+          )
           updated = existing.copy(
-            summary = SkillArgs.str(args, "summary").getOrElse(existing.summary),
-            description = SkillArgs.str(args, "description").orElse(existing.description),
-            location = SkillArgs.str(args, "location").orElse(existing.location),
+            summary = str(args, "summary").getOrElse(existing.summary),
+            description = str(args, "description").orElse(existing.description),
+            location = str(args, "location").orElse(existing.location),
             start = start,
             end = end,
           )
           result <- calendarProvider.updateEvent(ctx.actorId, CalendarId(calId), updated)
-          _      <- logEvent(
-            ctx,
-            EventType.CalendarEventUpdated,
-            Json.Obj("calendarId" -> Json.Str(calId), "eventId" -> Json.Str(evId)),
-          )
         } yield entryToJson(result)
       case _ => ZIO.fail(JorlanError("calendar.updateEvent: calendarId and eventId are required"))
     }
@@ -292,15 +262,10 @@ class GoogleCalendarSkill(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    (SkillArgs.str(args, "calendarId"), SkillArgs.str(args, "eventId")) match {
+    (str(args, "calendarId"), str(args, "eventId")) match {
       case (Some(calId), Some(evId)) =>
         for {
           _ <- calendarProvider.deleteEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
-          _ <- logEvent(
-            ctx,
-            EventType.CalendarEventDeleted,
-            Json.Obj("calendarId" -> Json.Str(calId), "eventId" -> Json.Str(evId)),
-          )
         } yield Json.Obj("eventId" -> Json.Str(evId), "deleted" -> Json.Bool(true))
       case _ => ZIO.fail(JorlanError("calendar.deleteEvent: calendarId and eventId are required"))
     }
