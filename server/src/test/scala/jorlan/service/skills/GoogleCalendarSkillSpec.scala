@@ -63,7 +63,7 @@ object GoogleCalendarSkillSpec extends ZIOSpec[ZIORepositories] {
 
   private def makeSkill(provider: CalendarProvider[[A] =>> IO[JorlanError, A]])
     : URIO[ZIORepositories, GoogleCalendarSkill] =
-    ZIO.serviceWith[ZIORepositories](new GoogleCalendarSkill(provider, _))
+    ZIO.succeed(new GoogleCalendarSkill(provider))
 
   private def strField(
     json: Json,

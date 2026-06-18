@@ -65,7 +65,7 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
     } yield FakeDriveProvider(fr, cr)
 
   private def makeSkill(provider: DriveProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, GoogleDriveSkill] =
-    ZIO.serviceWith[ZIORepositories](new GoogleDriveSkill(provider, _))
+    ZIO.succeed(new GoogleDriveSkill(provider))
 
   private def intField(
     json: Json,

@@ -73,7 +73,7 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
     } yield FakeEmailProvider(messagesRef, sentRef, draftsRef, archivedRef)
 
   private def makeSkill(provider: EmailProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, EmailSkill] =
-    ZIO.serviceWith[ZIORepositories](new EmailSkill(provider, _))
+    ZIO.succeed(new EmailSkill(provider))
 
   private def strField(
     json: Json,

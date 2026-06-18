@@ -13,12 +13,12 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import zio.*
 import zio.json.ast.Json
 
 /** Shared event-logging helper mixed into all built-in [[jorlan.connector.Skill]] implementations. */
-private[service] trait SkillEventLogger {
+@deprecated("Should not use, we need to log events generically and not all over the place. Skills in outside packages should have no say into which events get logged or not.")
+trait SkillEventLogger {
 
   protected def repo: ZIORepositories
 

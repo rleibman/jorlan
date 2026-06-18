@@ -48,7 +48,7 @@ object GoogleContactsSkillSpec extends ZIOSpec[ZIORepositories] {
     Ref.make(contacts).map(FakeGoogleContactsProvider(_))
 
   private def makeSkill(provider: FakeGoogleContactsProvider): URIO[ZIORepositories, GoogleContactsSkill] =
-    ZIO.serviceWith[ZIORepositories](new GoogleContactsSkill(provider, _))
+    ZIO.succeed(new GoogleContactsSkill(provider))
 
   private def intField(
     json: Json,

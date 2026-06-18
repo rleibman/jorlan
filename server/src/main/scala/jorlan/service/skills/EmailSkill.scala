@@ -32,7 +32,7 @@ import zio.json.ast.Json
   */
 class EmailSkill(
   emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
-) extends Skill with SkillEventLogger {
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
@@ -188,11 +188,6 @@ class EmailSkill(
     val maxResults = int(args, "maxResults").getOrElse(10)
     for {
       msgs <- emailProvider.listMessages(ctx.actorId, maxResults, None)
-      _    <- logEvent(
-        ctx,
-        EventType.EmailMessageRead,
-        Json.Obj("action" -> Json.Str("list"), "count" -> Json.Num(msgs.size)),
-      )
     } yield Json.Obj(
       "messages" -> Json.Arr(
         msgs.map(m =>
@@ -217,7 +212,6 @@ class EmailSkill(
       case Some(id) =>
         for {
           msg <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
-          _   <- logEvent(ctx, EventType.EmailMessageRead, Json.Obj("messageId" -> Json.Str(id)))
         } yield Json.Obj(
           "id"        -> Json.Str(msg.id.value),
           "from"      -> Json.Str(msg.from),
@@ -239,15 +233,6 @@ class EmailSkill(
       case Some(draft) =>
         for {
           msgId <- emailProvider.sendDraft(ctx.actorId, draft)
-          _     <- logEvent(
-            ctx,
-            EventType.EmailMessageSent,
-            Json.Obj(
-              "to"        -> Json.Arr(draft.to.map(Json.Str(_))*),
-              "subject"   -> Json.Str(draft.subject),
-              "messageId" -> Json.Str(msgId.value),
-            ),
-          )
         } yield Json.Obj("messageId" -> Json.Str(msgId.value), "sent" -> Json.Bool(true))
     }
 
@@ -260,11 +245,6 @@ class EmailSkill(
       case Some(draft) =>
         for {
           draftId <- emailProvider.createDraft(ctx.actorId, draft)
-          _       <- logEvent(
-            ctx,
-            EventType.EmailDraftCreated,
-            Json.Obj("to" -> Json.Arr(draft.to.map(Json.Str(_))*), "subject" -> Json.Str(draft.subject)),
-          )
         } yield Json.Obj("draftId" -> Json.Str(draftId), "created" -> Json.Bool(true))
     }
 
@@ -277,7 +257,6 @@ class EmailSkill(
       case Some(id) =>
         for {
           _ <- emailProvider.archiveMessage(ctx.actorId, EmailMessageId(id))
-          _ <- logEvent(ctx, EventType.EmailMessageArchived, Json.Obj("messageId" -> Json.Str(id)))
         } yield Json.Obj("messageId" -> Json.Str(id), "archived" -> Json.Bool(true))
     }
 
@@ -290,7 +269,6 @@ class EmailSkill(
       case Some(id) =>
         for {
           _ <- emailProvider.deleteMessage(ctx.actorId, EmailMessageId(id))
-          _ <- logEvent(ctx, EventType.EmailMessageDeleted, Json.Obj("messageId" -> Json.Str(id)))
         } yield Json.Obj("messageId" -> Json.Str(id), "deleted" -> Json.Bool(true))
     }
 
@@ -313,11 +291,6 @@ class EmailSkill(
         signWithPgp = false,
       )
       msgId <- emailProvider.sendDraft(ctx.actorId, draft)
-      _     <- logEvent(
-        ctx,
-        EventType.EmailMessageSent,
-        Json.Obj("replyTo" -> Json.Str(id), "messageId" -> Json.Str(msgId.value)),
-      )
     } yield Json.Obj("messageId" -> Json.Str(msgId.value), "sent" -> Json.Bool(true))
 
   private def emailSearch(
@@ -330,11 +303,6 @@ class EmailSkill(
         val maxResults = int(args, "maxResults").getOrElse(10)
         for {
           msgs <- emailProvider.listMessages(ctx.actorId, maxResults, Some(query))
-          _    <- logEvent(
-            ctx,
-            EventType.EmailMessageRead,
-            Json.Obj("action" -> Json.Str("search"), "query" -> Json.Str(query), "count" -> Json.Num(msgs.size)),
-          )
         } yield Json.Obj(
           "messages" -> Json.Arr(
             msgs.map(m =>

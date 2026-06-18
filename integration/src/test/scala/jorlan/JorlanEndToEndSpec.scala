@@ -13,18 +13,16 @@ package jorlan
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
-import jorlan.db.JorlanContainer
-import jorlan.db.repository.QuillRepositories
 import jorlan.*
-import jorlan.graphql.JorlanAPI
-import jorlan.db.repository.ZIORepositories
+import jorlan.db.JorlanContainer
+import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.google.{GoogleCalendarSkill, GoogleDriveSkill}
-import jorlan.service.*
+import jorlan.graphql.JorlanAPI
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.{EmailSkill, SkillRegistry}
-import jorlan.service.{CalendarProvider, DriveProvider, EmailProvider}
+import jorlan.service.*
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json
@@ -194,9 +192,9 @@ object JorlanEndToEndSpec
         for {
           repos <- ZIO.service[ZIORepositories]
           reg   <- ZIO.service[SkillRegistry]
-          _     <- reg.register(new EmailSkill(stubEmailProvider, repos))
-          _     <- reg.register(new GoogleCalendarSkill(stubCalendarProvider, repos))
-          _     <- reg.register(new GoogleDriveSkill(stubDriveProvider, repos))
+          _     <- reg.register(new EmailSkill(stubEmailProvider))
+          _     <- reg.register(new GoogleCalendarSkill(stubCalendarProvider))
+          _     <- reg.register(new GoogleDriveSkill(stubDriveProvider))
         } yield reg
       }
 
