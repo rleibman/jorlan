@@ -220,9 +220,10 @@ class HttpFetchSkill(
     resp.body.asString
       .mapError(e => JorlanError("Failed to read response body", Some(e)))
       .map { raw =>
+        val rawBytes = raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)
         val body =
-          if (raw.length > config.maxResponseBytes) {
-            raw.take(config.maxResponseBytes) + "\n[truncated]"
+          if (rawBytes.length > config.maxResponseBytes) {
+            new String(rawBytes.take(config.maxResponseBytes), java.nio.charset.StandardCharsets.UTF_8) + "\n[truncated]"
           } else {
             raw
           }
@@ -263,8 +264,10 @@ class HttpFetchSkill(
           client
             .batched(req)
             .mapError(e => JorlanError("HTTP GET request failed", Some(e)))
+            .timeoutFail(JorlanError(s"HTTP GET request timed out after ${config.timeoutSeconds}s"))(
+              Duration.fromSeconds(config.timeoutSeconds.toLong),
+            )
             .flatMap(buildResponse)
-        }
     } yield result
 
   private def post(args: Json): IO[JorlanError, Json] =
@@ -290,8 +293,10 @@ class HttpFetchSkill(
           client
             .batched(req)
             .mapError(e => JorlanError("HTTP POST request failed", Some(e)))
+            .timeoutFail(JorlanError(s"HTTP POST request timed out after ${config.timeoutSeconds}s"))(
+              Duration.fromSeconds(config.timeoutSeconds.toLong),
+            )
             .flatMap(buildResponse)
-        }
     } yield result
 
 }

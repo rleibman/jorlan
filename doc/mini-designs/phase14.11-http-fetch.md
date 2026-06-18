@@ -78,10 +78,9 @@ Input schema:
 ## Capability
 
 - **Name**: `http_fetch.call`
-- **ApprovalMode**: `PerInvocation` — external network calls require per-invocation approval
-
-Added to both `systemCapabilities` and `perInvocationCapabilities` in `InitService`.
-
+- Added to both `systemCapabilities` and `perInvocationCapabilities` in `InitService`.
++
++Skill capabilities are derived automatically from `ToolDescriptor.requiredCapabilities` via `SkillRegistry` (so `http_fetch.call` does not need to be added to `systemCapabilities`). If `http_fetch.call` must require per-invocation approval, it must be added to `perInvocationCapabilities` in `InitService`.
 ## Host Allowlist Matching
 
 ```
