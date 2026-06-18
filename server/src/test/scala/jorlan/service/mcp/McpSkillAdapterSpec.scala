@@ -45,16 +45,16 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("McpSkillAdapterSpec")(
-      test("descriptor.name uses mcp_<serverName> with underscore") {
+      test("descriptor.name uses mcp.<serverName> dot notation") {
         val client = FakeMcpClient(sampleTools, "result")
         val adapter = McpSkillAdapter("myserver", sampleTools, client)
-        assert(adapter.descriptor.name)(equalTo("mcp_myserver"))
+        assert(adapter.descriptor.name)(equalTo("mcp.myserver"))
       },
-      test("descriptor.tools are namespaced as mcp_<serverName>.<toolName>") {
+      test("descriptor.tools are namespaced as mcp.<serverName>.<toolName>") {
         val client = FakeMcpClient(sampleTools, "result")
         val adapter = McpSkillAdapter("myserver", sampleTools, client)
         val toolNames = adapter.descriptor.tools.map(_.name)
-        assert(toolNames)(equalTo(List("mcp_myserver.read_file", "mcp_myserver.write_file")))
+        assert(toolNames)(equalTo(List("mcp.myserver.read_file", "mcp.myserver.write_file")))
       },
       test("descriptor.tier is SkillTier.Imported") {
         val client = FakeMcpClient(sampleTools, "result")
@@ -71,7 +71,7 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
         val client = FakeMcpClient(sampleTools, "file contents here")
         val adapter = McpSkillAdapter("myserver", sampleTools, client)
         for {
-          result <- adapter.invoke(dummyCtx, "mcp_myserver.read_file", Json.Obj("path" -> Json.Str("/tmp/test.txt")))
+          result <- adapter.invoke(dummyCtx, "mcp.myserver.read_file", Json.Obj("path" -> Json.Str("/tmp/test.txt")))
         } yield assert(result)(equalTo(Json.Str("file contents here")))
       },
       test("invoke with wrong namespace fails with JorlanError") {
@@ -85,13 +85,26 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
         val client = FakeMcpClient(sampleTools, "result")
         val adapter = McpSkillAdapter("myserver", sampleTools, client)
         for {
-          result <- adapter.invoke(dummyCtx, "mcp_otherserver.read_file", Json.Obj()).exit
+          result <- adapter.invoke(dummyCtx, "mcp.otherserver.read_file", Json.Obj()).exit
         } yield assert(result)(failsWithA[JorlanError])
       },
       test("empty tool list yields empty descriptor.tools") {
         val client = FakeMcpClient(Nil, "result")
         val adapter = McpSkillAdapter("emptyserver", Nil, client)
         assert(adapter.descriptor.tools)(isEmpty)
+      },
+      test("serverName with dots is preserved in namespace (dots are valid with longest-prefix routing)") {
+        val client = FakeMcpClient(sampleTools, "result")
+        val adapter = McpSkillAdapter("my.server.com", sampleTools, client)
+        assert(adapter.descriptor.name)(equalTo("mcp.my.server.com")) &&
+        assert(adapter.descriptor.tools.map(_.name))(
+          equalTo(List("mcp.my.server.com.read_file", "mcp.my.server.com.write_file")),
+        )
+      },
+      test("serverName with non-dot special characters is sanitized to underscores") {
+        val client = FakeMcpClient(Nil, "result")
+        val adapter = McpSkillAdapter("my-server/v2", Nil, client)
+        assert(adapter.descriptor.name)(equalTo("mcp.my_server_v2"))
       },
     )
 

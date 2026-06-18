@@ -283,6 +283,9 @@ object StdioMcpClient {
       idRef     <- Ref.make(1)
       semaphore <- Semaphore.make(1)
       client = new StdioMcpClient(stdinQ, outputQ, idRef, semaphore)
+      initId <- idRef.getAndUpdate(_ + 1)
+      initReq =
+        s"""{"jsonrpc":"2.0","id":$initId,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"jorlan","version":"1.0"}}}"""
       _ <- semaphore.withPermit {
         client.writeRequest(initReq) *> client.readResponse.flatMap {
           case Json.Obj(fields) =>
@@ -322,7 +325,8 @@ private[mcp] def parseToolsList(result: Json): IO[JorlanError, List[McpTool]] = 
               val schema = toolFields.collectFirst { case ("inputSchema", s) => s }.getOrElse(Json.Obj())
               name match {
                 case Some(n) => ZIO.succeed(McpTool(n, desc, schema))
-                case None    => ZIO.fail(JorlanError(s"MCP: tool entry missing non-empty 'name': ${Json.Obj(toolFields*).toJson}"))
+                case None    =>
+                  ZIO.fail(JorlanError(s"MCP: tool entry missing non-empty 'name': ${Json.Obj(toolFields*).toJson}"))
               }
             case other =>
               ZIO.fail(JorlanError(s"MCP: unexpected tool shape: $other"))

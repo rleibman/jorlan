@@ -55,6 +55,12 @@ trait SkillRegistry {
 
   def getSkill[S <: Skill](name: String): UIO[Option[S]]
 
+  /** Unregister a skill by exact name, making its tools unavailable. No-op if not registered. */
+  def unregister(name: String): UIO[Unit]
+
+  /** Unregister all skills whose name matches the given predicate. Used by [[McpManager]] on reload. */
+  def unregisterWhere(pred: String => Boolean): UIO[Unit]
+
 }
 
 object SkillRegistry {
@@ -164,16 +170,27 @@ class SkillRegistryLive(
   def getSkill[S <: Skill](name: String): UIO[Option[S]] =
     skills.get.map(_.find(_._2.descriptor.name == name).map(_._2.asInstanceOf[S]))
 
+  override def unregister(name: String): UIO[Unit] =
+    skills.update(_ - name) *> toolSpecsCache.set(None)
+
+  override def unregisterWhere(pred: String => Boolean): UIO[Unit] =
+    skills.update(_.filterNot { case (name, _) => pred(name) }) *> toolSpecsCache.set(None)
+
   override def invoke(
     toolName: String,
     argsJson: String,
     ctx:      InvocationContext,
   ): UIO[Json] = {
-    val skillNamespace = toolName.takeWhile(_ != '.')
     skills.get.flatMap { map =>
-      map.get(skillNamespace) match {
+      // Find the skill whose name, followed by '.', is the longest prefix of toolName.
+      // Longest-prefix wins so that mcp.my.server.com beats mcp.my for tool mcp.my.server.com.read_file.
+      val matchedSkill = map
+        .filter { case (name, _) => toolName.startsWith(s"$name.") }
+        .maxByOption { case (name, _) => name.length }
+        .map { case (_, skill) => skill }
+      matchedSkill match {
         case None =>
-          ZIO.succeed(Json.Str(s"Error: unknown skill namespace '$skillNamespace'"))
+          ZIO.succeed(Json.Str(s"Error: no registered skill handles tool '$toolName'"))
         case Some(skill) =>
           validateRequiredFields(toolName, argsJson, skill).flatMap {
             case Left(err) =>

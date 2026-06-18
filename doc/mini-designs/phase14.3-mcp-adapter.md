@@ -248,14 +248,28 @@ trait McpManager {
 
 `McpManagerImpl` in `server`:
 
-1. Reads `server_settings` key `"mcp.servers"` via `ServerSettingsRepository.get`.
-2. If absent or empty array, logs debug and returns.
-3. For each enabled `McpServerConfig`:
+1. Calls `registry.unregisterWhere(_.startsWith("mcp."))` to purge any previously registered MCP skills.
+   This ensures servers removed or disabled in config don't remain as stale skills after a reload.
+2. Reads `server_settings` key `"mcp.servers"` via `ServerSettingsRepository.get`.
+3. If absent or empty array, logs debug and returns.
+4. For each enabled `McpServerConfig`:
    a. Creates the appropriate `McpClient` (`StdioMcpClient` or `HttpMcpClient`).
    b. Calls `client.listTools` to discover tools.
    c. Constructs `McpSkillAdapter(serverName, tools, client)`.
    d. Calls `SkillRegistry.register(adapter)`.
    e. On any error: logs warning with server name + error message; continues with remaining servers.
+
+### 7.1 Namespace format and SkillRegistry routing
+
+Skill name: `mcp.<sanitizedServerName>` (e.g., `mcp.filesystem`, `mcp.my.server.com`).  
+Tool names: `mcp.<sanitizedServerName>.<mcpToolName>`.
+
+`serverName` sanitization: characters matching `[^A-Za-z0-9_.]` are replaced with `_`; dots are **preserved**
+so naturally dotted server names (e.g., hostnames) remain readable.
+
+`SkillRegistry.invoke` uses **longest-prefix matching**: it finds the registered skill whose name, followed by
+`"."`, is the longest prefix of the tool name. This correctly handles dotted skill names without confusion between
+`mcp.my` and `mcp.my.server.com`.
 
 **Wiring in `Jorlan.scala`:**
 

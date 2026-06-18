@@ -17,8 +17,11 @@ import zio.json.ast.Json
 
 /** Adapts an MCP server's tool list as a Jorlan [[Skill]].
   *
-  * Tool names follow the pattern `mcp_<serverName>.<mcpToolName>`, where `mcp_<serverName>` is the skill namespace
-  * (required for [[jorlan.service.skills.SkillRegistryLive]] routing via `takeWhile(_ != '.')`).
+  * Tool names follow the pattern `mcp.<serverName>.<mcpToolName>`, where `mcp.<serverName>` is the skill namespace.
+  * SkillRegistry routing uses longest-prefix matching (`toolName.startsWith(skillName + ".")`), so dots in the skill
+  * name are safe.
+  *
+  * `serverName` is sanitized to replace characters that are not `[A-Za-z0-9_.]` with `_`; dots are preserved.
   */
 class McpSkillAdapter(
   serverName: String,
@@ -26,12 +29,15 @@ class McpSkillAdapter(
   client:     McpClient,
 ) extends Skill {
 
+  private val sanitizedName: String = serverName.replaceAll("[^A-Za-z0-9_.]", "_")
+  private val namespace:     String = s"mcp.$sanitizedName"
+
   override val descriptor: SkillDescriptor = SkillDescriptor(
-    name = s"mcp_$serverName",
+    name = namespace,
     tier = SkillTier.Imported,
     tools = tools.map { t =>
       ToolDescriptor(
-        name = s"mcp_$serverName.${t.name}",
+        name = s"$namespace.${t.name}",
         description = t.description.getOrElse(""),
         inputSchema = t.inputSchema,
         outputSchema = Json.Obj("type" -> Json.Str("string")),
@@ -46,10 +52,10 @@ class McpSkillAdapter(
     tool: String,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val prefix = s"mcp_$serverName."
+    val prefix = s"$namespace."
     val mcpToolName = tool.stripPrefix(prefix)
     if (mcpToolName == tool)
-      ZIO.fail(JorlanError(s"McpSkillAdapter: tool '$tool' is not in namespace 'mcp_$serverName'"))
+      ZIO.fail(JorlanError(s"McpSkillAdapter: tool '$tool' is not in namespace '$namespace'"))
     else
       client.callTool(mcpToolName, args).map(Json.Str(_))
   }

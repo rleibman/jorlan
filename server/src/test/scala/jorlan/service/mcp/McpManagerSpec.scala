@@ -144,11 +144,11 @@ object McpManagerSpec extends ZIOSpecDefault {
           _      <- ZIO.scoped(manager.loadAndRegister)
           skills <- registry.allSkills
         } yield {
-          val mcpSkills = skills.filter(_.descriptor.name.startsWith("mcp_"))
+          val mcpSkills = skills.filter(_.descriptor.name.startsWith("mcp."))
           assert(mcpSkills)(hasSize(equalTo(1))) &&
-          assert(mcpSkills.head.descriptor.name)(equalTo("mcp_testserver")) &&
+          assert(mcpSkills.head.descriptor.name)(equalTo("mcp.testserver")) &&
           assert(mcpSkills.head.descriptor.tools.map(_.name))(
-            equalTo(List("mcp_testserver.read_file", "mcp_testserver.write_file")),
+            equalTo(List("mcp.testserver.read_file", "mcp.testserver.write_file")),
           )
         }
       }.provide(Server.defaultWith(_.port(0)), Client.default, SkillRegistry.live),

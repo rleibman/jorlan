@@ -40,18 +40,23 @@ class McpManagerImpl(
   override def loadAndRegister: ZIO[Scope, JorlanError, Unit] = {
     settings.get("mcp.servers").flatMap {
       case None =>
-        ZIO.logDebug("No MCP servers configured (set 'mcp.servers' in server_settings to enable)")
+        // Remove any previously registered MCP skills and stop (config removed entirely).
+        registry.unregisterWhere(_.startsWith("mcp.")) *>
+          ZIO.logDebug("No MCP servers configured (set 'mcp.servers' in server_settings to enable)")
       case Some(json) =>
         json.as[List[McpServerConfig]] match {
           case Left(err) =>
             ZIO.logWarning(s"Skipping all MCP servers: could not parse config: $err")
           case Right(configs) =>
-            ZIO.foreachDiscard(configs.filter(_.enabled)) { cfg =>
-              makeAdapter(cfg)
-                .flatMap(adapter => registry.register(adapter))
-                .tapError(e => ZIO.logWarning(s"Skipping MCP server '${cfg.name}': ${e.msg}"))
-                .ignore
-            }
+            // Purge all previously registered MCP skills before re-registering so that
+            // servers removed or disabled in config don't stay available as stale skills.
+            registry.unregisterWhere(_.startsWith("mcp.")) *>
+              ZIO.foreachDiscard(configs.filter(_.enabled)) { cfg =>
+                makeAdapter(cfg)
+                  .flatMap(adapter => registry.register(adapter))
+                  .tapError(e => ZIO.logWarning(s"Skipping MCP server '${cfg.name}': ${e.msg}"))
+                  .ignore
+              }
         }
     }
   }

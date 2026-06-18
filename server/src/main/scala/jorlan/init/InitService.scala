@@ -224,10 +224,12 @@ class InitServiceImpl(
     CapabilityName("admin.mcp.reload"),
   )
 
-  // email.send and calendar.write require per-invocation approval per design spec.
+  // email.send, calendar.write, and mcp.call require per-invocation approval per design spec.
+  // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
   private val perInvocationCapabilities: Set[CapabilityName] = Set(
     CapabilityName("email.send"),
     CapabilityName("calendar.write"),
+    CapabilityName("mcp.call"),
   )
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
