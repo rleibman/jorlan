@@ -240,7 +240,7 @@ private class OllamaModelGateway(
               }
             },
           )
-        }.mapError(e => ModelUnavailable(e.getMessage): JorlanError)
+        }.mapError(e => ModelUnavailable(Option(e.getMessage).getOrElse(e.getClass.getName)))
       step <- done.await
     } yield step
   }
