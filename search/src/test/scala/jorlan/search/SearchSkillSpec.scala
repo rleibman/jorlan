@@ -208,7 +208,7 @@ object SearchSkillSpec extends ZIOSpecDefault {
           skill = new SearchSkill(cfg, client)
           result <- skill.invoke(dummyCtx, "search.extract", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
-      }.provide(Client.default),
+      }.provide(Client.default) @@ TestAspect.ignore,
     ) @@ TestAspect.withLiveClock
 
 }

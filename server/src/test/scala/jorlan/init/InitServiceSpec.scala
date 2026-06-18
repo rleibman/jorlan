@@ -195,35 +195,43 @@ object InitServiceSpec extends ZIOSpecDefault {
       // this test uses an empty registry so only the platform system caps are expected.
       test("successful init seeds all admin capability grants") {
         val expectedCapabilities = Set(
-          "agent.session.create",
-          "agent.session.list",
-          "agent.message",
-          "agent.session.terminate",
-          "admin.personality.read",
-          "admin.personality.update",
-          "admin.user.list",
-          "user.create",
-          "user.update",
-          "role.create",
-          "role.assign",
-          "role.revoke",
-          "permission.grant",
-          "permission.revoke",
-          "approval.decide",
-          "agent.skill.invoke",
-          "email.read",
-          "email.write",
-          "email.send",
-          "calendar.read",
-          "calendar.write",
-          "drive.read",
-          "mcp.call",
-          "admin.mcp.reload",
-          "admin.user.list",
-          "shell.read",
-          "weather.read",
-          "shell.read",
-        )
+          CapabilityName("agent.session.create"),
+          CapabilityName("agent.session.list"),
+          CapabilityName("agent.message"),
+          CapabilityName("agent.session.terminate"),
+          CapabilityName("admin.personality.read"),
+          CapabilityName("admin.personality.update"),
+          CapabilityName("admin.user.list"),
+          CapabilityName("user.create"),
+          CapabilityName("user.update"),
+          CapabilityName("role.create"),
+          CapabilityName("role.assign"),
+          CapabilityName("role.revoke"),
+          CapabilityName("permission.grant"),
+          CapabilityName("permission.revoke"),
+          CapabilityName("approval.decide"),
+          CapabilityName("agent.skill.invoke"),
+          // Email
+          CapabilityName("email.read"),
+          CapabilityName("email.write"),
+          CapabilityName("email.send"),
+          // Calendar
+          CapabilityName("calendar.read"),
+          CapabilityName("calendar.write"),
+          // Drive
+          CapabilityName("drive.read"),
+          // MCP
+          CapabilityName("mcp.call"),
+          CapabilityName("admin.mcp.reload"),
+          // Search
+          CapabilityName("search.read"),
+          // Shell read-only sandbox tools
+          CapabilityName("shell.read"),
+          // Weather
+          CapabilityName("weather.read"),
+          // Shell read-only sandbox tools
+          CapabilityName("shell.read"),
+        ).map(_.value)
         for {
           tokenStore <- ZIO.service[InitTokenStore]
           validToken <- tokenStore.token.map(_.getOrElse(""))
