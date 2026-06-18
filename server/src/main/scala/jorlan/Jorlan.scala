@@ -18,6 +18,7 @@ import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
+import jorlan.httpfetch.HttpFetchSkill
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.{LyrionSettings, LyrionSkill}
 import jorlan.market.MarketDataSkill
@@ -175,6 +176,8 @@ object Jorlan extends ZIOApp {
       _             <- registry.register(new EmailSkill(emailProvider, repos))
       _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
       _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
+      _             <- registry.register(new HttpFetchSkill())
+      _             <- registry.register(new UnitConversionSkill())
       _             <- repos.setting
         .get("skill.market")
         .mapError(e => new Throwable(e.msg))
@@ -200,7 +203,6 @@ object Jorlan extends ZIOApp {
         case None =>
           ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
       }
-      _ <- registry.register(new UnitConversionSkill())
     } yield ()
 
   private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
