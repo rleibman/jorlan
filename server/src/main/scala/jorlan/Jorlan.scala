@@ -17,20 +17,18 @@ import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
-import jorlan.google.{GmailProvider, GoogleCalendarProvider, GoogleDriveProvider}
+import jorlan.google.*
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
-import jorlan.lyrion.{LyrionSettings, LyrionSkill}
-import jorlan.market.MarketDataSkill
-import jorlan.market.MarketDataSkill.AlphaVantageConfig
-import jorlan.search.{SearchConfig, SearchSkill}
-import jorlan.weather.WeatherSkill
-import jorlan.weather.WeatherSkill.WeatherConfig
+import jorlan.lyrion.*
+import jorlan.market.*
 import jorlan.routes.*
+import jorlan.search.*
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.TimeSkill
 import jorlan.units.UnitConversionSkill
+import jorlan.weather.*
 import zio.http.*
 import zio.logging.backend.SLF4J
 import zio.{config, *}
@@ -59,24 +57,43 @@ object Jorlan extends ZIOApp {
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Environment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> EnvironmentBuilder.live
 
-  private case class AllTogether(startTime: Long) extends AppRoutes[JorlanEnvironment, JorlanSession, JorlanError] {
+  private object AllTogether {
 
-    private val routes: Seq[AppRoutes[JorlanEnvironment, JorlanSession, JorlanError]] =
-      Seq(
-        JorlanRoutes,
-        HealthRoutes,
-        StaticRoutes,
-        StatusRoutes(startTime),
-      )
+    def apply(startTime: Long): ZIO[
+      ConfigurationService & Client & AuthConfig & OAuthCredentialService & AuthServer[User, UserId, ConnectionId],
+      ConfigurationError,
+      AppRoutes[JorlanEnvironment, JorlanSession, JorlanError],
+    ] = {
+      for {
+        authServer   <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+        oauthCredSvc <- ZIO.service[jorlan.service.OAuthCredentialService]
+        authConfig   <- ZIO.service[AuthConfig]
+        httpClient   <- ZIO.service[Client]
+        config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+        oauthRoutes  <- OAuthRoutes()
+      } yield new AppRoutes[JorlanEnvironment, JorlanSession, JorlanError] {
 
-    override def api: ZIO[
-      JorlanEnvironment,
-      JorlanError,
-      Routes[JorlanEnvironment & JorlanSession, JorlanError],
-    ] = ZIO.foreach(routes)(_.api).map(_.reduce(_ ++ _) @@ Middleware.debug)
+        private val routes: Seq[AppRoutes[JorlanEnvironment, JorlanSession, JorlanError]] =
+          Seq(
+            AuthRoutes(authServer),
+            JorlanRoutes,
+            HealthRoutes,
+            StaticRoutes,
+            StatusRoutes(startTime),
+            oauthRoutes,
+          )
 
-    override def unauth: ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, JorlanError]] =
-      ZIO.foreach(routes)(_.unauth).map(_.reduce(_ ++ _) @@ Middleware.debug)
+        override def api: ZIO[
+          JorlanEnvironment,
+          JorlanError,
+          Routes[JorlanEnvironment & JorlanSession, JorlanError],
+        ] = ZIO.foreach(routes)(_.api).map(_.reduce(_ ++ _) @@ Middleware.debug)
+
+        override def unauth: ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, JorlanError]] =
+          ZIO.foreach(routes)(_.unauth).map(_.reduce(_ ++ _) @@ Middleware.debug)
+
+      }
+    }
 
   }
 
@@ -108,37 +125,21 @@ object Jorlan extends ZIOApp {
     */
   def zapp(startTime: Long = 0L): ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, Nothing]] =
     for {
-      _                <- ZIO.log("Initializing Web Routes")
-      config           <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      authServer       <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
-      authConfig       <- ZIO.service[AuthConfig]
-      oauthCredSvc     <- ZIO.service[jorlan.service.OAuthCredentialService]
-      httpClient       <- ZIO.service[Client]
-      repo             <- ZIO.service[ZIORepositories]
-      authR            <- authServer.authRoutes // TODO move into allTogether
-      unauthR          <- authServer.unauthRoutes // TODO move into allTogether
-      authServerApi    <- authServer.authRoutes // TODO move into allTogether
-      authServerUnauth <- authServer.unauthRoutes // TODO move into allTogether
-      allTogether = AllTogether(startTime)
-      unauth     <- allTogether.unauth
-      api        <- allTogether.api
-      nonceStore <- Ref.make(Map.empty[String, Long])
-      oauthAuthR = OAuthRoutes.authenticatedRoutes(authConfig, config.jorlan.google, nonceStore)
-      oauthUnauthR = OAuthRoutes.unauthenticatedRoutes(
-        authConfig,
-        config.jorlan.google,
-        oauthCredSvc,
-        httpClient,
-        nonceStore,
-      )
+      _           <- ZIO.log("Initializing Web Routes")
+      config      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      httpClient  <- ZIO.service[Client]
+      repo        <- ZIO.service[ZIORepositories]
+      authServer  <- ZIO.service[AuthServer[User, UserId, ConnectionId]]
+      allTogether <- AllTogether(startTime)
+      unauth      <- allTogether.unauth
+      api         <- allTogether.api
     } yield (
-      ((api ++ authR ++ authServerApi ++ oauthAuthR) @@ authServer.bearerSessionProvider) ++
-        authServerUnauth ++ unauthR ++ unauth ++ oauthUnauthR
+      (api @@ authServer.bearerSessionProvider) ++ unauth
     )
       .handleErrorCauseZIO(mapError)
 
-  private def registerBuiltInSkills: ZIO[JorlanEnvironment, Throwable, Unit] =
-    for {
+  private def registerBuiltInSkills: ZIO[JorlanEnvironment, JorlanError, Unit] =
+    (for {
       registry     <- ZIO.service[SkillRegistry]
       config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
       memService   <- ZIO.service[MemoryService]
@@ -152,7 +153,7 @@ object Jorlan extends ZIOApp {
       emailCfg = config.jorlan.email
       emailProvider <-
         if (emailCfg.defaultProvider.toLowerCase == "gmail") {
-          GmailProvider(oauthCredSvc).orDie
+          GmailProvider(oauthCredSvc)
         } else {
           ZIO.succeed(
             ImapSmtpProvider(
@@ -167,26 +168,29 @@ object Jorlan extends ZIOApp {
             ),
           )
         }
-      calProvider   <- GoogleCalendarProvider(oauthCredSvc).orDie
-      driveProvider <- GoogleDriveProvider(oauthCredSvc).orDie
-      _             <- registry.register(new CalculatorSkill())
-      _             <- registry.register(new MemorySkill(memService))
-      _             <- registry.register(new SchedulerSkill(jobManager))
-      _             <- registry.register(new ContactsSkill(repos))
-      _             <- registry.register(new WorkspaceSkill(workRoot, config.jorlan.workspace))
-      _             <- registry.register(new ShellSkill(config.jorlan.shell, repos))
-      _             <- registry.register(new NotifySkill(notifRouter))
-      _             <- registry.register(new EmailSkill(emailProvider, repos))
-      _             <- registry.register(new GoogleCalendarSkill(calProvider, repos))
-      _             <- registry.register(new GoogleDriveSkill(driveProvider, repos))
+      calProvider   <- GoogleCalendarProvider(oauthCredSvc)
+      driveProvider <- GoogleDriveProvider(oauthCredSvc)
+      _             <- registry.register(CalculatorSkill())
+      _             <- registry.register(MemorySkill(memService))
+      _             <- registry.register(SchedulerSkill(jobManager))
+      _             <- registry.register(ContactsSkill(repos))
+      _             <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _             <- registry.register(ShellSkill(config.jorlan.shell, repos))
+      _             <- registry.register(NotifySkill(notifRouter))
+      _             <- registry.register(EmailSkill(emailProvider, repos))
+      _             <- registry.register(GoogleCalendarSkill(calProvider, repos))
+      _             <- registry.register(GoogleDriveSkill(driveProvider, repos))
+      _             <- registry.register(TimeSkill())
+      _             <- registry.register(UnitConversionSkill())
+      _             <- registry.register(UserManagementSkill(repos))
       _             <- repos.setting
         .get("skill.market")
         .mapError(e => new Throwable(e.msg))
         .flatMap {
           case Some(json) =>
-            json.as[AlphaVantageConfig] match {
+            json.as[MarketDataSkill.AlphaVantageConfig] match {
               case Right(cfg) =>
-                registry.register(new MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
+                registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
               case Left(err) =>
                 ZIO.logWarning(s"Skipping market skill: invalid config JSON: $err")
             }
@@ -197,7 +201,7 @@ object Jorlan extends ZIOApp {
         case Some(json) =>
           json.as[LyrionSettings] match {
             case Right(cfg) =>
-              registry.register(new LyrionSkill(cfg, httpClient))
+              registry.register(LyrionSkill(cfg, httpClient))
             case Left(err) =>
               ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
           }
@@ -208,39 +212,36 @@ object Jorlan extends ZIOApp {
         case Some(json) =>
           json.as[SearchConfig] match {
             case Right(cfg) =>
-              registry.register(new SearchSkill(cfg, httpClient))
+              registry.register(SearchSkill(cfg, httpClient))
             case Left(err) =>
               ZIO.logWarning(s"Skipping search skill: invalid config JSON: $err")
           }
         case None =>
           ZIO.logDebug("Search skill not configured (set skill.search in server_settings to enable)")
       }
-      _ <- registry.register(new UnitConversionSkill())
       _ <- repos.setting.get("skill.weather").flatMap {
         case Some(json) =>
-          json.as[WeatherConfig] match {
+          json.as[WeatherSkill.WeatherConfig] match {
             case Right(cfg) =>
-              registry.register(new WeatherSkill(cfg, httpClient, cfg.baseUrl))
+              registry.register(WeatherSkill(cfg, httpClient, cfg.baseUrl))
             case Left(err) =>
               ZIO.logWarning(s"Skipping weather skill: invalid config JSON: $err")
           }
         case None =>
           ZIO.logDebug("Weather skill not configured (set skill.weather in server_settings to enable)")
       }
-      _ <- registry.register(new UserManagementSkill(repos))
-      _ <- registry.register(new TimeSkill())
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
           val names = elems.collect { case zio.json.ast.Json.Str(s) => s }
           ZIO.foreachDiscard(names)(name => registry.disableSkill(name))
         case _ => ZIO.unit
       }
-    } yield ()
+    } yield ()).mapError(JorlanError.apply)
 
-  private def startServices: URIO[Scope & JorlanEnvironment, Unit] =
+  private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
-      _                <- registerBuiltInSkills.orDie
+      _                <- registerBuiltInSkills
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]
       _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)

@@ -57,11 +57,11 @@ object SetupModeApp {
       statusR <- StatusRoutes(startTime).api
     } yield {
 
-      val initR: Routes[Any, Nothing] = Routes(
+      val initR: Routes[Any, JorlanError] = Routes(
         Method.POST / "api" / "init" -> handler { (req: Request) =>
           val isLocalhost = req.remoteAddress.exists(_.isLoopbackAddress)
           for {
-            body   <- req.body.asString.orDie
+            body   <- req.body.asString.mapError(JorlanError.apply)
             result <- body.fromJson[InitRequest] match {
               case Left(err) =>
                 ZIO.succeed(Response.badRequest(Map("error" -> err).toJson))

@@ -76,8 +76,8 @@ class JobManagerImpl(
   override def listTriggers(jobId: SchedulerJobId): IO[JorlanError, List[SchedulerTrigger]] =
     repo.scheduler.searchTriggers(TriggerSearch(jobId = jobId, pageSize = 1000)).mapError(JorlanError(_))
 
-  override def listJobs(agentId: Option[AgentId]): UIO[List[SchedulerJob]] =
-    repo.scheduler.listJobs(agentId, listJobsLimit).orDie
+  override def listJobs(agentId: Option[AgentId]): IO[JorlanError, List[SchedulerJob]] =
+    repo.scheduler.listJobs(agentId, listJobsLimit)
 
   override def getJob(id: SchedulerJobId): IO[JorlanError, SchedulerJob] =
     repo.scheduler
@@ -130,11 +130,11 @@ class JobManagerImpl(
 
 object JobManagerImpl {
 
-  val live: URLayer[ZIORepositories & ConfigurationService, JobManagerImpl] =
+  val live: ZLayer[ZIORepositories & ConfigurationService, JorlanError, JobManagerImpl] =
     ZLayer.fromZIO {
       for {
         repo   <- ZIO.service[ZIORepositories]
-        config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+        config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
       } yield JobManagerImpl(repo, config.jorlan.scheduler.listJobsLimit)
     }
 

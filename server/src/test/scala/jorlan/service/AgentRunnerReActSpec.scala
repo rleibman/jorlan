@@ -56,15 +56,16 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
   }
 
   private def reactLayers(steps: List[ChatStep]): URLayer[ZIORepositories, AgentRunner & SessionHub] =
-    ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
-      FakeModelGateway.stepsLayer(steps),
-      SessionHub.live,
-      ToolEventHub.live,
-      NoOpMemoryService.layer,
-      SkillRegistry.liveWith(echoSkill),
-      FakeConfigurationService.layer,
-      AgentRunnerImpl.live,
-    )
+    ZLayer
+      .makeSome[ZIORepositories, AgentRunner & SessionHub](
+        FakeModelGateway.stepsLayer(steps),
+        SessionHub.live,
+        ToolEventHub.live,
+        NoOpMemoryService.layer,
+        SkillRegistry.liveWith(echoSkill),
+        FakeConfigurationService.layer,
+        AgentRunnerImpl.live,
+      ).orDie
 
   private def runWithSubscription(
     message: String,

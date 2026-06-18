@@ -68,6 +68,7 @@ import java.security.spec.X509EncodedKeySpec
 import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.Base64
 import scala.language.unsafeNulls
+import jorlan.db.repository.RepositoryError
 
 /** Constructs an unmanaged [[HikariDataSource]] from [[DatabaseConfig]].
   *
@@ -91,10 +92,11 @@ def makeDataSource(config: DatabaseConfig): HikariDataSource = {
 }
 
 /** Constructs a [[HikariDataSource]] as a scoped resource — the pool is closed when the scope is released. */
-def managedDataSource(config: DatabaseConfig): zio.ZIO[zio.Scope, Nothing, HikariDataSource] =
-  zio.ZIO.acquireRelease(
-    zio.ZIO.attempt(makeDataSource(config)).orDie,
-  )(ds => zio.ZIO.succeed(ds.close()))
+def managedDataSource(config: DatabaseConfig): zio.ZIO[zio.Scope, RepositoryError, HikariDataSource] =
+  zio.ZIO
+    .acquireRelease(
+      zio.ZIO.attempt(makeDataSource(config)),
+    )(ds => zio.ZIO.succeed(ds.close())).mapError(RepositoryError.apply)
 
 /** Quill / MariaDB utility: `Ordering[Instant]` is not provided by the standard library. Required for in-memory
   * post-filter comparisons in queries that Quill cannot translate directly.

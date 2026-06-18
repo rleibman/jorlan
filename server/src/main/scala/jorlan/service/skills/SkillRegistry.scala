@@ -145,6 +145,7 @@ class SkillRegistryLive(
 
   override def register(skill: Skill): UIO[Unit] =
     for {
+      _ <- ZIO.logDebug("Registering skill: " + skill.descriptor.name)
       _ <- ZIO
         .logWarning(s"SkillRegistry: overwriting existing skill '${skill.descriptor.name}'")
         .whenZIO(skills.get.map(_.contains(skill.descriptor.name)))

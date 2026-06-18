@@ -14,7 +14,6 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 
 /** Built-in skill for user, role, and capability-grant management.
@@ -256,11 +255,12 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_users: pageSize must be > 0"))
     else {
       val nameContains = SkillArgs.str(args, "nameContains")
-      val active = SkillArgs.bool(args, "active")
+      val active = SkillArgs.bool(args, "active").orElse(Some(true))
       repos.user
-        .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize))
-        .mapError(JorlanError(_))
-        .map(users => Json.Arr(users.map(userJson)*))
+        .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize)).mapBoth(
+          JorlanError(_),
+          users => Json.Arr(users.map(userJson)*),
+        )
     }
   }
 
