@@ -348,6 +348,29 @@ lazy val unitConversionSkill = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// HTTP Fetch Skill — capability-gated HTTP GET/POST for agents
+
+lazy val httpFetchSkill = project
+  .in(file("http-fetch"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-http-fetch",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
 
 lazy val weatherSkill = project
@@ -494,7 +517,8 @@ lazy val server = project
     marketDataSkill,
     weatherSkill,
     timeSkill,
-    searchSkill
+    searchSkill,
+    httpFetchSkill,
   )
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
@@ -905,6 +929,7 @@ lazy val root = project
     lyrionSkill,
     unitConversionSkill,
     timeSkill,
+    httpFetchSkill,
     ai,
     server,
     shell,

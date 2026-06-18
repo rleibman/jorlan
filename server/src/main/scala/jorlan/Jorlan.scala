@@ -18,35 +18,35 @@ import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
 import jorlan.google.*
+import jorlan.httpfetch.{HttpFetchConfig, HttpFetchSkill}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.*
 import jorlan.market.*
 import jorlan.routes.*
-import jorlan.search.*
+import jorlan.search.{SearchConfig, SearchSkill}
 import jorlan.service.*
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.TimeSkill
 import jorlan.units.UnitConversionSkill
 import jorlan.weather.*
+import zio.*
 import zio.http.*
 import zio.logging.backend.SLF4J
-import zio.{config, *}
 
 import java.io.*
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
-/** ZIO environment type required by the main application. */
-type JorlanEnvironment = ConfigurationService & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService &
-  OAuthStateStore & ApprovalService & CapabilityEvaluator & AgentSessionManager & AgentRunner & SessionHub &
-  ToolEventHub & ModelGateway & ZIORepositories & MemoryService & SkillRegistry & JobManager & TriggerEngine &
-  ConnectorManager & NotificationRouter & Client & jorlan.service.OAuthCredentialService
-
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
   ConfigurationService & jorlan.service.OAuthCredentialService
+
+/** ZIO environment type required by the main application. */
+type JorlanEnvironment =
+  JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
+    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -197,6 +197,17 @@ object Jorlan extends ZIOApp {
           case None =>
             ZIO.logDebug("Market data skill not configured (set skill.market in server_settings to enable)")
         }
+      _ <- repos.setting.get("skill.httpFetch").flatMap {
+        case Some(json) =>
+          json.as[HttpFetchConfig] match {
+            case Right(cfg) =>
+              registry.register(HttpFetchSkill(cfg, httpClient))
+            case Left(err) =>
+              ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
+          }
+        case None =>
+          ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
+      }
       _ <- repos.setting.get("skill.lyrion").flatMap {
         case Some(json) =>
           json.as[LyrionSettings] match {
