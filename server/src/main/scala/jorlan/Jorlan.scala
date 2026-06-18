@@ -25,6 +25,7 @@ import jorlan.market.*
 import jorlan.routes.*
 import jorlan.search.{SearchConfig, SearchSkill}
 import jorlan.service.*
+import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.TimeSkill
@@ -41,7 +42,7 @@ import java.util.concurrent.TimeUnit
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService
+  ConfigurationService & jorlan.service.OAuthCredentialService & Client
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -241,6 +242,11 @@ object Jorlan extends ZIOApp {
         case None =>
           ZIO.logDebug("Weather skill not configured (set skill.weather in server_settings to enable)")
       }
+      // Load MCP servers from server_settings
+      _ <- ZIO
+        .scoped {
+          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
+        }.mapError(e => new Throwable(e.msg))
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
           val names = elems.collect { case zio.json.ast.Json.Str(s) => s }

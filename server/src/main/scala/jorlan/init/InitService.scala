@@ -220,6 +220,9 @@ class InitServiceImpl(
     CapabilityName("calendar.write"),
     // Drive
     CapabilityName("drive.read"),
+    // MCP
+    CapabilityName("mcp.call"),
+    CapabilityName("admin.mcp.reload"),
     // Search
     CapabilityName("search.read"),
     // Shell read-only sandbox tools
@@ -230,10 +233,12 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
   )
 
-  // email.send and calendar.write require per-invocation approval per design spec.
+  // email.send, calendar.write, and mcp.call require per-invocation approval per design spec.
+  // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
   private val perInvocationCapabilities: Set[CapabilityName] = Set(
     CapabilityName("email.send"),
     CapabilityName("calendar.write"),
+    CapabilityName("mcp.call"),
   )
 
   private def allAdminCaps: UIO[List[CapabilityName]] =

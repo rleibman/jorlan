@@ -20,6 +20,7 @@ import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SkillRegistry
 import zio.*
+import zio.http.Client
 import zio.json.ast.Json
 import zio.test.*
 
@@ -99,6 +100,7 @@ object GraphQLApiSpec
       NotificationRouter.live,
       ZLayer.succeed(ConnectorManager.empty),
       stubOAuthCredentialService,
+      Client.default.orDie,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

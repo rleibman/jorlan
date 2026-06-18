@@ -55,6 +55,12 @@ trait SkillRegistry {
 
   def getSkill[S <: Skill](name: String): UIO[Option[S]]
 
+  /** Unregister a skill by exact name, making its tools unavailable. No-op if not registered. */
+  def unregister(name: String): UIO[Unit]
+
+  /** Unregister all skills whose name matches the given predicate. Used by [[McpManager]] on reload. */
+  def unregisterWhere(pred: String => Boolean): UIO[Unit]
+
   def enableSkill(name:  String): UIO[Unit]
   def disableSkill(name: String): UIO[Unit]
   def isDisabled(name:   String): UIO[Boolean]
@@ -178,6 +184,12 @@ class SkillRegistryLive(
   def getSkill[S <: Skill](name: String): UIO[Option[S]] =
     skills.get.map(_.find(_._2.descriptor.name == name).map(_._2.asInstanceOf[S]))
 
+  override def unregister(name: String): UIO[Unit] =
+    skills.update(_ - name) *> toolSpecsCache.set(None)
+
+  override def unregisterWhere(pred: String => Boolean): UIO[Unit] =
+    skills.update(_.filterNot { case (name, _) => pred(name) }) *> toolSpecsCache.set(None)
+
   override def enableSkill(name: String): UIO[Unit] =
     disabled.update(_ - name) *> toolSpecsCache.set(None)
 
@@ -201,6 +213,7 @@ class SkillRegistryLive(
       val matchedSkill = map
         .filter { case (name, _) => toolName.startsWith(s"$name.") }
         .maxByOption { case (name, _) => name.length }
+
       matchedSkill match {
         case None =>
           ZIO.succeed(Json.Str(s"Error: no registered skill handles tool '$toolName'"))
