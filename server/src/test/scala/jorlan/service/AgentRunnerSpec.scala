@@ -32,26 +32,28 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
     chunks: List[String],
     delay:  Option[Duration] = None,
   ): URLayer[ZIORepositories, AgentRunner & SessionHub] =
-    ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
-      FakeModelGateway.layer(chunks, delay),
-      SessionHub.live,
-      ToolEventHub.live,
-      NoOpMemoryService.layer,
-      SkillRegistry.live,
-      FakeConfigurationService.layer,
-      AgentRunnerImpl.live,
-    )
+    ZLayer
+      .makeSome[ZIORepositories, AgentRunner & SessionHub](
+        FakeModelGateway.layer(chunks, delay),
+        SessionHub.live,
+        ToolEventHub.live,
+        NoOpMemoryService.layer,
+        SkillRegistry.live,
+        FakeConfigurationService.layer,
+        AgentRunnerImpl.live,
+      ).orDie
 
   private val failingLayers: URLayer[ZIORepositories, AgentRunner & SessionHub] = {
-    ZLayer.makeSome[ZIORepositories, AgentRunner & SessionHub](
-      FakeModelGateway.failingLayer(ModelUnavailable("offline")),
-      SessionHub.live,
-      ToolEventHub.live,
-      NoOpMemoryService.layer,
-      SkillRegistry.live,
-      FakeConfigurationService.layer,
-      AgentRunnerImpl.live,
-    )
+    ZLayer
+      .makeSome[ZIORepositories, AgentRunner & SessionHub](
+        FakeModelGateway.failingLayer(ModelUnavailable("offline")),
+        SessionHub.live,
+        ToolEventHub.live,
+        NoOpMemoryService.layer,
+        SkillRegistry.live,
+        FakeConfigurationService.layer,
+        AgentRunnerImpl.live,
+      ).orDie
   }
 
   /** Subscribe to the session (eagerly registering the queue), then fork the stream drain, then run processMessage.

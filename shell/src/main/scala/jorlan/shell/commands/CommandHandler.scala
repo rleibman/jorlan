@@ -62,6 +62,8 @@ object CommandHandler {
       case ShellCommand.MemoryPolicySetInterval(n)               => setCheckpointInterval(n)
       case ShellCommand.MemoryPolicyToggle(t, e)                 => toggleCheckpointTrigger(t, e)
       case ShellCommand.Skills                                   => showSkills
+      case ShellCommand.SkillsEnable(name)                       => enableSkill(name)
+      case ShellCommand.SkillsDisable(name)                      => disableSkill(name)
       case ShellCommand.ContactsFind(name)                       => findContacts(name)
       case ShellCommand.Capabilities                             => showCapabilities
       case ShellCommand.AgentsList                               => listAgents
@@ -195,6 +197,9 @@ object CommandHandler {
       "/approvals list                      List pending approval requests",
       "/approvals approve <id>              Approve a pending request",
       "/approvals deny <id>                 Deny a pending request",
+      "/skills                              List registered skills with enabled/disabled status",
+      "/skills enable <name>               Enable a skill by name",
+      "/skills disable <name>              Disable a skill by name (including built-in skills)",
       "/oauth status <provider>             Show OAuth connection status for a provider",
       "/oauth connect <provider>            Start OAuth authorization flow for a provider",
       "/oauth revoke <provider>             Revoke stored OAuth credentials for a provider",
@@ -966,13 +971,26 @@ object CommandHandler {
         case skills =>
           val lines = skills
             .map { s =>
+              val status = if (s.enabled) "enabled" else "DISABLED"
               val toolLines = s.tools
                 .map(t => s"    • ${t.name}  [${t.requiredCapabilities.mkString(", ")}]")
                 .mkString("\n")
-              s"  ${s.name}  (${s.tier})\n$toolLines"
+              s"  ${s.name}  (${s.tier})  [$status]\n$toolLines"
             }.mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Registered skills:\n$lines"))
       },
+    )
+
+  private def enableSkill(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.skill.enableSkill(name)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not enable skill '$name': $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Skill '$name' enabled.")),
+    )
+
+  private def disableSkill(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.skill.disableSkill(name)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not disable skill '$name': $err")),
+      _ => screen(_.addMessage(MessageKind.System, s"Skill '$name' disabled.")),
     )
 
   private def findContacts(name: String): ZIO[Env, Nothing, Unit] = {

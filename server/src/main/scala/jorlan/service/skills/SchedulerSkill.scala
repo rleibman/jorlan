@@ -246,7 +246,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       missedRunPolicy,
     )
 
-  def listJobs(agentId: AgentId): UIO[List[SchedulerJob]] =
+  def listJobs(agentId: AgentId): IO[JorlanError, List[SchedulerJob]] =
     jobManager.listJobs(Some(agentId))
 
   def pauseJob(id: SchedulerJobId): IO[JorlanError, Unit] =

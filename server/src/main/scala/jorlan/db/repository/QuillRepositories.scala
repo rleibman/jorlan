@@ -14,7 +14,6 @@ import io.getquill.*
 import io.getquill.extras.InstantOps
 import io.getquill.jdbczio.Quill
 import jorlan.db.{*, given}
-import jorlan.*
 import jorlan.service.{EventLogFilter, EventLogOrder}
 import jorlan.{*, given}
 import zio.*
@@ -132,7 +131,7 @@ private[repository] abstract class QuillRepoBase(qc: QuillCtx) {
 
 object QuillRepositories {
 
-  val live: ZLayer[ConfigurationService, ConfigurationError, QuillRepositories] =
+  val live: ZLayer[ConfigurationService, JorlanError, QuillRepositories] =
     ZLayer
       .scoped {
         for {
@@ -638,6 +637,10 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
 
   override def listSkills(): RepositoryTask[List[SkillInfo]] =
     ZIO.fail(RepositoryError("listSkills not implemented in QuillSkillRepository"))
+  override def enableSkill(name: String): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("enableSkill not implemented in QuillSkillRepository"))
+  override def disableSkill(name: String): RepositoryTask[Unit] =
+    ZIO.fail(RepositoryError("disableSkill not implemented in QuillSkillRepository"))
   override def invokeTool(
     toolName: String,
     argsJson: String,
@@ -1454,17 +1457,17 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
   import JorlanSchema.*
   import qc.ctx.{*, given}
 
-  override def get(key: String): UIO[Option[Json]] =
+  override def get(key: String): IO[RepositoryError, Option[Json]] =
     exec(
       qc.ctx
         .run(qServerSettings.filter(_.settingKey == lift(key)))
         .map(_.headOption.flatMap(row => row.value.fromJson[Json].toOption)),
-    ).orDie
+    ).mapError(RepositoryError.apply)
 
   override def set(
     key:   String,
     value: Json,
-  ): UIO[Unit] = {
+  ): IO[RepositoryError, Unit] = {
     val jsonStr = value.toJson
     exec(
       qc.ctx.run(
@@ -1477,10 +1480,10 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
             ) => t.value -> e.value,
           ),
       ),
-    ).unit.orDie
+    ).unit.mapError(RepositoryError.apply)
   }
 
-  override def serverPersonality(): UIO[Option[Personality]] =
+  override def serverPersonality(): IO[RepositoryError, Option[Personality]] =
     get(ZIOServerSettingsRepository.PersonalityKey).map(_.flatMap(_.as[Personality].toOption))
 
   override def updatePersonality(
@@ -1489,11 +1492,12 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
     languages: List[String],
     expertise: List[String],
     prompt:    String,
-  ): UIO[Option[Personality]] = {
+  ): IO[RepositoryError, Option[Personality]] = {
     val p = Personality(name, formality, languages, expertise, prompt)
     ZIO
-      .fromEither(p.toJsonAST.left.map(RuntimeException(_))).orDie
+      .fromEither(p.toJsonAST.left.map(RuntimeException(_)))
       .flatMap(json => set(ZIOServerSettingsRepository.PersonalityKey, json).as(Some(p)))
+      .mapError(RepositoryError.apply)
   }
 
 }

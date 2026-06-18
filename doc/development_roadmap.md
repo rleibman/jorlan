@@ -1019,7 +1019,7 @@ Each subphase should be a separate MR
   previously entered commands, allowing users to easily recall and reuse them. The whole thing should work similar to a
   bash shell experience. Implemented: Tab key cycles through prefix matches; ↑↓ arrows navigate command history with
   draft restoration; history capped at 500 entries.
-- [ ] **Fuzzy contact search in `contacts.find`**: Phase 12 uses case-insensitive substring match on
+- [x] **Fuzzy contact search in `contacts.find`**: Phase 12 uses case-insensitive substring match on
   `User.displayName`. Upgrade to fuzzy/phonetic matching (e.g. Levenshtein distance or MariaDB
   `SOUNDEX`) so that "Roberto" matches "Robert Leibman" and "Sara" matches "Sarah Smith". Ensures
   natural-language name resolution works without exact display-name spelling.
@@ -1037,24 +1037,33 @@ Most skills should be ideally independent of the server code, and server code sh
 of each skill, we should avoid having to add any of these directly to EnvironmentBuilder, though they should be
 registered into the SkillRegistry in Jorlan.scala.
 
-14.1 [ ] Add a calculator skill for the agent to perform math calculations, it shoud be in a separate module. Consider
+14.1 [x] Add a calculator skill for the agent to perform math calculations, it shoud be in a separate module. Consider
 using mXparser library.
-14.2 [ ] Add a unit conversion skill for the agent to convert between different units of measurement, use squants
+14.2 [x] Add a unit conversion skill for the agent to convert between different units of measurement, use squants
 library
 for this, it should be in a separate module.
-14.3 [ ] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
+14.3 [x] **MCP compatibility adapter**: import MCP-compatible tools as Tier-4 skills; translate manifest to canonical
 internal format (since this is basic funcitonality it can be in the server module)
-14.4 [ ] **Market data skill**: read quotes, watchlists, alerts, news (no trading/execution in initial scope), new sbt
+14.4 [x] **Market data skill**: read quotes, watchlists, alerts, news (no trading/execution in initial scope), new sbt
 module
-14.5 [ ] **Lyrion music skill**: list players, play/pause/stop, set volume, play playlist, schedule playback new sbt
+14.5 [x] **Lyrion music skill**: list players, play/pause/stop, set volume, play playlist, schedule playback new sbt
 module
 14.6 [ ] **Google Contacts skill**: search, read contacts new sbt module
-14.7 [ ] ** Weather skill: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
-14.8 [ ] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
+14.7 [x] **Weather skill**: current conditions, forecast, alerts (use public API like OpenWeatherMap) new sbt module
+14.8 [x] ** Bash commands skill: ls, cat, grep, find, etc. (execute in a sandboxed environment with resource limits) new
 sbt module
-14.9 [ ] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
+14.9 [x] ** user management skill: crud on user and permissions (requires special permissions to modify other user's
 persmissions). Can reside in the server module since it's a core part of the system and doesn't have external
 dependencies.
+14.10 [x] **Time/timezone skill**: query current time, convert between timezones, add ISO 8601 durations to a datetime,
+compute the diff between two datetimes. Zero external dependencies (java.time only). New sbt module `timeSkill` in
+`time-skill/`. Registers unconditionally. Capability: `time.read` (Persistent).
+14.11 [ ] **HTTP fetch skill**: let agents make HTTP GET/POST requests to external URLs. Capability-gated with an
+allowlist of permitted host patterns (configured via `server_settings` key `"skill.http_fetch"`). Tools:
+`http_fetch.get`, `http_fetch.post`. New sbt module. Enables ad-hoc REST API integration without a dedicated skill per
+service.
+14.16 [x] **Web search skill**: Tavily-backed `search.web`, `search.news`, `search.extract` tools; `search.read`
+capability; optional config via `skill.search` in `server_settings`; new `search` sbt module.
 
 ## Phase 15: Web Frontend
 
@@ -1198,6 +1207,19 @@ remaining skills.
   permission)
 - [ ] **Slack connector**: Slack Bot API, message normalization, identity resolution
 - [ ] Workspace memory snapshots (workspace-scoped memory linked to snapshot artifacts)
+  14.12 [ ] **Workspace write skill**: extend the existing `WorkspaceSkill` (or add a new `workspace.write_file`,
+  `workspace.append_file`, `workspace.delete_file` tools) so agents can produce persistent file artifacts, not just read
+  them. Sandboxed to workspace root. Requires `workspace.write` capability.
+  14.13 [ ] **GitHub skill**: read GitHub issues, pull requests, and file contents; post comments; search code. Uses
+  GitHub REST API v3 with a personal access token stored in `server_settings` key `"skill.github"`. New sbt module.
+  Tools: `github.list_issues`, `github.get_issue`, `github.comment_issue`, `github.list_prs`, `github.get_file`,
+  `github.search_code`.
+  14.14 [ ] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
+  module. Tools: `rss.fetch` (URL → list of entries), `rss.list_saved` / `rss.save_feed` / `rss.remove_feed` (persist
+  watched feeds in `server_settings`).
+  14.15 [ ] **Notes/scratchpad skill**: lightweight session-scoped or persistent key/value store for within-session agent
+  state. Distinct from the memory system (no embeddings, no summarisation — just fast keyed access). Lives in the server
+  module. Tools: `notes.set`, `notes.get`, `notes.list`, `notes.delete`.
 
 ---
 
