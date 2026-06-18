@@ -85,7 +85,7 @@ trait JobManager {
     * @param agentId
     *   `Some(id)` to return only jobs for that agent; `None` to return all jobs (unfiltered, up to repository limit).
     */
-  def listJobs(agentId: Option[AgentId]): UIO[List[SchedulerJob]]
+  def listJobs(agentId: Option[AgentId]): IO[JorlanError, List[SchedulerJob]]
 
   /** Retrieve a single job by ID.
     *
@@ -143,7 +143,7 @@ object JobManager {
   def listTriggers(jobId: SchedulerJobId): ZIO[JobManager, JorlanError, List[SchedulerTrigger]] =
     ZIO.serviceWithZIO[JobManager](_.listTriggers(jobId))
 
-  def listJobs(agentId: Option[AgentId]): URIO[JobManager, List[SchedulerJob]] =
+  def listJobs(agentId: Option[AgentId]): ZIO[JobManager, JorlanError, List[SchedulerJob]] =
     ZIO.serviceWithZIO[JobManager](_.listJobs(agentId))
 
   def getJob(id: SchedulerJobId): ZIO[JobManager, JorlanError, SchedulerJob] =

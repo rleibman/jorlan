@@ -10,8 +10,7 @@
 
 package jorlan.routes
 
-import auth.{AuthConfig, AuthenticatedSession, key}
-import jorlan.*
+import auth.{AuthConfig, key}
 import jorlan.*
 import jorlan.service.OAuthCredentialService
 import zio.*
@@ -21,10 +20,12 @@ import zio.json.ast.Json
 
 import java.net.URLEncoder
 import java.security.SecureRandom
-import java.time.Instant
 import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+
+/** Nonce store: maps each issued nonce to its expiry. Consumed on first use in the callback route. */
+type NonceStore = Ref[Map[String, Long]]
 
 /** OAuth2 routes for integrating external providers (currently: Google).
   *
@@ -39,7 +40,11 @@ import javax.crypto.spec.SecretKeySpec
   * State JWT format: `base64url(payload).HmacSHA256(base64url(payload))` where payload is
   * `{"userId":N,"provider":"...","exp":unixSeconds}`.
   */
-object OAuthRoutes {
+class OAuthRoutes(
+  nonceStore: NonceStore,
+) extends AppRoutes[JorlanEnvironment, JorlanSession, JorlanError] {
+
+  import OAuthRoutes.*
 
   private val GoogleScopes = List(
     "https://www.googleapis.com/auth/gmail.modify",
@@ -50,34 +55,116 @@ object OAuthRoutes {
   val GoogleAuthBase = "https://accounts.google.com/o/oauth2/v2/auth"
   private val GoogleTokenUri = "https://oauth2.googleapis.com/token"
 
-  // ─── State JWT helpers ────────────────────────────────────────────────────────
+  override def api: ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment & JorlanSession, JorlanError]] =
+    for {
+      authConfig   <- ZIO.service[AuthConfig]
+      oauthCredSvc <- ZIO.service[OAuthCredentialService]
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+    } yield {
 
-  private def hmacSign(
-    payload: String,
-    secret:  String,
-  ): String = {
-    val mac = Mac.getInstance("HmacSHA256")
-    mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"))
-    Base64.getUrlEncoder.withoutPadding.encodeToString(mac.doFinal(payload.getBytes("UTF-8")))
-  }
+      val secret = authConfig.secretKey.key
+      val googleCfg = config.jorlan.google
+
+      val startRoute: Route[JorlanSession, Nothing] =
+        Method.GET / "api" / "oauth" / "start" / string("provider") -> handler {
+          (
+            provider: String,
+            _:        Request,
+          ) =>
+            (for {
+              userId <- ZIO
+                .serviceWith[JorlanSession](_.user.map(_.id))
+                .someOrFail(JorlanError("Unauthenticated"))
+              _ <- ZIO.unless(provider.toLowerCase == "google")(
+                ZIO.fail(JorlanError(s"Unsupported OAuth provider: $provider. Supported: google")),
+              )
+              stateJwt <- buildStateJwt(userId, provider, secret, nonceStore)
+              scopes = GoogleScopes
+              scopeStr = URLEncoder.encode(scopes.mkString(" "), "UTF-8")
+              redirectEnc = URLEncoder.encode(googleCfg.redirectUri, "UTF-8")
+              clientEnc = URLEncoder.encode(googleCfg.clientId, "UTF-8")
+              stateEnc = URLEncoder.encode(stateJwt, "UTF-8")
+              authUrl =
+                s"$GoogleAuthBase?client_id=$clientEnc" +
+                  s"&redirect_uri=$redirectEnc" +
+                  s"&response_type=code" +
+                  s"&scope=$scopeStr" +
+                  s"&state=$stateEnc" +
+                  s"&access_type=offline" +
+                  s"&prompt=consent"
+            } yield Response.json(s"""{"authUrl":${authUrl.toJson}}"""))
+              .catchAll { e =>
+                ZIO.succeed(
+                  Response(Status.BadRequest, body = Body.fromString(s"""{"error":${e.getMessage.toJson}}""")),
+                )
+              }
+        }
+
+      Routes(startRoute)
+    }
+
+  override def unauth: ZIO[JorlanEnvironment, JorlanError, Routes[JorlanEnvironment, JorlanError]] =
+    for {
+      authConfig   <- ZIO.service[AuthConfig]
+      oauthCredSvc <- ZIO.service[OAuthCredentialService]
+      httpClient   <- ZIO.service[Client]
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+    } yield {
+      val secret = authConfig.secretKey.key
+      val googleCfg = config.jorlan.google
+
+      val callbackRoute: Route[Any, Nothing] =
+        Method.GET / "api" / "oauth" / "callback" / "google" -> handler { (req: Request) =>
+          val qp = req.url.queryParams
+          (for {
+            code <- ZIO
+              .fromOption(qp.queryParam("code"))
+              .orElseFail(JorlanError("Missing code parameter"))
+            state <- ZIO
+              .fromOption(qp.queryParam("state"))
+              .orElseFail(JorlanError("Missing state parameter"))
+            now     <- Clock.instant
+            payload <- verifyAndConsumeStateJwt(state, secret, now.getEpochSecond, nonceStore)
+              .mapError(e => JorlanError(e))
+            tokenBody = Body.fromString(
+              s"code=${URLEncoder.encode(code, "UTF-8")}" +
+                s"&client_id=${URLEncoder.encode(googleCfg.clientId, "UTF-8")}" +
+                s"&client_secret=${URLEncoder.encode(googleCfg.clientSecret, "UTF-8")}" +
+                s"&redirect_uri=${URLEncoder.encode(googleCfg.redirectUri, "UTF-8")}" +
+                s"&grant_type=authorization_code",
+            )
+            tokenReq = Request
+              .post(URL.decode(GoogleTokenUri).getOrElse(URL.empty), tokenBody)
+              .addHeader(Header.ContentType(MediaType.application.`x-www-form-urlencoded`))
+            tokenResp <- Client
+              .batched(tokenReq)
+              .mapError(e => JorlanError(s"Token exchange HTTP error: $e"))
+              .provideEnvironment(ZEnvironment(httpClient))
+            tokenStr <- tokenResp.body.asString
+              .mapError(e => JorlanError(s"Token body read failed: ${e.getMessage}", Some(e)))
+            _ <- ZIO.when(!tokenResp.status.isSuccess)(
+              ZIO.logDebug(s"[oauth:callback] Google token error body: $tokenStr") *>
+                ZIO.fail(JorlanError("Google token exchange failed")),
+            )
+            tokenJson <- ZIO
+              .fromEither(tokenStr.fromJson[Json])
+              .mapError(e => JorlanError(s"Token JSON parse failed: $e"))
+            _ <- oauthCredSvc.store(UserId(payload.userId), payload.provider, tokenJson)
+          } yield Response.redirect(URL.decode("/?oauth=success").getOrElse(URL.empty)))
+            .catchAll { e =>
+              ZIO.logWarning(s"[oauth:callback] error=${e.getMessage}") *>
+                ZIO.succeed(Response.redirect(URL.decode("/?oauth=error").getOrElse(URL.empty)))
+            }
+        }
+
+      Routes(callbackRoute)
+    }
+
+}
+
+object OAuthRoutes {
 
   private val StateJwtTtlSeconds = 1800L
-
-  /** Nonce store: maps each issued nonce to its expiry. Consumed on first use in the callback route. */
-  type NonceStore = Ref[Map[String, Long]]
-
-  private[routes] case class StatePayload(
-    userId:   Long,
-    provider: String,
-    exp:      Long,
-    nonce:    String,
-  ) derives JsonEncoder, JsonDecoder
-
-  private def generateNonce(): String = {
-    val bytes = new Array[Byte](16)
-    new SecureRandom().nextBytes(bytes)
-    Base64.getUrlEncoder.withoutPadding.encodeToString(bytes)
-  }
 
   private[routes] def buildStateJwt(
     userId:     UserId,
@@ -94,6 +181,52 @@ object OAuthRoutes {
       nonceStore.update(_ + (nonce -> exp)).as(s"$encoded.$sig")
     }
 
+  private[routes] case class StatePayload(
+    userId:   Long,
+    provider: String,
+    exp:      Long,
+    nonce:    String,
+  ) derives JsonEncoder, JsonDecoder
+
+  private def generateNonce(): String = {
+    val bytes = new Array[Byte](16)
+    new SecureRandom().nextBytes(bytes)
+    Base64.getUrlEncoder.withoutPadding.encodeToString(bytes)
+  }
+  private def hmacSign(
+    payload: String,
+    secret:  String,
+  ): String = {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"))
+    Base64.getUrlEncoder.withoutPadding.encodeToString(mac.doFinal(payload.getBytes("UTF-8")))
+  }
+
+  /** Keep the synchronous version for backward-compatible unit tests. */
+  private[routes] def verifyStateJwt(
+    token:      String,
+    secret:     String,
+    nowSeconds: Long,
+  ): Either[String, StatePayload] = {
+    val parts = token.split("\\.", 2)
+    if (parts.length != 2) {
+      Left("Invalid state token format")
+    } else {
+      val encoded = parts(0)
+      val sig = parts(1)
+      if (hmacSign(encoded, secret) != sig) {
+        Left("State token signature invalid")
+      } else {
+        val payloadStr = new String(Base64.getUrlDecoder.decode(encoded), "UTF-8")
+        payloadStr.fromJson[StatePayload] match {
+          case Left(e)  => Left(s"State token parse error: $e")
+          case Right(p) =>
+            if (p.exp < nowSeconds) Left("State token expired")
+            else Right(p)
+        }
+      }
+    }
+  }
   private[routes] def verifyAndConsumeStateJwt(
     token:      String,
     secret:     String,
@@ -128,135 +261,10 @@ object OAuthRoutes {
     }
   }
 
-  /** Keep the synchronous version for backward-compatible unit tests. */
-  private[routes] def verifyStateJwt(
-    token:      String,
-    secret:     String,
-    nowSeconds: Long,
-  ): Either[String, StatePayload] = {
-    val parts = token.split("\\.", 2)
-    if (parts.length != 2) {
-      Left("Invalid state token format")
-    } else {
-      val encoded = parts(0)
-      val sig = parts(1)
-      if (hmacSign(encoded, secret) != sig) {
-        Left("State token signature invalid")
-      } else {
-        val payloadStr = new String(Base64.getUrlDecoder.decode(encoded), "UTF-8")
-        payloadStr.fromJson[StatePayload] match {
-          case Left(e)  => Left(s"State token parse error: $e")
-          case Right(p) =>
-            if (p.exp < nowSeconds) Left("State token expired")
-            else Right(p)
-        }
-      }
-    }
-  }
-
-  // ─── Routes factory ───────────────────────────────────────────────────────────
-
-  /** Routes requiring a valid session — must be mounted behind `bearerSessionProvider`. */
-  def authenticatedRoutes(
-    authConfig: AuthConfig,
-    googleCfg:  jorlan.GoogleOAuthSettings,
-    nonceStore: NonceStore,
-  ): Routes[JorlanSession, Nothing] = {
-    val secret = authConfig.secretKey.key
-
-    val startRoute: Route[JorlanSession, Nothing] =
-      Method.GET / "api" / "oauth" / "start" / string("provider") -> handler {
-        (
-          provider: String,
-          _:        Request,
-        ) =>
-          (for {
-            userId <- ZIO
-              .serviceWith[JorlanSession](_.user.map(_.id))
-              .someOrFail(JorlanError("Unauthenticated"))
-            _ <- ZIO.unless(provider.toLowerCase == "google")(
-              ZIO.fail(JorlanError(s"Unsupported OAuth provider: $provider. Supported: google")),
-            )
-            stateJwt <- buildStateJwt(userId, provider, secret, nonceStore)
-            scopes = GoogleScopes
-            scopeStr = URLEncoder.encode(scopes.mkString(" "), "UTF-8")
-            redirectEnc = URLEncoder.encode(googleCfg.redirectUri, "UTF-8")
-            clientEnc = URLEncoder.encode(googleCfg.clientId, "UTF-8")
-            stateEnc = URLEncoder.encode(stateJwt, "UTF-8")
-            authUrl =
-              s"$GoogleAuthBase?client_id=$clientEnc" +
-                s"&redirect_uri=$redirectEnc" +
-                s"&response_type=code" +
-                s"&scope=$scopeStr" +
-                s"&state=$stateEnc" +
-                s"&access_type=offline" +
-                s"&prompt=consent"
-          } yield Response.json(s"""{"authUrl":${authUrl.toJson}}"""))
-            .catchAll { e =>
-              ZIO.succeed(
-                Response(Status.BadRequest, body = Body.fromString(s"""{"error":${e.getMessage.toJson}}""")),
-              )
-            }
-      }
-
-    Routes(startRoute)
-  }
-
-  /** Unauthenticated routes — Google callback redirect, does not require a session. */
-  def unauthenticatedRoutes(
-    authConfig:   AuthConfig,
-    googleCfg:    jorlan.GoogleOAuthSettings,
-    oauthCredSvc: OAuthCredentialService,
-    httpClient:   Client,
-    nonceStore:   NonceStore,
-  ): Routes[Any, Nothing] = {
-    val secret = authConfig.secretKey.key
-
-    val callbackRoute: Route[Any, Nothing] =
-      Method.GET / "api" / "oauth" / "callback" / "google" -> handler { (req: Request) =>
-        val qp = req.url.queryParams
-        (for {
-          code <- ZIO
-            .fromOption(qp.queryParam("code"))
-            .orElseFail(JorlanError("Missing code parameter"))
-          state <- ZIO
-            .fromOption(qp.queryParam("state"))
-            .orElseFail(JorlanError("Missing state parameter"))
-          now     <- Clock.instant
-          payload <- verifyAndConsumeStateJwt(state, secret, now.getEpochSecond, nonceStore)
-            .mapError(e => JorlanError(e))
-          tokenBody = Body.fromString(
-            s"code=${URLEncoder.encode(code, "UTF-8")}" +
-              s"&client_id=${URLEncoder.encode(googleCfg.clientId, "UTF-8")}" +
-              s"&client_secret=${URLEncoder.encode(googleCfg.clientSecret, "UTF-8")}" +
-              s"&redirect_uri=${URLEncoder.encode(googleCfg.redirectUri, "UTF-8")}" +
-              s"&grant_type=authorization_code",
-          )
-          tokenReq = Request
-            .post(URL.decode(GoogleTokenUri).getOrElse(URL.empty), tokenBody)
-            .addHeader(Header.ContentType(MediaType.application.`x-www-form-urlencoded`))
-          tokenResp <- Client
-            .batched(tokenReq)
-            .mapError(e => JorlanError(s"Token exchange HTTP error: $e"))
-            .provideEnvironment(ZEnvironment(httpClient))
-          tokenStr <- tokenResp.body.asString
-            .mapError(e => JorlanError(s"Token body read failed: ${e.getMessage}", Some(e)))
-          _ <- ZIO.when(!tokenResp.status.isSuccess)(
-            ZIO.logDebug(s"[oauth:callback] Google token error body: $tokenStr") *>
-              ZIO.fail(JorlanError("Google token exchange failed")),
-          )
-          tokenJson <- ZIO
-            .fromEither(tokenStr.fromJson[Json])
-            .mapError(e => JorlanError(s"Token JSON parse failed: $e"))
-          _ <- oauthCredSvc.store(UserId(payload.userId), payload.provider, tokenJson)
-        } yield Response.redirect(URL.decode("/?oauth=success").getOrElse(URL.empty)))
-          .catchAll { e =>
-            ZIO.logWarning(s"[oauth:callback] error=${e.getMessage}") *>
-              ZIO.succeed(Response.redirect(URL.decode("/?oauth=error").getOrElse(URL.empty)))
-          }
-      }
-
-    Routes(callbackRoute)
+  def apply(): UIO[OAuthRoutes] = {
+    for {
+      nonceStore <- Ref.make(Map.empty[String, Long])
+    } yield new OAuthRoutes(nonceStore)
   }
 
 }

@@ -91,8 +91,8 @@ extension (settings: ZIOServerSettingsRepository) {
   def setPersonality(p: Personality): RepositoryTask[Unit] =
     ZIO
       .fromEither(p.toJsonAST.left.map(RuntimeException(_)))
-      .orDie
       .flatMap(json => settings.set(ZIOServerSettingsRepository.PersonalityKey, json))
+      .mapError(RepositoryError.apply)
 
 }
 

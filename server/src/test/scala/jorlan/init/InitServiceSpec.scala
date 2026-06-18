@@ -12,7 +12,6 @@ package jorlan.init
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import jorlan.testing.InMemoryRepositories
 import zio.*
@@ -202,6 +201,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           "agent.session.terminate",
           "admin.personality.read",
           "admin.personality.update",
+          "admin.user.list",
           "user.create",
           "user.update",
           "role.create",
@@ -220,6 +220,9 @@ object InitServiceSpec extends ZIOSpecDefault {
           "mcp.call",
           "admin.mcp.reload",
           "admin.user.list",
+          "shell.read",
+          "weather.read",
+          "shell.read",
         )
         for {
           tokenStore <- ZIO.service[InitTokenStore]

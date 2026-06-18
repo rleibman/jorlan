@@ -85,13 +85,13 @@ enablePlugins(
   com.github.sbt.git.GitVersioning,
 )
 
-val emilVersion = "0.19.0"
-val zioInteropCatsVersion = "23.1.0.5"
-val bouncyCastleVersion = "1.79"
+val emilVersion = "0.20.0"
+val zioInteropCatsVersion = "23.1.0.13"
+val bouncyCastleVersion = "1.84"
 val googleApiClientVersion = "2.9.0"
-val googleApisGmailVersion = "v1-rev20260112-2.0.0"
-val googleApisCalendarVersion = "v3-rev20251123-2.0.0"
-val googleApisDriveVersion = "v3-rev20260220-2.0.0"
+val googleApisGmailVersion = "v1-rev20260525-2.0.0"
+val googleApisCalendarVersion = "v3-rev20260517-2.0.0"
+val googleApisDriveVersion = "v3-rev20260428-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
 val telegramiumVersion = "10.1000.0"
 val calibanClientVersion = "3.1.2"
@@ -103,22 +103,22 @@ val dispatchHttpVersion = "2.0.0"
 val flywayVersion = "12.8.1"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
-val jsoniterVersion = "2.38.9"
+val jsoniterVersion = "2.38.14"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.16.2"
-val langchainCoreVersion = "1.16.2"
-val langchainLibrariesVersion = "1.16.2-beta26"
+val langchain4jOllamaVersion = "1.16.3"
+val langchainCoreVersion = "1.16.3"
+val langchainLibrariesVersion = "1.16.3-beta26"
 val lanternaVersion = "3.1.5"
 val logbackVersion = "1.5.34"
-val mariadbVersion = "3.5.8"
+val mariadbVersion = "3.5.9"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
 val quillVersion = "4.8.6"
 val scalablytypedRuntimeVersion = "2.4.2"
 val scalacssVersion = "1.0.0"
-val scalaJavaTimeVersion = "2.6.0"
+val scalaJavaTimeVersion = "2.7.0"
 val scalajsDomVersion = "2.8.1"
 val scalajsReactVersion = "4.0.0"
 val scalatagsVersion = "0.13.1"
@@ -263,7 +263,7 @@ lazy val calculatorSkill = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-calculator",
     libraryDependencies ++= Seq(
-      "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.0" withSources (),
+      "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
       "dev.zio"                %% "zio"                     % zioVersion withSources (),
       "dev.zio"                %% "zio-json"                % zioJsonVersion withSources (),
       // Testing
@@ -348,6 +348,74 @@ lazy val unitConversionSkill = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// HTTP Fetch Skill — capability-gated HTTP GET/POST for agents
+
+lazy val httpFetchSkill = project
+  .in(file("http-fetch"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-http-fetch",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
+
+lazy val weatherSkill = project
+  .in(file("weather"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-weather",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Time Skill — java.time-based timezone/datetime skill (no external dependencies)
+
+lazy val timeSkill = project
+  .in(file("time-skill"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-time-skill",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Market Data — Alpha Vantage market data skill
 
 lazy val marketDataSkill = project
@@ -358,6 +426,29 @@ lazy val marketDataSkill = project
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-market-data",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"      % zioVersion withSources (),
+      "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      // Testing
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Test / fork := true,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Search Skill — Tavily web search API
+
+lazy val searchSkill = project
+  .in(file("search"))
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .dependsOn(modelJVM, connectorApi)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-search",
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio"      % zioVersion withSources (),
       "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
@@ -423,7 +514,11 @@ lazy val server = project
     googleServices,
     unitConversionSkill,
     lyrionSkill,
-    marketDataSkill
+    marketDataSkill,
+    weatherSkill,
+    timeSkill,
+    searchSkill,
+    httpFetchSkill,
   )
   .settings(
     scalacOptions ++= scala3Opts :+ "-Werror",
@@ -829,8 +924,12 @@ lazy val root = project
     emailConnector,
     googleServices,
     marketDataSkill,
+    weatherSkill,
+    searchSkill,
     lyrionSkill,
     unitConversionSkill,
+    timeSkill,
+    httpFetchSkill,
     ai,
     server,
     shell,

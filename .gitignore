@@ -67,3 +67,5 @@ dist
 /.claude/worktrees
 /server/logs/
 /logs
+/.claude/.claude/worktrees/phase-14.11/
+/.claude/.claude/worktrees/phase-14.16/

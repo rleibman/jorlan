@@ -36,7 +36,11 @@ object StreamingChatLanguageModel {
       ): Unit = {
         import dev.langchain4j.model.chat.request.ChatRequest
         j.chat(
-          ChatRequest.builder().messages(messages).toolSpecifications(toolSpecifications).build(),
+          ChatRequest
+            .builder()
+            .messages(messages)
+            .toolSpecifications(toolSpecifications)
+            .build(),
           handler,
         )
       }

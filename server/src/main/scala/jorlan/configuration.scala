@@ -81,6 +81,7 @@ case class ShellSettings(
   allowedBinaries:  List[String] = List("echo", "ls", "cat", "grep", "find", "pwd"),
   timeoutSeconds:   Int = 30,
   captureThreshold: Int = 65536,
+  sandboxRoot:      String = ".",
 )
 
 case class WebConfig(
@@ -141,11 +142,11 @@ case class AppConfig(jorlan: JorlanConfig)
 
 object AppConfig {
 
-  def read(typesafeConfig: TypesafeConfig): UIO[AppConfig] =
+  def read(typesafeConfig: TypesafeConfig): IO[ConfigurationError, AppConfig] =
     TypesafeConfigProvider
       .fromTypesafeConfig(typesafeConfig)
       .load(DeriveConfig.derived[AppConfig].desc)
-      .orDie
+      .mapError(e => ConfigLoadError("", Option(e)))
 
 }
 

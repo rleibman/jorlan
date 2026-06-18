@@ -61,6 +61,11 @@ trait SkillRegistry {
   /** Unregister all skills whose name matches the given predicate. Used by [[McpManager]] on reload. */
   def unregisterWhere(pred: String => Boolean): UIO[Unit]
 
+  def enableSkill(name:  String): UIO[Unit]
+  def disableSkill(name: String): UIO[Unit]
+  def isDisabled(name:   String): UIO[Boolean]
+  def disabledSet:                UIO[Set[String]]
+
 }
 
 object SkillRegistry {
@@ -71,18 +76,20 @@ object SkillRegistry {
   val live: ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
-        ref   <- Ref.make(Map.empty[String, Skill])
-        cache <- makeCache
-      } yield SkillRegistryLive(ref, None, cache),
+        ref      <- Ref.make(Map.empty[String, Skill])
+        cache    <- makeCache
+        disabled <- Ref.make(Set.empty[String])
+      } yield SkillRegistryLive(ref, None, cache, disabled),
     )
 
   /** Build a registry pre-populated with the given skills (capability enforcement disabled; for tests). */
   def liveWith(skills: Skill*): ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
-        ref   <- Ref.make(Map.empty[String, Skill])
-        cache <- makeCache
-        registry = SkillRegistryLive(ref, None, cache)
+        ref      <- Ref.make(Map.empty[String, Skill])
+        cache    <- makeCache
+        disabled <- Ref.make(Set.empty[String])
+        registry = SkillRegistryLive(ref, None, cache, disabled)
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
@@ -94,7 +101,8 @@ object SkillRegistry {
         evaluator <- ZIO.service[CapabilityEvaluator]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
-      } yield SkillRegistryLive(ref, Some(evaluator), cache),
+        disabled  <- Ref.make(Set.empty[String])
+      } yield SkillRegistryLive(ref, Some(evaluator), cache, disabled),
     )
 
   /** Build a pre-populated registry wired with [[CapabilityEvaluator]] for production use. */
@@ -104,7 +112,8 @@ object SkillRegistry {
         evaluator <- ZIO.service[CapabilityEvaluator]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
-        registry = SkillRegistryLive(ref, Some(evaluator), cache)
+        disabled  <- Ref.make(Set.empty[String])
+        registry = SkillRegistryLive(ref, Some(evaluator), cache, disabled)
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
@@ -137,10 +146,12 @@ class SkillRegistryLive(
   skills:         Ref[Map[String, Skill]],
   evaluator:      Option[CapabilityEvaluator],
   toolSpecsCache: Ref[Option[List[ToolSpec]]],
+  disabled:       Ref[Set[String]],
 ) extends SkillRegistry {
 
   override def register(skill: Skill): UIO[Unit] =
     for {
+      _ <- ZIO.logDebug("Registering skill: " + skill.descriptor.name)
       _ <- ZIO
         .logWarning(s"SkillRegistry: overwriting existing skill '${skill.descriptor.name}'")
         .whenZIO(skills.get.map(_.contains(skill.descriptor.name)))
@@ -152,10 +163,13 @@ class SkillRegistryLive(
     skills.get.map(_.values.toList)
 
   override def allTools: UIO[List[ToolDescriptor]] =
-    skills.get.map(_.values.toList.flatMap(_.descriptor.tools))
+    for {
+      dis   <- disabled.get
+      tools <- skills.get.map(_.values.filter(s => !dis.contains(s.descriptor.name)).toList.flatMap(_.descriptor.tools))
+    } yield tools
 
   override def allAdminCapabilities: UIO[List[CapabilityName]] =
-    allTools.map(_.flatMap(_.requiredCapabilities).distinct)
+    skills.get.map(_.values.toList.flatMap(_.descriptor.tools).flatMap(_.requiredCapabilities).distinct)
 
   override def allToolSpecs: UIO[List[ToolSpec]] =
     toolSpecsCache.get.flatMap {
@@ -176,36 +190,53 @@ class SkillRegistryLive(
   override def unregisterWhere(pred: String => Boolean): UIO[Unit] =
     skills.update(_.filterNot { case (name, _) => pred(name) }) *> toolSpecsCache.set(None)
 
+  override def enableSkill(name: String): UIO[Unit] =
+    disabled.update(_ - name) *> toolSpecsCache.set(None)
+
+  override def disableSkill(name: String): UIO[Unit] =
+    disabled.update(_ + name) *> toolSpecsCache.set(None)
+
+  override def isDisabled(name: String): UIO[Boolean] =
+    disabled.get.map(_.contains(name))
+
+  override def disabledSet: UIO[Set[String]] =
+    disabled.get
+
   override def invoke(
     toolName: String,
     argsJson: String,
     ctx:      InvocationContext,
   ): UIO[Json] = {
     skills.get.flatMap { map =>
-      // Find the skill whose name, followed by '.', is the longest prefix of toolName.
-      // Longest-prefix wins so that mcp.my.server.com beats mcp.my for tool mcp.my.server.com.read_file.
+      // Longest-prefix match: find the skill whose name + "." is the longest prefix of toolName.
+      // This supports dotted skill names (e.g. mcp.myserver) without confusing mcp.my vs mcp.my.server.
       val matchedSkill = map
         .filter { case (name, _) => toolName.startsWith(s"$name.") }
         .maxByOption { case (name, _) => name.length }
-        .map { case (_, skill) => skill }
+
       matchedSkill match {
         case None =>
           ZIO.succeed(Json.Str(s"Error: no registered skill handles tool '$toolName'"))
-        case Some(skill) =>
-          validateRequiredFields(toolName, argsJson, skill).flatMap {
-            case Left(err) =>
-              ZIO.succeed(Json.Str(s"Error: $err"))
-            case Right(args) =>
-              checkCapabilities(toolName, ctx, skill).flatMap {
-                case Some(denied) => ZIO.succeed(Json.Str(s"Error: $denied"))
-                case None         =>
-                  skill
-                    .invoke(ctx, toolName, args)
-                    .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg} (args: $argsJson)"))
-                    .fold(
-                      e => Json.Str(s"Error: ${e.msg}"),
-                      identity,
-                    )
+        case Some((skillName, skill)) =>
+          isDisabled(skillName).flatMap {
+            case true =>
+              ZIO.succeed(Json.Str(s"Error: skill '$skillName' is disabled"))
+            case false =>
+              validateRequiredFields(toolName, argsJson, skill).flatMap {
+                case Left(err) =>
+                  ZIO.succeed(Json.Str(s"Error: $err"))
+                case Right(args) =>
+                  checkCapabilities(toolName, ctx, skill).flatMap {
+                    case Some(denied) => ZIO.succeed(Json.Str(s"Error: $denied"))
+                    case None         =>
+                      skill
+                        .invoke(ctx, toolName, args)
+                        .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg} (args: $argsJson)"))
+                        .fold(
+                          e => Json.Str(s"Error: ${e.msg}"),
+                          identity,
+                        )
+                  }
               }
           }
       }

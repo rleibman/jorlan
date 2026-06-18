@@ -13,7 +13,6 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.*
@@ -484,8 +483,9 @@ object AgentRunnerImpl {
 
   val defaultMaxToolSteps: Int = 10
 
-  val live: URLayer[
+  val live: ZLayer[
     ModelGateway & SessionHub & ToolEventHub & ZIORepositories & MemoryService & SkillRegistry & ConfigurationService,
+    JorlanError,
     AgentRunner,
   ] =
     ZLayer.fromZIO(
@@ -496,7 +496,7 @@ object AgentRunnerImpl {
         repo          <- ZIO.service[ZIORepositories]
         memoryService <- ZIO.service[MemoryService]
         skillRegistry <- ZIO.service[SkillRegistry]
-        settings      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent).orDie
+        settings      <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.agent)
         runnerState   <- AgentRunnerState.make
       } yield AgentRunnerImpl(
         modelGateway = modelGateway,

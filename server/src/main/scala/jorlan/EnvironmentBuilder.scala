@@ -47,7 +47,8 @@ object EnvironmentBuilder {
         },
       ).flatten
 
-  private val liveConnectorManagerLayer: URLayer[ZIORepositories & MessageIngress & Client, ConnectorManager] =
+  private val liveConnectorManagerLayer
+    : ZLayer[ZIORepositories & MessageIngress & Client, JorlanError, ConnectorManager] =
     ZLayer.fromZIO {
       for {
         skillRepo  <- ZIO.serviceWith[ZIORepositories](_.skill)
@@ -55,8 +56,6 @@ object EnvironmentBuilder {
         httpClient <- ZIO.service[Client]
         connectors <- skillRepo
           .searchConnectors(ConnectorSearch())
-          .mapError(e => new RuntimeException(e.msg))
-          .orDie
         telegramInstances = connectors.filter(_.connectorType == ConnectorType.Telegram)
         _ <- ZIO.logInfo(s"[connector] found ${telegramInstances.length} Telegram connector instance(s) in DB")
         // Parse configs, logging any that fail
@@ -84,10 +83,10 @@ object EnvironmentBuilder {
 
   /** ZLayer that provides [[OAuthCredentialService]] from config + repositories + HTTP client. */
   private val oauthCredentialServiceLayer
-    : URLayer[ConfigurationService & ZIORepositories & Client, OAuthCredentialService] =
+    : ZLayer[ConfigurationService & ZIORepositories & Client, JorlanError, OAuthCredentialService] =
     ZLayer.fromZIO {
       for {
-        config     <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+        config     <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
         repos      <- ZIO.service[ZIORepositories]
         httpClient <- ZIO.service[Client]
         googleCfg = config.jorlan.google

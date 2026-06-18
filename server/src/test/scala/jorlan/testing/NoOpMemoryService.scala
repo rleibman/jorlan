@@ -61,7 +61,7 @@ class NoOpMemoryService extends MemoryService {
   ): IO[JorlanError, Unit] = ZIO.unit
 
   override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] =
-    ZIO.succeed(CheckpointPolicyConfig())
+    ZIO.succeed(CheckpointPolicyConfig.default)
 
   override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
 

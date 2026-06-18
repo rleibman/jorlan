@@ -34,7 +34,7 @@ private[service] trait SkillEventLogger {
     ctx:       InvocationContext,
     eventType: EventType,
     payload:   Json,
-  ): UIO[Unit] =
+  ): IO[JorlanError, Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
         .append(
@@ -48,7 +48,7 @@ private[service] trait SkillEventLogger {
             payloadJson = Some(payload),
             occurredAt = now,
           ),
-        ).orDie.unit
+        ).unit
     }
 
 }
