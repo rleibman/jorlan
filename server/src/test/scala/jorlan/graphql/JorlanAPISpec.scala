@@ -190,7 +190,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         approvalSvcLayer,
         noOpNotificationRouter,
         oauthCredSvcLayer,
-      Client.default.orDie,
+        Client.default.orDie,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
       ).orDie
   }

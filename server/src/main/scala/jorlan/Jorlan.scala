@@ -23,9 +23,9 @@ import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
 import jorlan.lyrion.*
 import jorlan.market.*
 import jorlan.routes.*
-import jorlan.service.mcp.McpManagerImpl
 import jorlan.search.{SearchConfig, SearchSkill}
 import jorlan.service.*
+import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.TimeSkill
@@ -242,6 +242,11 @@ object Jorlan extends ZIOApp {
         case None =>
           ZIO.logDebug("Weather skill not configured (set skill.weather in server_settings to enable)")
       }
+      // Load MCP servers from server_settings
+      _ <- ZIO
+        .scoped {
+          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
+        }.mapError(e => new Throwable(e.msg))
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
           val names = elems.collect { case zio.json.ast.Json.Str(s) => s }
@@ -249,13 +254,6 @@ object Jorlan extends ZIOApp {
         case _ => ZIO.unit
       }
     } yield ()).mapError(JorlanError.apply)
-      _ <- registry.register(new UnitConversionSkill())
-      // Load MCP servers from server_settings
-      _ <- ZIO
-        .scoped {
-          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
-        }.mapError(e => new Throwable(e.msg))
-    } yield ()
 
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
