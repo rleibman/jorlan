@@ -11,7 +11,7 @@
 package ai
 // $COVERAGE-OFF$
 
-import dev.langchain4j.agent.tool.{ToolExecutionRequest, ToolSpecification}
+import dev.langchain4j.agent.tool.ToolSpecification
 import dev.langchain4j.model.chat.request.json.*
 import dev.langchain4j.model.chat.response.ChatResponse
 
@@ -58,7 +58,6 @@ object ToolSupport {
 
   private def parseObjectSchema(json: String): JsonObjectSchema = {
     import com.fasterxml.jackson.databind.ObjectMapper
-    import com.fasterxml.jackson.databind.node.ObjectNode
     val mapper = ObjectMapper()
     val root = mapper.readTree(json)
     val builder = JsonObjectSchema.builder()

@@ -13,7 +13,6 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.process.Command
@@ -209,7 +208,7 @@ class ShellSkill(
     ctx:         InvocationContext,
     eventType:   EventType,
     payloadJson: Json,
-  ): UIO[Unit] =
+  ): IO[JorlanError, Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
         .append(
@@ -223,14 +222,14 @@ class ShellSkill(
             payloadJson = Some(payloadJson),
             occurredAt = now,
           ),
-        ).orDie.unit
+        ).unit
     }
 
   private def captureArtifact(
     ctx:    InvocationContext,
     binary: String,
     stdout: String,
-  ): UIO[Option[String]] =
+  ): IO[JorlanError, Option[String]] =
     if (stdout.length <= settings.captureThreshold) ZIO.none
     else
       Clock.instant.flatMap { now =>
@@ -245,7 +244,7 @@ class ShellSkill(
           metadataJson = Some(Json.Obj("binary" -> Json.Str(binary), "bytes" -> Json.Num(stdout.length))),
           createdAt = now,
         )
-        repo.artifact.upsert(artifact).orDie.map(a => Some(a.storageUri.toString))
+        repo.artifact.upsert(artifact).map(a => Some(a.storageUri.toString))
       }
 
   private def shellRun(
@@ -324,10 +323,11 @@ class ShellSkill(
       .attempt(sandboxRoot.resolve(relOrAbs).normalize())
       .mapError(e => JorlanError(s"shell: invalid path: ${e.getMessage}"))
       .flatMap { resolved =>
-        if (!resolved.startsWith(sandboxRoot))
-          ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'"))
-        else
-          ZIO.succeed(resolved)
+        for {
+          rootReal <- ZIO.attemptBlocking(sandboxRoot.toRealPath()).orElseSucceed(sandboxRoot)
+          real     <- ZIO.attemptBlocking(resolved.toRealPath()).orElseSucceed(resolved)
+          _        <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
+        } yield resolved
       }
 
   /** Run a command (binary + args), capture its stdout+stderr, apply the 64 KB cap. */
@@ -338,29 +338,35 @@ class ShellSkill(
     val cmd = Command(binary, cmdArgs*)
     cmd.run
       .flatMap { process =>
+        val limit = (MaxSafeOutputBytes + 1).toLong
         for {
-          stdout   <- process.stdout.string
-          stderr   <- process.stderr.string
-          exitCode <- process.exitCode
-        } yield (exitCode.code, stdout, stderr)
+          stdoutChunk <- process.stdout.stream.take(limit).runCollect
+          stderrChunk <- process.stderr.stream.take(limit).runCollect
+          exitCode    <- process.exitCode
+        } yield (
+          exitCode.code,
+          truncateOutput(new String(stdoutChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+          truncateOutput(new String(stderrChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+        )
       }
-      .timeout(10.seconds)
-      .mapError(e => JorlanError(s"$binary: ${e.getMessage}"))
-      .map {
-        case Some((code, out, err)) =>
-          val truncOut = truncateOutput(out)
-          Json.Obj(
-            "exitCode" -> Json.Num(code),
-            "stdout"   -> Json.Str(truncOut),
-            "stderr"   -> Json.Str(err),
-          )
-        case None =>
-          Json.Obj(
-            "exitCode" -> Json.Num(-1),
-            "stdout"   -> Json.Str(""),
-            "stderr"   -> Json.Str("Error: command timed out after 10s"),
-          )
-      }
+      .timeout(10.seconds).mapBoth(
+        e => JorlanError(s"$binary: ${e.getMessage}"),
+        {
+          case Some((code, out, err)) =>
+            val truncOut = truncateOutput(out)
+            Json.Obj(
+              "exitCode" -> Json.Num(code),
+              "stdout"   -> Json.Str(truncOut),
+              "stderr"   -> Json.Str(err),
+            )
+          case None =>
+            Json.Obj(
+              "exitCode" -> Json.Num(-1),
+              "stdout"   -> Json.Str(""),
+              "stderr"   -> Json.Str("Error: command timed out after 10s"),
+            )
+        },
+      )
   }
 
   private def truncateOutput(s: String): String =

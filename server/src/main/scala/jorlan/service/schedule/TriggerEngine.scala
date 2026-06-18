@@ -15,9 +15,8 @@ import cron4s.expr.CronExpr
 import cron4s.lib.javatime.*
 import cron4s.syntax.all.*
 import jorlan.*
+import jorlan.SchedulerJob.*
 import jorlan.db.repository.*
-import jorlan.*
-import SchedulerJob.*
 import jorlan.service.{AgentRunner, AgentSessionManager}
 import zio.*
 
@@ -26,7 +25,7 @@ import zio.*
   */
 trait TriggerEngine {
 
-  def start: UIO[Unit]
+  def start: IO[JorlanError, Unit]
 
 }
 
@@ -66,7 +65,7 @@ class TriggerEngineImpl(
   jobTimeout:     Duration = Duration.ofSeconds(300),
 ) extends TriggerEngine {
 
-  private val workerIdIO: UIO[String] =
+  private val workerIdIO: IO[JorlanError, String] =
     ZIO
       .attemptBlocking {
         val host = InetAddress.getLocalHost.nn.getHostName.nn
@@ -77,7 +76,7 @@ class TriggerEngineImpl(
   private def logJobEvent(
     eventType: EventType,
     job:       SchedulerJob,
-  ): UIO[Unit] =
+  ): IO[JorlanError, Unit] =
     Clock.instant.flatMap { now =>
       repo.eventLog
         .append(
@@ -90,8 +89,8 @@ class TriggerEngineImpl(
             now = now,
           ),
         )
-        .unit
-        .orDie
+        .unit.mapError(JorlanError.apply)
+
     }
 
   private def advanceCronTrigger(
@@ -159,7 +158,7 @@ class TriggerEngineImpl(
   private def scheduleRetryOrFail(
     job: SchedulerJob,
     now: Instant,
-  ): UIO[Unit] =
+  ): IO[JorlanError, Unit] =
     if (job.retryCount < job.maxRetries) {
       val backoff = job.backoffPolicy match {
         case RetryBackoffPolicy.Fixed       => job.backoffSeconds.toLong
@@ -181,7 +180,7 @@ class TriggerEngineImpl(
     job:       SchedulerJob,
     cronCache: Ref[Map[SchedulerTriggerId, CronExpr]],
     workerId:  String,
-  ): UIO[Unit] = {
+  ): IO[JorlanError, Unit] = {
     val content = if (job.prompt.nonEmpty) job.prompt else job.inputJson.getOrElse("")
     ZIO
       .acquireReleaseWith(
@@ -198,7 +197,7 @@ class TriggerEngineImpl(
                 leasedBy = Some(workerId),
               ),
             )
-            .orDie
+
           session <- sessionManager.createSession(job.userId, None)
         } yield session,
       )(
@@ -236,14 +235,14 @@ class TriggerEngineImpl(
           _   <- scheduleRetryOrFail(job, now)
           _   <- logJobEvent(EventType.SchedulerJobFailed, job)
         } yield ()
-      }
+      }.mapError(JorlanError.apply)
   }
 
   /** Recompute `scheduledAt` for all Pending jobs with Cron or Interval triggers that are already in the past, to
     * prevent a thundering herd on restart.
     */
-  private def recomputeStaleTriggers: UIO[Unit] =
-    (for {
+  private def recomputeStaleTriggers: IO[JorlanError, Unit] =
+    for {
       now  <- Clock.instant
       jobs <- repo.scheduler.getPendingJobs
       staleness = pollInterval.multipliedBy(2L)
@@ -287,7 +286,7 @@ class TriggerEngineImpl(
           }
         } yield ()).orElse(ZIO.unit)
       }
-    } yield ()).orDie
+    } yield ()
 
   /** One poll tick: expire stale leases, then claim and fork each pending job.
     *
@@ -297,15 +296,14 @@ class TriggerEngineImpl(
   private[service] def tick(
     workerId:  String,
     cronCache: Ref[Map[SchedulerTriggerId, CronExpr]],
-  ): UIO[Unit] = {
+  ): IO[JorlanError, Unit] = {
     for {
       now  <- Clock.instant
-      _    <- repo.scheduler.expireLeases(now.minusSeconds(leaseTtl.toLong)).orDie
-      jobs <- repo.scheduler.getPendingJobs.orDie
+      _    <- repo.scheduler.expireLeases(now.minusSeconds(leaseTtl.toLong))
+      jobs <- repo.scheduler.getPendingJobs
       _    <- ZIO.foreachDiscard(jobs) { job =>
         repo.scheduler
           .claimJob(job.id, workerId, now, leaseTtl)
-          .orDie
           .flatMap { claimed =>
             executeJob(job, cronCache, workerId).forkDaemon.unit.when(claimed)
           }
@@ -318,7 +316,7 @@ class TriggerEngineImpl(
     * This method runs until interrupted. Callers should `forkDaemon` the returned effect and retain the fiber for
     * potential cancellation.
     */
-  override def start: UIO[Unit] =
+  override def start: IO[JorlanError, Unit] =
     for {
       workerId  <- workerIdIO
       cronCache <- Ref.make(Map.empty[SchedulerTriggerId, CronExpr])
@@ -331,15 +329,16 @@ class TriggerEngineImpl(
 
 object TriggerEngine {
 
-  val live: URLayer[
-    ZIORepositories & AgentSessionManager & AgentRunner & ConfigurationService,
-    TriggerEngine,
+  val live: ZLayer[
+    ConfigurationService & AgentRunner & AgentSessionManager & ZIORepositories,
+    ConfigurationError,
+    TriggerEngineImpl,
   ] = ZLayer.fromZIO {
     for {
       repo   <- ZIO.service[ZIORepositories]
       sm     <- ZIO.service[AgentSessionManager]
       runner <- ZIO.service[AgentRunner]
-      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).orDie
+      config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
       s = config.jorlan.scheduler
     } yield TriggerEngineImpl(
       repo,

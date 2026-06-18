@@ -14,7 +14,6 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 
 /** Built-in skill for user, role, and capability-grant management.
@@ -62,6 +61,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
         name = "user_mgmt.get_user",
         description = "Fetch a single user by their numeric ID. Returns an empty object if not found.",
         inputSchema = Json.decoder
+          .decodeJson(
+            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID to get"}},"required":["userId"]}""",
           )
           .getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
@@ -254,11 +255,12 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_users: pageSize must be > 0"))
     else {
       val nameContains = SkillArgs.str(args, "nameContains")
-      val active = SkillArgs.bool(args, "active")
+      val active = SkillArgs.bool(args, "active").orElse(Some(true))
       repos.user
-        .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize))
-        .mapError(JorlanError(_))
-        .map(users => Json.Arr(users.map(userJson)*))
+        .search(UserSearch(nameContains = nameContains, active = active, page = page, pageSize = pageSize)).mapBoth(
+          JorlanError(_),
+          users => Json.Arr(users.map(userJson)*),
+        )
     }
   }
 
@@ -390,9 +392,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def revokeGrant(args: Json): IO[JorlanError, Json] = {
     requireLong(args, "revoke_grant", "grantId").flatMap { id =>
       repos.permission
-        .revokeGrant(CapabilityGrantId(id))
-        .mapError(JorlanError(_))
-        .as(Json.Obj("success" -> Json.Bool(true)))
+        .revokeGrant(CapabilityGrantId(id)).mapBoth(JorlanError(_), _ => Json.Obj("success" -> Json.Bool(true)))
     }
   }
 
@@ -417,8 +417,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
         fields.collectFirst { case (`field`, Json.Num(n)) => n } match {
           case Some(n) =>
             ZIO
-              .attempt(n.longValueExact)
-              .mapError(_ => JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
+              .attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
           case None =>
             SkillArgs.str(args, field) match {
               case Some(s) =>

@@ -11,7 +11,6 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.*
 import zio.*
 import zio.stream.ZStream
 
@@ -62,15 +61,16 @@ case class ToolCallRequested(
 
 /** Root error type for all model-call failures. */
 sealed abstract class ModelError(
-  override val msg:   String,
-  override val cause: Option[Throwable] = None,
+  override val msg:         String,
+  override val cause:       Option[Throwable] = None,
+  override val isTransient: Boolean = false,
 ) extends JorlanError(msg, cause)
 
 /** The LLM provider is unreachable or returned a non-retryable connection error. */
 case class ModelUnavailable(override val msg: String) extends ModelError(msg)
 
 /** The model call exceeded the configured timeout. */
-case class ModelTimeout(override val msg: String) extends ModelError(msg)
+case class ModelTimeout(override val msg: String) extends ModelError(msg, isTransient = true)
 
 /** The model returned a response that could not be parsed into the expected format. */
 case class ModelResponseMalformed(override val msg: String) extends ModelError(msg)
@@ -93,7 +93,7 @@ trait ModelGateway {
     sessionId:    AgentSessionId,
     message:      String,
     systemPrompt: String = "",
-  ): ZStream[Any, ModelError, String]
+  ): ZStream[Any, JorlanError, String]
 
   /** Single step in the ReAct tool-calling loop.
     *
@@ -107,10 +107,10 @@ trait ModelGateway {
     sessionId: AgentSessionId,
     messages:  List[AgentMessage],
     tools:     List[ToolSpec],
-  ): IO[ModelError, ChatStep]
+  ): IO[JorlanError, ChatStep]
 
   /** Returns metadata for all models the gateway can currently route to. */
-  def availableModels: UIO[List[ModelInfo]]
+  def availableModels: IO[JorlanError, List[ModelInfo]]
 
   /** Pre-populate the in-memory chat history for `sessionId` from persisted [[Message]] records.
     *
@@ -121,13 +121,13 @@ trait ModelGateway {
     sessionId:    AgentSessionId,
     messages:     List[Message],
     systemPrompt: String = "",
-  ): UIO[Unit]
+  ): IO[JorlanError, Unit]
 
   /** Release all in-process resources (chat memory, connection pools) held for `sessionId`.
     *
     * Must be called on session termination to prevent unbounded growth of the per-session map.
     */
-  def invalidateSession(sessionId: AgentSessionId): UIO[Unit]
+  def invalidateSession(sessionId: AgentSessionId): IO[JorlanError, Unit]
 
 }
 

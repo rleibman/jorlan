@@ -126,7 +126,11 @@ class GoogleContactsSkill(
           _        <- logEvent(
             ctx,
             EventType.ContactRead,
-            Json.Obj("action" -> Json.Str("searchContacts"), "query" -> Json.Str(query), "count" -> Json.Num(contacts.size)),
+            Json.Obj(
+              "action" -> Json.Str("searchContacts"),
+              "query"  -> Json.Str(query),
+              "count"  -> Json.Num(contacts.size),
+            ),
           )
         } yield Json.Obj(
           "contacts" -> Json.Arr(contacts.map(contactToJson)*),

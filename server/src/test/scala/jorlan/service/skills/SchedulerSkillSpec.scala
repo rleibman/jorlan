@@ -26,11 +26,12 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
   private val userId = UserId(1L)
 
   override val bootstrap: ULayer[JobManager] =
-    ZLayer.make[JobManager](
-      InMemoryRepositories.live(),
-      FakeConfigurationService.layer,
-      JobManagerImpl.live,
-    )
+    ZLayer
+      .make[JobManager](
+        InMemoryRepositories.live(),
+        FakeConfigurationService.layer,
+        JobManagerImpl.live,
+      ).orDie
 
   private def makeSkill: URIO[JobManager, SchedulerSkill] =
     ZIO.serviceWith[JobManager](new SchedulerSkill(_))

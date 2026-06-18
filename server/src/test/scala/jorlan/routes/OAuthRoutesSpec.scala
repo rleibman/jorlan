@@ -21,7 +21,7 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
   private val userId = UserId(42L)
   private val provider = "google"
 
-  private def freshStore: UIO[OAuthRoutes.NonceStore] = Ref.make(Map.empty[String, Long])
+  private def freshStore: UIO[NonceStore] = Ref.make(Map.empty[String, Long])
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("OAuthRoutes")(

@@ -19,6 +19,7 @@ import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.*
 import jorlan.service.*
+import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
@@ -674,6 +675,8 @@ object JorlanAPI {
       JorlanError,
       CheckpointPolicyConfig,
     ],
+    /** Reloads MCP servers from server_settings and re-registers adapters. Requires `admin.mcp.reload`. */
+    reloadMcpServers: Unit => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Enables a previously disabled skill by name. Requires `admin.settings`. */
     enableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Disables a skill by name (including built-in skills). Requires `admin.settings`. */
@@ -1336,6 +1339,17 @@ object JorlanAPI {
               _       <- requireCapability("admin.settings", actorId)
               _       <- ZIO.serviceWithZIO[MemoryService](_.updateCheckpointPolicy(config))
             } yield config,
+          reloadMcpServers = _ =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.mcp.reload", actorId)
+              registry <- ZIO.service[SkillRegistry]
+              repos    <- ZIO.service[ZIORepositories]
+              client   <- ZIO.service[zio.http.Client]
+              _        <- ZIO.scoped {
+                McpManagerImpl(registry, client, repos.setting).loadAndRegister
+              }
+            } yield true,
           enableSkill = name =>
             for {
               actorId <- actorIdFromSession

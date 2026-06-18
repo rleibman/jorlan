@@ -64,10 +64,12 @@ object TimeSkillSpec extends ZIOSpecDefault {
           val offset = strField(result, "utcOffset")
           val dt = strField(result, "datetime")
           val dow = strField(result, "dayOfWeek")
-          assertTrue(tz.contains("UTC")) &&
-          assertTrue(offset.contains("Z") || offset.contains("+00:00")) &&
-          assertTrue(dt.exists(_.startsWith("2026-06-16"))) &&
-          assertTrue(dow.exists(_.equalsIgnoreCase("monday")))
+          assertTrue(
+            tz.contains("UTC"),
+            offset.contains("Z") || offset.contains("+00:00"),
+            dt.exists(_.startsWith("2026-06-16")),
+            dow.exists(_.equalsIgnoreCase("tuesday")),
+          )
         }
       },
       test("time.now with America/New_York returns eastern offset") {
@@ -77,9 +79,7 @@ object TimeSkillSpec extends ZIOSpecDefault {
         } yield {
           val tz = strField(result, "timezone")
           val offset = strField(result, "utcOffset")
-          assertTrue(tz.contains("America/New_York")) &&
-          // EDT = -04:00, EST = -05:00
-          assertTrue(offset.exists(o => o == "-04:00" || o == "-05:00"))
+          assertTrue(tz.contains("America/New_York"), offset.exists(o => o == "-04:00" || o == "-05:00"))
         }
       },
       test("time.now with invalid timezone fails with JorlanError") {
@@ -98,8 +98,7 @@ object TimeSkillSpec extends ZIOSpecDefault {
         } yield {
           val converted = strField(result, "converted")
           // Midnight UTC = 09:00 Tokyo (UTC+9)
-          assertTrue(converted.exists(_.contains("09:00:00"))) &&
-          assertTrue(converted.exists(_.contains("+09:00")))
+          assertTrue(converted.exists(_.contains("09:00:00")), converted.exists(_.contains("+09:00")))
         }
       },
       test("time.convert with invalid fromTimezone fails") {
@@ -164,11 +163,13 @@ object TimeSkillSpec extends ZIOSpecDefault {
           val hours = numField(result, "hours")
           val minutes = numField(result, "minutes")
           val humanReadable = strField(result, "humanReadable")
-          assertTrue(totalSecs.contains(5400.0)) &&
-          assertTrue(hours.contains(1.0)) &&
-          assertTrue(minutes.contains(30.0)) &&
-          assertTrue(humanReadable.exists(_.contains("hour"))) &&
-          assertTrue(humanReadable.exists(_.contains("30 minute")))
+          assertTrue(
+            totalSecs.contains(5400.0),
+            hours.contains(1.0),
+            minutes.contains(30.0),
+            humanReadable.exists(_.contains("hour")),
+            humanReadable.exists(_.contains("30 minute")),
+          )
         }
       },
       test("time.diff where to is before from returns negative totalSeconds") {

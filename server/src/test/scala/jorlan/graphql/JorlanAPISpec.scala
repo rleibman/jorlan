@@ -21,6 +21,7 @@ import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
 import zio.*
+import zio.http.Client
 import zio.test.*
 
 /** Unit tests for [[JorlanAPI]] using in-memory service stubs. No database required.
@@ -169,27 +170,29 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ): UIO[zio.json.ast.Json] = ZIO.succeed(zio.json.ast.Json.Str("ok"))
       },
     )
-    ZLayer.make[FullEnv](
-      agentRepoLayer,
-      hubLayer,
-      ToolEventHub.live,
-      capEval,
-      session,
-      FakeModelGateway.layer(List("ok")),
-      AgentSessionManagerImpl.live,
-      memSvcLayer, {
-        ZLayer.fromZIO {
-          ZIO.serviceWith[MemoryService](svc => SkillRegistry.liveWith(new MemorySkill(svc)))
-        }.flatten
-      },
-      FakeConfigurationService.layer,
-      AgentRunnerImpl.live,
-      JobManagerImpl.live,
-      approvalSvcLayer,
-      noOpNotificationRouter,
-      oauthCredSvcLayer,
-      ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
-    )
+    ZLayer
+      .make[FullEnv](
+        agentRepoLayer,
+        hubLayer,
+        ToolEventHub.live,
+        capEval,
+        session,
+        FakeModelGateway.layer(List("ok")),
+        AgentSessionManagerImpl.live,
+        memSvcLayer, {
+          ZLayer.fromZIO {
+            ZIO.serviceWith[MemoryService](svc => SkillRegistry.liveWith(new MemorySkill(svc)))
+          }.flatten
+        },
+        FakeConfigurationService.layer,
+        AgentRunnerImpl.live,
+        JobManagerImpl.live,
+        approvalSvcLayer,
+        noOpNotificationRouter,
+        oauthCredSvcLayer,
+        Client.default.orDie,
+        ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
+      ).orDie
   }
 
   // ─── Helper to extract a Long field from GraphQL response text ────────────────

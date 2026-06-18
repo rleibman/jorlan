@@ -49,17 +49,18 @@ object InitTokenStore {
 
   private val rng: SecureRandom = SecureRandom()
 
-  private def generateToken(): UIO[String] =
-    ZIO.attempt {
-      val bytes = new Array[Byte](16)
-      rng.nextBytes(bytes)
-      bytes.map(b => f"${b & 0xff}%02x").mkString
-    }.orDie
+  private def generateToken(): IO[JorlanError, String] =
+    ZIO
+      .attempt {
+        val bytes = new Array[Byte](16)
+        rng.nextBytes(bytes)
+        bytes.map(b => f"${b & 0xff}%02x").mkString
+      }.mapError(JorlanError.apply)
 
   /** Creates the token store. If `initialized` is false, a 32-hex token is generated and printed to stdout. If already
     * initialized, the store holds `None` and setup is permanently disabled.
     */
-  def make(initialized: Boolean): UIO[InitTokenStore] =
+  def make(initialized: Boolean): IO[JorlanError, InitTokenStore] =
     if (initialized) {
       Ref.make(Option.empty[String]).map(InitTokenStoreImpl(_))
     } else {
@@ -219,14 +220,25 @@ class InitServiceImpl(
     CapabilityName("calendar.write"),
     // Drive
     CapabilityName("drive.read"),
+    // MCP
+    CapabilityName("mcp.call"),
+    CapabilityName("admin.mcp.reload"),
+    // Search
+    CapabilityName("search.read"),
+    // Shell read-only sandbox tools
+    CapabilityName("shell.read"),
+    // Weather
+    CapabilityName("weather.read"),
     // Shell read-only sandbox tools
     CapabilityName("shell.read"),
   )
 
-  // email.send and calendar.write require per-invocation approval per design spec.
+  // email.send, calendar.write, and mcp.call require per-invocation approval per design spec.
+  // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
   private val perInvocationCapabilities: Set[CapabilityName] = Set(
     CapabilityName("email.send"),
     CapabilityName("calendar.write"),
+    CapabilityName("mcp.call"),
   )
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
