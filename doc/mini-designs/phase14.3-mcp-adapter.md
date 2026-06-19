@@ -102,7 +102,7 @@ case class McpServerConfig(
   transport: McpTransport,
   // stdio only
   command:   Option[String] = None,
-  args:      List[String]   = Nil,
+  args:      List[String]   = List.empty,
   env:       Map[String, String] = Map.empty,
   // http only
   url:       Option[String] = None,

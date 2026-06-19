@@ -72,6 +72,6 @@ object ConnectorManager {
     *
     * Use in tests and in non-connector configurations where no connectors are wired.
     */
-  val empty: ConnectorManager = ConnectorManagerImpl(Nil)
+  val empty: ConnectorManager = ConnectorManagerImpl(List.empty)
 
 }

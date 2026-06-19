@@ -296,8 +296,8 @@ class SkillRegistryLive(
           fields
             .collectFirst { case ("required", Json.Arr(reqs)) =>
               reqs.collect { case Json.Str(k) => k }.toList
-            }.getOrElse(Nil)
-        case _ => Nil
+            }.getOrElse(List.empty)
+        case _ => List.empty
       }
       missingKeys = requiredKeys.filterNot(k => obj.fields.exists { case (field, v) => field == k && v != Json.Null })
       _ <-

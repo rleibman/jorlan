@@ -1202,8 +1202,8 @@ object JorlanClient {
     def updatePersonality[A](
       name:      String,
       formality: jorlan.Formality,
-      languages: List[String] = Nil,
-      expertise: List[String] = Nil,
+      languages: List[String] = List.empty,
+      expertise: List[String] = List.empty,
       prompt:    String,
     )(
       innerSelection: SelectionBuilder[Personality, A],

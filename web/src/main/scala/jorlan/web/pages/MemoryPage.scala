@@ -14,9 +14,9 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
+import jorlan.web.components.*
 import jorlan.web.pages.PageUtils
-import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTablePagination, MuiTextField}
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
 
 import java.time.Instant
@@ -54,7 +54,7 @@ object MemoryPage {
       .withHooks[User]
       .useState(
         State(
-          Nil,
+          List.empty,
           "",
           scopeFilter = MemoryScope.User,
           loading = true,

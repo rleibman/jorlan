@@ -41,7 +41,7 @@ class CalculatorSkill extends Skill {
           .decodeJson(
             """{"type":"object","oneOf":[{"properties":{"result":{"type":"number"},"expression":{"type":"string"}},"required":["result","expression"]},{"properties":{"error":{"type":"string"},"expression":{"type":"string"}},"required":["error","expression"]}]}""",
           ).getOrElse(Json.Obj()),
-        requiredCapabilities = Nil,
+        requiredCapabilities = List.empty,
         examplePrompts = List(
           "What is 2 + 2?",
           "Calculate the square root of 144",

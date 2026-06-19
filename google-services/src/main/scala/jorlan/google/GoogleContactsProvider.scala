@@ -45,17 +45,17 @@ class GoogleContactsProvider private (
 
   private def toDomain(person: com.google.api.services.people.v1.model.Person): GoogleContact = {
     val displayName = Option(person.getNames)
-      .map(_.asScala.toList).getOrElse(Nil)
+      .map(_.asScala.toList).getOrElse(List.empty)
       .headOption
       .flatMap(n => Option(n.getDisplayName))
     val emails = Option(person.getEmailAddresses)
-      .map(_.asScala.toList).getOrElse(Nil)
+      .map(_.asScala.toList).getOrElse(List.empty)
       .flatMap(e => Option(e.getValue))
     val phones = Option(person.getPhoneNumbers)
-      .map(_.asScala.toList).getOrElse(Nil)
+      .map(_.asScala.toList).getOrElse(List.empty)
       .flatMap(p => Option(p.getValue))
     val orgs = Option(person.getOrganizations)
-      .map(_.asScala.toList).getOrElse(Nil)
+      .map(_.asScala.toList).getOrElse(List.empty)
       .flatMap(o => Option(o.getName))
     GoogleContact(
       resourceName = Option(person.getResourceName).getOrElse("").nn,
@@ -84,7 +84,7 @@ class GoogleContactsProvider private (
         .execute()
         .nn
       Option(result.getResults)
-        .map(_.asScala.toList).getOrElse(Nil)
+        .map(_.asScala.toList).getOrElse(List.empty)
         .flatMap(r => Option(r.getPerson))
         .map(toDomain)
     }
@@ -107,7 +107,7 @@ class GoogleContactsProvider private (
         .execute()
         .nn
       Option(result.getConnections)
-        .map(_.asScala.toList).getOrElse(Nil)
+        .map(_.asScala.toList).getOrElse(List.empty)
         .map(toDomain)
     }
 

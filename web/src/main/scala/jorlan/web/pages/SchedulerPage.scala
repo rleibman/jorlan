@@ -14,9 +14,9 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
+import jorlan.web.components.*
 import jorlan.web.pages.PageUtils
-import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTablePagination, MuiTextField}
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -72,7 +72,7 @@ object SchedulerPage {
       .withHooks[User]
       .useState(
         State(
-          Nil,
+          List.empty,
           Map.empty,
           Set.empty,
           loading = true,
@@ -484,7 +484,7 @@ object SchedulerPage {
                               ),
                             ).build,
                         ) ++ (if (isExpanded) {
-                                val ts = state.value.triggers.getOrElse(job.id, scala.Nil)
+                                val ts = state.value.triggers.getOrElse(job.id, scala.List.empty)
                                 scala.List[VdomElement](
                                   TableRow
                                     .withKey(s"${job.id.value}-triggers")(
@@ -549,7 +549,7 @@ object SchedulerPage {
                                       ),
                                     ).build,
                                 )
-                              } else scala.Nil)
+                              } else scala.List.empty)
                       }*,
                     ),
                   ),

@@ -45,7 +45,7 @@ trait Skill {
   ///////////////////////////////////////////////////////////////////////////////////
   // Some utility methods used to parse tool arguments from JSON; skills are free to use their own approach, but this keeps things consistent and DRY across skills.
 
-  def str(
+  final protected def str(
     args: Json,
     key:  String,
   ): Option[String] =
@@ -54,7 +54,7 @@ trait Skill {
       case _                => None
     }
 
-  def strList(
+  final protected def strList(
     args: Json,
     key:  String,
   ): List[String] =
@@ -62,11 +62,11 @@ trait Skill {
       case Json.Obj(fields) =>
         fields
           .collectFirst { case (`key`, Json.Arr(elems)) => elems.collect { case Json.Str(s) => s }.toList }
-          .getOrElse(Nil)
-      case _ => Nil
+          .getOrElse(List.empty)
+      case _ => List.empty
     }
 
-  def int(
+  final protected def int(
     args: Json,
     key:  String,
   ): Option[Int] =
@@ -75,7 +75,7 @@ trait Skill {
       case _                => None
     }
 
-  def bool(
+  final protected def bool(
     args: Json,
     key:  String,
   ): Option[Boolean] =
@@ -84,7 +84,7 @@ trait Skill {
       case _                => None
     }
 
-  def optInt(
+  final protected def optInt(
     args: Json,
     name: String,
   ): Option[Int] =
@@ -93,7 +93,7 @@ trait Skill {
       case _                => None
     }
 
-  def optStr(
+  final protected def optStr(
     args: Json,
     name: String,
   ): Option[String] =
@@ -102,10 +102,10 @@ trait Skill {
       case _                => None
     }
 
-  def parseChannelType(s: String): Option[ChannelType] =
+  final protected def parseChannelType(s: String): Option[ChannelType] =
     ChannelType.values.find(_.toString.equalsIgnoreCase(s))
 
-  def parseSchema(literal: String): Json =
+  final protected def parseSchema(literal: String): Json =
     Json.decoder
       .decodeJson(literal).fold(
         err => throw new IllegalArgumentException(s"Malformed tool schema literal: $err"),
@@ -149,9 +149,10 @@ trait ConnectorSkill extends Skill {
   *   the tools this skill exposes; each tool is addressable by its [[ToolDescriptor.name]]
   */
 case class SkillDescriptor(
-  name:  String,
-  tier:  SkillTier,
-  tools: List[ToolDescriptor],
+  name:     String,
+  tier:     SkillTier,
+  tools:    List[ToolDescriptor],
+  keywords: List[String] = List.empty,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.
@@ -173,7 +174,8 @@ case class ToolDescriptor(
   inputSchema:          Json,
   outputSchema:         Json,
   requiredCapabilities: List[CapabilityName],
-  examplePrompts:       List[String] = Nil,
+  examplePrompts:       List[String] = List.empty,
+  keywords:             List[String] = List.empty,
 )
 
 /** The authority context a tool runs under — resolved by the runtime, never supplied by the model.

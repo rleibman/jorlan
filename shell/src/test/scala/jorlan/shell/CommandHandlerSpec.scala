@@ -97,7 +97,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           ): IO[String, B] =
             ref.modify {
               case h :: t => (h.asInstanceOf[B], t)
-              case Nil    => (null.asInstanceOf[B], Nil)
+              case Nil    => (null.asInstanceOf[B], List.empty)
             }
         }
       }
@@ -290,7 +290,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
               ZLayer.succeed[JorlanScreen](fs) ++
                 fakeAuth() ++
                 (fakeGQLRunReturning[scala.Option[List[JorlanClient.ModelInfo.ModelInfoView]]](
-                  Some(Nil),
+                  Some(List.empty),
                 ) >>> ZIOClientRepositories.live) ++
                 defaultCfg ++
                 ShellState.live ++
@@ -508,7 +508,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           name = "Jorlan",
           formality = Formality.Professional,
           languages = List("en"),
-          expertise = Nil,
+          expertise = List.empty,
           prompt = "Be helpful.",
         )
         for {
@@ -577,7 +577,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
           name = "Jorlan",
           formality = Formality.Casual,
           languages = List("en"),
-          expertise = Nil,
+          expertise = List.empty,
           prompt = "Be concise.",
         )
         for {
@@ -1025,7 +1025,7 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("10"))
       },
       test("/agents list shows 'No active sessions' when empty") {
-        val empty: Option[List[jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView]] = Some(Nil)
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.AgentSession.AgentSessionView]] = Some(List.empty)
         for {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]
@@ -1099,7 +1099,8 @@ object CommandHandlerSpec extends ZIOSpecDefault {
         } yield assertTrue(text.contains("shell.execute"), text.contains("5"))
       },
       test("/approvals list shows 'No pending' when empty") {
-        val empty: Option[List[jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView]] = Some(Nil)
+        val empty: Option[List[jorlan.graphql.client.JorlanClient.ApprovalRequest.ApprovalRequestView]] =
+          Some(List.empty)
         for {
           fs   <- FakeScreen.make
           exit <- Promise.make[Nothing, Unit]

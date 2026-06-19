@@ -13,6 +13,7 @@ package jorlan.web.components
 import net.leibman.jorlan.StBuildingComponent
 import net.leibman.jorlan.StBuildingComponent.Default
 import org.scalablytyped.runtime.StObject
+
 import scala.scalajs.js
 import scala.scalajs.js.annotation.{JSImport, JSName}
 

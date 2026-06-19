@@ -59,14 +59,14 @@ class FakeTelegramApiClient(
 object FakeTelegramApiClient {
 
   def make(
-    updates:          List[Update] = Nil,
+    updates:          List[Update] = List.empty,
     firstCallPromise: Option[Promise[Nothing, Unit]] = None,
   ): UIO[FakeTelegramApiClient] =
     (Ref.make(updates) <*> Ref.make(List.empty[(String, String)])).map { case (u, s) =>
       FakeTelegramApiClient(u, s, firstCallPromise)
     }
 
-  def layer(updates: List[Update] = Nil): ULayer[TelegramApiClient] =
+  def layer(updates: List[Update] = List.empty): ULayer[TelegramApiClient] =
     ZLayer(make(updates).map(f => f: TelegramApiClient))
 
 }

@@ -67,7 +67,7 @@ class GmailProvider private (
       case None    => ("", None)
       case Some(p) =>
         val mime = Option(p.getMimeType).getOrElse("").nn
-        val parts = Option(p.getParts).map(_.asScala.toList).getOrElse(Nil)
+        val parts = Option(p.getParts).map(_.asScala.toList).getOrElse(List.empty)
         if (mime.startsWith("text/plain")) {
           (decodePart(Option(p.getBody).flatMap(b => Option(b.getData)).orNull), None)
         } else if (mime.startsWith("text/html")) {
@@ -90,14 +90,14 @@ class GmailProvider private (
 
   private def messageToEmail(m: Message): EmailMessage = {
     val payload = Option(m.getPayload)
-    val headers = payload.flatMap(p => Option(p.getHeaders)).map(_.asScala.toList).getOrElse(Nil)
+    val headers = payload.flatMap(p => Option(p.getHeaders)).map(_.asScala.toList).getOrElse(List.empty)
     def hdr(n: String) =
       headers.find(_.getName.nn.equalsIgnoreCase(n)).flatMap(h => Option(h.getValue)).getOrElse("").nn
     val (plain, html) = extractTextBody(payload.orNull)
-    val labels = Option(m.getLabelIds).map(_.asScala.toList).getOrElse(Nil)
+    val labels = Option(m.getLabelIds).map(_.asScala.toList).getOrElse(List.empty)
     val date = Option(m.getInternalDate).map(d => Instant.ofEpochMilli(d.toLong)).getOrElse(Instant.EPOCH)
     val attachments = payload
-      .flatMap(p => Option(p.getParts)).map(_.asScala.toList).getOrElse(Nil)
+      .flatMap(p => Option(p.getParts)).map(_.asScala.toList).getOrElse(List.empty)
       .filter(pt => Option(pt.getFilename).exists(_.nonEmpty))
       .map { pt =>
         EmailAttachment(
@@ -135,7 +135,7 @@ class GmailProvider private (
         .users().messages().list("me").nn
         .setMaxResults(maxResults.toLong)
       query.foreach(q => req.setQ(q))
-      val msgRefs = Option(req.execute().nn.getMessages).map(_.asScala.toList).getOrElse(Nil)
+      val msgRefs = Option(req.execute().nn.getMessages).map(_.asScala.toList).getOrElse(List.empty)
       msgRefs.map { ref =>
         messageToEmail(
           gmail

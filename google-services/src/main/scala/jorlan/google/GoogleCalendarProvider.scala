@@ -69,7 +69,7 @@ class GoogleCalendarProvider private (
       case "tentative" => CalendarEventStatus.Tentative
       case _           => CalendarEventStatus.Confirmed
     }
-    val attendees = Option(e.getAttendees).map(_.asScala.toList).getOrElse(Nil).map { a =>
+    val attendees = Option(e.getAttendees).map(_.asScala.toList).getOrElse(List.empty).map { a =>
       val response = Option(a.getResponseStatus).getOrElse("needsAction").nn match {
         case "accepted"  => AttendeeResponse.Accepted
         case "declined"  => AttendeeResponse.Declined
@@ -117,7 +117,7 @@ class GoogleCalendarProvider private (
   override def listCalendars(userId: UserId): IO[JorlanError, List[UserCalendar]] =
     withCalendar(userId) { cal =>
       val result = cal.calendarList().list().nn.execute().nn
-      Option(result.getItems).map(_.asScala.toList).getOrElse(Nil).map { item =>
+      Option(result.getItems).map(_.asScala.toList).getOrElse(List.empty).map { item =>
         UserCalendar(
           id = CalendarId(Option(item.getId).getOrElse("").nn),
           summary = Option(item.getSummary).getOrElse("").nn,
@@ -144,7 +144,7 @@ class GoogleCalendarProvider private (
       timeMax.foreach(t => req.setTimeMax(new DateTime(t.toEpochMilli)))
       val result = req.execute().nn
       Option(result.getItems)
-        .map(_.asScala.toList).getOrElse(Nil)
+        .map(_.asScala.toList).getOrElse(List.empty)
         .map(eventToEntry(calendarId, _))
     }
 

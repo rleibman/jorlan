@@ -92,7 +92,7 @@ object CheckpointPolicy {
 trait CheckpointSummarizer {
 
   /** @param messages
-    *   the conversation messages to summarize (returns `Nil` immediately if empty)
+    *   the conversation messages to summarize (returns `List.empty` immediately if empty)
     * @param userId
     *   owner of the resulting [[MemoryRecord]]s
     * @param agentId

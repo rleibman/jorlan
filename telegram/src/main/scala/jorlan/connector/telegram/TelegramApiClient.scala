@@ -183,9 +183,9 @@ class TelegramApiClientLive(
               if (resp.status.code == 409)
                 ZIO.logWarning(
                   s"[telegram] getUpdates 409 Conflict — Telegram says: $body — backing off 30 s.",
-                ) *> ZIO.sleep(30.seconds) *> ZIO.succeed(Nil)
+                ) *> ZIO.sleep(30.seconds) *> ZIO.succeed(List.empty)
               else if (!resp.status.isSuccess)
-                ZIO.logWarning(s"[telegram] getUpdates non-2xx ${resp.status.code}: $body") *> ZIO.succeed(Nil)
+                ZIO.logWarning(s"[telegram] getUpdates non-2xx ${resp.status.code}: $body") *> ZIO.succeed(List.empty)
               else
                 ZIO
                   .fromEither {
@@ -198,14 +198,14 @@ class TelegramApiClientLive(
                     } yield updates
                   }.catchAll {
                     case _ if body.contains("\"ok\":false") =>
-                      ZIO.logWarning(s"[telegram] API returned error: $body") *> ZIO.succeed(Nil)
+                      ZIO.logWarning(s"[telegram] API returned error: $body") *> ZIO.succeed(List.empty)
                     case err => ZIO.fail(err)
                   }
             }
         }
     }.catchAll { err =>
       if (err.msg.contains("ReadTimeoutException"))
-        ZIO.logDebug("[telegram] long-poll read timeout (expected, continuing)") *> ZIO.succeed(Nil)
+        ZIO.logDebug("[telegram] long-poll read timeout (expected, continuing)") *> ZIO.succeed(List.empty)
       else
         ZIO.fail(err)
     }

@@ -108,7 +108,7 @@ private class ApprovalServiceImpl(
       case EvaluationResult.CapabilityGrantAllows(grant)
           if grant.approvalMode == ApprovalMode.Session && request.sessionId.isDefined =>
         repo.permission.findApprovedRequest(request.capability, request.requestorId, request.sessionId).map(_.toList)
-      case _ => ZIO.succeed(Nil)
+      case _ => ZIO.succeed(List.empty)
     }
 
   private def logDecision(

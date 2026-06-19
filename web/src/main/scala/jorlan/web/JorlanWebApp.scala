@@ -16,8 +16,8 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import net.leibman.jorlan.muiMaterial.components.{Alert, CssBaseline, ThemeProvider}
-import net.leibman.jorlan.muiMaterial.stylesMod
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeMod.ThemeOptions
+import net.leibman.jorlan.muiMaterial.stylesMod
 import org.scalajs.dom
 import sttp.model.Uri
 
@@ -113,7 +113,7 @@ object JorlanWebApp {
               case Some(None) =>
                 LoginRouter[ConnectionId](
                   connectionId = Some(connectionId),
-                  oauthProviders = Nil,
+                  oauthProviders = List.empty,
                 )
               case Some(Some(user)) =>
                 AppRouter(user)

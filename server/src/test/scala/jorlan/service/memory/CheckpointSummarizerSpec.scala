@@ -42,7 +42,7 @@ object CheckpointSummarizerSpec extends ZIOSpec[CheckpointSummarizer] {
       test("empty messages produce no records") {
         for {
           summarizer <- ZIO.service[CheckpointSummarizer]
-          records    <- summarizer.summarize(Nil, userId, agentId)
+          records    <- summarizer.summarize(List.empty, userId, agentId)
         } yield assertTrue(records.isEmpty)
       },
       test("FakeModelGateway with bullet response produces records") {

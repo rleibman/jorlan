@@ -40,8 +40,8 @@ object GoogleContactsSkillSpec extends ZIOSpec[ZIORepositories] {
     resourceName = "people/c222",
     displayName = Some("Bob Jones"),
     emails = List("bob@example.com"),
-    phones = Nil,
-    organizations = Nil,
+    phones = List.empty,
+    organizations = List.empty,
   )
 
   private def makeProvider(contacts: List[GoogleContact] = List(alice, bob)): UIO[FakeGoogleContactsProvider] =

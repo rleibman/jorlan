@@ -63,14 +63,14 @@ class GoogleDriveProvider private (
         .setPageSize(maxResults)
       qOpt.foreach(req.setQ)
       val result = req.execute().nn
-      Option(result.getFiles).map(_.asScala.toList).getOrElse(Nil).map { f =>
+      Option(result.getFiles).map(_.asScala.toList).getOrElse(List.empty).map { f =>
         DriveFile(
           id = DriveFileId(Option(f.getId).getOrElse("").nn),
           name = Option(f.getName).getOrElse("").nn,
           mimeType = Option(f.getMimeType).getOrElse("").nn,
           sizeBytes = Option(f.getSize).map(_.toLong),
           modifiedAt = Option(f.getModifiedTime).map(t => Instant.ofEpochMilli(t.getValue)).getOrElse(Instant.EPOCH),
-          parents = Option(f.getParents).map(_.asScala.toList).getOrElse(Nil),
+          parents = Option(f.getParents).map(_.asScala.toList).getOrElse(List.empty),
           webViewLink = Option(f.getWebViewLink),
         )
       }

@@ -22,7 +22,7 @@ case class McpServerConfig(
   name:      String,
   transport: McpTransport,
   command:   Option[String] = None,
-  args:      List[String] = Nil,
+  args:      List[String] = List.empty,
   env:       Map[String, String] = Map.empty,
   url:       Option[String] = None,
   enabled:   Boolean = true,

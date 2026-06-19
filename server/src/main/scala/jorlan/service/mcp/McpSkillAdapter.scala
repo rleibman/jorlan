@@ -42,7 +42,7 @@ class McpSkillAdapter(
         inputSchema = t.inputSchema,
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("mcp.call")),
-        examplePrompts = Nil,
+        examplePrompts = List.empty,
       )
     },
   )

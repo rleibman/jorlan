@@ -49,7 +49,7 @@ object AgentSessionManagerSpec extends ZIOSpecDefault {
         Some(seededAgentRepoLayer),
       ),
       SessionHub.live,
-      FakeModelGateway.layer(Nil),
+      FakeModelGateway.layer(List.empty),
       AgentSessionManagerImpl.live,
     )
 

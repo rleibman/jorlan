@@ -10,13 +10,13 @@
 
 package jorlan.web.pages
 
+import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import caliban.WebSocketHandler
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
 
 import scala.language.unsafeNulls
@@ -37,19 +37,19 @@ object EventLogPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, running = false, Set.empty, None, error = None))
+      .useState(State(List.empty, running = false, Set.empty, None, error = None))
       .useEffectOnMountBy {
         (
           _,
           state,
         ) =>
           CallbackTo {
-            var pendingBatch:   List[EventLog[Json]] = Nil
+            var pendingBatch:   List[EventLog[Json]] = List.empty
             var flushScheduled: Boolean = false
 
             def scheduledFlush(): Unit = {
               val batch = pendingBatch
-              pendingBatch = Nil
+              pendingBatch = List.empty
               flushScheduled = false
               if (batch.nonEmpty) {
                 state
@@ -165,7 +165,7 @@ object EventLogPage {
                                       ),
                                   ).build,
                               )
-                            } else scala.Nil)
+                            } else scala.List.empty)
                     }*,
                   ),
                 ),

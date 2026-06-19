@@ -27,7 +27,7 @@ import zio.json.ast.Json
   *   Request timeout in seconds (default 30).
   */
 case class HttpFetchConfig(
-  allowedHosts:     List[String] = Nil,
+  allowedHosts:     List[String] = List.empty,
   maxResponseBytes: Int = 524288,
   timeoutSeconds:   Int = 30,
 )
@@ -198,7 +198,7 @@ class HttpFetchSkill(
           .getOrElse(Chunk.empty)
           .collect { case (k, Json.Str(v)) => (k, v) }
           .toList
-      case _ => Nil
+      case _ => List.empty
     }
 
   // ---------------------------------------------------------------------------

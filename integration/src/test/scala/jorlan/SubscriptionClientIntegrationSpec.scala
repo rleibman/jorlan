@@ -76,7 +76,7 @@ object SubscriptionClientIntegrationSpec
         userId:   UserId,
         provider: String,
       ):                                          IO[JorlanError, Unit] = ZIO.unit
-      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(List.empty)
       override def refreshAccessToken(
         userId:   UserId,
         provider: String,

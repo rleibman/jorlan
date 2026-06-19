@@ -205,7 +205,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
         for {
           svc    <- ZIO.service[MemoryService]
           before <- svc.query(MemoryScope.User, userId, agentId)
-          _      <- svc.checkpoint(AgentSessionId(99L), Nil, userId, agentId, CheckpointTrigger.SessionEnd)
+          _      <- svc.checkpoint(AgentSessionId(99L), List.empty, userId, agentId, CheckpointTrigger.SessionEnd)
           after  <- svc.query(MemoryScope.User, userId, agentId)
         } yield assertTrue(after.size == before.size)
       },

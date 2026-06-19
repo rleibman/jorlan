@@ -89,8 +89,8 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
         } yield assert(result)(failsWithA[JorlanError])
       },
       test("empty tool list yields empty descriptor.tools") {
-        val client = FakeMcpClient(Nil, "result")
-        val adapter = McpSkillAdapter("emptyserver", Nil, client)
+        val client = FakeMcpClient(List.empty, "result")
+        val adapter = McpSkillAdapter("emptyserver", List.empty, client)
         assert(adapter.descriptor.tools)(isEmpty)
       },
       test("serverName with dots is preserved in namespace (dots are valid with longest-prefix routing)") {
@@ -102,8 +102,8 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
         )
       },
       test("serverName with non-dot special characters is sanitized to underscores") {
-        val client = FakeMcpClient(Nil, "result")
-        val adapter = McpSkillAdapter("my-server/v2", Nil, client)
+        val client = FakeMcpClient(List.empty, "result")
+        val adapter = McpSkillAdapter("my-server/v2", List.empty, client)
         assert(adapter.descriptor.name)(equalTo("mcp.my_server_v2"))
       },
     )

@@ -14,9 +14,9 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.pages.PageUtils
 import jorlan.web.components.MuiButton
-import net.leibman.jorlan.muiMaterial.components.*
+import jorlan.web.pages.PageUtils
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -34,7 +34,7 @@ object SkillsPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true, error = None, expanded = Set.empty, toggling = Set.empty))
+      .useState(State(List.empty, loading = true, error = None, expanded = Set.empty, toggling = Set.empty))
       .useEffectOnMountBy {
         (
           _,
@@ -223,7 +223,7 @@ object SkillsPage {
                                 ),
                               ),
                           )
-                        else scala.Nil
+                        else scala.List.empty
                       )
                     }*,
                   ),

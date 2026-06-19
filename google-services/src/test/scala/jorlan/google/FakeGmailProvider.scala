@@ -74,12 +74,12 @@ class FakeGmailProvider(
 
 object FakeGmailProvider {
 
-  def make(messages: List[EmailMessage] = Nil): UIO[FakeGmailProvider] =
+  def make(messages: List[EmailMessage] = List.empty): UIO[FakeGmailProvider] =
     for {
       mr <- Ref.make(messages)
-      sr <- Ref.make[List[EmailDraft]](Nil)
-      dr <- Ref.make[List[EmailDraft]](Nil)
-      ar <- Ref.make[List[EmailMessageId]](Nil)
+      sr <- Ref.make[List[EmailDraft]](List.empty)
+      dr <- Ref.make[List[EmailDraft]](List.empty)
+      ar <- Ref.make[List[EmailMessageId]](List.empty)
     } yield FakeGmailProvider(mr, sr, dr, ar)
 
 }

@@ -38,7 +38,7 @@ object SkillRegistrySpec extends ZIOSpecDefault {
               .decodeJson("""{"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}""")
               .getOrElse(Json.Obj()),
             outputSchema = Json.Obj("type" -> Json.Str("string")),
-            requiredCapabilities = Nil,
+            requiredCapabilities = List.empty,
           )
         },
       )
@@ -144,7 +144,7 @@ object SkillRegistrySpec extends ZIOSpecDefault {
                   .decodeJson("""{"type":"object","properties":{},"required":[]}""")
                   .getOrElse(Json.Obj()),
                 outputSchema = Json.Obj("type" -> Json.Str("string")),
-                requiredCapabilities = Nil,
+                requiredCapabilities = List.empty,
               ),
             ),
           )

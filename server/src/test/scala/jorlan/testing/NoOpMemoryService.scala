@@ -27,7 +27,7 @@ class NoOpMemoryService extends MemoryService {
     userId:  UserId,
     agentId: AgentId,
     text:    Option[String],
-  ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(Nil)
+  ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List.empty)
 
   override def forget(
     id:               MemoryRecordId,

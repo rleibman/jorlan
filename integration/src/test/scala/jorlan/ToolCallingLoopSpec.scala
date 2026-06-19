@@ -81,7 +81,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
         userId:   UserId,
         provider: String,
       ):                                          IO[JorlanError, Unit] = ZIO.unit
-      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(List.empty)
       override def refreshAccessToken(
         userId:   UserId,
         provider: String,
@@ -100,7 +100,13 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
         name = "echo",
         tier = SkillTier.BuiltIn,
         tools = List(
-          ToolDescriptor("echo.run", "Echo a tool call", Json.Obj(zio.Chunk.empty), Json.Obj(zio.Chunk.empty), Nil),
+          ToolDescriptor(
+            "echo.run",
+            "Echo a tool call",
+            Json.Obj(zio.Chunk.empty),
+            Json.Obj(zio.Chunk.empty),
+            List.empty,
+          ),
         ),
       )
     override def invoke(

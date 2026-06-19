@@ -34,7 +34,7 @@ class FakeCalendarProvider(
     timeMax:    Option[Instant],
   ): IO[JorlanError, List[CalendarEntry]] =
     eventsRef.get.map { m =>
-      val events = m.getOrElse(calendarId.value, Nil)
+      val events = m.getOrElse(calendarId.value, List.empty)
       val filtered = events
         .filter(e => timeMin.forall(min => !e.start.isBefore(min)))
         .filter(e => timeMax.forall(max => !e.end.isAfter(max)))
@@ -48,7 +48,7 @@ class FakeCalendarProvider(
   ): IO[JorlanError, CalendarEntry] =
     eventsRef.get.flatMap { m =>
       ZIO
-        .fromOption(m.getOrElse(calendarId.value, Nil).find(_.id == eventId))
+        .fromOption(m.getOrElse(calendarId.value, List.empty).find(_.id == eventId))
         .orElseFail(JorlanError(s"Event not found: ${eventId.value}"))
     }
 
@@ -60,7 +60,7 @@ class FakeCalendarProvider(
     for {
       newId <- idGenRef.updateAndGet(_ + 1).map(n => CalendarEventId(s"fake-event-$n"))
       saved = entry.copy(id = newId)
-      _ <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, Nil) :+ saved))
+      _ <- eventsRef.update(m => m.updated(calendarId.value, m.getOrElse(calendarId.value, List.empty) :+ saved))
     } yield saved
 
   override def updateEvent(
@@ -69,7 +69,7 @@ class FakeCalendarProvider(
     entry:      CalendarEntry,
   ): IO[JorlanError, CalendarEntry] =
     eventsRef.update { m =>
-      val updated = m.getOrElse(calendarId.value, Nil).map(e => if (e.id == entry.id) entry else e)
+      val updated = m.getOrElse(calendarId.value, List.empty).map(e => if (e.id == entry.id) entry else e)
       m.updated(calendarId.value, updated)
     } *> ZIO.succeed(entry)
 
@@ -79,7 +79,7 @@ class FakeCalendarProvider(
     eventId:    CalendarEventId,
   ): IO[JorlanError, Unit] =
     eventsRef.update { m =>
-      val filtered = m.getOrElse(calendarId.value, Nil).filterNot(_.id == eventId)
+      val filtered = m.getOrElse(calendarId.value, List.empty).filterNot(_.id == eventId)
       m.updated(calendarId.value, filtered)
     }
 
@@ -88,7 +88,7 @@ class FakeCalendarProvider(
 object FakeCalendarProvider {
 
   def make(
-    calendars: List[UserCalendar] = Nil,
+    calendars: List[UserCalendar] = List.empty,
     events:    Map[String, List[CalendarEntry]] = Map.empty,
   ): UIO[FakeCalendarProvider] =
     for {

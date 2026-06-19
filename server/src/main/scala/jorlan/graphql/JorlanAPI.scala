@@ -707,7 +707,7 @@ object JorlanAPI {
         .flatMap {
           case Json.Arr(elems) => Some(elems.collect { case Json.Str(s) => s }.toList)
           case _               => None
-        }.getOrElse(Nil)
+        }.getOrElse(List.empty)
       val updated =
         if (remove) current.filterNot(_ == name)
         else if (current.contains(name)) current

@@ -10,13 +10,13 @@
 
 package jorlan.web.pages
 
+import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.{MuiButton, MuiTextField}
-import caliban.WebSocketHandler
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -42,7 +42,7 @@ object ChatPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(None, "", Nil, streaming = false, "", None, error = None))
+      .useState(State(None, "", List.empty, streaming = false, "", None, error = None))
       .useRef(Option.empty[WebSocketHandler])
       .useEffectOnMountBy {
         (

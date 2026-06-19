@@ -75,7 +75,7 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
     userId:   UserId,
     agentId:  AgentId,
   ): IO[JorlanError, List[MemoryRecord]] = {
-    if (messages.isEmpty) ZIO.succeed(Nil)
+    if (messages.isEmpty) ZIO.succeed(List.empty)
     else {
       val transcript = messages.map(m => s"${m.role}: ${m.content}").mkString("\n")
       val tempSessionId = AgentSessionId(-1L)
@@ -91,7 +91,7 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
         .ensuring(modelGateway.invalidateSession(tempSessionId).ignore)
         .flatMap { sb =>
           val summary = sb.toString
-          if (summary.isBlank) ZIO.succeed(Nil)
+          if (summary.isBlank) ZIO.succeed(List.empty)
           else {
             Clock.instant.map { now =>
               summary.linesIterator

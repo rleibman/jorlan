@@ -121,7 +121,7 @@ class AgentRunnerImpl(
     userContent:  String,
   ): List[AgentMessage] = {
     val systemMsgs: List[AgentMessage] =
-      if (systemPrompt.nonEmpty) List(SystemMsg(systemPrompt)) else Nil
+      if (systemPrompt.nonEmpty) List(SystemMsg(systemPrompt)) else List.empty
     systemMsgs :+ UserMsg(userContent)
   }
 
@@ -320,7 +320,7 @@ class AgentRunnerImpl(
       )
       .mapError(JorlanError(_))
       .flatMap {
-        case Nil    => ZIO.succeed(Nil)
+        case Nil    => ZIO.succeed(List.empty)
         case c :: _ =>
           repo.conversation
             .searchMessages(

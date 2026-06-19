@@ -26,7 +26,7 @@ object ConnectorManagerSpec extends ZIOSpecDefault {
 
     override val connectorType:       ConnectorType = ConnectorType.Telegram
     override val instanceId:          ConnectorInstanceId = ConnectorInstanceId(99L)
-    override val descriptor:          SkillDescriptor = SkillDescriptor("tracking", SkillTier.BuiltIn, Nil)
+    override val descriptor:          SkillDescriptor = SkillDescriptor("tracking", SkillTier.BuiltIn, List.empty)
     override val sendMessageToolName: Option[String] = Some("tracking.send_message")
 
     override def invoke(
@@ -44,7 +44,7 @@ object ConnectorManagerSpec extends ZIOSpecDefault {
 
     override val connectorType:       ConnectorType = ConnectorType.Telegram
     override val instanceId:          ConnectorInstanceId = ConnectorInstanceId(98L)
-    override val descriptor:          SkillDescriptor = SkillDescriptor("failing", SkillTier.BuiltIn, Nil)
+    override val descriptor:          SkillDescriptor = SkillDescriptor("failing", SkillTier.BuiltIn, List.empty)
     override val sendMessageToolName: Option[String] = None
 
     override def invoke(

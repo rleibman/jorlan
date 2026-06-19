@@ -52,7 +52,7 @@ class ToolEventHub private (subs: Ref[Map[AgentSessionId, List[Queue[ToolEvent]]
     for {
       queue <- Queue.bounded[ToolEvent](256)
       _     <- subs.update { map =>
-        val existing = map.getOrElse(sessionId, Nil)
+        val existing = map.getOrElse(sessionId, List.empty)
         map + (sessionId -> (queue :: existing))
       }
     } yield ZStream
@@ -60,7 +60,7 @@ class ToolEventHub private (subs: Ref[Map[AgentSessionId, List[Queue[ToolEvent]]
       .ensuring(
         queue.shutdown *>
           subs.update { map =>
-            val updated = map.getOrElse(sessionId, Nil).filterNot(_ eq queue)
+            val updated = map.getOrElse(sessionId, List.empty).filterNot(_ eq queue)
             if (updated.isEmpty) map - sessionId
             else map + (sessionId -> updated)
           },
@@ -68,7 +68,7 @@ class ToolEventHub private (subs: Ref[Map[AgentSessionId, List[Queue[ToolEvent]]
 
   def publish(event: ToolEvent): UIO[Unit] =
     subs.get.flatMap { map =>
-      ZIO.foreachParDiscard(map.getOrElse(event.sessionId, Nil))(_.offer(event).unit)
+      ZIO.foreachParDiscard(map.getOrElse(event.sessionId, List.empty))(_.offer(event).unit)
     }
 
 }

@@ -283,8 +283,8 @@ class EmailSkill(
       original <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
       draft = EmailDraft(
         to = List(original.from),
-        cc = Nil,
-        bcc = Nil,
+        cc = List.empty,
+        bcc = List.empty,
         subject = s"Re: ${original.subject}",
         body = body,
         replyToMessageId = Some(id),

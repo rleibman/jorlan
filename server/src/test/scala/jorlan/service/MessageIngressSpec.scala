@@ -45,11 +45,12 @@ object MessageIngressSpec extends ZIOSpecDefault {
       InMemoryRepositories.InMemoryUserRepo.make.flatMap { base =>
         result.fold(ZIO.unit)(u => base.upsert(u).orDie.unit).as {
           new ZIOUserRepository {
-            override def getById(id:    UserId):     RepositoryTask[Option[User]] = base.getById(id)
-            override def search(s:      UserSearch): RepositoryTask[List[User]] = base.search(s)
-            override def upsert(user:   User):       RepositoryTask[User] = base.upsert(user)
-            override def deactivate(id: UserId):     RepositoryTask[Long] = base.deactivate(id)
-            override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(Nil)
+            override def getById(id:    UserId):               RepositoryTask[Option[User]] = base.getById(id)
+            override def search(s:      UserSearch):           RepositoryTask[List[User]] = base.search(s)
+            override def upsert(user:   User):                 RepositoryTask[User] = base.upsert(user)
+            override def deactivate(id: UserId):               RepositoryTask[Long] = base.deactivate(id)
+            override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
+              ZIO.succeed(List.empty)
             override def upsertChannelIdentity(ci: ChannelIdentity):   RepositoryTask[ChannelIdentity] = ZIO.succeed(ci)
             override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] = ZIO.succeed(0L)
             override def login(

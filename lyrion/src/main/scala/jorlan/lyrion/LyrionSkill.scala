@@ -45,6 +45,8 @@ object LyrionSettings {
   *
   * All tools require the `lyrion.control` capability.
   *
+  * https://lyrion.org/reference/cli
+  *
   * @param settings
   *   connection parameters for the Lyrion server
   * @param client
@@ -54,6 +56,12 @@ class LyrionSkill(
   settings: LyrionSettings,
   client:   Client,
 ) extends Skill {
+
+  // TODO tools that we need to add:
+  // lyrion.alarm.list, lyrion.alarm.create, lyrion.alarm.delete, lyrion.alarm.update
+  // lyrion.album.search
+  // lyrion.artist.search
+  // lyrion.song.search
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "lyrion",
@@ -278,15 +286,15 @@ class LyrionSkill(
       case _ => false
     }
 
-  /** Extract a named array field from a JSON object, returning Nil if absent or non-array. */
+  /** Extract a named array field from a JSON object, returning List.empty if absent or non-array. */
   private def arrField(
     obj: Json,
     key: String,
   ): List[Json] =
     obj match {
       case Json.Obj(fields) =>
-        fields.collectFirst { case (`key`, Json.Arr(elems)) => elems.toList }.getOrElse(Nil)
-      case _ => Nil
+        fields.collectFirst { case (`key`, Json.Arr(elems)) => elems.toList }.getOrElse(List.empty)
+      case _ => List.empty
     }
 
   /** Extract a required string arg from the invocation args JSON. */

@@ -58,7 +58,7 @@ class FakeDriveProvider(
 object FakeDriveProvider {
 
   def make(
-    files:   List[DriveFile] = Nil,
+    files:   List[DriveFile] = List.empty,
     content: Map[String, Array[Byte]] = Map.empty,
   ): UIO[FakeDriveProvider] =
     for {

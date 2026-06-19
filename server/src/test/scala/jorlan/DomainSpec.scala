@@ -240,7 +240,7 @@ object DomainSpec extends ZIOSpecDefault {
       assertTrue(prompt.contains("Scala") && prompt.contains("ZIO"))
     },
     test("buildSystemPrompt with empty expertise omits expertise instruction") {
-      val p = Personality.default.copy(expertise = Nil)
+      val p = Personality.default.copy(expertise = List.empty)
       val prompt = Personality.buildSystemPrompt(p)
       assertTrue(!prompt.contains("deep expertise"))
     },
@@ -287,7 +287,7 @@ object DomainSpec extends ZIOSpecDefault {
       assertTrue(prompt.contains("es"), prompt.contains("fr"))
     },
     test("buildSystemPrompt with empty language list omits language instruction") {
-      val p = Personality.default.copy(languages = Nil)
+      val p = Personality.default.copy(languages = List.empty)
       val prompt = Personality.buildSystemPrompt(p)
       assertTrue(!prompt.contains("following languages"))
     },

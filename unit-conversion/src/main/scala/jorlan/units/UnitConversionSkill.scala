@@ -379,7 +379,7 @@ class UnitConversionSkill extends Skill {
             """{"type":"object","properties":{"value":{"type":"number","description":"The numeric value to convert"},"fromUnit":{"type":"string","description":"The source unit (e.g. 'km', 'C', 'kg', 'mph')"},"toUnit":{"type":"string","description":"The target unit (e.g. 'm', 'F', 'lb', 'km/h')"}},"required":["value","fromUnit","toUnit"]}""",
           ).getOrElse(Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
-        requiredCapabilities = Nil,
+        requiredCapabilities = List.empty,
         examplePrompts = List(
           "Convert 100 kilometers to miles",
           "What is 37 degrees Celsius in Fahrenheit?",

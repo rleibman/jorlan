@@ -43,7 +43,7 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
             .decodeJson("""{"type":"object","properties":{},"required":[]}""")
             .getOrElse(Json.Obj()),
           outputSchema = Json.Obj("type" -> Json.Str("string")),
-          requiredCapabilities = Nil,
+          requiredCapabilities = List.empty,
         ),
       ),
     )
