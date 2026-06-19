@@ -15,6 +15,7 @@ import caliban.ScalaJSClientAdapter
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
+import jorlan.web.util.ApiClientSttp4
 import net.leibman.jorlan.muiMaterial.components.{Alert, CssBaseline, ThemeProvider}
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeMod.ThemeOptions
 import net.leibman.jorlan.muiMaterial.stylesMod
@@ -26,8 +27,6 @@ import scala.scalajs.js
 import scala.scalajs.js.annotation.JSExport
 
 object JorlanWebApp {
-
-  val connectionId: ConnectionId = ConnectionId.unsafeRandom
 
   /** Parsed URI for the Jorlan GraphQL API endpoint. Computed once at startup from `window.location`. */
   val serverUri: Uri = {
@@ -82,7 +81,7 @@ object JorlanWebApp {
           _,
         ) =>
           AuthClient
-            .whoami[User, ConnectionId](Some(connectionId))
+            .whoami[User, ConnectionId](Some(ApiClientSttp4.connectionId))
             .flatTap {
               case Some(user) => Callback.log(s"Authenticated: ${user.email}").asAsyncCallback
               case None       => Callback.log("Not authenticated").asAsyncCallback
@@ -112,7 +111,7 @@ object JorlanWebApp {
                 <.div(^.className := "loading")("Loading…")
               case Some(None) =>
                 LoginRouter[ConnectionId](
-                  connectionId = Some(connectionId),
+                  connectionId = Some(ApiClientSttp4.connectionId),
                   oauthProviders = List.empty,
                 )
               case Some(Some(user)) =>
