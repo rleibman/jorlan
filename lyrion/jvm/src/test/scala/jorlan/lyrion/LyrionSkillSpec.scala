@@ -33,7 +33,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
   /** Build a [[LyrionSkill]] pointing at an in-process test server on the given port. */
   private def makeSkill(port: Int)(client: Client): LyrionSkill =
     LyrionSkill(
-      LyrionSettings(serverUrl = s"http://localhost:$port"),
+      LyrionConfig(serverUrl = s"http://localhost:$port"),
       client,
     )
 

@@ -8,11 +8,12 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.connector.telegram
+package jorlan.telegram
 
 import jorlan.ChannelType
 import jorlan.connector.*
 import jorlan.*
+import jorlan.telegram.TelegramMessageNormalizer
 import telegramium.bots.{Chat, Update}
 import telegramium.bots.{Message as TgMessage, User as TgUser}
 import zio.test.*

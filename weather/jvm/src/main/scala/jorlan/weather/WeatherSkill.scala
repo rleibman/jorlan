@@ -28,7 +28,7 @@ import zio.json.ast.Json
   * under the key `"skill.weather"`.
   */
 class WeatherSkill(
-  config:  WeatherSkill.WeatherConfig,
+  config:  WeatherConfig,
   client:  Client,
   baseUrl: String = "https://api.openweathermap.org/data/2.5",
 ) extends Skill {
@@ -128,12 +128,10 @@ class WeatherSkill(
     args match {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`name`, v) => v } match {
-          case None              => ZIO.succeed(None)
+          case None              => ZIO.none
           case Some(Json.Num(n)) =>
             ZIO
-              .attempt(n.intValueExact())
-              .mapError(_ => ValidationError(s"field '$name' must be an integer"))
-              .map(Some(_))
+              .attempt(n.intValueExact()).mapBoth(_ => ValidationError(s"field '$name' must be an integer"), Some(_))
           case Some(_) =>
             ZIO.fail(ValidationError(s"field '$name' must be an integer"))
         }
@@ -278,18 +276,4 @@ class WeatherSkill(
 
 }
 
-object WeatherSkill {
-
-  case class WeatherConfig(
-    apiKey:  String,
-    baseUrl: String = "https://api.openweathermap.org/data/2.5",
-    units:   String = "metric",
-  )
-
-  object WeatherConfig {
-
-    given JsonDecoder[WeatherConfig] = DeriveJsonDecoder.gen[WeatherConfig]
-
-  }
-
-}
+object WeatherSkill {}

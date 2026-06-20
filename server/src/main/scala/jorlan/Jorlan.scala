@@ -191,7 +191,7 @@ object Jorlan extends ZIOApp {
         .mapError(e => new Throwable(e.msg))
         .flatMap {
           case Some(json) =>
-            json.as[MarketDataSkill.AlphaVantageConfig] match {
+            json.as[AlphaVantageConfig] match {
               case Right(cfg) =>
                 registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
               case Left(err) =>
@@ -213,7 +213,7 @@ object Jorlan extends ZIOApp {
       }
       _ <- repos.setting.get("skill.lyrion").flatMap {
         case Some(json) =>
-          json.as[LyrionSettings] match {
+          json.as[LyrionConfig] match {
             case Right(cfg) =>
               registry.register(LyrionSkill(cfg, httpClient))
             case Left(err) =>
@@ -235,7 +235,7 @@ object Jorlan extends ZIOApp {
       }
       _ <- repos.setting.get("skill.weather").flatMap {
         case Some(json) =>
-          json.as[WeatherSkill.WeatherConfig] match {
+          json.as[WeatherConfig] match {
             case Right(cfg) =>
               registry.register(WeatherSkill(cfg, httpClient, cfg.baseUrl))
             case Left(err) =>

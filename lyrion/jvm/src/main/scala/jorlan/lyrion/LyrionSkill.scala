@@ -17,27 +17,6 @@ import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
 
-/** Configuration for the Lyrion Music Server connection.
-  *
-  * @param serverUrl
-  *   Base URL of the Lyrion Music Server (formerly Logitech Media Server / Squeezebox Server)
-  * @param username
-  *   Username for HTTP basic auth (currently unused; reserved for future support)
-  * @param password
-  *   Password for HTTP basic auth (currently unused; reserved for future support)
-  */
-case class LyrionSettings(
-  serverUrl: String = "http://localhost:9000",
-  username:  String = "",
-  password:  String = "",
-)
-
-object LyrionSettings {
-
-  given JsonDecoder[LyrionSettings] = DeriveJsonDecoder.gen[LyrionSettings]
-
-}
-
 /** Skill that interfaces with a Lyrion Music Server via its JSON-RPC API.
   *
   * Exposes tools for listing players, checking playback status, controlling playback (play/pause/stop), adjusting
@@ -53,7 +32,7 @@ object LyrionSettings {
   *   the zio-http [[Client]] used for all outbound requests
   */
 class LyrionSkill(
-  settings: LyrionSettings,
+  settings: LyrionConfig,
   client:   Client,
 ) extends Skill {
 

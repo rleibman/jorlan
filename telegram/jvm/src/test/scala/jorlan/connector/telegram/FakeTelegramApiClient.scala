@@ -8,9 +8,10 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.connector.telegram
+package jorlan.telegram
 
 import jorlan.*
+import jorlan.telegram.TelegramApiClient
 import telegramium.bots.Update
 import zio.*
 

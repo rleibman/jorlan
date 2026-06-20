@@ -14,7 +14,7 @@ import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, key}
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
-import jorlan.connector.telegram.*
+import jorlan.telegram.*
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
@@ -32,6 +32,7 @@ import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
+import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill}
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
 

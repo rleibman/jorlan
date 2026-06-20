@@ -12,7 +12,7 @@ package jorlan.weather
 
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.weather.WeatherSkill.WeatherConfig
+import jorlan.weather.WeatherConfig
 import zio.*
 import zio.http.*
 import zio.json.ast.Json

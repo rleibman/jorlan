@@ -2,6 +2,7 @@
 // Common Stuff
 
 import org.apache.commons.io.FileUtils
+import sbtcrossproject.CrossProject
 
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -216,7 +217,7 @@ lazy val gqlClient =
       libraryDependencies ++= Seq(
         "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
         "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
-      )
+      ),
     )
     .settings(
       scalacOptions ++= scala3Opts :+ "-Werror",
@@ -240,6 +241,19 @@ lazy val skillApi =
     .enablePlugins(AutomateHeaderPlugin)
     .settings(commonSettings)
     .dependsOn(model)
+    .jsSettings(
+      libraryDependencies ++= Seq(
+        "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
+        "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
+        "org.scala-js" %%% "scalajs-dom"                % scalajsDomVersion withSources (),
+        "com.olvind" %%% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
+        "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
+        "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
+        "com.lihaoyi" %%% "scalatags"                   % scalatagsVersion withSources (),
+        "com.github.japgolly.scalacss" %%% "core"       % scalacssVersion withSources (),
+        "com.github.japgolly.scalacss" %%% "ext-react"  % scalacssVersion withSources (),
+      ),
+    )
     .settings(
       scalacOptions ++= scala3Opts :+ "-Werror",
       name := "jorlan-connector-api",
@@ -253,166 +267,26 @@ lazy val skillApi =
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
 
-////////////////////////////////////////////////////////////////////////////////////
-// Telegram Connector — TelegramConnectorSkill + TelegramApiClient
-
-lazy val telegramConnector =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("telegram"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
+/*Common stuff that all skill modules should have, at least the ones provided from "the factory" */
+lazy val skillModule: CrossProject => CrossProject =
+  _.enablePlugins(AutomateHeaderPlugin)
     .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-telegram",
-      libraryDependencies ++= Seq(
-        "dev.zio"               %% "zio"              % zioVersion withSources (),
-        "dev.zio"               %% "zio-json"         % zioJsonVersion withSources (),
-        "dev.zio"               %% "zio-http"         % zioHttpVersion withSources (),
-        "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
-      Test / fork := true,
+    .jsEnablePlugins(ScalaJSPlugin)
+    .jsSettings(
+      scalaJSLinkerConfig ~= {
+        _.withModuleKind(ModuleKind.NoModule)
+          .withOutputPatterns(org.scalajs.linker.interface.OutputPatterns.fromJSFile("%s-skill.js"))
+      },
+      // FIX: Use Def.setting and := so sbt can safely read name.value
+      Compile / scalaJSMainModuleInitializer := Def.task {
+        (Compile / scalaJSMainModuleInitializer).value.map { initializer =>
+          initializer.withModuleID(name.value)
+        }
+      }.value,
+      scalaJSUseMainModuleInitializer := true,
     )
-
-////////////////////////////////////////////////////////////////////////////////////
-// Calculator Skill — mXparser-based math expression evaluator
-
-lazy val calculatorSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("calculator"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
     .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-calculator",
-      libraryDependencies ++= Seq(
-        "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
-        "dev.zio"                %% "zio"                     % zioVersion withSources (),
-        "dev.zio"                %% "zio-json"                % zioJsonVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
-
-////////////////////////////////////////////////////////////////////////////////////
-// Lyrion Music Skill — JSON-RPC client for Lyrion Music Server (Squeezebox)
-
-lazy val lyrionSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("lyrion"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-lyrion",
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-        "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
-
-////////////////////////////////////////////////////////////////////////////////////
-// Email Connector — IMAP/SMTP provider + PGP service
-
-lazy val emailConnector =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("email"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-email",
-      libraryDependencies ++= Seq(
-        "dev.zio"          %% "zio"              % zioVersion withSources (),
-        "dev.zio"          %% "zio-json"         % zioJsonVersion withSources (),
-        "dev.zio"          %% "zio-http"         % zioHttpVersion withSources (),
-        "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
-        "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
-        "dev.zio"          %% "zio-interop-cats" % zioInteropCatsVersion withSources (),
-        "org.bouncycastle"  % "bcpg-jdk18on"     % bouncyCastleVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
-
-////////////////////////////////////////////////////////////////////////////////////
-// Unit Conversion Skill — squants-backed unit conversion
-
-lazy val unitConversionSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("unit-conversion"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-unit-conversion",
-      libraryDependencies ++= Seq(
-        "org.typelevel" %% "squants"  % "1.8.3" withSources (),
-        "dev.zio"       %% "zio"      % zioVersion withSources (),
-        "dev.zio"       %% "zio-json" % zioJsonVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
-
-////////////////////////////////////////////////////////////////////////////////////
-// HTTP Fetch Skill — capability-gated HTTP GET/POST for agents
-
-lazy val httpFetchSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("http-fetch"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-http-fetch",
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-        "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
-
-////////////////////////////////////////////////////////////////////////////////////
-// Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
-
-lazy val weatherSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("weather"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
+      commonSettings,
       scalacOptions ++= scala3Opts :+ "-Werror",
       name := "jorlan-weather",
       libraryDependencies ++= Seq(
@@ -428,27 +302,91 @@ lazy val weatherSkill =
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Telegram Connector — TelegramConnectorSkill + TelegramApiClient
+
+lazy val telegramConnector =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("telegram"))
+    .configureCross(skillModule)
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
+      ),
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Calculator Skill — mXparser-based math expression evaluator
+
+lazy val calculatorSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("calculator"))
+    .configureCross(skillModule)
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
+      ),
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Lyrion Music Skill — JSON-RPC client for Lyrion Music Server (Squeezebox)
+
+lazy val lyrionSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("lyrion"))
+    .configureCross(skillModule)
+
+////////////////////////////////////////////////////////////////////////////////////
+// Email Connector — IMAP/SMTP provider + PGP service
+
+lazy val emailConnector =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("email"))
+    .configureCross(skillModule)
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
+        "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
+        "dev.zio"          %% "zio-interop-cats" % zioInteropCatsVersion withSources (),
+        "org.bouncycastle"  % "bcpg-jdk18on"     % bouncyCastleVersion withSources (),
+      ),
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Unit Conversion Skill — squants-backed unit conversion
+
+lazy val unitConversionSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("unit-conversion"))
+    .configureCross(skillModule)
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "org.typelevel" %% "squants" % "1.8.3" withSources (),
+      ),
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
+// HTTP Fetch Skill — capability-gated HTTP GET/POST for agents
+
+lazy val httpFetchSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("http-fetch"))
+    .configureCross(skillModule)
+
+////////////////////////////////////////////////////////////////////////////////////
+// Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
+
+lazy val weatherSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("weather"))
+    .configureCross(skillModule)
+
+////////////////////////////////////////////////////////////////////////////////////
 // Time Skill — java.time-based timezone/datetime skill (no external dependencies)
 
 lazy val timeSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("time-skill"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-time-skill",
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
+    .configureCross(skillModule)
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Market Data — Alpha Vantage market data skill
@@ -456,23 +394,7 @@ lazy val timeSkill =
 lazy val marketDataSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("market-data"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-market-data",
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-        "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
+    .configureCross(skillModule)
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Search Skill — Tavily web search API
@@ -480,23 +402,7 @@ lazy val marketDataSkill =
 lazy val searchSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("search"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-search",
-      libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
-        "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
-      ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
-    )
+    .configureCross(skillModule)
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
@@ -504,28 +410,16 @@ lazy val searchSkill =
 lazy val googleServices =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("google-services"))
-    .enablePlugins(AutomateHeaderPlugin)
-    .settings(commonSettings)
-    .dependsOn(model, skillApi)
-    .settings(
-      scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-google-services",
+    .configureCross(skillModule)
+    .jvmSettings(
       libraryDependencies ++= Seq(
-        "dev.zio"              %% "zio"                             % zioVersion withSources (),
-        "dev.zio"              %% "zio-json"                        % zioJsonVersion withSources (),
-        "dev.zio"              %% "zio-http"                        % zioHttpVersion withSources (),
         "com.google.api-client" % "google-api-client"               % googleApiClientVersion withSources (),
         "com.google.apis"       % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
         "com.google.apis"       % "google-api-services-calendar"    % googleApisCalendarVersion withSources (),
         "com.google.apis"       % "google-api-services-drive"       % googleApisDriveVersion withSources (),
         "com.google.apis"       % "google-api-services-people"      % googleApisPeopleVersion withSources (),
         "com.google.auth"       % "google-auth-library-oauth2-http" % googleAuthLibraryVersion withSources (),
-        // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
       ),
-      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
     )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -635,6 +529,8 @@ lazy val integration = project
       "dev.zio" %% "zio-config-magnolia" % zioConfigVersion withSources (),
       "dev.zio" %% "zio-config-typesafe" % zioConfigVersion withSources (),
       "dev.zio" %% "zio-json"            % zioJsonVersion withSources (),
+      // other
+      "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),

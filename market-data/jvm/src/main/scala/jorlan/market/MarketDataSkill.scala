@@ -260,18 +260,3 @@ class MarketDataSkill(
     }
 
 }
-
-object MarketDataSkill {
-
-  case class AlphaVantageConfig(
-    apiKey:  String,
-    baseUrl: String = "https://www.alphavantage.co/query",
-  )
-
-  object AlphaVantageConfig {
-
-    given JsonDecoder[AlphaVantageConfig] = DeriveJsonDecoder.gen[AlphaVantageConfig]
-
-  }
-
-}

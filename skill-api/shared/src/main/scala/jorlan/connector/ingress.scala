@@ -11,7 +11,7 @@
 package jorlan.connector
 
 import jorlan.ChannelType
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -37,17 +37,17 @@ case class InboundMessage(
   chatKind:      ChatKind,
   content:       String,
   receivedAt:    Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** The kind of chat a [[InboundMessage]] arrived in. */
-enum ChatKind derives JsonEncoder, JsonDecoder {
+enum ChatKind derives JsonCodec {
 
   case Private, Group, Channel, Supergroup
 
 }
 
 /** Policy applied when a connector receives a message from a sender that does not resolve to a known, verified user. */
-enum UnrecognizedIdentityPolicy derives JsonEncoder, JsonDecoder {
+enum UnrecognizedIdentityPolicy derives JsonCodec {
 
   /** Drop the message silently and write a rejection entry to the event log. */
   case Reject
