@@ -30,7 +30,7 @@ case class ShellConfig(
   serverUrl: String = "http://localhost:8080",
   email:     Option[String] = None,
   password:  Option[String] = None,
-) derives JsonEncoder {
+) derives JsonCodec {
 
   def typedServerUrl: ServerUrl = ServerUrl(serverUrl)
 
@@ -145,5 +145,5 @@ object ShellConfig {
 
 }
 
-private case class ShellConfigFile(jorlan: ShellConfigRoot) derives JsonEncoder
-private case class ShellConfigRoot(shell: ShellConfig) derives JsonEncoder
+private case class ShellConfigFile(jorlan: ShellConfigRoot) derives JsonCodec
+private case class ShellConfigRoot(shell: ShellConfig) derives JsonCodec

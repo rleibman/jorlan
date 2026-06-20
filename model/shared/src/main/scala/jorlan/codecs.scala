@@ -21,7 +21,7 @@ import java.util.Base64
 import scala.language.unsafeNulls
 
 /** zio-json codecs for external library types that cannot carry their own codec given instances. Import these into any
-  * file that uses one of these types in a `derives JsonEncoder, JsonDecoder` case class.
+  * file that uses one of these types in a `derives JsonCodec` case class.
   */
 object Codecs {
 

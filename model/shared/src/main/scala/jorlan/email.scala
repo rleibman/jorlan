@@ -10,7 +10,8 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
+
 import java.time.Instant
 
 case class EmailAttachment(
@@ -18,7 +19,7 @@ case class EmailAttachment(
   mimeType:     String,
   sizeBytes:    Long,
   attachmentId: String,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 case class EmailMessage(
   id:                EmailMessageId,
@@ -35,7 +36,7 @@ case class EmailMessage(
   labels:            List[String],
   pgpSigned:         Boolean,
   pgpSignatureValid: Option[Boolean],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 case class EmailDraft(
   to:               List[String],
@@ -45,4 +46,4 @@ case class EmailDraft(
   body:             String,
   replyToMessageId: Option[String],
   signWithPgp:      Boolean,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

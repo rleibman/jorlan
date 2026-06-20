@@ -157,7 +157,7 @@ class OAuthCredentialServiceImpl(
     access_token: String,
     expires_in:   Option[Int],
     token_type:   Option[String],
-  ) derives JsonDecoder
+  ) derives JsonCodec
 
   private def run[A](effect: ZIO[Client, JorlanError, A]): IO[JorlanError, A] =
     effect.provideEnvironment(ZEnvironment(client))

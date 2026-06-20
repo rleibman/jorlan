@@ -30,13 +30,7 @@ case class SearchConfig(
   apiKey:     String,
   baseUrl:    String = "https://api.tavily.com",
   maxResults: Int = 5,
-)
-
-object SearchConfig {
-
-  given JsonDecoder[SearchConfig] = DeriveJsonDecoder.gen[SearchConfig]
-
-}
+) derives JsonCodec
 
 /** Built-in skill for web search via the Tavily API.
   *

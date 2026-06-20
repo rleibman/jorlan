@@ -11,7 +11,7 @@
 package jorlan
 
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -20,7 +20,7 @@ import java.time.Instant
   * OAuth provider values (`Google`, `GitHub`, `Discord`) double as channel types so that OAuth identities are stored in
   * [[ChannelIdentity]] alongside other channel links.
   */
-enum ChannelType derives JsonEncoder, JsonDecoder {
+enum ChannelType derives JsonCodec {
 
   case Shell, Telegram, Slack, Email, WhatsApp, Sms, GraphQL, Google, GitHub, Discord
 
@@ -52,7 +52,7 @@ case class User(
   createdAt:   Instant,
   updatedAt:   Instant,
   active:      Boolean = true,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** Links a [[User]] to their identity on a specific external channel (e.g. a Telegram chat ID or Slack member ID). One
   * user may have multiple identities across different channels. OAuth provider identities are stored here using
@@ -73,4 +73,4 @@ case class ChannelIdentity(
   verified:      Boolean = false,
   providerData:  Option[Json] = None,
   createdAt:     Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

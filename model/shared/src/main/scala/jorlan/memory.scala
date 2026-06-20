@@ -11,7 +11,7 @@
 package jorlan
 
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -22,7 +22,7 @@ import java.time.Instant
   *   - `Workspace` — visible to all members of the associated workspace.
   *   - `Private` — visible only to the specific agent that created it.
   */
-enum MemoryScope derives JsonEncoder, JsonDecoder {
+enum MemoryScope derives JsonCodec {
 
   case User, Shared, Workspace, Private
 
@@ -57,7 +57,7 @@ case class MemoryRecord(
   createdAt:   Instant,
   updatedAt:   Instant,
   importance:  Int = 5,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A vector embedding of a [[MemoryRecord]], used for semantic (similarity) search.
   *
@@ -72,4 +72,4 @@ case class MemoryEmbedding(
   model:          EmbeddingModelId,
   vector:         Vector[Float],
   createdAt:      Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

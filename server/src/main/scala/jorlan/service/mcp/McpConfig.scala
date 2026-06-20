@@ -12,7 +12,7 @@ package jorlan.service.mcp
 
 import zio.json.*
 
-enum McpTransport derives JsonDecoder, JsonEncoder {
+enum McpTransport derives JsonCodec {
 
   case Stdio, Http
 
@@ -26,11 +26,4 @@ case class McpServerConfig(
   env:       Map[String, String] = Map.empty,
   url:       Option[String] = None,
   enabled:   Boolean = true,
-)
-
-object McpServerConfig {
-
-  given JsonDecoder[McpServerConfig] = DeriveJsonDecoder.gen[McpServerConfig]
-  given JsonEncoder[McpServerConfig] = DeriveJsonEncoder.gen[McpServerConfig]
-
-}
+) derives JsonCodec

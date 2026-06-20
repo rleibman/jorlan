@@ -13,7 +13,7 @@ package jorlan
 import jorlan.Codecs.given
 import zio.http.MediaType
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.net.URI
 import java.time.Instant
@@ -27,7 +27,7 @@ case class Workspace(
   description: Option[String],
   createdAt:   Instant,
   updatedAt:   Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A file or document produced or consumed during an agent session.
   *
@@ -46,4 +46,4 @@ case class Artifact(
   storageUri:   URI,
   metadataJson: Option[Json],
   createdAt:    Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

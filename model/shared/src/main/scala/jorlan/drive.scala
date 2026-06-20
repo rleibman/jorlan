@@ -10,7 +10,8 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
+
 import java.time.Instant
 
 case class DriveFile(
@@ -21,4 +22,4 @@ case class DriveFile(
   modifiedAt:  Instant,
   parents:     List[String],
   webViewLink: Option[String],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

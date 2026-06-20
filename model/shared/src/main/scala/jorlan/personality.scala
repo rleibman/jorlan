@@ -10,7 +10,7 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 /** Communication style for the server personality. Shapes the tone of synthesised system prompt instructions.
   *   - `Casual` — relaxed, conversational tone
@@ -110,7 +110,7 @@ case class Personality(
   languages: List[String],
   expertise: List[String],
   prompt:    String,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 object Personality {
 

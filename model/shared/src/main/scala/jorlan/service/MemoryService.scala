@@ -38,7 +38,7 @@ case class CheckpointPolicyConfig(
   onUserRequest:        Boolean = true,
   timedIntervalTurns:   Option[Int] = Some(10),
   beforeExternalEffect: Boolean = false,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 object CheckpointPolicyConfig {
 

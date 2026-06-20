@@ -11,7 +11,7 @@
 package jorlan
 
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -35,7 +35,7 @@ case class Role(
   id:          RoleId,
   name:        String,
   description: Option[String],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A direct permission granting a specific action on a resource, attached to either a role or a user.
   *
@@ -49,7 +49,7 @@ case class Permission(
   resource: String,
   action:   String,
   scope:    Option[Json],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** Controls how strictly an agent must seek user approval before using a capability.
   *
@@ -60,7 +60,7 @@ case class Permission(
   *   - `Timed` — approval holds until `CapabilityGrant.expiresAt`.
   *   - `Persistent` — granted without any approval required (highest trust).
   */
-enum ApprovalMode derives JsonEncoder, JsonDecoder {
+enum ApprovalMode derives JsonCodec {
 
   case Denied, PerInvocation, Once, Session, Timed, Persistent
 
@@ -87,10 +87,10 @@ case class CapabilityGrant(
   expiresAt:           Option[Instant],
   resourceConstraints: Option[String],
   createdAt:           Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** Lifecycle state of an [[ApprovalRequest]]. */
-enum ApprovalStatus derives JsonEncoder, JsonDecoder {
+enum ApprovalStatus derives JsonCodec {
 
   case Pending, Approved, Rejected, Expired, Cancelled
 
@@ -115,7 +115,7 @@ case class ApprovalRequest(
   status:          ApprovalStatus,
   createdAt:       Instant,
   expiresAt:       Option[Instant],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** Records a user's response to an [[ApprovalRequest]].
   *
@@ -130,4 +130,4 @@ case class ApprovalDecision(
   decision:          ApprovalStatus,
   scopeOverride:     Option[String],
   decidedAt:         Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
