@@ -7,7 +7,7 @@ import scala.scalajs.js
 
 object SkillUnloaderService {
 
-  // TODO ptu this in the skill screen
+  // TODO put this in the skill screen
 //  def triggerUnload(props: Props): Callback = {
 //    // Transition state back to Unloaded
 //    $.modState(_.copy(status = Unloaded)) >>
