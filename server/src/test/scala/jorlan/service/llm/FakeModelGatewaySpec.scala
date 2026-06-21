@@ -40,7 +40,7 @@ object FakeModelGatewaySpec extends ZIOSpecDefault {
         for {
           ref <- Ref.make(List.empty[ChatStep])
           gw = FakeModelGateway(chunks = List("fallback"), stepsRef = Some(ref))
-          step <- gw.chatStep(sessionId, Nil, Nil)
+          step <- gw.chatStep(sessionId, List.empty, List.empty)
         } yield step match {
           case FinalAnswer(_) => assertTrue(true)
           case _              => assertTrue(false)
@@ -62,7 +62,7 @@ object FakeModelGatewaySpec extends ZIOSpecDefault {
       test("capturingLayer.availableModels returns at least one model") {
         for {
           captured <- Ref.make(List.empty[String])
-          gw       <- buildGw(FakeModelGateway.capturingLayer(Nil, captured))
+          gw       <- buildGw(FakeModelGateway.capturingLayer(List.empty, captured))
           models   <- gw.availableModels
         } yield assertTrue(models.nonEmpty, models.exists(_.id == ModelId("fake-model")))
       },
@@ -70,7 +70,7 @@ object FakeModelGatewaySpec extends ZIOSpecDefault {
       test("capturingLayer.invalidateSession completes without error") {
         for {
           captured <- Ref.make(List.empty[String])
-          gw       <- buildGw(FakeModelGateway.capturingLayer(Nil, captured))
+          gw       <- buildGw(FakeModelGateway.capturingLayer(List.empty, captured))
           _        <- gw.invalidateSession(sessionId)
         } yield assertTrue(true)
       },

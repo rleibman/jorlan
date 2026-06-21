@@ -21,7 +21,7 @@ case class LoginRequest(
   email:        String,
   password:     String,
   connectionId: Option[String] = None,
-) derives JsonEncoder
+) derives JsonCodec
 
 case class LoginResult(
   token:       String,
@@ -184,4 +184,4 @@ private[client] class AuthClientImpl(
 private case class UserPayload(
   displayName: String,
   email:       Option[String] = None,
-) derives JsonDecoder
+) derives JsonCodec

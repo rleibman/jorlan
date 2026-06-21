@@ -14,9 +14,9 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.pages.PageUtils
 import jorlan.web.components.{MuiButton, MuiTablePagination, MuiTextField}
-import net.leibman.jorlan.muiMaterial.components.*
+import jorlan.web.pages.PageUtils
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -59,7 +59,7 @@ object UsersPage {
       .withHooks[User]
       .useState(
         State(
-          users = Nil,
+          users = List.empty,
           loading = true,
           error = None,
           page = 0,
@@ -71,15 +71,15 @@ object UsersPage {
           createName = "",
           createEmail = "",
           permsUser = None,
-          grants = Nil,
+          grants = List.empty,
           newCap = "",
           newMode = "AutoApprove",
           rolesUser = None,
-          userRoles = Nil,
-          allRoles = Nil,
+          userRoles = List.empty,
+          allRoles = List.empty,
           assignRoleId = "",
           identsUser = None,
-          identities = Nil,
+          identities = List.empty,
           newChType = "Telegram",
           newChUserId = "",
         ),
@@ -225,7 +225,7 @@ object UsersPage {
             }
 
           def closePerms(): Callback =
-            state.setState(state.value.copy(permsUser = None, grants = Nil))
+            state.setState(state.value.copy(permsUser = None, grants = List.empty))
 
           def grantCapability(): Callback =
             state.value.permsUser match {
@@ -298,7 +298,7 @@ object UsersPage {
             }
 
           def closeRoles(): Callback =
-            state.setState(state.value.copy(rolesUser = None, userRoles = Nil, allRoles = Nil))
+            state.setState(state.value.copy(rolesUser = None, userRoles = List.empty, allRoles = List.empty))
 
           def assignRole(): Callback =
             (state.value.rolesUser, state.value.assignRoleId.toLongOption) match {
@@ -356,7 +356,7 @@ object UsersPage {
             }
 
           def closeIdentities(): Callback =
-            state.setState(state.value.copy(identsUser = None, identities = Nil))
+            state.setState(state.value.copy(identsUser = None, identities = List.empty))
 
           def linkIdentity(): Callback =
             state.value.identsUser match {

@@ -13,10 +13,10 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.skills.SkillRegistry
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -35,6 +35,7 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
     override val descriptor: SkillDescriptor = SkillDescriptor(
       name = "echo",
       tier = SkillTier.BuiltIn,
+      skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
       tools = List(
         ToolDescriptor(
           name = "echo.run",
@@ -43,7 +44,7 @@ object AgentRunnerReActSpec extends ZIOSpec[ZIORepositories] {
             .decodeJson("""{"type":"object","properties":{},"required":[]}""")
             .getOrElse(Json.Obj()),
           outputSchema = Json.Obj("type" -> Json.Str("string")),
-          requiredCapabilities = Nil,
+          requiredCapabilities = List.empty,
         ),
       ),
     )

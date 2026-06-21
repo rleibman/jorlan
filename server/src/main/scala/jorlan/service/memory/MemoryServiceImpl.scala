@@ -99,7 +99,7 @@ class MemoryServiceImpl(
       config  <- policyRef.get
       should  <- CheckpointPolicy.fromConfig(config).shouldCheckpoint(trigger, None)
       records <- ZIO.when(should)(summarizer.summarize(messages, userId, agentId))
-      _       <- ZIO.foreachParDiscard(records.getOrElse(Nil)) { record =>
+      _       <- ZIO.foreachParDiscard(records.getOrElse(List.empty)) { record =>
         val contentText = record.value.asObject
           .flatMap(_.get("text"))
           .flatMap(_.asString)
@@ -126,7 +126,7 @@ class MemoryServiceImpl(
         )
         .mapError(JorlanError(_))
       messages <- convOpt.headOption match {
-        case None    => ZIO.succeed(Nil)
+        case None    => ZIO.succeed(List.empty)
         case Some(c) =>
           repo.conversation
             .searchMessages(

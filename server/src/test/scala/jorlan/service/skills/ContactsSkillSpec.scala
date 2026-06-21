@@ -60,7 +60,7 @@ object ContactsSkillSpec extends ZIOSpecDefault {
     override def deactivate(id: UserId):               RepositoryTask[Long] = ZIO.die(RuntimeException("stub"))
     override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
       ciStore.get.map { fromStore =>
-        val fromSeed = seedIds.getOrElse(userId.value, Nil)
+        val fromSeed = seedIds.getOrElse(userId.value, List.empty)
         fromSeed ++ fromStore.values.filter(_.userId == userId).toList
       }
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =

@@ -101,7 +101,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       page:     Int,
       pageSize: Int,
     ): IO[JorlanError, List[AgentSession]] =
-      ZIO.succeed(Nil)
+      ZIO.succeed(List.empty)
 
   }
 

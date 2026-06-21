@@ -10,7 +10,7 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -20,13 +20,13 @@ case class ModelInfo(
   provider:          String,
   contextWindow:     Int,
   supportsStreaming: Boolean,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** Current OAuth connection state for a provider (e.g. Google). */
 case class OAuthStatus(
   connected: Boolean,
   expiresAt: Option[Instant],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A single tool exposed by a skill. */
 case class SkillToolInfo(
@@ -34,7 +34,7 @@ case class SkillToolInfo(
   description:          String,
   requiredCapabilities: List[String],
   examplePrompts:       List[String],
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A registered skill visible via the API. */
 case class SkillInfo(
@@ -42,4 +42,4 @@ case class SkillInfo(
   tier:    SkillTier,
   tools:   List[SkillToolInfo],
   enabled: Boolean = true,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

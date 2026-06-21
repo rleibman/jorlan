@@ -186,7 +186,7 @@ object OAuthRoutes {
     provider: String,
     exp:      Long,
     nonce:    String,
-  ) derives JsonEncoder, JsonDecoder
+  ) derives JsonCodec
 
   private def generateNonce(): String = {
     val bytes = new Array[Byte](16)

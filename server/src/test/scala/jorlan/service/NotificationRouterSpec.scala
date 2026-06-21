@@ -13,8 +13,8 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.testing.InMemoryRepositories
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -44,9 +44,14 @@ object NotificationRouterSpec extends ZIOSpecDefault {
     new ConnectorSkill {
       override val connectorType: ConnectorType = ct
       override val instanceId:    ConnectorInstanceId = ConnectorInstanceId(99L)
-      override val descriptor:    SkillDescriptor = SkillDescriptor(ct.toString.toLowerCase, SkillTier.BuiltIn, Nil)
-      override def start:         IO[JorlanError, Unit] = ZIO.unit
-      override def stop:          IO[JorlanError, Unit] = ZIO.unit
+      override val descriptor:    SkillDescriptor = SkillDescriptor(
+        ct.toString.toLowerCase,
+        SkillTier.BuiltIn,
+        List.empty,
+        skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+      )
+      override def start:               IO[JorlanError, Unit] = ZIO.unit
+      override def stop:                IO[JorlanError, Unit] = ZIO.unit
       override val sendMessageToolName: Option[String] = Some(s"${ct.toString.toLowerCase}.send_message")
       override def invoke(
         ctx:  InvocationContext,
@@ -63,9 +68,14 @@ object NotificationRouterSpec extends ZIOSpecDefault {
     new ConnectorSkill {
       override val connectorType: ConnectorType = ct
       override val instanceId:    ConnectorInstanceId = ConnectorInstanceId(1L)
-      override val descriptor:    SkillDescriptor = SkillDescriptor(ct.toString.toLowerCase, SkillTier.BuiltIn, Nil)
-      override def start:         IO[JorlanError, Unit] = ZIO.unit
-      override def stop:          IO[JorlanError, Unit] = ZIO.unit
+      override val descriptor:    SkillDescriptor = SkillDescriptor(
+        ct.toString.toLowerCase,
+        SkillTier.BuiltIn,
+        List.empty,
+        skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+      )
+      override def start: IO[JorlanError, Unit] = ZIO.unit
+      override def stop:  IO[JorlanError, Unit] = ZIO.unit
       override def invoke(
         ctx:  InvocationContext,
         tool: String,
@@ -91,7 +101,7 @@ object NotificationRouterSpec extends ZIOSpecDefault {
       override def upsert(user:   User):                 RepositoryTask[User] = ZIO.die(RuntimeException("stub"))
       override def deactivate(id: UserId):               RepositoryTask[Long] = ZIO.die(RuntimeException("stub"))
       override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
-        ZIO.succeed(identities.getOrElse(userId.value, Nil))
+        ZIO.succeed(identities.getOrElse(userId.value, List.empty))
       override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
         ZIO.die(RuntimeException("stub"))
       override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =

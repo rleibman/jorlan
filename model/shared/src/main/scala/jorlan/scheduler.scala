@@ -10,12 +10,12 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
 /** Lifecycle state of a [[SchedulerJob]] execution run. */
-enum JobStatus derives JsonEncoder, JsonDecoder {
+enum JobStatus derives JsonCodec {
 
   /** Waiting to be claimed by the TriggerEngine on the next poll. */
   case Pending
@@ -38,7 +38,7 @@ enum JobStatus derives JsonEncoder, JsonDecoder {
 }
 
 /** Determines how a [[SchedulerTrigger]] fires its associated [[SchedulerJob]]. */
-enum TriggerType derives JsonEncoder, JsonDecoder {
+enum TriggerType derives JsonCodec {
 
   case Cron, Interval, OneShot
 
@@ -48,7 +48,7 @@ enum TriggerType derives JsonEncoder, JsonDecoder {
 }
 
 /** Determines what to do when a scheduled job run was missed (e.g. server was down). */
-enum MissedRunPolicy derives JsonEncoder, JsonDecoder {
+enum MissedRunPolicy derives JsonCodec {
 
   /** Silently skip missed executions and advance to the next scheduled time. */
   case Skip
@@ -62,7 +62,7 @@ enum MissedRunPolicy derives JsonEncoder, JsonDecoder {
 }
 
 /** Backoff strategy when retrying a failed job. */
-enum RetryBackoffPolicy derives JsonEncoder, JsonDecoder {
+enum RetryBackoffPolicy derives JsonCodec {
 
   /** Wait exactly `backoffSeconds` between retries. */
   case Fixed
@@ -136,7 +136,7 @@ case class SchedulerJob(
   leasedAt:        Option[Instant],
   leasedBy:        Option[String],
   createdAt:       Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 object SchedulerJob {
 
@@ -187,4 +187,4 @@ case class SchedulerTrigger(
   expression:  String, // Should this be some sort of CronExpression or something less Stringy?
   enabled:     Boolean = true,
   createdAt:   Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

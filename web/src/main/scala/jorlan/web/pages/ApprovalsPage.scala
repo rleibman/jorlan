@@ -10,13 +10,13 @@
 
 package jorlan.web.pages
 
+import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import caliban.WebSocketHandler
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -33,7 +33,7 @@ object ApprovalsPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true, wsHandler = None, error = None))
+      .useState(State(List.empty, loading = true, wsHandler = None, error = None))
       .useEffectOnMountBy {
         (
           _,

@@ -49,7 +49,7 @@ class FakeModelGateway(
     stepsRef.fold(ZIO.succeed(FinalAnswer(ZStream.fromIterable(chunks)): ChatStep)) { ref =>
       ref.modify {
         case head :: tail => (head, tail)
-        case Nil          => (FinalAnswer(ZStream.fromIterable(chunks)), Nil)
+        case Nil          => (FinalAnswer(ZStream.fromIterable(chunks)), List.empty)
       }
     }
 
@@ -103,7 +103,7 @@ object FakeModelGateway {
     */
   def stepsLayer(steps: List[ChatStep]): ULayer[ModelGateway] =
     ZLayer.fromZIO(
-      Ref.make(steps).map(ref => FakeModelGateway(chunks = Nil, stepsRef = Some(ref))),
+      Ref.make(steps).map(ref => FakeModelGateway(chunks = List.empty, stepsRef = Some(ref))),
     )
 
   /** Creates a gateway that records whether [[seedHistory]] was called. Use to assert that prior conversation history

@@ -50,7 +50,7 @@ object SubscriptionClientSpec extends ZIOSpecDefault {
         assertCompletes
       },
       test("stub with no chunks yields an empty stream") {
-        val stub: SubscriptionClient = StubSubscriptionClient(Nil)
+        val stub: SubscriptionClient = StubSubscriptionClient(List.empty)
         for {
           result <- ZIO.scoped(stub.agentResponseStream(AgentSessionId(2L)).runCollect)
         } yield assertTrue(result.isEmpty)

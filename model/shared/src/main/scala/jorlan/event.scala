@@ -11,14 +11,14 @@
 package jorlan
 
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
 /** All observable platform events written to the append-only event log. Every significant action by an agent, user, or
   * system component emits at least one of these.
   */
-enum EventType derives JsonEncoder, JsonDecoder {
+enum EventType derives JsonCodec {
 
   // ─── Agent / session lifecycle ───────────────────────────────────────────────
   case AgentStarted, AgentCompleted, AgentFailed
@@ -126,4 +126,4 @@ case class EventLog[R](
   resource:    Option[R],
   payloadJson: Option[Json],
   occurredAt:  Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

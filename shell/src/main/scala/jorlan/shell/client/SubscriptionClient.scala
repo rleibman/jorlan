@@ -69,27 +69,27 @@ private case class WsMsg(
   `type`:  String,
   id:      Option[String] = None,
   payload: Option[Json] = None,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 private case class ChunkData(
   sessionId: AgentSessionId,
   content:   String,
   finished:  Boolean,
   isError:   Boolean = false,
-) derives JsonDecoder
+) derives JsonCodec
 
 private case class ToolEventData(
   sessionId: Long,
   eventType: String,
   toolName:  String,
   payload:   String,
-) derives JsonDecoder
+) derives JsonCodec
 
-private case class AgentResponseData(agentResponseStream: ChunkData) derives JsonDecoder
-private case class DataPayload(data: AgentResponseData) derives JsonDecoder
+private case class AgentResponseData(agentResponseStream: ChunkData) derives JsonCodec
+private case class DataPayload(data: AgentResponseData) derives JsonCodec
 
-private case class ToolEventsData(toolEvents: ToolEventData) derives JsonDecoder
-private case class ToolEventsPayload(data: ToolEventsData) derives JsonDecoder
+private case class ToolEventsData(toolEvents: ToolEventData) derives JsonCodec
+private case class ToolEventsPayload(data: ToolEventsData) derives JsonCodec
 
 private class SubscriptionClientImpl(
   cfg:     ShellConfig,

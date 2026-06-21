@@ -83,7 +83,7 @@ object ShellConfigSpec extends ZIOSpecDefault {
       suite("applyArgs")(
         test("no args leaves config unchanged") {
           val cfg = ShellConfig()
-          assertTrue(ShellConfig.applyArgs(cfg, Nil) == cfg)
+          assertTrue(ShellConfig.applyArgs(cfg, List.empty) == cfg)
         },
         test("--server-url overrides serverUrl") {
           val cfg = ShellConfig()
@@ -137,7 +137,7 @@ object ShellConfigSpec extends ZIOSpecDefault {
       // P8.1-005: resolveWritePath, isFirstRun, write, findReadFile
       suite("resolveWritePath")(
         test("returns default path when no args and no env var") {
-          ShellConfig.resolveWritePath(Nil).map { file =>
+          ShellConfig.resolveWritePath(List.empty).map { file =>
             assertTrue(file.getPath.endsWith("jorlan-shell.json"))
           }
         },

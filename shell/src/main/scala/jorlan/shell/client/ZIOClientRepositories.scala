@@ -53,10 +53,10 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def searchSessions(s: AgentSessionSearch): IO[String, List[AgentSession]] =
       gqlClient
         .run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))
-        .map(_.getOrElse(Nil).map(toAgentSession))
+        .map(_.getOrElse(List.empty).map(toAgentSession))
 
     override def getById(id:            AgentId):         IO[String, Option[Agent]] = ZIO.succeed(None)
-    override def search(s:              AgentSearch):     IO[String, List[Agent]] = ZIO.succeed(Nil)
+    override def search(s:              AgentSearch):     IO[String, List[Agent]] = ZIO.succeed(List.empty)
     override def upsert(a:              Agent):           IO[String, Agent] = ZIO.fail("not implemented")
     override def delete(id:             AgentId):         IO[String, Long] = ZIO.fail("not implemented")
     override def getSession(id:         AgentSessionId):  IO[String, Option[AgentSession]] = ZIO.succeed(None)
@@ -70,7 +70,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def availableModels(): IO[String, List[ModelInfo]] =
       gqlClient
         .run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))
-        .map(_.getOrElse(Nil).map(toModelInfo))
+        .map(_.getOrElse(List.empty).map(toModelInfo))
     override def submitMessage(
       sessionId: AgentSessionId,
       content:   String,
@@ -86,7 +86,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def search(s: MemorySearch): IO[String, List[MemoryRecord]] =
       gqlClient
         .run(JorlanClient.Queries.listMemory(s.scope, s.textSearch)(JorlanClient.MemoryRecord.view))
-        .map(_.getOrElse(Nil).map(toMemoryRecord))
+        .map(_.getOrElse(List.empty).map(toMemoryRecord))
 
     override def upsert(record: MemoryRecord): IO[String, MemoryRecord] = {
       val text = record.value match {
@@ -131,21 +131,21 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def listPendingApprovals(userId: UserId): IO[String, List[ApprovalRequest]] =
         gqlClient
           .run(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
-          .map(_.getOrElse(Nil).map(toApprovalRequest))
+          .map(_.getOrElse(List.empty).map(toApprovalRequest))
 
       override def searchGrants(s: GrantSearch): IO[String, List[CapabilityGrant]] =
         gqlClient
           .run(JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view))
-          .map(_.getOrElse(Nil).map(toCapabilityGrant))
+          .map(_.getOrElse(List.empty).map(toCapabilityGrant))
 
       override def listCapabilities(): IO[String, List[CapabilityGrant]] =
         gqlClient
           .run(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))
-          .map(_.getOrElse(Nil).map(toCapabilityGrant))
+          .map(_.getOrElse(List.empty).map(toCapabilityGrant))
       override def listApprovals(): IO[String, List[ApprovalRequest]] =
         gqlClient
           .run(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
-          .map(_.getOrElse(Nil).map(toApprovalRequest))
+          .map(_.getOrElse(List.empty).map(toApprovalRequest))
       override def decideApproval(
         id:       ApprovalRequestId,
         approved: Boolean,
@@ -158,11 +158,11 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
           case Some(uid) =>
             gqlClient
               .run(JorlanClient.Queries.roles(uid)(JorlanClient.Role.view))
-              .map(_.getOrElse(Nil).map(toRole))
+              .map(_.getOrElse(List.empty).map(toRole))
           case None =>
             gqlClient
               .run(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
-              .map(_.getOrElse(Nil).map(toRole))
+              .map(_.getOrElse(List.empty).map(toRole))
         }
       override def upsertRole(role: Role): IO[String, Role] =
         gqlClient
@@ -180,7 +180,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         roleId: RoleId,
       ): IO[String, Unit] =
         gqlClient.run(JorlanClient.Mutations.revokeRole(userId, roleId)).unit
-      override def searchPermissions(s:   PermissionSearch):      IO[String, List[Permission]] = ZIO.succeed(Nil)
+      override def searchPermissions(s:   PermissionSearch):      IO[String, List[Permission]] = ZIO.succeed(List.empty)
       override def upsertPermission(perm: Permission):            IO[String, Permission] = ZIO.fail("not implemented")
       override def deletePermission(id:   PermissionId):          IO[String, Long] = ZIO.succeed(0L)
       override def upsertCapabilityGrant(grant: CapabilityGrant): IO[String, CapabilityGrant] =
@@ -204,11 +204,11 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def recordApprovalDecision(decision: ApprovalDecision): IO[String, ApprovalDecision] =
         ZIO.fail("not implemented")
       override def getApprovalRequest(id: ApprovalRequestId): IO[String, Option[ApprovalRequest]] = ZIO.succeed(None)
-      override def getExpiredApprovalRequests:                IO[String, List[ApprovalRequest]] = ZIO.succeed(Nil)
+      override def getExpiredApprovalRequests: IO[String, List[ApprovalRequest]] = ZIO.succeed(List.empty)
       override def getGrantsForCapability(
         userId:     UserId,
         capability: CapabilityName,
-      ): IO[String, List[CapabilityGrant]] = ZIO.succeed(Nil)
+      ): IO[String, List[CapabilityGrant]] = ZIO.succeed(List.empty)
       override def hasDirectPermission(
         userId:   UserId,
         resource: String,
@@ -239,18 +239,18 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     ): IO[String, List[SchedulerJob]] =
       gqlClient
         .run(JorlanClient.Queries.jobs(agentId)(JorlanClient.SchedulerJob.view))
-        .map(_.getOrElse(Nil).map(toSchedulerJob))
+        .map(_.getOrElse(List.empty).map(toSchedulerJob))
 
     override def searchTriggers(s: TriggerSearch): IO[String, List[SchedulerTrigger]] =
       gqlClient
         .run(JorlanClient.Queries.triggers(s.jobId)(JorlanClient.SchedulerTrigger.view))
-        .map(_.getOrElse(Nil).map(toSchedulerTrigger))
+        .map(_.getOrElse(List.empty).map(toSchedulerTrigger))
 
     override def getJob(id: SchedulerJobId): IO[String, Option[SchedulerJob]] =
       gqlClient
         .run(JorlanClient.Queries.job(id)(JorlanClient.SchedulerJob.view))
         .map(_.map(toSchedulerJob))
-    override def getPendingJobs:                IO[String, List[SchedulerJob]] = ZIO.succeed(Nil)
+    override def getPendingJobs:                IO[String, List[SchedulerJob]] = ZIO.succeed(List.empty)
     override def upsertJob(job: SchedulerJob):  IO[String, SchedulerJob] = ZIO.fail("not implemented")
     override def deleteJob(id: SchedulerJobId): IO[String, Boolean] =
       gqlClient.run(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
@@ -290,7 +290,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         .run(
           JorlanClient.Queries.users(s.active, s.nameContains, Some(s.page), Some(s.pageSize))(JorlanClient.User.view),
         )
-        .map(_.getOrElse(Nil).map(toUser))
+        .map(_.getOrElse(List.empty).map(toUser))
 
     override def getById(id: UserId): IO[String, Option[User]] =
       gqlClient
@@ -316,7 +316,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def getChannelIdentities(userId: UserId): IO[String, List[ChannelIdentity]] =
       gqlClient
         .run(JorlanClient.Queries.userChannelIdentities(userId)(JorlanClient.ChannelIdentity.view))
-        .map(_.getOrElse(Nil).map(toChannelIdentity))
+        .map(_.getOrElse(List.empty).map(toChannelIdentity))
     override def upsertChannelIdentity(ci: ChannelIdentity): IO[String, ChannelIdentity] =
       gqlClient
         .run(
@@ -357,26 +357,26 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   override val conversation: ConversationRepository[[A] =>> IO[String, A]] =
     new ConversationRepository[[A] =>> IO[String, A]] {
       override def getById(id:          ConversationId):     IO[String, Option[Conversation]] = ZIO.succeed(None)
-      override def search(s:            ConversationSearch): IO[String, List[Conversation]] = ZIO.succeed(Nil)
+      override def search(s:            ConversationSearch): IO[String, List[Conversation]] = ZIO.succeed(List.empty)
       override def create(conversation: Conversation):       IO[String, Conversation] = ZIO.fail("not implemented")
-      override def searchMessages(s:    MessageSearch):      IO[String, List[Message]] = ZIO.succeed(Nil)
+      override def searchMessages(s:    MessageSearch):      IO[String, List[Message]] = ZIO.succeed(List.empty)
       override def addMessage(message:  Message):            IO[String, Message] = ZIO.fail("not implemented")
     }
 
   override val skill: SkillRepository[[A] =>> IO[String, A]] = new SkillRepository[[A] =>> IO[String, A]] {
     override def getById(id:         SkillId):             IO[String, Option[SkillRecord]] = ZIO.succeed(None)
-    override def search(s:           SkillSearch):         IO[String, List[SkillRecord]] = ZIO.succeed(Nil)
+    override def search(s:           SkillSearch):         IO[String, List[SkillRecord]] = ZIO.succeed(List.empty)
     override def upsert(skill:       SkillRecord):         IO[String, SkillRecord] = ZIO.fail("not implemented")
     override def getVersion(id:      SkillVersionId):      IO[String, Option[SkillVersion]] = ZIO.succeed(None)
-    override def searchVersions(s:   SkillVersionSearch):  IO[String, List[SkillVersion]] = ZIO.succeed(Nil)
+    override def searchVersions(s:   SkillVersionSearch):  IO[String, List[SkillVersion]] = ZIO.succeed(List.empty)
     override def upsertVersion(v:    SkillVersion):        IO[String, SkillVersion] = ZIO.fail("not implemented")
     override def getConnector(id:    ConnectorInstanceId): IO[String, Option[ConnectorInstance]] = ZIO.succeed(None)
-    override def searchConnectors(s: ConnectorSearch):     IO[String, List[ConnectorInstance]] = ZIO.succeed(Nil)
+    override def searchConnectors(s: ConnectorSearch):     IO[String, List[ConnectorInstance]] = ZIO.succeed(List.empty)
     override def upsertConnector(ci: ConnectorInstance):   IO[String, ConnectorInstance] = ZIO.fail("not implemented")
     override def listSkills():                             IO[String, List[SkillInfo]] =
       gqlClient
         .run(JorlanClient.Queries.skills(JorlanClient.SkillInfo.view(JorlanClient.SkillToolInfo.view)))
-        .map(_.getOrElse(Nil).map(toSkillInfo))
+        .map(_.getOrElse(List.empty).map(toSkillInfo))
     override def invokeTool(
       toolName: String,
       argsJson: String,
@@ -391,20 +391,20 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   override val eventLog: EventLogRepository[[A] =>> IO[String, A]] = new EventLogRepository[[A] =>> IO[String, A]] {
     override def append[R: zio.json.JsonEncoder](event: EventLog[R]): IO[String, EventLog[R]] =
       ZIO.fail("not implemented")
-    override def search(filter: EventLogFilter): IO[String, List[EventLog[Json]]] = ZIO.succeed(Nil)
+    override def search(filter: EventLogFilter): IO[String, List[EventLog[Json]]] = ZIO.succeed(List.empty)
     override def replaySession(
       sessionId: AgentSessionId,
       limit:     Int,
-    ): IO[String, List[EventLog[Json]]] = ZIO.succeed(Nil)
+    ): IO[String, List[EventLog[Json]]] = ZIO.succeed(List.empty)
   }
 
   override val artifact: ArtifactRepository[[A] =>> IO[String, A]] = new ArtifactRepository[[A] =>> IO[String, A]] {
     override def getById(id:         ArtifactId):      IO[String, Option[Artifact]] = ZIO.succeed(None)
-    override def search(s:           ArtifactSearch):  IO[String, List[Artifact]] = ZIO.succeed(Nil)
+    override def search(s:           ArtifactSearch):  IO[String, List[Artifact]] = ZIO.succeed(List.empty)
     override def upsert(artifact:    Artifact):        IO[String, Artifact] = ZIO.fail("not implemented")
     override def delete(id:          ArtifactId):      IO[String, Long] = ZIO.succeed(0L)
     override def getWorkspace(id:    WorkspaceId):     IO[String, Option[Workspace]] = ZIO.succeed(None)
-    override def searchWorkspaces(s: WorkspaceSearch): IO[String, List[Workspace]] = ZIO.succeed(Nil)
+    override def searchWorkspaces(s: WorkspaceSearch): IO[String, List[Workspace]] = ZIO.succeed(List.empty)
     override def upsertWorkspace(ws: Workspace):       IO[String, Workspace] = ZIO.fail("not implemented")
   }
 
@@ -453,9 +453,9 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         userId:   UserId,
         provider: String,
       ):                                       IO[String, Unit] = ZIO.unit
-      override def listByUser(userId: UserId): IO[String, List[ExternalCredential]] = ZIO.succeed(Nil)
+      override def listByUser(userId: UserId): IO[String, List[ExternalCredential]] = ZIO.succeed(List.empty)
       override def listOAuthProviders():       IO[String, List[String]] =
-        gqlClient.run(JorlanClient.Queries.listOAuthProviders).map(_.getOrElse(Nil))
+        gqlClient.run(JorlanClient.Queries.listOAuthProviders).map(_.getOrElse(List.empty))
       override def oauthStatus(provider: String): IO[String, Option[OAuthStatus]] =
         gqlClient
           .run(JorlanClient.Queries.oauthStatus(provider)(JorlanClient.OAuthStatus.view))

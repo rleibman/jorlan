@@ -51,7 +51,7 @@ object ShellSkillSpec extends ZIOSpec[ZIORepositories] {
 
   private def mkArgs(
     binary: String,
-    args:   List[String] = Nil,
+    args:   List[String] = List.empty,
     cwd:    Option[String] = None,
   ): Json = {
     val base: List[(String, Json)] = List(
@@ -198,7 +198,7 @@ object ShellSkillSpec extends ZIOSpec[ZIORepositories] {
       test("cwd override changes working directory") {
         for {
           skill  <- makeSkill()
-          result <- skill.invoke(ctx, "shell.run", mkArgs("pwd", Nil, Some("/tmp")))
+          result <- skill.invoke(ctx, "shell.run", mkArgs("pwd", List.empty, Some("/tmp")))
         } yield assertTrue(
           exitCode(result).contains(0),
           stdoutOf(result).exists(s => s.trim == "/tmp" || s.trim.startsWith("/tmp")),

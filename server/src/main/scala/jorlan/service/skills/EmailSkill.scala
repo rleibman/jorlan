@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.*
 import jorlan.service.EmailProvider
+import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -37,6 +38,7 @@ class EmailSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "email.list",
@@ -283,8 +285,8 @@ class EmailSkill(
       original <- emailProvider.getMessage(ctx.actorId, EmailMessageId(id))
       draft = EmailDraft(
         to = List(original.from),
-        cc = Nil,
-        bcc = Nil,
+        cc = List.empty,
+        bcc = List.empty,
         subject = s"Re: ${original.subject}",
         body = body,
         replyToMessageId = Some(id),

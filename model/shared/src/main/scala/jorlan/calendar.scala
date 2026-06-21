@@ -10,16 +10,16 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.JsonCodec
 import java.time.Instant
 
-enum CalendarEventStatus derives JsonEncoder, JsonDecoder {
+enum CalendarEventStatus derives JsonCodec {
 
   case Confirmed, Tentative, Cancelled
 
 }
 
-enum AttendeeResponse derives JsonEncoder, JsonDecoder {
+enum AttendeeResponse derives JsonCodec {
 
   case Accepted, Declined, Tentative, NeedsAction
 
@@ -29,7 +29,7 @@ case class CalendarAttendee(
   email:          String,
   displayName:    Option[String],
   responseStatus: AttendeeResponse,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 case class CalendarEntry(
   id:          CalendarEventId,
@@ -43,11 +43,11 @@ case class CalendarEntry(
   attendees:   List[CalendarAttendee],
   organizer:   Option[String],
   status:      CalendarEventStatus,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 case class UserCalendar(
   id:        CalendarId,
   summary:   String,
   isPrimary: Boolean,
   timeZone:  String,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

@@ -13,16 +13,17 @@ package jorlan
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
+import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
+import just.semver.SemVer
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json
@@ -81,7 +82,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
         userId:   UserId,
         provider: String,
       ):                                          IO[JorlanError, Unit] = ZIO.unit
-      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(Nil)
+      override def listProviders(userId: UserId): IO[JorlanError, List[String]] = ZIO.succeed(List.empty)
       override def refreshAccessToken(
         userId:   UserId,
         provider: String,
@@ -99,8 +100,15 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       SkillDescriptor(
         name = "echo",
         tier = SkillTier.BuiltIn,
+        skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
         tools = List(
-          ToolDescriptor("echo.run", "Echo a tool call", Json.Obj(zio.Chunk.empty), Json.Obj(zio.Chunk.empty), Nil),
+          ToolDescriptor(
+            "echo.run",
+            "Echo a tool call",
+            Json.Obj(zio.Chunk.empty),
+            Json.Obj(zio.Chunk.empty),
+            List.empty,
+          ),
         ),
       )
     override def invoke(

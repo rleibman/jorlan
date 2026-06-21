@@ -13,7 +13,7 @@ package jorlan
 import jorlan.Codecs.given
 import just.semver.SemVer
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -25,7 +25,7 @@ import java.time.Instant
 enum SkillTier(
   val level:       Int,
   val description: String,
-) derives JsonEncoder, JsonDecoder {
+) derives JsonCodec {
 
   case BuiltIn extends SkillTier(0, "Built-in native Scala skill")
   case Plugin extends SkillTier(1, "Installed native Scala plugin skill")
@@ -39,14 +39,14 @@ enum SkillTier(
 /** Lifecycle gate for a [[SkillVersion]]. Versions must advance through all intermediate states before becoming
   * `Active`. `Revoked` is terminal.
   */
-enum SkillStatus derives JsonEncoder, JsonDecoder {
+enum SkillStatus derives JsonCodec {
 
   case Draft, Validated, PermissionReviewed, SandboxTested, AwaitingApproval, Active, Deprecated, Revoked
 
 }
 
 /** The external system a [[ConnectorInstance]] bridges to. */
-enum ConnectorType derives JsonEncoder, JsonDecoder {
+enum ConnectorType derives JsonCodec {
 
   case Shell, GraphQL, Telegram, Slack, Email, WhatsApp, Sms, Lyrion, MarketData, WebSearch
 
@@ -64,7 +64,7 @@ case class SkillRecord(
   currentVersion: Option[SemVer],
   tier:           SkillTier,
   createdAt:      Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** An immutable snapshot of a [[SkillRecord]] at a specific semver version.
   *
@@ -79,7 +79,7 @@ case class SkillVersion(
   manifestJson: Json,
   status:       SkillStatus,
   createdAt:    Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A configured and named instance of a connector to an external system.
   *
@@ -96,7 +96,7 @@ case class ConnectorInstance(
   configJson:    Json,
   status:        String,
   createdAt:     Instant,
-) derives JsonEncoder, JsonDecoder {
+) derives JsonCodec {
 
   override def toString: String = s"ConnectorInstance($id, $connectorType, $name, [redacted], $status, $createdAt)"
 

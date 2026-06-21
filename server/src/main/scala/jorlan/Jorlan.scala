@@ -173,25 +173,25 @@ object Jorlan extends ZIOApp {
       driveProvider   <- GoogleDriveProvider(oauthCredSvc)
       contactProvider <- GoogleContactsProvider(oauthCredSvc)
       _               <- registry.register(CalculatorSkill())
-      _               <- registry.register(MemorySkill(memService))
-      _               <- registry.register(SchedulerSkill(jobManager))
-      _               <- registry.register(ContactsSkill(repos))
-      _               <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
-      _               <- registry.register(ShellSkill(config.jorlan.shell, repos))
-      _               <- registry.register(NotifySkill(notifRouter))
-      _               <- registry.register(EmailSkill(emailProvider))
-      _               <- registry.register(GoogleCalendarSkill(calProvider))
-      _               <- registry.register(GoogleContactsSkill(contactProvider))
-      _               <- registry.register(GoogleDriveSkill(driveProvider))
-      _               <- registry.register(TimeSkill())
-      _               <- registry.register(UnitConversionSkill())
-      _               <- registry.register(UserManagementSkill(repos))
-      _               <- repos.setting
+//      _               <- registry.register(MemorySkill(memService))
+//      _               <- registry.register(SchedulerSkill(jobManager))
+      _ <- registry.register(ContactsSkill(repos))
+//      _               <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
+//      _               <- registry.register(ShellSkill(config.jorlan.shell, repos))
+//      _               <- registry.register(NotifySkill(notifRouter))
+//      _               <- registry.register(EmailSkill(emailProvider))
+//      _               <- registry.register(GoogleCalendarSkill(calProvider))
+//      _               <- registry.register(GoogleContactsSkill(contactProvider))
+//      _               <- registry.register(GoogleDriveSkill(driveProvider))
+      _ <- registry.register(TimeSkill())
+      _ <- registry.register(UnitConversionSkill())
+//      _               <- registry.register(UserManagementSkill(repos))
+      _ <- repos.setting
         .get("skill.market")
         .mapError(e => new Throwable(e.msg))
         .flatMap {
           case Some(json) =>
-            json.as[MarketDataSkill.AlphaVantageConfig] match {
+            json.as[AlphaVantageConfig] match {
               case Right(cfg) =>
                 registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
               case Left(err) =>
@@ -213,7 +213,7 @@ object Jorlan extends ZIOApp {
       }
       _ <- repos.setting.get("skill.lyrion").flatMap {
         case Some(json) =>
-          json.as[LyrionSettings] match {
+          json.as[LyrionConfig] match {
             case Right(cfg) =>
               registry.register(LyrionSkill(cfg, httpClient))
             case Left(err) =>
@@ -235,7 +235,7 @@ object Jorlan extends ZIOApp {
       }
       _ <- repos.setting.get("skill.weather").flatMap {
         case Some(json) =>
-          json.as[WeatherSkill.WeatherConfig] match {
+          json.as[WeatherConfig] match {
             case Right(cfg) =>
               registry.register(WeatherSkill(cfg, httpClient, cfg.baseUrl))
             case Left(err) =>
@@ -255,6 +255,9 @@ object Jorlan extends ZIOApp {
           ZIO.foreachDiscard(names)(name => registry.disableSkill(name))
         case _ => ZIO.unit
       }
+      _ <- registry.allSkills
+        .map(_.map(_.descriptor.name).mkString(",")).flatMap(s => ZIO.logInfo(s"All Registered skills: $s"))
+      // TODO log disabled skills
     } yield ()).mapError(JorlanError.apply)
 
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =

@@ -10,7 +10,7 @@
 
 package jorlan.init
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 case class ServerStatus(
   initialized: Boolean,
@@ -18,4 +18,4 @@ case class ServerStatus(
   buildTime:   Long,
   serverName:  String,
   uptimeMs:    Long,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

@@ -55,9 +55,9 @@ class SessionHub private (subs: Ref[Map[AgentSessionId, List[SubscriberEntry]]])
       queue <- Queue.bounded[ResponseChunk](1024)
       count <- subs
         .updateAndGet { map =>
-          val existing = map.getOrElse(sessionId, Nil)
+          val existing = map.getOrElse(sessionId, List.empty)
           map + (sessionId -> (SubscriberEntry(connectionId, queue) :: existing))
-        }.map(_.getOrElse(sessionId, Nil).size)
+        }.map(_.getOrElse(sessionId, List.empty).size)
       _ <- ZIO.logDebug(s"[SessionHub] subscriber ADDED: session=$sessionId conn=$connectionId totalForSession=$count")
     } yield ZStream
       .fromQueue(queue)
@@ -65,7 +65,7 @@ class SessionHub private (subs: Ref[Map[AgentSessionId, List[SubscriberEntry]]])
         ZIO.logDebug(s"[SessionHub] subscriber REMOVED: session=$sessionId conn=$connectionId") *>
           queue.shutdown *>
           subs.update { map =>
-            val updated = map.getOrElse(sessionId, Nil).filterNot(_.connectionId == connectionId)
+            val updated = map.getOrElse(sessionId, List.empty).filterNot(_.connectionId == connectionId)
             if (updated.isEmpty) map - sessionId
             else map + (sessionId -> updated)
           },
@@ -77,7 +77,7 @@ class SessionHub private (subs: Ref[Map[AgentSessionId, List[SubscriberEntry]]])
     */
   def publish(chunk: ResponseChunk): UIO[Unit] =
     subs.get.flatMap { map =>
-      val entries = map.getOrElse(chunk.sessionId, Nil)
+      val entries = map.getOrElse(chunk.sessionId, List.empty)
       ZIO.when(entries.isEmpty)(
         ZIO.logInfo(s"[SessionHub] publish with NO subscribers: session=${chunk.sessionId} finished=${chunk.finished}"),
       ) *>

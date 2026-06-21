@@ -15,7 +15,7 @@ import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
-import net.leibman.jorlan.muiMaterial.components.*
+import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -38,7 +38,7 @@ object OAuthManagementPage {
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(Nil, loading = true, error = None))
+      .useState(State(List.empty, loading = true, error = None))
       .useEffectOnMountBy {
         (
           _,

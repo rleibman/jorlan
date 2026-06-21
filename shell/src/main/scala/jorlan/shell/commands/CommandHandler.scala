@@ -12,7 +12,6 @@ package jorlan.shell.commands
 
 import ch.qos.logback.classic.{Level, LoggerContext}
 import jorlan.*
-import jorlan.service.CheckpointPolicyConfig
 import jorlan.shell.*
 import jorlan.shell.client.*
 import jorlan.shell.tui.{JorlanScreen, MessageKind}

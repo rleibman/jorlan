@@ -10,13 +10,13 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 /** Numeric risk level for a capability invocation request, 0 = safest, 5 = most dangerous.
   *
   * Mirrors the shell command risk table in the design document and generalises it to all capabilities.
   */
-enum RiskClass(val level: Int) derives JsonEncoder, JsonDecoder {
+enum RiskClass(val level: Int) derives JsonCodec {
 
   /** Read-only inspection — no side effects (e.g. `filesystem.read`, `memory.search`). */
   case ReadOnly extends RiskClass(0)

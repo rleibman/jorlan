@@ -10,8 +10,9 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
 import zio.json.ast.Json
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
+
 import java.time.Instant
 
 case class ExternalCredential(
@@ -24,4 +25,4 @@ case class ExternalCredential(
   scopes:         Option[String],
   createdAt:      Instant,
   updatedAt:      Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

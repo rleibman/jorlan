@@ -66,14 +66,14 @@ object GraphQLClient {
 private case class GQLRequest(
   query:     String,
   variables: Option[Json] = None,
-) derives JsonEncoder
+) derives JsonCodec
 
-private case class GQLError(message: String) derives JsonDecoder
+private case class GQLError(message: String) derives JsonCodec
 
 private case class GQLResponse(
   data:   Option[Json] = None,
   errors: Option[List[GQLError]] = None,
-) derives JsonDecoder
+) derives JsonCodec
 
 private[client] class GraphQLClientImpl(
   cfg:     ShellConfig,

@@ -11,7 +11,7 @@
 package jorlan
 
 import jorlan.Codecs.given
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.security.PublicKey
 import java.time.Instant
@@ -35,4 +35,4 @@ case class OrchestratorIdentity(
   trustLevel:   Int = 0,
   createdAt:    Instant,
   updatedAt:    Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

@@ -10,7 +10,7 @@
 
 package jorlan
 
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
@@ -24,7 +24,7 @@ import java.time.Instant
   *   - `Failed` — the session ended due to an unrecoverable error.
   *   - `Cancelled` — the session was explicitly cancelled by the user or an orchestrator.
   */
-enum SessionStatus derives JsonEncoder, JsonDecoder {
+enum SessionStatus derives JsonCodec {
 
   case Created, Active, Paused, Blocked, Completed, Failed, Cancelled
 
@@ -45,7 +45,7 @@ case class Agent(
   defaultModel: Option[ModelId],
   trustLevel:   Int = 0,
   createdAt:    Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A single runtime instance of an [[Agent]] executing on behalf of a [[User]]. Each session maintains its own
   * conversation context window and execution state.
@@ -72,7 +72,7 @@ case class AgentSession(
   chatRef:     Option[String] = None,
   createdAt:   Instant,
   updatedAt:   Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** A single streamed token (or completion sentinel) from an agent response.
   *
@@ -91,4 +91,4 @@ case class ResponseChunk(
   content:   String,
   finished:  Boolean,
   isError:   Boolean = false,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

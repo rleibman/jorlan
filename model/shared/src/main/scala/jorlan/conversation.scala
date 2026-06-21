@@ -11,12 +11,12 @@
 package jorlan
 
 import zio.json.ast.Json
-import zio.json.{JsonDecoder, JsonEncoder}
+import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
 /** The role of the author of a [[Message]] — mirrors the LLM chat-completion role vocabulary. */
-enum MessageRole derives JsonEncoder, JsonDecoder {
+enum MessageRole derives JsonCodec {
 
   case User, Assistant, System, Tool
 
@@ -29,7 +29,7 @@ case class Conversation(
   id:        ConversationId,
   sessionId: AgentSessionId,
   startedAt: Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 /** One LLM exchange unit within a [[Conversation]].
   *
@@ -43,4 +43,4 @@ case class Message(
   content:        String,
   metadataJson:   Option[Json],
   createdAt:      Instant,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec

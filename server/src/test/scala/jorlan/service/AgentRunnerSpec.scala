@@ -106,9 +106,9 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       }.provideSome[ZIORepositories](layers(List("pong"))),
       test("processMessage with empty chunk list still publishes finished sentinel") {
         for {
-          received <- runWithSubscription(Nil, "hi")
+          received <- runWithSubscription(List.empty, "hi")
         } yield assertTrue(received.length == 1, received.head.finished)
-      }.provideSome[ZIORepositories](layers(Nil)),
+      }.provideSome[ZIORepositories](layers(List.empty)),
       test("processMessage publishes finished sentinel on ModelGateway failure") {
         for {
           connId   <- ConnectionId.randomZIO
@@ -120,7 +120,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
       }.provideSome[ZIORepositories](failingLayers),
       test("processMessage writes AgentResponseCompleted even on model failure") {
         for {
-          _      <- runWithSubscription(Nil, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
+          _      <- runWithSubscription(List.empty, "hi").catchAll(_ => ZIO.succeed(Chunk.empty))
           events <- ZIO.serviceWithZIO[ZIORepositories](_.eventLog.search(EventLogFilter()))
         } yield assertTrue(events.exists(_.eventType == EventType.AgentResponseCompleted))
       }.provideSome[ZIORepositories](failingLayers),
@@ -129,7 +129,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
           gw     <- ZIO.service[ModelGateway]
           models <- gw.availableModels
         } yield assertTrue(models.exists(_.id == ModelId("fake-model")))
-      }.provide(FakeModelGateway.layer(Nil)),
+      }.provide(FakeModelGateway.layer(List.empty)),
       test("FailingFakeModelGateway.availableModels returns fake model list") {
         for {
           gw     <- ZIO.service[ModelGateway]
@@ -161,7 +161,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             stream <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
             _      <- stream.take(0).runDrain
           } yield assertCompletes
-        }.provideSome[ZIORepositories](layers(Nil)),
+        }.provideSome[ZIORepositories](layers(List.empty)),
       ),
       // P85-034: actorId = None path
       test("processMessage with actorId=None succeeds and publishes sentinel") {

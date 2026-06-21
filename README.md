@@ -106,7 +106,7 @@ The result is a platform that supports both autonomous AI-driven execution and h
 - **Database**: MariaDB via Quill (`quill-jdbc-zio`) + Flyway migrations
 - **API**: Caliban (GraphQL) as the primary external API
 - **HTTP**: zio-http
-- **Serialization**: zio-json
+- **Serialization**: zio-json (prefer `derives JsonCodec`)
 - **LLM**: LangChain4j (Ollama streaming) via the `ai` module
 - **Scheduling**: cron4s for cron expression parsing
 - **Testing**: zio-test + Testcontainers (MariaDB)
@@ -117,21 +117,65 @@ The result is a platform that supports both autonomous AI-driven execution and h
 
 ## Module Structure
 
+Skills and connectors are **cross-projects** (JVM + JS), allowing each to expose both a server-side implementation and a web configuration UI component from the same source tree.
+
 ```
 jorlan/
-├── model/        Domain types, repository traits, error hierarchy, configuration models
-├── db/           Quill repository implementations, Flyway migrations, DB configuration
-├── ai/           LLM client integrations (LangChain4j + Ollama)
-├── server/       Caliban GraphQL API, HTTP server, agent runtime, scheduler, memory system
-├── shell/        Interactive TUI shell — connects to the server over GraphQL + WebSocket
-├── web/          Scala.js SPA — React 19 + MUI v9 web frontend (served directly by the server)
-├── stLib/        ScalablyTyped bindings sub-project for React 19 + MUI v9 + Emotion
-├── analytics/    Analytics subsystem (future)
-├── integration/  Integration tests (Testcontainers)
-└── util/         Shared utilities
+├── model/               Domain types, repository traits, error hierarchy, configuration models (cross)
+├── gqlClient/           Shared GraphQL client types and abstractions (cross)
+├── skillApi/            Shared skill API contract — Skill, ConnectorSkill, ToolDescriptor, etc. (cross)
+│
+├── Skills (each is a cross-project: JVM implementation + JS configuration UI)
+│   ├── calculatorSkill/     Basic arithmetic calculator
+│   ├── lyrionSkill/         Lyrion music server (play, pause, search)
+│   ├── emailConnector/      Email via IMAP/SMTP or Google Gmail
+│   ├── unitConversionSkill/ Unit conversion (length, weight, temperature, etc.)
+│   ├── httpFetchSkill/      HTTP GET with configurable host allowlist
+│   ├── weatherSkill/        Current weather and forecast via Open-Meteo
+│   ├── timeSkill/           Time, timezone, and duration utilities (pure java.time)
+│   ├── marketDataSkill/     Stock quotes via Alpha Vantage
+│   ├── searchSkill/         Web search via Tavily API
+│   └── googleServices/      Gmail, Google Calendar, Google Drive, Google Contacts
+│
+├── telegramConnector/   Telegram Bot connector (JVM only)
+├── ai/                  LLM client integrations (LangChain4j + Ollama) (JVM only)
+├── server/              Caliban GraphQL API, HTTP server, agent runtime, MCP adapter, scheduler, memory
+├── shell/               Interactive TUI shell — connects to server over GraphQL + WebSocket
+├── web/                 Scala.js SPA — React 19 + MUI v9 (served by the server)
+├── stLib/               ScalablyTyped bindings sub-project for React 19 + MUI v9 + Emotion
+├── integration/         Integration tests (Testcontainers MariaDB)
+└── analytics/           Analytics subsystem (future)
 ```
 
-The domain layer (`model`) has no dependency on DB or connector specifics. All persistence details live in `db`.
+The domain layer (`model`) has no dependency on DB or connector specifics. All persistence details live in `db` (inside `server`). Each skill's JS side exports a React configuration component that the web frontend's Skills page loads dynamically.
+
+---
+
+## Skills
+
+Jorlan ships with a growing library of built-in skills. All skills can be enabled or disabled at runtime via the web UI (`/skills` page) or shell (`/skills enable <name>` / `/skills disable <name>`).
+
+| Skill | Namespace | Key Tools | Config Key |
+|---|---|---|---|
+| Calculator | `calculator` | `calculator.evaluate` | — (always on) |
+| Unit Conversion | `unit_conversion` | `unit_conversion.convert` | — (always on) |
+| Time & Timezone | `time` | `time.current`, `time.convert_timezone`, `time.format` | — (always on) |
+| Email (Gmail / IMAP) | `email` | `email.list`, `email.read`, `email.send`, `email.search` | OAuth / IMAP settings |
+| Google Calendar | `calendar` | `calendar.list_events`, `calendar.create_event`, etc. | OAuth |
+| Google Drive | `drive` | `drive.list`, `drive.read`, `drive.search` | OAuth |
+| Google Contacts | `contacts` | `contacts.find`, `contacts.list` | OAuth |
+| Market Data | `market_data` | `market_data.quote`, `market_data.history` | `skill.market_data` → Alpha Vantage key |
+| Lyrion Music | `lyrion` | `lyrion.play`, `lyrion.pause`, `lyrion.search` | `skill.lyrion` → server URL |
+| Weather | `weather` | `weather.current`, `weather.forecast` | `skill.weather` → optional API key |
+| HTTP Fetch | `http_fetch` | `http_fetch.get` | `skill.http_fetch` → host allowlist |
+| Web Search | `search` | `search.web`, `search.news`, `search.extract` | `skill.search` → Tavily API key |
+| MCP Adapter | `mcp.<serverName>` | dynamic (from MCP server) | `mcp.servers` → server configs |
+| Shell Commands | `shell` | `shell.run`, `shell.ls`, `shell.cat`, `shell.grep`, etc. | `skill.shell` → sandbox root |
+| User Management | `user_mgmt` | `user_mgmt.list_users`, `user_mgmt.create_user`, etc. | — (admin only) |
+| Memory | `memory` | `memory.store`, `memory.query`, `memory.forget` | — (always on) |
+| Scheduler | `scheduler` | `scheduler.create_job`, `scheduler.list_jobs`, etc. | — (always on) |
+
+Skill configuration is stored in the `server_settings` table under the documented keys and can be updated via the web Settings page or directly in the database.
 
 ---
 
@@ -277,6 +321,19 @@ Config search order: `JORLAN_SHELL_CONFIG` env var → `--config` flag → `~/.j
 | `/approvals list` | List pending approval requests |
 | `/approvals approve <id>` | Approve a pending request |
 | `/approvals deny <id>` | Deny a pending request |
+| `/skills` | List all registered skills and their enabled/disabled status |
+| `/skills enable <name>` | Enable a skill |
+| `/skills disable <name>` | Disable a skill (even built-in skills) |
+| `/mcp list` | List configured MCP servers |
+| `/mcp reload` | Reload MCP server configs from server_settings |
+| `/contacts find <name>` | Search Google Contacts |
+| `/email list [n]` | List recent emails |
+| `/calendar today` | Show today's calendar events |
+| `/scheduler list` | List scheduler jobs |
+| `/oauth list` | List OAuth provider connections |
+| `/oauth connect <provider>` | Connect to an OAuth provider (google, etc.) |
+| `/users list` | List users (admin) |
+| `/roles list` | List roles (admin) |
 | `/help` | Show help summary |
 | `/commands` | List all available commands |
 | `/quit` or `/exit` | Exit the shell |
@@ -296,13 +353,17 @@ The `web` module is a Scala.js single-page application that connects to the Jorl
 |---|---|
 | **Chat** | Start sessions, send messages, stream responses in real time |
 | **Sessions** | Browse active/past sessions, create or terminate |
-| **Approvals** | Review and decide pending capability approval requests (live badge in nav) |
+| **Approvals** | Review and decide pending capability approval requests |
 | **Memory** | Search, remember, forget, and classify memory records |
 | **Scheduler** | Browse jobs and triggers, pause/resume/cancel/run-now/delete |
 | **Event Log** | Live-tail the event log via WebSocket subscription |
-| **Skills** | Skill registry browser (stub — awaiting `listSkillVersions` GraphQL query) |
+| **Skills** | Skill registry browser with enable/disable toggles per skill; each skill's configuration UI is embedded |
 | **Users** | User, role, and permission management (admin) |
 | **Settings** | Server personality editor, model selector |
+
+### Skill configuration in the web UI
+
+Each cross-project skill exports a React component (`*UI.scala`) that the Skills page loads to let admins configure that skill (API keys, allowlists, server URLs, etc.) without touching the database directly. Skill-specific config is stored in `server_settings` and loaded at startup.
 
 ### Building the web frontend
 
@@ -330,7 +391,7 @@ For local development, set `jorlan.web.root = "debugDist"` in `server/src/main/r
 # Compile all modules
 sbt --error compile
 
-# Run all tests (unit + server + shell + web)
+# Run all tests (unit + server + shell + skill modules)
 sbt --error test
 
 # Run integration tests (requires Docker for Testcontainers)
@@ -342,18 +403,31 @@ sbt scalafmtAll
 # Build the web frontend
 bash scripts/build-web.sh
 
-# Regenerate GraphQL schema (after API changes)
+************# Regenerate GraphQL schema (after API changes in JorlanAPI.scala)
 bash scripts/capture-schema.sh
 
-# Regenerate Caliban shell client (after schema changes)
+# Regenerate Caliban shell/web client (after schema changes)
 bash scripts/gen-client.sh
 ```
 
-Test counts (as of Phase 15): **843 tests** across `ai`, `server`, `shell`, `web`, and `integration` modules — all passing without a running server or Ollama.
+> **Note**: Never edit the generated GraphQL schema or `JorlanClient.scala` directly. Always modify `JorlanAPI.scala` and regenerate via the scripts above.
+
+Test counts (as of Phase 14 refactor): **~708 unit tests** + **~180 integration tests** across all modules — all passing without a running server or Ollama.
 
 ---
 
 ## Architecture Highlights
+
+### Cross-Project Skill Architecture
+
+Skills are implemented as `sbt` cross-projects with two sides:
+
+- **JVM side** (`server/`): the actual `Skill` implementation that runs in the server runtime
+- **JS side** (`js/`): a React configuration UI component that the web frontend embeds on the Skills page
+
+This structure means each skill is self-contained — its domain code, tools, tests, configuration schema, and web UI all live in one module. Adding a new skill does not require touching the `server` module.
+
+Skills register themselves in `Jorlan.scala` based on `server_settings`; optional skills (those requiring API keys) are silently skipped if not configured.
 
 ### Agent Session Runtime
 
@@ -365,14 +439,23 @@ Shell /new → createSession mutation → AgentSessionManager.createSession
                                     ← AgentSession (sessionId shown in mode bar)
 
 Shell <text> → submitMessage mutation → AgentRunner.processMessage
+                                       → SkillRegistry.allTools (ReAct loop)
                                        → ModelGateway.streamedResponse (Ollama/LangChain4j)
                                        → ZStream[String] token chunks
                                        → SessionHub.publish(ResponseChunk)
                                        → agentResponseStream subscription
-                                       → WebSocket frames → shell TUI
+                                       → WebSocket frames → shell TUI / web
 ```
 
 `FakeModelGateway` is used in all unit/integration tests — no Ollama required for CI.
+
+### Skill Registry & MCP Adapter
+
+The `SkillRegistry` maintains all active skills and dispatches tool invocations from the ReAct loop. Skills are looked up by **longest-prefix matching** on the tool name (e.g., `mcp.my.server.com.read_file` routes to the skill named `mcp.my.server.com`), which correctly handles dotted namespaces used by the MCP adapter.
+
+The MCP adapter reads server configs from `server_settings` key `"mcp.servers"` and registers one `McpSkillAdapter` per enabled server. Hot-reload is available via the `reloadMcpServers` GraphQL mutation.
+
+Skills can be enabled or disabled at runtime. The disabled set is persisted to `server_settings` key `"skill.disabled"` so the state survives restarts.
 
 ### Memory System (Phase 9)
 
@@ -410,7 +493,7 @@ Every significant runtime action is recorded in a durable event log. Key event t
 
 ### Repository Layer
 
-All persistence goes through typed repository traits in `model`. The `db` module provides Quill/MariaDB implementations bound to `RepositoryTask[A] = IO[RepositoryError, A]`. Flyway migrations (V001–V022) are run automatically on startup.
+All persistence goes through typed repository traits in `model`. The `db` module (inside `server`) provides Quill/MariaDB implementations bound to `RepositoryTask[A] = IO[RepositoryError, A]`. Flyway migrations (V001–V025+) are run automatically on startup.
 
 ---
 
@@ -431,17 +514,25 @@ All persistence goes through typed repository traits in `model`. The `db` module
 | 8.2 | Database bootstrap script (`init-db.sh`) | ✅ Complete |
 | 8.3 | Server personality and system prompt injection | ✅ Complete |
 | 8.4 | AI module testing on CI with `FakeModelGateway` | ✅ Complete |
-| **9** | **Memory system — checkpointing, summarization, access policy, context injection** | **✅ Complete** |
-| **10** | **Durable scheduler — cron/interval triggers, DB locking, retry/backoff** | **✅ Complete** |
-| **11** | **Telegram connector** | **✅ Complete** |
-| **12** | **Built-in skills — ReAct loop, SkillRegistry, 8 skills** | **✅ Complete** |
-| **18** | **Installer and distribution (.deb, macOS Homebrew)** | **✅ Complete** |
-| 13 | Email and Calendar skills | Planned |
-| 14 | Orchestrator integration | Planned |
-| **15** | **Web frontend (Scala.js + React 19 + MUI v9)** | **✅ Complete** |
-| 16 | Additional features (shell autocomplete, etc.) | Planned |
-| 17 | Advanced features — declarative skills, MCP adapter, vector memory | Planned |
+| 9 | Memory system — checkpointing, summarization, access policy, context injection | ✅ Complete |
+| 10 | Durable scheduler — cron/interval triggers, DB locking, retry/backoff | ✅ Complete |
+| 11 | Telegram connector | ✅ Complete |
+| 12 | Built-in skills — ReAct loop, SkillRegistry, core skills | ✅ Complete |
+| 13 | Email and Calendar skills (Gmail, Google Calendar, Google Drive) | ✅ Complete |
+| 14.0 | Skill enable/disable (web UI + shell + persisted in server_settings) | ✅ Complete |
+| 14.3 | MCP compatibility adapter (stdio + HTTP, hot-reload, dotted namespaces) | ✅ Complete |
+| 14.6 | Google Contacts skill | ✅ Complete |
+| 14.7 | Weather skill (Open-Meteo) | ✅ Complete |
+| 14.8 | Shell filesystem tools (ls, cat, grep, find, head, tail, wc) | ✅ Complete |
+| 14.9 | User management skill (12 tools) | ✅ Complete |
+| 14.10 | Time & timezone skill (pure java.time) | ✅ Complete |
+| 14.11 | HTTP fetch skill (host allowlist, PerInvocation approval) | ✅ Complete |
+| 14.16 | Web search skill (Tavily API) | ✅ Complete |
+| 14.x | Skills refactored to cross-projects; per-skill configuration UI screens; `gqlClient` abstraction | ✅ Complete |
+| 15 | Web frontend (Scala.js + React 19 + MUI v9) | ✅ Complete |
 | 18 | Installer and distribution (.deb, macOS Homebrew) | ✅ Complete |
+| 16 | Advanced features — declarative skills, agent-authored skills, vector memory | Planned |
+| 17 | Orchestrator integration (work request submission, execution state machine) | Planned |
 
 See `doc/development_roadmap.md` for the detailed task breakdown per phase.
 
@@ -455,9 +546,9 @@ See `doc/development_roadmap.md` for the detailed task breakdown per phase.
 | `doc/SoftwareRequirementsSpecification.md` | Full requirements |
 | `doc/SoftwareDesignDocument.md` | Architecture and implementation guidance |
 | `doc/orchestrator_integration_addendum.md` | GraphQL orchestrator API design |
-| `doc/00_system_overview.md` – `doc/13_artifacts_and_effects.md` | Subsystem diagrams |
+| `doc/system-diagrams/` | Subsystem diagrams per domain area |
 | `doc/development_roadmap.md` | Phase-by-phase task list with checkboxes |
-| `doc/mini-designs/` | Per-feature design documents (phase 9, 10, etc.) |
+| `doc/mini-designs/` | Per-feature design documents |
 | `.env.example` | All supported environment variables with descriptions |
 
 ---

@@ -35,13 +35,13 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
       threadId = "thread-1",
       from = "alice@example.com",
       to = List("bob@example.com"),
-      cc = Nil,
-      bcc = Nil,
+      cc = List.empty,
+      bcc = List.empty,
       subject = "Hello",
       body = "Hello Bob",
       bodyHtml = None,
       date = Instant.parse("2026-01-01T10:00:00Z"),
-      attachments = Nil,
+      attachments = List.empty,
       labels = List("INBOX"),
       pgpSigned = false,
       pgpSignatureValid = None,
@@ -51,13 +51,13 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
       threadId = "thread-2",
       from = "charlie@example.com",
       to = List("bob@example.com"),
-      cc = Nil,
-      bcc = Nil,
+      cc = List.empty,
+      bcc = List.empty,
       subject = "Meeting tomorrow",
       body = "Let's meet at 10am",
       bodyHtml = None,
       date = Instant.parse("2026-01-02T09:00:00Z"),
-      attachments = Nil,
+      attachments = List.empty,
       labels = List("INBOX"),
       pgpSigned = false,
       pgpSignatureValid = None,
@@ -67,9 +67,9 @@ object EmailSkillSpec extends ZIOSpec[ZIORepositories] {
   private def makeProvider(messages: List[EmailMessage] = sampleMessages): UIO[FakeEmailProvider] =
     for {
       messagesRef <- Ref.make(messages)
-      sentRef     <- Ref.make[List[EmailDraft]](Nil)
-      draftsRef   <- Ref.make[List[EmailDraft]](Nil)
-      archivedRef <- Ref.make[List[EmailMessageId]](Nil)
+      sentRef     <- Ref.make[List[EmailDraft]](List.empty)
+      draftsRef   <- Ref.make[List[EmailDraft]](List.empty)
+      archivedRef <- Ref.make[List[EmailMessageId]](List.empty)
     } yield FakeEmailProvider(messagesRef, sentRef, draftsRef, archivedRef)
 
   private def makeSkill(provider: EmailProvider[[A] =>> IO[JorlanError, A]]): URIO[ZIORepositories, EmailSkill] =

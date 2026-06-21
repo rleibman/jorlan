@@ -40,10 +40,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def searchSessions(s: AgentSessionSearch): AsyncCallback[List[AgentSession]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))
-        .map(_.getOrElse(Nil).map(toAgentSession))
+        .map(_.getOrElse(List.empty).map(toAgentSession))
 
     override def getById(id:            AgentId):         AsyncCallback[Option[Agent]] = AsyncCallback.pure(None)
-    override def search(s:              AgentSearch):     AsyncCallback[List[Agent]] = AsyncCallback.pure(Nil)
+    override def search(s:              AgentSearch):     AsyncCallback[List[Agent]] = AsyncCallback.pure(List.empty)
     override def upsert(a:              Agent):           AsyncCallback[Agent] = ???
     override def delete(id:             AgentId):         AsyncCallback[Long] = ???
     override def getSession(id:         AgentSessionId):  AsyncCallback[Option[AgentSession]] = AsyncCallback.pure(None)
@@ -57,7 +57,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def availableModels(): AsyncCallback[List[ModelInfo]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))
-        .map(_.getOrElse(Nil).map(toModelInfo))
+        .map(_.getOrElse(List.empty).map(toModelInfo))
     override def submitMessage(
       sessionId: AgentSessionId,
       content:   String,
@@ -75,7 +75,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         .asyncCalibanCallWithAuth(
           JorlanClient.Queries.listMemory(s.scope, s.textSearch)(JorlanClient.MemoryRecord.view),
         )
-        .map(_.getOrElse(Nil).map(toMemoryRecord))
+        .map(_.getOrElse(List.empty).map(toMemoryRecord))
 
     override def upsert(record: MemoryRecord): AsyncCallback[MemoryRecord] = {
       val text = record.value match {
@@ -123,14 +123,14 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def listPendingApprovals(userId: UserId): AsyncCallback[List[ApprovalRequest]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
-        .map(_.getOrElse(Nil).map(toApprovalRequest))
+        .map(_.getOrElse(List.empty).map(toApprovalRequest))
 
     override def searchGrants(s: GrantSearch): AsyncCallback[List[CapabilityGrant]] =
       adapter
         .asyncCalibanCallWithAuth(
           JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view),
         )
-        .map(_.getOrElse(Nil).map(toCapabilityGrant))
+        .map(_.getOrElse(List.empty).map(toCapabilityGrant))
 
     override def getRole(id: RoleId):        AsyncCallback[Option[Role]] = AsyncCallback.pure(None)
     override def searchRoles(s: RoleSearch): AsyncCallback[List[Role]] =
@@ -138,11 +138,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         case Some(uid) =>
           adapter
             .asyncCalibanCallWithAuth(JorlanClient.Queries.roles(uid)(JorlanClient.Role.view))
-            .map(_.getOrElse(Nil).map(toRole))
+            .map(_.getOrElse(List.empty).map(toRole))
         case None =>
           adapter
             .asyncCalibanCallWithAuth(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
-            .map(_.getOrElse(Nil).map(toRole))
+            .map(_.getOrElse(List.empty).map(toRole))
       }
     override def upsertRole(role: Role): AsyncCallback[Role] =
       adapter
@@ -170,9 +170,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Mutations.revokeRole(userId, roleId))
         .map(_ => ())
-    override def searchPermissions(s:   PermissionSearch): AsyncCallback[List[Permission]] = AsyncCallback.pure(Nil)
-    override def upsertPermission(perm: Permission):       AsyncCallback[Permission] = ???
-    override def deletePermission(id:   PermissionId):     AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def searchPermissions(s: PermissionSearch): AsyncCallback[List[Permission]] =
+      AsyncCallback.pure(List.empty)
+    override def upsertPermission(perm: Permission):            AsyncCallback[Permission] = ???
+    override def deletePermission(id:   PermissionId):          AsyncCallback[Long] = AsyncCallback.pure(0L)
     override def upsertCapabilityGrant(grant: CapabilityGrant): AsyncCallback[CapabilityGrant] =
       adapter
         .asyncCalibanCallWithAuth(
@@ -199,11 +200,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def recordApprovalDecision(decision: ApprovalDecision):  AsyncCallback[ApprovalDecision] = ???
     override def getApprovalRequest(id: ApprovalRequestId):           AsyncCallback[Option[ApprovalRequest]] =
       AsyncCallback.pure(None)
-    override def getExpiredApprovalRequests: AsyncCallback[List[ApprovalRequest]] = AsyncCallback.pure(Nil)
+    override def getExpiredApprovalRequests: AsyncCallback[List[ApprovalRequest]] = AsyncCallback.pure(List.empty)
     override def getGrantsForCapability(
       userId:     UserId,
       capability: CapabilityName,
-    ): AsyncCallback[List[CapabilityGrant]] = AsyncCallback.pure(Nil)
+    ): AsyncCallback[List[CapabilityGrant]] = AsyncCallback.pure(List.empty)
     override def hasDirectPermission(
       userId:   UserId,
       resource: String,
@@ -224,11 +225,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def listCapabilities(): AsyncCallback[List[CapabilityGrant]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.listCapabilities(JorlanClient.CapabilityGrant.view))
-        .map(_.getOrElse(Nil).map(toCapabilityGrant))
+        .map(_.getOrElse(List.empty).map(toCapabilityGrant))
     override def listApprovals(): AsyncCallback[List[ApprovalRequest]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
-        .map(_.getOrElse(Nil).map(toApprovalRequest))
+        .map(_.getOrElse(List.empty).map(toApprovalRequest))
     override def decideApproval(
       id:       ApprovalRequestId,
       approved: Boolean,
@@ -250,18 +251,18 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     ): AsyncCallback[List[SchedulerJob]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.jobs(agentId)(JorlanClient.SchedulerJob.view))
-        .map(_.getOrElse(Nil).map(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]]))
+        .map(_.getOrElse(List.empty).map(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]]))
 
     override def searchTriggers(s: TriggerSearch): AsyncCallback[List[SchedulerTrigger]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.triggers(s.jobId)(JorlanClient.SchedulerTrigger.view))
         .map(
-          _.getOrElse(Nil)
+          _.getOrElse(List.empty)
             .map(summon[Conversion[JorlanClient.SchedulerTrigger.SchedulerTriggerView, SchedulerTrigger]]),
         )
 
     override def getJob(id: SchedulerJobId):   AsyncCallback[Option[SchedulerJob]] = AsyncCallback.pure(None)
-    override def getPendingJobs:               AsyncCallback[List[SchedulerJob]] = AsyncCallback.pure(Nil)
+    override def getPendingJobs:               AsyncCallback[List[SchedulerJob]] = AsyncCallback.pure(List.empty)
     override def upsertJob(job: SchedulerJob): AsyncCallback[SchedulerJob] =
       AsyncCallback.throwException(new UnsupportedOperationException("upsertJob not available on web client"))
 
@@ -345,7 +346,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         .asyncCalibanCallWithAuth(
           JorlanClient.Queries.users(s.active, s.nameContains, Some(s.page), Some(s.pageSize))(JorlanClient.User.view),
         )
-        .map(_.getOrElse(Nil).map(toUser))
+        .map(_.getOrElse(List.empty).map(toUser))
 
     override def getById(id: UserId): AsyncCallback[Option[User]] =
       adapter
@@ -383,7 +384,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def getChannelIdentities(userId: UserId): AsyncCallback[List[ChannelIdentity]] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Queries.userChannelIdentities(userId)(JorlanClient.ChannelIdentity.view))
-        .map(_.getOrElse(Nil).map(toChannelIdentity))
+        .map(_.getOrElse(List.empty).map(toChannelIdentity))
     override def upsertChannelIdentity(ci: ChannelIdentity): AsyncCallback[ChannelIdentity] =
       adapter
         .asyncCalibanCallWithAuth(
@@ -424,29 +425,31 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
   override val conversation: ConversationRepository[AsyncCallback] = new ConversationRepository[AsyncCallback] {
     override def getById(id: ConversationId):     AsyncCallback[Option[Conversation]] = AsyncCallback.pure(None)
-    override def search(s:   ConversationSearch): AsyncCallback[List[Conversation]] = AsyncCallback.pure(Nil)
+    override def search(s:   ConversationSearch): AsyncCallback[List[Conversation]] = AsyncCallback.pure(List.empty)
     override def create(conversation: Conversation):  AsyncCallback[Conversation] = ???
-    override def searchMessages(s:    MessageSearch): AsyncCallback[List[Message]] = AsyncCallback.pure(Nil)
+    override def searchMessages(s:    MessageSearch): AsyncCallback[List[Message]] = AsyncCallback.pure(List.empty)
     override def addMessage(message:  Message):       AsyncCallback[Message] = ???
   }
 
   override val skill: SkillRepository[AsyncCallback] = new SkillRepository[AsyncCallback] {
-    override def getById(id:       SkillId):            AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
-    override def search(s:         SkillSearch):        AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(Nil)
-    override def upsert(skill:     SkillRecord):        AsyncCallback[SkillRecord] = ???
-    override def getVersion(id:    SkillVersionId):     AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
-    override def searchVersions(s: SkillVersionSearch): AsyncCallback[List[SkillVersion]] = AsyncCallback.pure(Nil)
-    override def upsertVersion(v:  SkillVersion):       AsyncCallback[SkillVersion] = ???
+    override def getById(id:    SkillId):        AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
+    override def search(s:      SkillSearch):    AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(List.empty)
+    override def upsert(skill:  SkillRecord):    AsyncCallback[SkillRecord] = ???
+    override def getVersion(id: SkillVersionId): AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
+    override def searchVersions(s: SkillVersionSearch): AsyncCallback[List[SkillVersion]] =
+      AsyncCallback.pure(List.empty)
+    override def upsertVersion(v: SkillVersion):        AsyncCallback[SkillVersion] = ???
     override def getConnector(id: ConnectorInstanceId): AsyncCallback[Option[ConnectorInstance]] =
       AsyncCallback.pure(None)
-    override def searchConnectors(s: ConnectorSearch): AsyncCallback[List[ConnectorInstance]] = AsyncCallback.pure(Nil)
+    override def searchConnectors(s: ConnectorSearch): AsyncCallback[List[ConnectorInstance]] =
+      AsyncCallback.pure(List.empty)
     override def upsertConnector(ci: ConnectorInstance): AsyncCallback[ConnectorInstance] = ???
     override def listSkills():                           AsyncCallback[List[SkillInfo]] =
       adapter
         .asyncCalibanCallWithAuth(
           JorlanClient.Queries.skills(JorlanClient.SkillInfo.view(JorlanClient.SkillToolInfo.view)),
         )
-        .map(_.getOrElse(Nil).map(toSkillInfo))
+        .map(_.getOrElse(List.empty).map(toSkillInfo))
     override def invokeTool(
       toolName: String,
       argsJson: String,
@@ -460,21 +463,21 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
   override val eventLog: EventLogRepository[AsyncCallback] = new EventLogRepository[AsyncCallback] {
     override def append[R: zio.json.JsonEncoder](event: EventLog[R]): AsyncCallback[EventLog[R]] = ???
-    override def search(filter: EventLogFilter): AsyncCallback[List[EventLog[Json]]] = AsyncCallback.pure(Nil)
+    override def search(filter: EventLogFilter): AsyncCallback[List[EventLog[Json]]] = AsyncCallback.pure(List.empty)
     override def replaySession(
       sessionId: AgentSessionId,
       limit:     Int,
     ): AsyncCallback[List[EventLog[Json]]] =
-      AsyncCallback.pure(Nil)
+      AsyncCallback.pure(List.empty)
   }
 
   override val artifact: ArtifactRepository[AsyncCallback] = new ArtifactRepository[AsyncCallback] {
     override def getById(id:         ArtifactId):      AsyncCallback[Option[Artifact]] = AsyncCallback.pure(None)
-    override def search(s:           ArtifactSearch):  AsyncCallback[List[Artifact]] = AsyncCallback.pure(Nil)
+    override def search(s:           ArtifactSearch):  AsyncCallback[List[Artifact]] = AsyncCallback.pure(List.empty)
     override def upsert(artifact:    Artifact):        AsyncCallback[Artifact] = ???
     override def delete(id:          ArtifactId):      AsyncCallback[Long] = AsyncCallback.pure(0L)
     override def getWorkspace(id:    WorkspaceId):     AsyncCallback[Option[Workspace]] = AsyncCallback.pure(None)
-    override def searchWorkspaces(s: WorkspaceSearch): AsyncCallback[List[Workspace]] = AsyncCallback.pure(Nil)
+    override def searchWorkspaces(s: WorkspaceSearch): AsyncCallback[List[Workspace]] = AsyncCallback.pure(List.empty)
     override def upsertWorkspace(ws: Workspace):       AsyncCallback[Workspace] = ???
   }
 
@@ -524,9 +527,9 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         userId:   UserId,
         provider: String,
       ):                                       AsyncCallback[Unit] = AsyncCallback.pure(())
-      override def listByUser(userId: UserId): AsyncCallback[List[ExternalCredential]] = AsyncCallback.pure(Nil)
+      override def listByUser(userId: UserId): AsyncCallback[List[ExternalCredential]] = AsyncCallback.pure(List.empty)
       override def listOAuthProviders():       AsyncCallback[List[String]] =
-        adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.listOAuthProviders).map(_.getOrElse(Nil))
+        adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.listOAuthProviders).map(_.getOrElse(List.empty))
       override def startOAuth(provider: String): AsyncCallback[Option[String]] =
         adapter.asyncCalibanCallWithAuth(
           JorlanClient.Mutations.startOAuth(provider)(JorlanClient.OAuthStartResult.authUrl),

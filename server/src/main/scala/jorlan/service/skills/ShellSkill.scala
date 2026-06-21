@@ -13,6 +13,7 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 import zio.process.Command
@@ -52,6 +53,7 @@ class ShellSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "shell",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "shell.run",

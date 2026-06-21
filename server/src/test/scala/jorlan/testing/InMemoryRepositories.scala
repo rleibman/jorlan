@@ -57,7 +57,7 @@ object InMemoryRepositories {
         m.get(id.value).fold((0L, m))(u => (1L, m.updated(id.value, u.copy(active = false))))
       }
 
-    override def getChannelIdentities(userId: UserId):       RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(Nil)
+    override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(List.empty)
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
       ZIO.die(RuntimeException("not implemented"))
     override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
@@ -406,7 +406,7 @@ object InMemoryRepositories {
 
     override def createSession(modelId:      Option[ModelId]): RepositoryTask[Option[AgentSession]] = ZIO.none
     override def terminateSession(sessionId: AgentSessionId):  RepositoryTask[Unit] = ZIO.unit
-    override def availableModels():                            RepositoryTask[List[ModelInfo]] = ZIO.succeed(Nil)
+    override def availableModels():                            RepositoryTask[List[ModelInfo]] = ZIO.succeed(List.empty)
     override def submitMessage(
       sessionId: AgentSessionId,
       content:   String,
@@ -628,15 +628,15 @@ object InMemoryRepositories {
     override def listJobs(
       agentId: Option[AgentId],
       limit:   Int = 200,
-    ):                                                       RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
-    override def getPendingJobs:                             RepositoryTask[List[SchedulerJob]] = ZIO.succeed(Nil)
-    override def upsertJob(job:         SchedulerJob):       RepositoryTask[SchedulerJob] = ZIO.succeed(job)
-    override def deleteJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
-    override def pauseJob(id:           SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
-    override def resumeJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
-    override def cancelJob(id:          SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
-    override def triggerNow(id:         SchedulerJobId):     RepositoryTask[Boolean] = ZIO.succeed(false)
-    override def searchTriggers(s:      TriggerSearch):      RepositoryTask[List[SchedulerTrigger]] = ZIO.succeed(Nil)
+    ):                                              RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
+    override def getPendingJobs:                    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
+    override def upsertJob(job:    SchedulerJob):   RepositoryTask[SchedulerJob] = ZIO.succeed(job)
+    override def deleteJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def pauseJob(id:      SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def resumeJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def cancelJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def triggerNow(id:    SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def searchTriggers(s: TriggerSearch):  RepositoryTask[List[SchedulerTrigger]] = ZIO.succeed(List.empty)
     override def upsertTrigger(trigger: SchedulerTrigger):   RepositoryTask[SchedulerTrigger] = ZIO.succeed(trigger)
     override def deleteTrigger(id:      SchedulerTriggerId): RepositoryTask[Long] = ZIO.succeed(0L)
     override def claimJob(
@@ -848,7 +848,7 @@ object InMemoryRepositories {
             saved = record.copy(id = SkillId(id))
             _ <- store.update(_.updated(id, saved))
           } yield saved
-        override def listSkills():               RepositoryTask[List[SkillInfo]] = ZIO.succeed(Nil)
+        override def listSkills():               RepositoryTask[List[SkillInfo]] = ZIO.succeed(List.empty)
         override def enableSkill(name:  String): RepositoryTask[Unit] = ZIO.unit
         override def disableSkill(name: String): RepositoryTask[Unit] = ZIO.unit
         override def invokeTool(
@@ -905,7 +905,7 @@ object InMemoryRepositories {
           ZIO.succeed(None)
 
         override def searchWorkspaces(s: WorkspaceSearch): RepositoryTask[List[Workspace]] =
-          ZIO.succeed(Nil)
+          ZIO.succeed(List.empty)
 
         override def upsertWorkspace(ws: Workspace): RepositoryTask[Workspace] =
           ZIO.succeed(ws)
@@ -1107,7 +1107,7 @@ private class InMemoryExtCredentialRepo(
   override def listByUser(userId: UserId): RepositoryTask[List[ExternalCredential]] =
     store.get.map(_.values.filter(_.userId == userId).toList)
 
-  override def listOAuthProviders():          RepositoryTask[List[String]] = ZIO.succeed(Nil)
+  override def listOAuthProviders():          RepositoryTask[List[String]] = ZIO.succeed(List.empty)
   override def startOAuth(provider:  String): RepositoryTask[Option[String]] = ZIO.none
   override def revokeOAuth(provider: String): RepositoryTask[Unit] = ZIO.unit
   override def oauthStatus(provider: String): RepositoryTask[Option[OAuthStatus]] = ZIO.none

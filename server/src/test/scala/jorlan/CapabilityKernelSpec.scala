@@ -139,19 +139,22 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
   private val policyEngineSuite = suite("ApprovalPolicyEngine")(
     // Step 1: explicit deny
     test("ExplicitDeny → Denied regardless of risk") {
-      val result = ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.ExplicitDeny, riskHigh, Nil, now)
+      val result =
+        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.ExplicitDeny, riskHigh, List.empty, now)
       assertTrue(result.isInstanceOf[AuthorizationResult.Denied])
     },
     // Step 2: resource permission
     test("ResourcePermissionAllows → Allowed") {
       val result =
-        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.ResourcePermissionAllows, riskHigh, Nil, now)
+        ApprovalPolicyEngine
+          .decide(req("shell.execute"), EvaluationResult.ResourcePermissionAllows, riskHigh, List.empty, now)
       assertTrue(result == AuthorizationResult.Allowed)
     },
     // Step 3: role permission
     test("RolePermissionAllows → Allowed") {
       val result =
-        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.RolePermissionAllows, riskHigh, Nil, now)
+        ApprovalPolicyEngine
+          .decide(req("shell.execute"), EvaluationResult.RolePermissionAllows, riskHigh, List.empty, now)
       assertTrue(result == AuthorizationResult.Allowed)
     },
     // Step 4: capability grant — various modes
@@ -160,7 +163,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Denied)),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result.isInstanceOf[AuthorizationResult.Denied])
@@ -170,7 +173,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Persistent)),
         riskLow,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result == AuthorizationResult.Allowed)
@@ -180,7 +183,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.PerInvocation)),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {
@@ -193,7 +196,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Timed, Some(future))),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result == AuthorizationResult.Allowed)
@@ -203,7 +206,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Timed, Some(past))),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {
@@ -216,7 +219,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Timed, None)),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {
@@ -239,7 +242,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Once)),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {
@@ -276,7 +279,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Session)),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {
@@ -287,17 +290,19 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
     // Step 5 & 6: connector / skill policy stubs
     test("ConnectorPolicyAllows → Allowed") {
       val result =
-        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.ConnectorPolicyAllows, riskHigh, Nil, now)
+        ApprovalPolicyEngine
+          .decide(req("shell.execute"), EvaluationResult.ConnectorPolicyAllows, riskHigh, List.empty, now)
       assertTrue(result == AuthorizationResult.Allowed)
     },
     test("SkillPolicyAllows → Allowed") {
       val result =
-        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.SkillPolicyAllows, riskHigh, Nil, now)
+        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.SkillPolicyAllows, riskHigh, List.empty, now)
       assertTrue(result == AuthorizationResult.Allowed)
     },
     // Step 7: default deny
     test("DefaultDeny → Denied") {
-      val result = ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.DefaultDeny, riskHigh, Nil, now)
+      val result =
+        ApprovalPolicyEngine.decide(req("shell.execute"), EvaluationResult.DefaultDeny, riskHigh, List.empty, now)
       assertTrue(result.isInstanceOf[AuthorizationResult.Denied])
     },
     // PendingApproval carries the unsaved ApprovalRequest template
@@ -306,7 +311,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("memory.write"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.PerInvocation)),
         riskLow,
-        Nil,
+        List.empty,
         now,
       )
       result match {
@@ -431,7 +436,7 @@ object CapabilityKernelSpec extends ZIOSpecDefault {
         req("shell.execute"),
         EvaluationResult.CapabilityGrantAllows(grant(ApprovalMode.Timed, Some(now))),
         riskHigh,
-        Nil,
+        List.empty,
         now,
       )
       assertTrue(result match {

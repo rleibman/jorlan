@@ -38,7 +38,7 @@ case class CheckpointPolicyConfig(
   onUserRequest:        Boolean = true,
   timedIntervalTurns:   Option[Int] = Some(10),
   beforeExternalEffect: Boolean = false,
-) derives JsonEncoder, JsonDecoder
+) derives JsonCodec
 
 object CheckpointPolicyConfig {
 
@@ -92,7 +92,7 @@ object CheckpointPolicy {
 trait CheckpointSummarizer {
 
   /** @param messages
-    *   the conversation messages to summarize (returns `Nil` immediately if empty)
+    *   the conversation messages to summarize (returns `List.empty` immediately if empty)
     * @param userId
     *   owner of the resulting [[MemoryRecord]]s
     * @param agentId

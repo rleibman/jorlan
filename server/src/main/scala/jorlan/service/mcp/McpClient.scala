@@ -316,7 +316,7 @@ private[mcp] def parseToolsList(result: Json): IO[JorlanError, List[McpTool]] = 
   result match {
     case Json.Obj(fields) =>
       fields.collectFirst { case ("tools", Json.Arr(toolsArr)) => toolsArr } match {
-        case None        => ZIO.succeed(Nil)
+        case None        => ZIO.succeed(List.empty)
         case Some(tools) =>
           ZIO.foreach(tools.toList) {
             case Json.Obj(toolFields) =>
@@ -332,7 +332,7 @@ private[mcp] def parseToolsList(result: Json): IO[JorlanError, List[McpTool]] = 
               ZIO.fail(JorlanError(s"MCP: unexpected tool shape: $other"))
           }
       }
-    case _ => ZIO.succeed(Nil)
+    case _ => ZIO.succeed(List.empty)
   }
 }
 

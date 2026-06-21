@@ -10,7 +10,7 @@
 
 package jorlan.telegram
 
-import jorlan.connector.telegram.*
+import jorlan.telegram.*
 import zio.*
 import zio.http.Client
 

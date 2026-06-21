@@ -13,6 +13,7 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.repository.ZIORepositories
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -41,6 +42,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "user_mgmt",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "user_mgmt.list_users",

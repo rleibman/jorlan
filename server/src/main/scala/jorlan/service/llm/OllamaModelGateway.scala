@@ -28,7 +28,7 @@ import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories}
 import jorlan.service.*
 import zio.*
-import zio.json.JsonDecoder
+import zio.json.{JsonCodec, JsonDecoder}
 import zio.stream.ZStream
 
 import java.util as jutil
@@ -38,16 +38,16 @@ import scala.language.unsafeNulls
 private case class OllamaModelDetails(
   parameter_size:     Option[String],
   quantization_level: Option[String],
-) derives JsonDecoder
+) derives JsonCodec
 
 private case class OllamaTagModel(
   name:    String,
   details: Option[OllamaModelDetails] = None,
-) derives JsonDecoder
+) derives JsonCodec
 
 private case class OllamaTagsResponse(
   models: List[OllamaTagModel],
-) derives JsonDecoder
+) derives JsonCodec
 
 /** Holds one LangChain4j assistant and the system prompt it was built with.
   *

@@ -12,6 +12,7 @@ package jorlan.service.mcp
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -35,6 +36,7 @@ class McpSkillAdapter(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = namespace,
     tier = SkillTier.Imported,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = tools.map { t =>
       ToolDescriptor(
         name = s"$namespace.${t.name}",
@@ -42,7 +44,7 @@ class McpSkillAdapter(
         inputSchema = t.inputSchema,
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("mcp.call")),
-        examplePrompts = Nil,
+        examplePrompts = List.empty,
       )
     },
   )
