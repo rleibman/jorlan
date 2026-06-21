@@ -36,6 +36,7 @@ object WeatherUI {
       val parsed = props.initialConfigStr
         .fromJson[WeatherConfig]
         .getOrElse(WeatherConfig())
+      parsed
     }
     .render(
       (
