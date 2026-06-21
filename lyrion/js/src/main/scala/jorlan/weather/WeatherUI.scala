@@ -36,6 +36,7 @@ object LyrionUI {
       val parsed = props.initialConfigStr
         .fromJson[LyrionConfig]
         .getOrElse(LyrionConfig())
+      parsed
     }
     .render(
       (
