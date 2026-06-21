@@ -36,6 +36,7 @@ object TimeUI {
       val parsed = props.initialConfigStr
         .fromJson[TimeConfig]
         .getOrElse(TimeConfig())
+      parsed
     }
     .render(
       (
