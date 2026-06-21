@@ -36,6 +36,7 @@ object TelegramUI {
       val parsed = props.initialConfigStr
         .fromJson[TelegramConfig]
         .getOrElse(TelegramConfig())
+      parsed
     }
     .render(
       (
