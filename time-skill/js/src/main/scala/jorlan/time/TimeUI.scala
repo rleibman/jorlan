@@ -65,7 +65,7 @@ object TimeUI {
         println("Time plugin cleaned up background intervals successfully.")
       }),
     )
-    js.Dynamic.global.registerRemoteSkill("weather-skill", payload)
+    js.Dynamic.global.registerRemoteSkill("time-skill", payload)
   }
 
 }
