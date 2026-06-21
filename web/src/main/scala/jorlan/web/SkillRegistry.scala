@@ -75,6 +75,11 @@ object SkillRegistry {
     val bridgedComponent = JsComponent[js.Object, Children.None, js.Object](jsComponentRaw)
 
     val renderedElement: VdomElement = bridgedComponent(pluginProps.asInstanceOf[js.Object])
+    loadedSkills.put(skillId, renderedElement)
+
+    if (!js.isUndefined(rawPayload.onUnload)) {
+      cleanupHooks.put(skillId, rawPayload.onUnload.asInstanceOf[js.Function0[Unit]])
+    }
 
     // Render 'renderedElement' into your main dashboard layout
   }
