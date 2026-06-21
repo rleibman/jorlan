@@ -12,6 +12,7 @@ package jorlan.weather
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -36,6 +37,7 @@ class WeatherSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "weather",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "weather.current",

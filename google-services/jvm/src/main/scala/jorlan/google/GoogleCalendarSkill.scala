@@ -13,6 +13,7 @@ package jorlan.google
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.CalendarProvider
+import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -35,6 +36,7 @@ class GoogleCalendarSkill(
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "calendar",
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tier = SkillTier.BuiltIn,
     tools = List(
       ToolDescriptor(

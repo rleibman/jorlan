@@ -13,6 +13,7 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.skills.SkillRegistry
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -30,6 +31,7 @@ object SkillRegistrySpec extends ZIOSpecDefault {
       override val descriptor: SkillDescriptor = SkillDescriptor(
         name = namespace,
         tier = SkillTier.BuiltIn,
+        skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
         tools = toolNames.map { t =>
           ToolDescriptor(
             name = t,
@@ -136,6 +138,7 @@ object SkillRegistrySpec extends ZIOSpecDefault {
           override val descriptor: SkillDescriptor = SkillDescriptor(
             name = "fail",
             tier = SkillTier.BuiltIn,
+            skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
             tools = List(
               ToolDescriptor(
                 name = "fail.run",

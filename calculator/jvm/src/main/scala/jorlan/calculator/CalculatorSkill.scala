@@ -12,6 +12,7 @@ package jorlan.calculator
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import org.mariuszgromada.math.mxparser.{Expression, License}
 import zio.*
 import zio.json.ast.Json
@@ -29,6 +30,7 @@ class CalculatorSkill extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "calculator",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "calculator.evaluate",

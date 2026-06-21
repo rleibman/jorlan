@@ -12,6 +12,7 @@ package jorlan.units
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import squants.energy.*
 import squants.information.*
 import squants.mass.*
@@ -370,6 +371,7 @@ class UnitConversionSkill extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "units",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "units.convert",

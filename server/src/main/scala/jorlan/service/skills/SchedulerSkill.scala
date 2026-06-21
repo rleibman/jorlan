@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.*
 import jorlan.service.JobManager
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -26,6 +27,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "scheduler",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "scheduler.create_job",

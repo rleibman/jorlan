@@ -12,7 +12,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.*
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -24,9 +24,14 @@ object ConnectorManagerSpec extends ZIOSpecDefault {
     val stopped: Ref[Boolean],
   ) extends ConnectorSkill {
 
-    override val connectorType:       ConnectorType = ConnectorType.Telegram
-    override val instanceId:          ConnectorInstanceId = ConnectorInstanceId(99L)
-    override val descriptor:          SkillDescriptor = SkillDescriptor("tracking", SkillTier.BuiltIn, List.empty)
+    override val connectorType: ConnectorType = ConnectorType.Telegram
+    override val instanceId:    ConnectorInstanceId = ConnectorInstanceId(99L)
+    override val descriptor:    SkillDescriptor = SkillDescriptor(
+      "tracking",
+      SkillTier.BuiltIn,
+      List.empty,
+      skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+    )
     override val sendMessageToolName: Option[String] = Some("tracking.send_message")
 
     override def invoke(
@@ -42,9 +47,14 @@ object ConnectorManagerSpec extends ZIOSpecDefault {
 
   private class FailingConnectorSkill extends ConnectorSkill {
 
-    override val connectorType:       ConnectorType = ConnectorType.Telegram
-    override val instanceId:          ConnectorInstanceId = ConnectorInstanceId(98L)
-    override val descriptor:          SkillDescriptor = SkillDescriptor("failing", SkillTier.BuiltIn, List.empty)
+    override val connectorType: ConnectorType = ConnectorType.Telegram
+    override val instanceId:    ConnectorInstanceId = ConnectorInstanceId(98L)
+    override val descriptor:    SkillDescriptor = SkillDescriptor(
+      "failing",
+      SkillTier.BuiltIn,
+      List.empty,
+      skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+    )
     override val sendMessageToolName: Option[String] = None
 
     override def invoke(

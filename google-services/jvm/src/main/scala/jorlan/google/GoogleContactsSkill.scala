@@ -13,6 +13,7 @@ package jorlan.google
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.{GoogleContact, GoogleContactsProvider as GoogleContactsProviderTrait}
+import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -31,6 +32,7 @@ class GoogleContactsSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "google_contacts",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "google_contacts.list_contacts",

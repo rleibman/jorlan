@@ -1,4 +1,5 @@
 # Software Design Description (SDD)
+
 ## Secure Agent Runtime and Orchestration Platform
 
 Version: 0.1 Draft  
@@ -14,11 +15,16 @@ Database: MariaDB
 
 ## 1.1 Purpose
 
-This Software Design Description (SDD) defines the initial high-level design for a secure, multi-user, observable, extensible AI agent runtime and orchestration platform.
+This Software Design Description (SDD) defines the initial high-level design for a secure, multi-user, observable,
+extensible AI agent runtime and orchestration platform.
 
-The design is intended to guide implementation by a development team or AI coding assistant. It builds on the previously defined Software Requirements Specification and executive summary, translating requirements into an initial technical structure while avoiding excessive implementation detail.
+The design is intended to guide implementation by a development team or AI coding assistant. It builds on the previously
+defined Software Requirements Specification and executive summary, translating requirements into an initial technical
+structure while avoiding excessive implementation detail.
 
-This document is intentionally a skeleton-level design. It establishes the major system components, boundaries, data flows, extension points, technology choices, and design principles. Detailed class design, database DDL, GraphQL schema definitions, and exact module APIs are deferred to implementation-specific design notes.
+This document is intentionally a skeleton-level design. It establishes the major system components, boundaries, data
+flows, extension points, technology choices, and design principles. Detailed class design, database DDL, GraphQL schema
+definitions, and exact module APIs are deferred to implementation-specific design notes.
 
 ---
 
@@ -34,9 +40,11 @@ The system shall provide a secure runtime for AI agents capable of:
 - Durable event logging and traceability
 - Shared and user-specific memory
 - Integration with LLMs, especially local models via Ollama
-- Integration with external systems such as email, Google services, Telegram, Slack, shell, web search, Lyrion, and market data services
+- Integration with external systems such as email, Google services, Telegram, Slack, shell, web search, Lyrion, and
+  market data services
 
-The first implementation shall target Linux and macOS. Microsoft Windows is explicitly out of scope for the initial implementation.
+The first implementation shall target Linux and macOS. Microsoft Windows is explicitly out of scope for the initial
+implementation.
 
 ---
 
@@ -67,21 +75,21 @@ The design is guided by the following goals:
 
 ## 1.5 Definitions
 
-| Term | Definition |
-|---|---|
-| Agent | Runtime entity that uses models, tools, memory, and policies to perform work |
-| User | A canonical account representing a human actor across one or more communication channels |
-| Channel Identity | A Telegram account, email address, shell user, Slack user, phone number, or other external identity linked to a canonical user |
-| Skill | A reusable unit of agent functionality with typed inputs, outputs, permissions, and execution behavior |
-| Connector | A communication or external-system integration, such as Telegram, Gmail, Slack, Lyrion, or Google Calendar |
-| Capability | A specific authority granted to an agent, skill, connector, user, or role |
-| Role | A named set of permissions assigned to users |
-| Resource Permission | A direct permission on a specific resource, independent of role assignment |
-| Event Log | Durable append-only record of significant system activity |
-| Memory Checkpoint | A summarized conversation or execution state committed into long-term memory |
-| Shared Memory | Knowledge available to the system across users, subject to policy |
-| User Context | Information about a particular user's preferences, history, active work, and channel identities |
-| Scheduler | Durable subsystem responsible for delayed, recurring, and trigger-based execution |
+| Term                | Definition                                                                                                                     |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Agent               | Runtime entity that uses models, tools, memory, and policies to perform work                                                   |
+| User                | A canonical account representing a human actor across one or more communication channels                                       |
+| Channel Identity    | A Telegram account, email address, shell user, Slack user, phone number, or other external identity linked to a canonical user |
+| Skill               | A reusable unit of agent functionality with typed inputs, outputs, permissions, and execution behavior                         |
+| Connector           | A communication or external-system integration, such as Telegram, Gmail, Slack, Lyrion, or Google Calendar                     |
+| Capability          | A specific authority granted to an agent, skill, connector, user, or role                                                      |
+| Role                | A named set of permissions assigned to users                                                                                   |
+| Resource Permission | A direct permission on a specific resource, independent of role assignment                                                     |
+| Event Log           | Durable append-only record of significant system activity                                                                      |
+| Memory Checkpoint   | A summarized conversation or execution state committed into long-term memory                                                   |
+| Shared Memory       | Knowledge available to the system across users, subject to policy                                                              |
+| User Context        | Information about a particular user's preferences, history, active work, and channel identities                                |
+| Scheduler           | Durable subsystem responsible for delayed, recurring, and trigger-based execution                                              |
 
 ---
 
@@ -89,7 +97,9 @@ The design is guided by the following goals:
 
 ## 2.1 Architectural Summary
 
-The system is a Scala-based, JVM-hosted agent runtime composed of a core orchestration service, durable persistence layer, permission system, scheduler, model gateway, memory subsystem, skill runtime, connector framework, and external API layer.
+The system is a Scala-based, JVM-hosted agent runtime composed of a core orchestration service, durable persistence
+layer, permission system, scheduler, model gateway, memory subsystem, skill runtime, connector framework, and external
+API layer.
 
 At a high level:
 
@@ -104,9 +114,11 @@ Users / Channels
   -> Responses / Effects / Notifications
 ```
 
-The system supports multiple users communicating through multiple channels. Every inbound message is associated with a canonical user before agent processing begins.
+The system supports multiple users communicating through multiple channels. Every inbound message is associated with a
+canonical user before agent processing begins.
 
-The runtime maintains per-conversation context temporarily. At configured checkpoints, or before/after meaningful external effects, the system summarizes relevant context and commits it to shared and/or user-scoped memory.
+The runtime maintains per-conversation context temporarily. At configured checkpoints, or before/after meaningful
+external effects, the system summarizes relevant context and commits it to shared and/or user-scoped memory.
 
 All significant actions are written to the event log.
 
@@ -133,18 +145,18 @@ The platform shall avoid hidden prompt-driven behavior where structured contract
 
 The system is divided into the following major boundaries:
 
-| Boundary | Responsibility |
-|---|---|
-| Core Runtime | Agent orchestration, planning, execution, state transitions |
-| Permission Kernel | Capability grants, role checks, approval policies |
-| Skill Runtime | Skill registration, validation, execution, sandboxing |
-| Connector Framework | External communication systems and service integrations |
-| Memory System | User context, shared memory, vector retrieval, checkpoints |
-| Scheduler | Durable delayed, recurring, and trigger-based execution |
-| Model Gateway | LLM provider abstraction and routing |
-| Persistence Layer | MariaDB-backed durable state and event logging |
-| API Layer | GraphQL, HTTP, shell, and connector-facing interfaces |
-| Observability Layer | Logs, traces, metrics, replay support |
+| Boundary            | Responsibility                                              |
+|---------------------|-------------------------------------------------------------|
+| Core Runtime        | Agent orchestration, planning, execution, state transitions |
+| Permission Kernel   | Capability grants, role checks, approval policies           |
+| Skill Runtime       | Skill registration, validation, execution, sandboxing       |
+| Connector Framework | External communication systems and service integrations     |
+| Memory System       | User context, shared memory, vector retrieval, checkpoints  |
+| Scheduler           | Durable delayed, recurring, and trigger-based execution     |
+| Model Gateway       | LLM provider abstraction and routing                        |
+| Persistence Layer   | MariaDB-backed durable state and event logging              |
+| API Layer           | GraphQL, HTTP, shell, and connector-facing interfaces       |
+| Observability Layer | Logs, traces, metrics, replay support                       |
 
 ---
 
@@ -176,19 +188,58 @@ Linux and macOS shall be the initial supported operating systems.
 
 ## 3.3 Core Libraries
 
-The initial library stack shall include:
+| Library        | Purpose                                                                |
+|----------------|------------------------------------------------------------------------|
+| ZIO            | Effect system, concurrency, scheduling primitives, resource management |
+| zio-json       | JSON encoding/decoding (prefer `derives JsonCodec`)                    |
+| zio-http       | HTTP server/client                                                     |
+| zio-test       | Unit and integration testing                                           |
+| Caliban        | GraphQL interface                                                      |
+| Flyway         | Database migration management                                          |
+| Quill          | Database access layer                                                  |
+| LangChain4j    | LLM integration and model tooling                                      |
+| Testcontainers | Integration testing with external systems                              |
+| cron4s         | Cron expression parsing for the durable scheduler                      |
+| HikariCP       | Database connection pooling                                            |
+| ScalablyTyped  | Scala.js bindings for React 19 + MUI v9 + Emotion                      |
 
-| Library | Purpose |
-|---|---|
-| ZIO | Effect system, concurrency, scheduling primitives, resource management |
-| zio-json | JSON encoding/decoding |
-| zio-http | HTTP server/client where appropriate |
-| zio-test | Unit and integration testing |
-| Caliban | GraphQL interface |
-| Flyway | Database migration management |
-| Quill | Database access layer |
-| LangChain4j | LLM integration and model tooling where useful |
-| Testcontainers | Integration testing with external systems |
+---
+
+## 3.6 SBT Module Structure
+
+The project is organized as a multi-module SBT build. Skills and connectors are **cross-projects** (JVM + JS) so each
+skill can provide both a server-side implementation and a web configuration UI component from the same source tree.
+
+```
+model            (cross: JVM + JS) — domain types, repository traits, error hierarchy
+gqlClient        (cross: JVM + JS) — shared GQL client types, generated JorlanClient
+skillApi         (cross: JVM + JS) — Skill, ConnectorSkill, ToolDescriptor contracts
+
+Skills (each is a cross-project):
+  calculatorSkill       — arithmetic calculator
+  lyrionSkill           — Lyrion music server control
+  emailConnector        — Email via IMAP/SMTP or Google Gmail
+  unitConversionSkill   — unit conversion
+  httpFetchSkill        — HTTP GET with host allowlist
+  weatherSkill          — weather via Open-Meteo
+  timeSkill             — time/timezone (pure java.time)
+  marketDataSkill       — stock quotes via Alpha Vantage
+  searchSkill           — web search via Tavily API
+  googleServices        — Gmail, Google Calendar, Google Drive, Google Contacts
+
+telegramConnector (JVM only) — Telegram Bot connector
+ai                (JVM only) — LangChain4j + Ollama LLM client
+server            (JVM only) — Caliban GraphQL API, HTTP, agent runtime, MCP adapter, scheduler, memory
+shell             (JVM only) — interactive TUI shell
+web               (JS only)  — Scala.js SPA (React 19 + MUI v9), served by the server
+stLib             (JS only)  — ScalablyTyped bindings sub-project (run `cd stLib && sbt publishLocal` once)
+integration       (JVM only) — Testcontainers integration tests
+analytics         (JVM only) — analytics subsystem (future)
+```
+
+Each skill's JS side exports a React configuration component that the web frontend embeds on the Skills page. Optional
+skills (those requiring API keys or external services) are silently skipped at startup if not configured in
+`server_settings`.
 
 ---
 
@@ -314,7 +365,8 @@ All inbound messages must be resolved to a canonical user before agent execution
 
 The identity subsystem shall map external channel identifiers to canonical users.
 
-Unrecognized identities shall be rejected, quarantined, or routed to an onboarding/verification flow depending on connector policy.
+Unrecognized identities shall be rejected, quarantined, or routed to an onboarding/verification flow depending on
+connector policy.
 
 For signed or cryptographically verified channels, the system shall validate signatures before accepting commands.
 
@@ -448,7 +500,9 @@ Example capability:
 {
   "capability": "filesystem.read",
   "scope": {
-    "paths": ["/workspace/project-a"]
+    "paths": [
+      "/workspace/project-a"
+    ]
   },
   "approval": "once",
   "expiresIn": "24h"
@@ -461,14 +515,14 @@ Example capability:
 
 The system shall support approval modes:
 
-| Mode | Meaning |
-|---|---|
-| denied | Operation is not allowed |
-| per_invocation | Approval required every time |
-| once | Approval required once for a defined scope |
-| session | Approval valid for current session |
-| timed | Approval valid until expiration |
-| persistent | Approval remains until revoked |
+| Mode           | Meaning                                    |
+|----------------|--------------------------------------------|
+| denied         | Operation is not allowed                   |
+| per_invocation | Approval required every time               |
+| once           | Approval required once for a defined scope |
+| session        | Approval valid for current session         |
+| timed          | Approval valid until expiration            |
+| persistent     | Approval remains until revoked             |
 
 ---
 
@@ -494,14 +548,18 @@ Explicit denial shall take precedence over grants.
 
 The system shall support multiple tiers of skills.
 
-| Tier | Skill Type | Trust Level |
-|---|---|---|
-| 0 | Built-in native Scala skill | Highest |
-| 1 | Installed native Scala plugin skill | High, if trusted |
-| 2 | Declarative JSON skill | Medium |
-| 3 | Scripted sandbox skill | Low/medium |
-| 4 | Imported MCP or external skill | Restricted |
-| 5 | Agent-authored draft skill | Untrusted |
+| Tier | Skill Type                                | Trust Level      |
+|------|-------------------------------------------|------------------|
+| 0    | Built-in native Scala skill               | Highest          |
+| 1    | Installed native Scala plugin skill       | High, if trusted |
+| 2    | Declarative JSON skill                    | Medium           |
+| 3    | Scripted sandbox skill                    | Low/medium       |
+| 4    | Imported MCP or external skill (Imported) | Restricted       |
+| 5    | Agent-authored draft skill                | Untrusted        |
+
+All skills — including built-in skills — can be individually enabled or disabled at runtime without a server restart.
+The disabled set is persisted to `server_settings` key `"skill.disabled"` and reloaded on startup. Disabled skills are
+hidden from the ReAct loop's tool list and return an error if invoked directly.
 
 ---
 
@@ -573,7 +631,8 @@ Draft
 
 ## 7.6 External Skill Importing
 
-The system shall support adapters for external skill ecosystems, including MCP-compatible tools and OpenClaw-like skill definitions.
+The system shall support adapters for external skill ecosystems, including MCP-compatible tools and OpenClaw-like skill
+definitions.
 
 Imported skills shall be translated into canonical internal manifests where feasible.
 
@@ -599,31 +658,25 @@ Connectors shall handle:
 
 ## 8.2 Required Initial Connectors
 
-The following connectors are required for the initial implementation:
+The following connectors are implemented:
 
-1. Shell connector
-2. GraphQL connector/API
-3. Telegram connector
+1. Shell connector (TUI REPL + command dispatch)
+2. GraphQL connector/API (Caliban — primary external API)
+3. Telegram connector (Bot API, message normalization, identity resolution)
 
 ---
 
 ## 8.3 Planned Connectors
 
-Planned connectors include:
+Remaining planned connectors:
 
 - Slack
-- PGP-protected email
-- Gmail
-- IMAP
-- SMTP
-- WhatsApp
-- SMS
-- Google Calendar
-- Google Drive
-- Google Contacts
-- Lyrion music service
-- Web search providers
-- Market data providers
+- WhatsApp / SMS
+- PGP-protected email (native client)
+
+> **Note**: Gmail, IMAP/SMTP, Google Calendar, Google Drive, Google Contacts, Lyrion, web search, and market data are
+> implemented as **skills** (via the skill framework), not connectors. Connectors in this design handle message
+> ingress/egress from external chat channels.
 
 ---
 
@@ -639,13 +692,18 @@ Connectors may communicate with the core application through:
 - GraphQL calls
 - Local HTTP calls
 
-For initial design, connector logic should target a common application service interface. GraphQL shall expose that same application service layer externally.
+For initial design, connector logic should target a common application service interface. GraphQL shall expose that same
+application service layer externally.
 
-This avoids coupling internal connector execution exclusively to GraphQL while preserving GraphQL as the primary API surface.
+This avoids coupling internal connector execution exclusively to GraphQL while preserving GraphQL as the primary API
+surface.
 
 ---
 
-# 9. Required Early Skills
+# 9. Skills — Implemented and Planned
+
+> **Implementation status**: As of Phase 14, all skills in this section are implemented. Each skill is a cross-project
+> SBT module providing a JVM server implementation and a JS web configuration UI.
 
 ## 9.1 Email Skill
 
@@ -689,7 +747,8 @@ Future integrations may include:
 - Google Docs
 - Google Sheets
 
-External CLI tools such as gog may be used as adapters or bridges but shall not define the canonical internal Google service model.
+External CLI tools such as gog may be used as adapters or bridges but shall not define the canonical internal Google
+service model.
 
 ---
 
@@ -738,7 +797,8 @@ Initial scope shall include:
 - Create alerts
 - Retrieve market news
 
-Trading/execution actions are out of scope for the initial implementation or shall require per-invocation high-risk approval.
+Trading/execution actions are out of scope for the initial implementation or shall require per-invocation high-risk
+approval.
 
 ---
 
@@ -872,14 +932,14 @@ Interactive shell and sudo execution shall be disabled by default.
 
 Shell commands shall be classified by risk.
 
-| Class | Description | Examples |
-|---|---|---|
-| 0 | Read-only inspection | ls, cat, grep, find, git status, git diff |
-| 1 | Workspace-local write | mkdir, touch, scalafmt, sbt test |
-| 2 | Destructive workspace operation | rm, git clean, git reset, overwrite mv |
-| 3 | External side effect | git push, curl POST, ssh, scp |
-| 4 | Privileged/system operation | sudo, systemctl, chmod/chown outside workspace |
-| 5 | Credential/payment/security-sensitive | gpg private keys, password managers, payment CLIs |
+| Class | Description                           | Examples                                          |
+|-------|---------------------------------------|---------------------------------------------------|
+| 0     | Read-only inspection                  | ls, cat, grep, find, git status, git diff         |
+| 1     | Workspace-local write                 | mkdir, touch, scalafmt, sbt test                  |
+| 2     | Destructive workspace operation       | rm, git clean, git reset, overwrite mv            |
+| 3     | External side effect                  | git push, curl POST, ssh, scp                     |
+| 4     | Privileged/system operation           | sudo, systemctl, chmod/chown outside workspace    |
+| 5     | Credential/payment/security-sensitive | gpg private keys, password managers, payment CLIs |
 
 Higher-risk classes shall require stricter approval.
 
@@ -892,7 +952,9 @@ The shell runtime shall prefer structured command execution:
 ```json
 {
   "binary": "/usr/bin/sbt",
-  "args": ["test"],
+  "args": [
+    "test"
+  ],
   "cwd": "/workspace/project",
   "timeoutSeconds": 600
 }
@@ -1014,7 +1076,8 @@ Because shared memory can incorporate information from multiple users, memory re
 
 The system shall prevent unintended leakage of sensitive user-specific data into inappropriate contexts.
 
-Open design issue: the exact boundary between shared memory, user memory, private memory, and workspace memory requires further refinement.
+Open design issue: the exact boundary between shared memory, user memory, private memory, and workspace memory requires
+further refinement.
 
 ---
 
@@ -1120,7 +1183,8 @@ Events shall include:
 
 Large outputs such as long logs, generated files, attachments, and model transcripts may be stored as artifacts.
 
-Artifacts may be stored in the filesystem, object storage, or database-backed storage according to deployment configuration.
+Artifacts may be stored in the filesystem, object storage, or database-backed storage according to deployment
+configuration.
 
 Artifact references shall be persisted in MariaDB.
 
@@ -1201,7 +1265,8 @@ Skills and connectors shall request secret-backed operations through controlled 
 
 The system shall support user-configurable PGP email policies.
 
-At minimum, inbound email commands shall require sender verification sufficient to prevent unknown rogue actors from controlling the system.
+At minimum, inbound email commands shall require sender verification sufficient to prevent unknown rogue actors from
+controlling the system.
 
 Policies may include:
 
@@ -1377,52 +1442,58 @@ Recommended initial implementation order:
 
 This design has been checked against the major decisions discussed so far.
 
-| Discussion Point | Reflected in Design? | Location |
-|---|---:|---|
-| Written in Scala | Yes | Sections 3.1, 3.3 |
-| JVM first, not Scala Native | Yes | Sections 3.2, 18 |
-| MariaDB primary database | Yes | Sections 3.4, 14 |
-| MariaDB vector support as derived index | Yes | Sections 3.4, 12 |
-| ZIO ecosystem libraries | Yes | Section 3.3 |
-| Caliban GraphQL | Yes | Sections 3.3, 15 |
-| Flyway | Yes | Sections 3.3, 14 |
-| Quill | Yes | Sections 3.3, 14 |
-| LangChain4j | Yes | Section 3.3 |
-| Multi-user from day one | Yes | Sections 5, 6, 8 |
-| Canonical user with many channel identities | Yes | Section 5 |
-| Shared memory across users | Yes, with privacy caveat | Sections 5.4, 12.4 |
-| Conversation checkpointing into memory | Yes | Section 5.5 |
-| Role system | Yes | Section 6 |
-| Resource-specific 1x1 permissions | Yes | Section 6.2 |
-| GraphQL, shell, Telegram required initially | Yes | Section 8.2 |
-| Connector abstraction | Yes | Sections 8, 15.3 |
-| GraphQL-first but not over-coupled internally | Yes | Section 8.4 |
-| Email skill | Yes | Section 9.1 |
-| Himalaya as adapter, not core | Yes | Section 9.1 |
-| Google Calendar/Drive/etc. | Yes | Section 9.2 |
-| gog as adapter, not core | Yes | Section 9.2 |
-| Web search | Yes | Section 9.3 |
-| Lyrion music service | Yes | Section 9.4 |
-| Stock tickers | Yes | Section 9.5 |
-| Scheduler and triggers | Yes | Sections 11, 9.6 |
-| Agent-created skills | Yes | Sections 7.4, 7.5 |
-| Generic declarative skills | Yes | Section 7.3 |
-| Shell access with strict controls | Yes | Section 10 |
-| Linux/macOS only, not Microsoft | Yes | Sections 1.2, 10.2 |
-| PGP-protected email | Yes | Section 16.3 |
-| Extensive unit testing | Yes | Section 17.1 |
-| Integration testing with Testcontainers | Yes | Section 17.2 |
-| Complex flow testing | Yes | Section 17.3 |
-| Traceability and logging | Yes | Sections 14.3, 16, 17 |
+| Discussion Point                              |     Reflected in Design? | Location              |
+|-----------------------------------------------|-------------------------:|-----------------------|
+| Written in Scala                              |                      Yes | Sections 3.1, 3.3     |
+| JVM first, not Scala Native                   |                      Yes | Sections 3.2, 18      |
+| MariaDB primary database                      |                      Yes | Sections 3.4, 14      |
+| MariaDB vector support as derived index       |                      Yes | Sections 3.4, 12      |
+| ZIO ecosystem libraries                       |                      Yes | Section 3.3           |
+| Caliban GraphQL                               |                      Yes | Sections 3.3, 15      |
+| Flyway                                        |                      Yes | Sections 3.3, 14      |
+| Quill                                         |                      Yes | Sections 3.3, 14      |
+| LangChain4j                                   |                      Yes | Section 3.3           |
+| Multi-user from day one                       |                      Yes | Sections 5, 6, 8      |
+| Canonical user with many channel identities   |                      Yes | Section 5             |
+| Shared memory across users                    | Yes, with privacy caveat | Sections 5.4, 12.4    |
+| Conversation checkpointing into memory        |                      Yes | Section 5.5           |
+| Role system                                   |                      Yes | Section 6             |
+| Resource-specific 1x1 permissions             |                      Yes | Section 6.2           |
+| GraphQL, shell, Telegram required initially   |                      Yes | Section 8.2           |
+| Connector abstraction                         |                      Yes | Sections 8, 15.3      |
+| GraphQL-first but not over-coupled internally |                      Yes | Section 8.4           |
+| Email skill                                   |                      Yes | Section 9.1           |
+| Himalaya as adapter, not core                 |                      Yes | Section 9.1           |
+| Google Calendar/Drive/etc.                    |                      Yes | Section 9.2           |
+| gog as adapter, not core                      |                      Yes | Section 9.2           |
+| Web search                                    |                      Yes | Section 9.3           |
+| Lyrion music service                          |                      Yes | Section 9.4           |
+| Stock tickers                                 |                      Yes | Section 9.5           |
+| Scheduler and triggers                        |                      Yes | Sections 11, 9.6      |
+| Agent-created skills                          |                      Yes | Sections 7.4, 7.5     |
+| Generic declarative skills                    |                      Yes | Section 7.3           |
+| Shell access with strict controls             |                      Yes | Section 10            |
+| Linux/macOS only, not Microsoft               |                      Yes | Sections 1.2, 10.2    |
+| PGP-protected email                           |                      Yes | Section 16.3          |
+| Extensive unit testing                        |                      Yes | Section 17.1          |
+| Integration testing with Testcontainers       |                      Yes | Section 17.2          |
+| Complex flow testing                          |                      Yes | Section 17.3          |
+| Traceability and logging                      |                      Yes | Sections 14.3, 16, 17 |
 
 ## 21.1 Validation Summary
 
 The design is a good match for the current discussion.
 
-The largest unresolved risk is the shared-memory model. A fully shared memory system is powerful, but it needs careful policy boundaries to avoid cross-user leakage or inappropriate personalization. This is marked as an open design issue and should be refined before implementation of memory retrieval.
+The largest unresolved risk is the shared-memory model. A fully shared memory system is powerful, but it needs careful
+policy boundaries to avoid cross-user leakage or inappropriate personalization. This is marked as an open design issue
+and should be refined before implementation of memory retrieval.
 
-The second-largest unresolved issue is connector topology. The design currently keeps GraphQL as the primary external API while recommending a shared application service layer for internal connectors. This avoids over-coupling connectors to GraphQL but preserves the GraphQL-first direction.
+The second-largest unresolved issue is connector topology. The design currently keeps GraphQL as the primary external
+API while recommending a shared application service layer for internal connectors. This avoids over-coupling connectors
+to GraphQL but preserves the GraphQL-first direction.
 
-The third-largest unresolved issue is shell execution. The design includes strong guardrails, but shell access remains inherently dangerous and should be implemented later than the permission kernel and event log.
+The third-largest unresolved issue is shell execution. The design includes strong guardrails, but shell access remains
+inherently dangerous and should be implemented later than the permission kernel and event log.
 
-Overall, the document reflects the project direction: a secure, multi-user, Scala-based, MariaDB-backed, observable agent runtime with typed skills, controlled autonomy, rich scheduling, memory checkpointing, and practical connectors.
+Overall, the document reflects the project direction: a secure, multi-user, Scala-based, MariaDB-backed, observable
+agent runtime with typed skills, controlled autonomy, rich scheduling, memory checkpointing, and practical connectors.

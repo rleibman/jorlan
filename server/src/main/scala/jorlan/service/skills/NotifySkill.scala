@@ -14,6 +14,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.*
 import jorlan.service.NotificationRouter
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -28,6 +29,7 @@ class NotifySkill(router: NotificationRouter) extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "notify",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "notify.user",

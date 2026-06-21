@@ -12,6 +12,7 @@ package jorlan.search
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -50,6 +51,7 @@ class SearchSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "search",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "search.web",

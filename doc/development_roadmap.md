@@ -206,18 +206,33 @@ GraphQL.
 
 ## Appendix: Module Dependency Map
 
+Skills are cross-projects (JVM + JS). The `←` arrow means "depends on".
+
 ```
-model
-  ← connector-api
-  ← ai
-  ← analytics
-  ← email          (connector-api, model)
-  ← telegram       (connector-api, model)
-  ← google-services(connector-api, model)
-  ← shell          (model)
-  ← web            (model)
-  ← server         (model, ai, analytics, connector-api, email, telegram, google-services)
-  ← integration    (model, server, shell, connector-api, telegram)
+model              (cross)
+  ← gqlClient      (cross: model)
+  ← skillApi       (cross: model, gqlClient)
+  ← ai             (JVM:   model)
+  ← analytics      (JVM:   model)
+
+Skill cross-projects (each: JVM + JS, depend on model, skillApi):
+  ← calculatorSkill
+  ← lyrionSkill
+  ← emailConnector
+  ← unitConversionSkill
+  ← httpFetchSkill
+  ← weatherSkill
+  ← timeSkill
+  ← marketDataSkill
+  ← searchSkill
+  ← googleServices
+
+  ← telegramConnector  (JVM: skillApi, model)
+  ← shell              (JVM: model, gqlClient)
+  ← web                (JS:  model, gqlClient, skillApi, all skill JS sides)
+  ← server             (JVM: model, ai, analytics, skillApi, all skill JVM sides,
+                              telegramConnector)
+  ← integration        (JVM: model, server, shell, skillApi, telegramConnector)
 ```
 
 ## Appendix: Testing Conventions

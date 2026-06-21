@@ -12,6 +12,7 @@ package jorlan.time
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -198,6 +199,7 @@ class TimeSkill extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "time",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "time.now",

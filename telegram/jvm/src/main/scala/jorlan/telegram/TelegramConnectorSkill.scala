@@ -13,8 +13,9 @@ package jorlan.telegram
 import jorlan.*
 import jorlan.connector.*
 import jorlan.*
+import just.semver.SemVer
 import telegramium.bots.Update
-import telegramium.bots.{Message => TgMessage}
+import telegramium.bots.Message as TgMessage
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -97,6 +98,7 @@ class TelegramConnectorSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "telegram",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "telegram.send_message",

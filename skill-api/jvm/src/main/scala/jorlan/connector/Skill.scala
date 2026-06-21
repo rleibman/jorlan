@@ -11,6 +11,7 @@
 package jorlan.connector
 
 import jorlan.*
+import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
@@ -149,10 +150,12 @@ trait ConnectorSkill extends Skill {
   *   the tools this skill exposes; each tool is addressable by its [[ToolDescriptor.name]]
   */
 case class SkillDescriptor(
-  name:     String,
-  tier:     SkillTier,
-  tools:    List[ToolDescriptor],
-  keywords: List[String] = List.empty,
+  name:          String,
+  tier:          SkillTier,
+  tools:         List[ToolDescriptor],
+  skillVersion:  SemVer | String,
+  keywords:      List[String] = List.empty,
+  jorlanVersion: SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

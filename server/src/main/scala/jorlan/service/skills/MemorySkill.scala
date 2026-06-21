@@ -15,6 +15,7 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import jorlan.*
 import jorlan.service.MemoryService
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -29,6 +30,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = MemorySkill.skillName,
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "memory.remember",

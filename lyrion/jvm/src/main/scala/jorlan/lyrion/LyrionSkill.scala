@@ -12,6 +12,7 @@ package jorlan.lyrion
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import just.semver.SemVer
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -45,6 +46,7 @@ class LyrionSkill(
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "lyrion",
     tier = SkillTier.BuiltIn,
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tools = List(
       ToolDescriptor(
         name = "lyrion.players",

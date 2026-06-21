@@ -269,7 +269,7 @@ lazy val skillApi =
 
 /*Common stuff that all skill modules should have, at least the ones provided from "the factory" */
 lazy val skillModule: CrossProject => CrossProject =
-  _.enablePlugins(AutomateHeaderPlugin)
+  _.enablePlugins(AutomateHeaderPlugin, BuildInfoPlugin)
     .dependsOn(model, skillApi)
     .jsEnablePlugins(ScalaJSPlugin)
     .jsSettings(
@@ -287,6 +287,7 @@ lazy val skillModule: CrossProject => CrossProject =
     )
     .settings(
       commonSettings,
+      buildInfoPackage := "jorlan.skill",
       scalacOptions ++= scala3Opts :+ "-Werror",
       name := "jorlan-weather",
       libraryDependencies ++= Seq(

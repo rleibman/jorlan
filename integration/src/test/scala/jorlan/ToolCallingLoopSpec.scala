@@ -13,16 +13,17 @@ package jorlan
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer}
 import caliban.GraphQLInterpreter
+import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.db.JorlanContainer
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.*
 import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
+import just.semver.SemVer
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json
@@ -99,6 +100,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       SkillDescriptor(
         name = "echo",
         tier = SkillTier.BuiltIn,
+        skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
         tools = List(
           ToolDescriptor(
             "echo.run",
