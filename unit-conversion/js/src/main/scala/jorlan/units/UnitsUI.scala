@@ -36,6 +36,7 @@ object UnitsUI {
       val parsed = props.initialConfigStr
         .fromJson[UnitsConfig]
         .getOrElse(UnitsConfig())
+      parsed
     }
     .render(
       (
