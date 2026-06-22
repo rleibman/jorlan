@@ -88,18 +88,30 @@ object AppRouter {
             currentPage = state.value.page,
             navigate = navigate,
           )(
-            state.value.page match {
-              case AppPage.Chat      => ChatPage(user)
-              case AppPage.Sessions  => SessionsPage(user)
-              case AppPage.Approvals => ApprovalsPage(user)
-              case AppPage.Memory    => MemoryPage(user)
-              case AppPage.Scheduler => SchedulerPage(user)
-              case AppPage.EventLog  => EventLogPage(user)
-              case AppPage.Skills    => SkillsPage(user)
-              case AppPage.Users     => UsersPage(user)
-              case AppPage.Settings  => SettingsPage(user)
-              case AppPage.OAuth     => OAuthManagementPage(user)
-            },
+            // ChatPage stays mounted at all times so its session connection, message history,
+            // and in-progress prompt text survive page navigation. CSS hides it when inactive.
+            <.div(
+              ^.style := js.Dynamic.literal(
+                display = if (state.value.page == AppPage.Chat) "flex" else "none",
+                height = "100%",
+              ),
+            )(
+              ChatPage(user),
+            ),
+            if (state.value.page != AppPage.Chat)
+              state.value.page match {
+                case AppPage.Chat      => EmptyVdom
+                case AppPage.Sessions  => SessionsPage(user)
+                case AppPage.Approvals => ApprovalsPage(user)
+                case AppPage.Memory    => MemoryPage(user)
+                case AppPage.Scheduler => SchedulerPage(user)
+                case AppPage.EventLog  => EventLogPage(user)
+                case AppPage.Skills    => SkillsPage(user)
+                case AppPage.Users     => UsersPage(user)
+                case AppPage.Settings  => SettingsPage(user)
+                case AppPage.OAuth     => OAuthManagementPage(user)
+              }
+            else EmptyVdom,
           )
       }
 

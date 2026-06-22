@@ -47,6 +47,27 @@ class HttpFetchSkill(
     name = "http_fetch",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "fetch",
+      "HTTP",
+      "URL",
+      "web page",
+      "download",
+      "scrape",
+      "request",
+      "content",
+      "REST",
+      "API",
+      "GET",
+      "JSON",
+      "HTML",
+      "response",
+      "endpoint",
+      "curl",
+      ".com",
+    ),
+    configKey = Some("skill.httpFetch"),
+    configJsModule = Some("jorlan-http-fetch"),
     tools = List(
       ToolDescriptor(
         name = "http_fetch.get",
@@ -183,36 +204,47 @@ class HttpFetchSkill(
     }
 
   // ---------------------------------------------------------------------------
+  // Streaming request helper
+  // ---------------------------------------------------------------------------
+
+  // `client.request` is the streaming entry point but was deprecated in ZIO HTTP 3.0 in favour of the
+  // companion-object `ZClient.streaming` which requires `Client` in the ZIO environment.  Since we hold
+  // the client as a direct field (not a service), the companion form would need an extra `provideLayer`
+  // dance.  The annotated wrapper isolates the suppression to a single call site.
+  @annotation.nowarn("msg=deprecated")
+  private def streamingRequest(req: Request): ZIO[Scope, Throwable, Response] =
+    client.request(req)
+
+  // ---------------------------------------------------------------------------
   // Response building
   // ---------------------------------------------------------------------------
 
   private def buildResponse(resp: Response): IO[JorlanError, Json] =
-    resp.body.asString.mapBoth(
-      e => JorlanError("Failed to read response body", Some(e)),
-      { raw =>
-        val rawBytes = raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)
-        val body =
-          if (rawBytes.length > config.maxResponseBytes) {
-            new String(
-              rawBytes.take(config.maxResponseBytes),
-              java.nio.charset.StandardCharsets.UTF_8,
-            ) + "\n[truncated]"
-          } else {
-            raw
-          }
-
-        val contentType = resp
-          .header(Header.ContentType)
-          .map(_.mediaType.fullType)
-          .getOrElse("application/octet-stream")
-
-        Json.Obj(
-          "status"      -> Json.Num(resp.status.code),
-          "body"        -> Json.Str(body),
-          "contentType" -> Json.Str(contentType),
-        )
-      },
-    )
+    // Read at most maxResponseBytes + 1 bytes from the stream so the cap is
+    // enforced at the network layer rather than after a full-body allocation.
+    // The +1 byte is used only to detect truncation; it is never included in
+    // the returned body string.
+    resp.body.asStream
+      .take(config.maxResponseBytes.toLong + 1)
+      .runCollect
+      .mapBoth(
+        e => JorlanError("Failed to read response body", Some(e)),
+        { bytes =>
+          val truncated = bytes.size > config.maxResponseBytes
+          val kept = if (truncated) bytes.take(config.maxResponseBytes) else bytes
+          val body = new String(kept.toArray, java.nio.charset.StandardCharsets.UTF_8) +
+            (if (truncated) "\n[truncated]" else "")
+          val contentType = resp
+            .header(Header.ContentType)
+            .map(_.mediaType.fullType)
+            .getOrElse("application/octet-stream")
+          Json.Obj(
+            "status"      -> Json.Num(resp.status.code),
+            "body"        -> Json.Str(body),
+            "contentType" -> Json.Str(contentType),
+          )
+        },
+      )
 
   // ---------------------------------------------------------------------------
   // Tool implementations
@@ -236,13 +268,15 @@ class HttpFetchSkill(
           val req = extraHeaders.foldLeft(baseReq) { case (r, (k, v)) =>
             r.addHeader(k, v)
           }
-          client
-            .batched(req)
-            .mapError(e => JorlanError("HTTP GET request failed", Some(e)))
+          ZIO
+            .scoped {
+              streamingRequest(req)
+                .mapError(e => JorlanError("HTTP GET request failed", Some(e)))
+                .flatMap(buildResponse)
+            }
             .timeoutFail(JorlanError(s"HTTP GET request timed out after ${config.timeoutSeconds}s"))(
               Duration.fromSeconds(config.timeoutSeconds.toLong),
             )
-            .flatMap(buildResponse)
         }
     } yield result
 
@@ -266,13 +300,15 @@ class HttpFetchSkill(
           val req = extraHeaders.foldLeft(baseReq) { case (r, (k, v)) =>
             r.addHeader(k, v)
           }
-          client
-            .batched(req)
-            .mapError(e => JorlanError("HTTP POST request failed", Some(e)))
+          ZIO
+            .scoped {
+              streamingRequest(req)
+                .mapError(e => JorlanError("HTTP POST request failed", Some(e)))
+                .flatMap(buildResponse)
+            }
             .timeoutFail(JorlanError(s"HTTP POST request timed out after ${config.timeoutSeconds}s"))(
               Duration.fromSeconds(config.timeoutSeconds.toLong),
             )
-            .flatMap(buildResponse)
         }
     } yield result
 

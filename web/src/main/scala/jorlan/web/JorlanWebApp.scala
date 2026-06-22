@@ -24,7 +24,11 @@ import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import scala.scalajs.js.annotation.JSExport
+import scala.scalajs.js.annotation.{JSExport, JSImport}
+
+@js.native
+@JSImport("react", JSImport.Namespace)
+private object ReactModule extends js.Object
 
 object JorlanWebApp {
 
@@ -122,6 +126,8 @@ object JorlanWebApp {
 
   @JSExport
   def main(args: Array[String]): Unit = {
+    // Expose bundled React as window.React so skill scripts (NoModule) can reference it as a global.
+    dom.window.asInstanceOf[js.Dynamic].React = ReactModule.asInstanceOf[js.Dynamic]
     val container = dom.document.getElementById("content")
     val root = ReactDOMClient.createRoot(container)
     root.render(component())

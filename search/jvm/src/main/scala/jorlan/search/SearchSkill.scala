@@ -18,21 +18,6 @@ import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
 
-/** Configuration for the Tavily search API skill.
-  *
-  * @param apiKey
-  *   Tavily API key (required)
-  * @param baseUrl
-  *   Base URL for the Tavily API; override in tests
-  * @param maxResults
-  *   Default maximum number of results to return
-  */
-case class SearchConfig(
-  apiKey:     String,
-  baseUrl:    String = "https://api.tavily.com",
-  maxResults: Int = 5,
-) derives JsonCodec
-
 /** Built-in skill for web search via the Tavily API.
   *
   * Exposes three tools:
@@ -52,6 +37,26 @@ class SearchSkill(
     name = "search",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "search",
+      "web",
+      "internet",
+      "find",
+      "lookup",
+      "browse",
+      "query",
+      "information",
+      "news",
+      "research",
+      "results",
+      "articles",
+      "links",
+      "Tavily",
+      "web search",
+      "online",
+    ),
+    configKey = Some("skill.search"),
+    configJsModule = Some("jorlan-search"),
     tools = List(
       ToolDescriptor(
         name = "search.web",

@@ -115,6 +115,20 @@ trait JobManager {
   /** Permanently delete the job and all of its triggers. */
   def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit]
 
+  /** Update the mutable configuration of a job (name, prompt, retry settings). Status and timestamps are unchanged. */
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[JorlanError, SchedulerJob]
+
+  /** Remove a trigger from its job. */
+  def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit]
+
 }
 
 object JobManager {
@@ -163,5 +177,21 @@ object JobManager {
 
   def deleteJob(id: SchedulerJobId): ZIO[JobManager, JorlanError, Unit] =
     ZIO.serviceWithZIO[JobManager](_.deleteJob(id))
+
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): ZIO[JobManager, JorlanError, SchedulerJob] =
+    ZIO.serviceWithZIO[JobManager](
+      _.updateJob(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy),
+    )
+
+  def deleteTrigger(id: SchedulerTriggerId): ZIO[JobManager, JorlanError, Unit] =
+    ZIO.serviceWithZIO[JobManager](_.deleteTrigger(id))
 
 }

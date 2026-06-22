@@ -31,6 +31,22 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
     name = MemorySkill.skillName,
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "memory",
+      "remember",
+      "recall",
+      "store",
+      "fact",
+      "knowledge",
+      "note",
+      "record",
+      "forget",
+      "retrieve",
+      "context",
+      "history",
+      "save",
+      "persist",
+    ),
     tools = List(
       ToolDescriptor(
         name = "memory.remember",

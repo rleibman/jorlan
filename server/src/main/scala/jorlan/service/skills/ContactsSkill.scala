@@ -33,6 +33,20 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
     name = "contacts",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "contacts",
+      "people",
+      "person",
+      "find user",
+      "lookup user",
+      "identity",
+      "alias",
+      "name search",
+      "address book",
+      "channel identity",
+      "Telegram user",
+      "link identity",
+    ),
     tools = List(
       ToolDescriptor(
         name = "contacts.find",

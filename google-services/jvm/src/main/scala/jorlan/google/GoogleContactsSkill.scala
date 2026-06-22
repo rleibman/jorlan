@@ -33,6 +33,19 @@ class GoogleContactsSkill(
     name = "google_contacts",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "contacts",
+      "address book",
+      "people",
+      "phone number",
+      "Google Contacts",
+      "vCard",
+      "name",
+      "email address",
+      "organization",
+      "find person",
+      "lookup contact",
+    ),
     tools = List(
       ToolDescriptor(
         name = "google_contacts.list_contacts",

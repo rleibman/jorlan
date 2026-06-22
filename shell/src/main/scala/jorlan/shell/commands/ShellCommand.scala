@@ -65,6 +65,11 @@ enum ShellCommand {
   case Skills
   case SkillsEnable(name: String)
   case SkillsDisable(name: String)
+  case SkillsGetConfig(name: String)
+  case SkillsSetConfig(
+    name:       String,
+    configJson: String,
+  )
   case ContactsFind(name: String)
   case Capabilities
   case AgentsList
@@ -179,16 +184,18 @@ object ShellCommand {
           val enabled = toggle.startsWith("on-")
           val trigger = toggle.stripPrefix("on-").stripPrefix("off-")
           MemoryPolicyToggle(trigger, enabled)
-        case "skills" :: "enable" :: name :: _                => SkillsEnable(name)
-        case "skills" :: "disable" :: name :: _               => SkillsDisable(name)
-        case "skills" :: _                                    => Skills
-        case "contacts" :: "find" :: rest if rest.nonEmpty    => ContactsFind(rest.mkString(" "))
-        case "contacts" :: _                                  => Unknown("/contacts")
-        case "capabilities" :: _                              => Capabilities
-        case "users" :: "list" :: "all" :: _                  => UsersList(None)
-        case "users" :: "list" :: "inactive" :: _             => UsersList(Some(false))
-        case "users" :: "list" :: _                           => UsersList(Some(true))
-        case "users" :: "create" :: displayName :: email :: _ =>
+        case "skills" :: "enable" :: name :: _                              => SkillsEnable(name)
+        case "skills" :: "disable" :: name :: _                             => SkillsDisable(name)
+        case "skills" :: "config" :: "get" :: name :: _                     => SkillsGetConfig(name)
+        case "skills" :: "config" :: "set" :: name :: rest if rest.nonEmpty => SkillsSetConfig(name, rest.mkString(" "))
+        case "skills" :: _                                                  => Skills
+        case "contacts" :: "find" :: rest if rest.nonEmpty                  => ContactsFind(rest.mkString(" "))
+        case "contacts" :: _                                                => Unknown("/contacts")
+        case "capabilities" :: _                                            => Capabilities
+        case "users" :: "list" :: "all" :: _                                => UsersList(None)
+        case "users" :: "list" :: "inactive" :: _                           => UsersList(Some(false))
+        case "users" :: "list" :: _                                         => UsersList(Some(true))
+        case "users" :: "create" :: displayName :: email :: _               =>
           UsersCreate(displayName, email)
         case "users" :: "deactivate" :: idStr :: _ if idStr.toLongOption.isDefined =>
           UsersDeactivate(UserId(idStr.toLong))

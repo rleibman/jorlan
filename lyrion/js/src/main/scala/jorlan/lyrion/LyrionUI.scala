@@ -8,7 +8,7 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package jorlan.market
+package jorlan.lyrion
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
@@ -16,7 +16,7 @@ import zio.json.*
 
 import scala.scalajs.js
 
-object MarketUI {
+object LyrionUI {
 
   @js.native
   private trait SkillProps extends js.Object {
@@ -29,9 +29,9 @@ object MarketUI {
   private def targetValue(e: Any): String =
     e.asInstanceOf[js.Dynamic].target.value.asInstanceOf[String]
 
-  private val MarketWidget = ScalaFnComponent
+  private val LyrionWidget = ScalaFnComponent
     .withHooks[SkillProps]
-    .useStateBy(props => props.initialConfigStr.fromJson[AlphaVantageConfig].getOrElse(AlphaVantageConfig()))
+    .useStateBy(props => props.initialConfigStr.fromJson[LyrionConfig].getOrElse(LyrionConfig()))
     .render {
       (
         props,
@@ -42,22 +42,32 @@ object MarketUI {
           ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "12px", maxWidth = "480px"),
           <.label(
             ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
-            <.span("Alpha Vantage API Key"),
+            <.span("Server URL"),
             <.input(
-              ^.`type`      := "password",
-              ^.value       := cfg.apiKey,
-              ^.placeholder := "Alpha Vantage API key",
-              ^.onChange ==> { e => state.setState(cfg.copy(apiKey = targetValue(e))) },
+              ^.`type`      := "text",
+              ^.value       := cfg.serverUrl,
+              ^.placeholder := "http://localhost:9000",
+              ^.onChange ==> { e => state.setState(cfg.copy(serverUrl = targetValue(e))) },
               ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
             ),
           ),
           <.label(
             ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
-            <.span("Base URL"),
+            <.span("Username"),
             <.input(
               ^.`type` := "text",
-              ^.value  := cfg.baseUrl,
-              ^.onChange ==> { e => state.setState(cfg.copy(baseUrl = targetValue(e))) },
+              ^.value  := cfg.username,
+              ^.onChange ==> { e => state.setState(cfg.copy(username = targetValue(e))) },
+              ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
+            ),
+          ),
+          <.label(
+            ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
+            <.span("Password"),
+            <.input(
+              ^.`type` := "password",
+              ^.value  := cfg.password,
+              ^.onChange ==> { e => state.setState(cfg.copy(password = targetValue(e))) },
               ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
             ),
           ),
@@ -76,8 +86,7 @@ object MarketUI {
               "Save",
             ),
             <.button(
-              ^.onClick --> state
-                .setState(props.initialConfigStr.fromJson[AlphaVantageConfig].getOrElse(AlphaVantageConfig())),
+              ^.onClick --> state.setState(props.initialConfigStr.fromJson[LyrionConfig].getOrElse(LyrionConfig())),
               ^.style := js.Dynamic.literal(
                 padding = "8px 16px",
                 background = "#e0e0e0",
@@ -93,10 +102,10 @@ object MarketUI {
 
   def main(args: Array[String]): Unit = {
     val payload = js.Dynamic.literal(
-      "component" -> MarketWidget.raw,
+      "component" -> LyrionWidget.raw,
       "onUnload"  -> (() => ()),
     )
-    js.Dynamic.global.registerRemoteSkill("jorlan-market-data", payload)
+    js.Dynamic.global.registerRemoteSkill("jorlan-lyrion", payload)
   }
 
 }

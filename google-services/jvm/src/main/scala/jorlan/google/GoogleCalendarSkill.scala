@@ -38,6 +38,22 @@ class GoogleCalendarSkill(
     name = "calendar",
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tier = SkillTier.BuiltIn,
+    keywords = List(
+      "calendar",
+      "event",
+      "meeting",
+      "appointment",
+      "schedule",
+      "invite",
+      "reminder",
+      "Google Calendar",
+      "RSVP",
+      "recurring",
+      "availability",
+      "book",
+      "agenda",
+      "due date",
+    ),
     tools = List(
       ToolDescriptor(
         name = "calendar.listCalendars",

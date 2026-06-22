@@ -13,6 +13,7 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
 import jorlan.*
+import jorlan.db.repository.{ZIORepositories, ZIOSkillIndexRepository, ZIOSkillRepository}
 import jorlan.service.{CapabilityEvaluator, ToolSpec}
 import zio.*
 import zio.json.*
@@ -43,6 +44,26 @@ trait SkillRegistry {
   /** Return all tools as [[ToolSpec]] values (model-module-safe view, no connector-api dependency). */
   def allToolSpecs: UIO[List[ToolSpec]]
 
+  /** Remove stale [[skillIndex]] rows for skills no longer registered in this runtime.
+    *
+    * Call once after all built-in skills and connectors have been registered so that `skillIndex` rows from previous
+    * runs (e.g. skills whose code was removed or renamed) do not pollute FULLTEXT search results.
+    */
+  def purgeStaleIndex(): UIO[Unit]
+
+  /** Return a filtered [[ToolSpec]] list relevant to the given prompt.
+    *
+    * Uses MariaDB FULLTEXT search when a [[ZIOSkillIndexRepository]] is available; falls back to [[allToolSpecs]] in
+    * test mode (no index). The `recentToolNames` list (from current session tool-call history) is used to boost
+    * recently-invoked skills. `prioritizedSkills` are always included in the result regardless of score.
+    */
+  def filteredToolSpecs(
+    prompt:            String,
+    expertise:         String,
+    recentToolNames:   List[String],
+    prioritizedSkills: List[String],
+  ): UIO[List[ToolSpec]]
+
   /** Invoke a named tool, returning its result as JSON.
     *
     * On failure the error is wrapped as `Json.Str("Error: <message>")` so the model can read it and recover.
@@ -72,48 +93,68 @@ object SkillRegistry {
 
   private def makeCache: UIO[Ref[Option[List[ToolSpec]]]] = Ref.make(Option.empty[List[ToolSpec]])
 
-  /** Build an empty registry with capability enforcement disabled (for tests). */
+  /** Build an empty registry with capability enforcement and DB index disabled (for tests). */
   val live: ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
         ref      <- Ref.make(Map.empty[String, Skill])
         cache    <- makeCache
         disabled <- Ref.make(Set.empty[String])
-      } yield SkillRegistryLive(ref, None, cache, disabled),
+      } yield SkillRegistryLive(ref, None, cache, disabled, None, None, 5, 1.0),
     )
 
-  /** Build a registry pre-populated with the given skills (capability enforcement disabled; for tests). */
+  /** Build a registry pre-populated with the given skills (capability enforcement and DB index disabled; for tests). */
   def liveWith(skills: Skill*): ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
         ref      <- Ref.make(Map.empty[String, Skill])
         cache    <- makeCache
         disabled <- Ref.make(Set.empty[String])
-        registry = SkillRegistryLive(ref, None, cache, disabled)
+        registry = SkillRegistryLive(ref, None, cache, disabled, None, None, 5, 1.0)
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
 
-  /** Build an empty registry wired with [[CapabilityEvaluator]] for production use. */
-  val liveSecure: URLayer[CapabilityEvaluator, SkillRegistry] =
+  /** Build an empty registry wired with [[CapabilityEvaluator]] and DB index for production use. */
+  val liveSecure: URLayer[CapabilityEvaluator & ZIORepositories, SkillRegistry] =
     ZLayer.fromZIO(
       for {
         evaluator <- ZIO.service[CapabilityEvaluator]
+        repos     <- ZIO.service[ZIORepositories]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
-      } yield SkillRegistryLive(ref, Some(evaluator), cache, disabled),
+      } yield SkillRegistryLive(
+        ref,
+        Some(evaluator),
+        cache,
+        disabled,
+        Some(repos.skill),
+        Some(repos.skillIndex),
+        5,
+        1.0,
+      ),
     )
 
-  /** Build a pre-populated registry wired with [[CapabilityEvaluator]] for production use. */
-  def liveSecureWith(skills: Skill*): URLayer[CapabilityEvaluator, SkillRegistry] =
+  /** Build a pre-populated registry wired with [[CapabilityEvaluator]] and DB index for production use. */
+  def liveSecureWith(skills: Skill*): URLayer[CapabilityEvaluator & ZIORepositories, SkillRegistry] =
     ZLayer.fromZIO(
       for {
         evaluator <- ZIO.service[CapabilityEvaluator]
+        repos     <- ZIO.service[ZIORepositories]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
-        registry = SkillRegistryLive(ref, Some(evaluator), cache, disabled)
+        registry = SkillRegistryLive(
+          ref,
+          Some(evaluator),
+          cache,
+          disabled,
+          Some(repos.skill),
+          Some(repos.skillIndex),
+          5,
+          1.0,
+        )
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
@@ -147,6 +188,10 @@ class SkillRegistryLive(
   evaluator:      Option[CapabilityEvaluator],
   toolSpecsCache: Ref[Option[List[ToolSpec]]],
   disabled:       Ref[Set[String]],
+  skillRepo:      Option[ZIOSkillRepository],
+  skillIndexRepo: Option[ZIOSkillIndexRepository],
+  topN:           Int,
+  recentBoost:    Double,
 ) extends SkillRegistry {
 
   override def register(skill: Skill): UIO[Unit] =
@@ -155,9 +200,73 @@ class SkillRegistryLive(
       _ <- ZIO
         .logWarning(s"SkillRegistry: overwriting existing skill '${skill.descriptor.name}'")
         .whenZIO(skills.get.map(_.contains(skill.descriptor.name)))
+      _ <- ZIO.when(skill.descriptor.tools.size > 10)(
+        ZIO.logWarning(
+          s"Skill '${skill.descriptor.name}' exposes ${skill.descriptor.tools.size} tools — consider splitting it to stay under the 10-tool guideline for local LLMs.",
+        ),
+      )
       _ <- skills.update(m => m + (skill.descriptor.name -> skill))
       _ <- toolSpecsCache.set(None)
+      _ <- indexSkill(skill)
     } yield ()
+
+  private def indexSkill(skill: Skill): UIO[Unit] =
+    skillIndexRepo match {
+      case None            => ZIO.unit
+      case Some(indexRepo) =>
+        skillRepo match {
+          case None        => ZIO.unit
+          case Some(sRepo) =>
+            val keywords = (skill.descriptor.keywords ++ skill.descriptor.tools.flatMap(_.keywords)).mkString(" ")
+            val searchText = (
+              List(skill.descriptor.name) ++
+                skill.descriptor.tools.map(_.name) ++
+                skill.descriptor.tools.map(_.description) ++
+                skill.descriptor.tools.flatMap(_.examplePrompts)
+            ).mkString(" ")
+            val effect = for {
+              allRecords <- sRepo.search(SkillSearch(pageSize = 1000))
+              existing = allRecords.find(_.name == skill.descriptor.name)
+              skillRecord <- existing match {
+                case Some(r) => ZIO.succeed(r)
+                case None    =>
+                  import java.time.Instant
+                  sRepo.upsert(
+                    SkillRecord(
+                      id = SkillId.empty,
+                      name = skill.descriptor.name,
+                      currentVersion = skill.descriptor.skillVersion match {
+                        case sv: just.semver.SemVer => Some(sv)
+                        case _ => None
+                      },
+                      tier = skill.descriptor.tier,
+                      createdAt = Instant.now(),
+                    ),
+                  )
+              }
+              _ <- indexRepo.upsert(skillRecord.id, keywords, searchText)
+            } yield ()
+            effect
+              .tapError(e => ZIO.logWarning(s"Failed to index skill '${skill.descriptor.name}': ${e.msg}"))
+              .ignore
+        }
+    }
+
+  override def purgeStaleIndex(): UIO[Unit] =
+    skillIndexRepo match {
+      case None            => ZIO.unit
+      case Some(indexRepo) =>
+        for {
+          currentNames <- skills.get.map(_.keySet)
+          _            <- indexRepo
+            .keepOnly(currentNames)
+            .tapError(e => ZIO.logWarning(s"purgeStaleIndex failed: ${e.msg}"))
+            .ignore
+          _ <- ZIO.logInfo(
+            s"purgeStaleIndex: kept ${currentNames.size} skills in index [${currentNames.toList.sorted.mkString(", ")}]",
+          )
+        } yield ()
+    }
 
   override def allSkills: UIO[List[Skill]] =
     skills.get.map(_.values.toList)
@@ -181,14 +290,63 @@ class SkillRegistryLive(
           )
     }
 
+  override def filteredToolSpecs(
+    prompt:            String,
+    expertise:         String,
+    recentToolNames:   List[String],
+    prioritizedSkills: List[String],
+  ): UIO[List[ToolSpec]] = {
+    skillIndexRepo match {
+      case None =>
+        // No DB index (test/dev mode): return all specs
+        allToolSpecs
+      case Some(indexRepo) =>
+        for {
+          dis        <- disabled.get
+          allEnabled <- skills.get.map(_.filter { case (name, _) => !dis.contains(name) })
+          query = List(prompt, expertise).filter(_.nonEmpty).mkString(" ")
+          dbMatches <- indexRepo
+            .search(query, limit = topN * 2)
+            .tapError(e => ZIO.logWarning(s"SkillIndex FULLTEXT search failed: ${e.msg}"))
+            .orElseSucceed(List.empty)
+          dbSkillNames = dbMatches.map(_._2).filter(name => !dis.contains(name) && allEnabled.contains(name))
+          // Extract skill names from recent tool calls via longest-prefix matching
+          recentNames = recentToolNames.flatMap { toolName =>
+            allEnabled.keys.filter(name => toolName.startsWith(s"$name.")).maxByOption(_.length)
+          }.toSet
+          // Build final selection: prioritized always first, then DB results (up to topN), then recent extras
+          prioritizedValid = prioritizedSkills.filter(n => allEnabled.contains(n) && !dis.contains(n))
+          dbCapped = dbSkillNames.filterNot(prioritizedValid.contains).take(topN)
+          recentExtras = recentNames.filterNot(n => prioritizedValid.contains(n) || dbCapped.contains(n)).toList
+          selected = (prioritizedValid ++ dbCapped ++ recentExtras).distinct
+          // Fallback: if nothing matched from DB, use recent; if still nothing, first N alphabetically
+          finalSelected <-
+            if (selected.nonEmpty) ZIO.succeed(selected)
+            else if (recentNames.nonEmpty) ZIO.succeed(recentNames.toList.take(topN))
+            else skills.get.map(m => m.keys.filter(k => !dis.contains(k)).toList.sorted.take(topN))
+          _ <- ZIO.logInfo(
+            s"filteredToolSpecs: selected [${finalSelected.mkString(", ")}] (db=${dbSkillNames.take(topN).mkString(", ")} recent=${recentNames.mkString(", ")} prio=${prioritizedValid.mkString(", ")}) prompt='${prompt.take(80)}'",
+          )
+          tools = finalSelected.flatMap(name => allEnabled.get(name).toList.flatMap(_.descriptor.tools))
+        } yield tools.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString))
+    }
+  }
+
   def getSkill[S <: Skill](name: String): UIO[Option[S]] =
     skills.get.map(_.find(_._2.descriptor.name == name).map(_._2.asInstanceOf[S]))
 
   override def unregister(name: String): UIO[Unit] =
-    skills.update(_ - name) *> toolSpecsCache.set(None)
+    skills.update(_ - name) *>
+      toolSpecsCache.set(None) *>
+      skillIndexRepo.fold(ZIO.unit)(_.removeBySkillName(name).ignore)
 
   override def unregisterWhere(pred: String => Boolean): UIO[Unit] =
-    skills.update(_.filterNot { case (name, _) => pred(name) }) *> toolSpecsCache.set(None)
+    for {
+      names <- skills.get.map(_.keys.filter(pred).toList)
+      _     <- skills.update(_.filterNot { case (name, _) => pred(name) })
+      _     <- toolSpecsCache.set(None)
+      _ <- skillIndexRepo.fold(ZIO.unit)(repo => ZIO.foreachDiscard(names)(name => repo.removeBySkillName(name).ignore))
+    } yield ()
 
   override def enableSkill(name: String): UIO[Unit] =
     disabled.update(_ - name) *> toolSpecsCache.set(None)

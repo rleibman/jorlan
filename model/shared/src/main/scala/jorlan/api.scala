@@ -38,8 +38,11 @@ case class SkillToolInfo(
 
 /** A registered skill visible via the API. */
 case class SkillInfo(
-  name:    String,
-  tier:    SkillTier,
-  tools:   List[SkillToolInfo],
-  enabled: Boolean = true,
+  name:           String,
+  tier:           SkillTier,
+  tools:          List[SkillToolInfo],
+  enabled:        Boolean = true,
+  keywords:       List[String] = List.empty,
+  configKey:      Option[String] = None,
+  configJsModule: Option[String] = None,
 ) derives JsonCodec

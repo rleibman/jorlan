@@ -202,6 +202,7 @@ class InitServiceImpl(
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
     CapabilityName("admin.user.list"),
+    CapabilityName("admin.settings"),
     CapabilityName("user.create"),
     CapabilityName("user.update"),
     CapabilityName("role.create"),
@@ -233,11 +234,13 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
   )
 
-  // email.send, calendar.write, and mcp.call require per-invocation approval per design spec.
+  // email.send, calendar.write, http_fetch.call, and mcp.call require per-invocation approval per design spec.
+  // http_fetch.call is per-invocation because each fetch is an outbound external network request.
   // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
   private val perInvocationCapabilities: Set[CapabilityName] = Set(
     CapabilityName("email.send"),
     CapabilityName("calendar.write"),
+    CapabilityName("http_fetch.call"),
     CapabilityName("mcp.call"),
   )
 

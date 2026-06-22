@@ -92,11 +92,11 @@ object EventLogServiceIntegrationSpec extends ZIOSpec[ZIORepositories] {
         import jorlan.db.repository.ZIOAgentRepository
         for {
           agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
-          agent     <- agentRepo.upsert(jorlan.Agent(jorlan.AgentId.empty, "FilterAgent", None, None, 0, T0))
-          repo      <- ZIO.serviceWith[ZIORepositories](_.eventLog)
-          saved     <- repo.append(testEvent(EventType.AgentStarted, agentId = Some(agent.id)))
-          _         <- repo.append(testEvent(EventType.AgentStarted))
-          result    <- repo.search(EventLogFilter(agentId = Some(agent.id), pageSize = 100))
+          agent  <- agentRepo.upsert(jorlan.Agent(jorlan.AgentId.empty, "FilterAgent", None, None, 0, createdAt = T0))
+          repo   <- ZIO.serviceWith[ZIORepositories](_.eventLog)
+          saved  <- repo.append(testEvent(EventType.AgentStarted, agentId = Some(agent.id)))
+          _      <- repo.append(testEvent(EventType.AgentStarted))
+          result <- repo.search(EventLogFilter(agentId = Some(agent.id), pageSize = 100))
         } yield assertTrue(result.exists(_.id == saved.id))
       },
       test("search sorted by OccurredAt ascending returns events in order") {

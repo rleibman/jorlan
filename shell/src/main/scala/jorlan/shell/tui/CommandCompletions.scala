@@ -67,6 +67,8 @@ object CommandCompletions {
     "/skills",
     "/skills disable ",
     "/skills enable ",
+    "/skills config get ",
+    "/skills config set ",
     "/status",
     "/trace",
     "/trace debug",

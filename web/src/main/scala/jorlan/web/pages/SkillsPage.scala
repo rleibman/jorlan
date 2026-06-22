@@ -17,6 +17,10 @@ import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
+import net.leibman.jorlan.muiMaterial.internalSwitchBaseMod.SwitchBaseProps
+import net.leibman.jorlan.muiMaterial.switchSwitchMod.SwitchProps
+import org.scalajs.dom
+import org.scalajs.dom.html
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -24,17 +28,35 @@ import scala.scalajs.js
 object SkillsPage {
 
   case class State(
-    skills:   List[SkillInfo],
-    loading:  Boolean,
-    error:    Option[String],
-    expanded: Set[String],
-    toggling: Set[String],
+    skills:        List[SkillInfo],
+    loading:       Boolean,
+    error:         Option[String],
+    expanded:      Set[String],
+    toggling:      Set[String],
+    configuring:   Set[String],
+    loadedModules: Set[String],
+    configJson:    Map[String, Option[String]],
+    configSaving:  Set[String],
+    configError:   Map[String, String],
   )
 
   val component =
     ScalaFnComponent
       .withHooks[User]
-      .useState(State(List.empty, loading = true, error = None, expanded = Set.empty, toggling = Set.empty))
+      .useState(
+        State(
+          skills = List.empty,
+          loading = true,
+          error = None,
+          expanded = Set.empty,
+          toggling = Set.empty,
+          configuring = Set.empty,
+          loadedModules = Set.empty,
+          configJson = Map.empty,
+          configSaving = Set.empty,
+          configError = Map.empty,
+        ),
+      )
       .useEffectOnMountBy {
         (
           _,
@@ -69,8 +91,6 @@ object SkillsPage {
                 else AsyncCallbackRepositories.skill.enableSkill(skill.name)
               action
                 .flatMap { _ =>
-                  val updated =
-                    state.value.skills.map(s => if (s.name == skill.name) s.copy(enabled = !skill.enabled) else s)
                   state
                     .modState(s =>
                       s.copy(
@@ -86,6 +106,129 @@ object SkillsPage {
                   PageUtils.onError(err => state.modState(s => s.copy(toggling = s.toggling - skill.name, error = err))),
                 )
                 .runNow()
+            }
+
+          def openConfigure(skill: SkillInfo): Callback =
+            Callback {
+              skill.configJsModule.foreach { jsModule =>
+                state
+                  .modState(s =>
+                    s.copy(
+                      configuring = s.configuring + skill.name,
+                      expanded = s.expanded + skill.name,
+                    ),
+                  )
+                  .runNow()
+                val onModuleLoaded: Callback =
+                  state.modState(s => s.copy(loadedModules = s.loadedModules + jsModule))
+                AsyncCallbackRepositories.skill
+                  .getSkillConfig(skill.name)
+                  .flatMap { jsonOpt =>
+                    state
+                      .modState(s => s.copy(configJson = s.configJson + (skill.name -> jsonOpt)))
+                      .asAsyncCallback
+                      .flatMap { _ =>
+                        injectSkillScript(jsModule, onModuleLoaded).asAsyncCallback
+                      }
+                  }
+                  .completeWith(
+                    PageUtils.onError(err =>
+                      state.modState(s =>
+                        s.copy(configError = s.configError + (skill.name -> err.getOrElse("Unknown error"))),
+                      ),
+                    ),
+                  )
+                  .runNow()
+              }
+            }
+
+          def saveConfig(
+            skill: SkillInfo,
+            json:  String,
+          ): Callback =
+            Callback {
+              state.modState(s => s.copy(configSaving = s.configSaving + skill.name)).runNow()
+              AsyncCallbackRepositories.skill
+                .updateSkillConfig(skill.name, json)
+                .flatMap { _ =>
+                  state
+                    .modState(s =>
+                      s.copy(
+                        configSaving = s.configSaving - skill.name,
+                        configJson = s.configJson + (skill.name -> Some(json)),
+                        configError = s.configError - skill.name,
+                      ),
+                    )
+                    .asAsyncCallback
+                }
+                .completeWith(
+                  PageUtils.onError(err =>
+                    state.modState(s =>
+                      s.copy(
+                        configSaving = s.configSaving - skill.name,
+                        configError = s.configError + (skill.name -> err.getOrElse("Unknown error")),
+                      ),
+                    ),
+                  ),
+                )
+                .runNow()
+            }
+
+          def renderConfigPanel(skill: SkillInfo): VdomElement =
+            skill.configJsModule match {
+              case None           => <.span()
+              case Some(jsModule) =>
+                if (!state.value.configuring.contains(skill.name)) {
+                  MuiButton
+                    .size("small")
+                    .onClick(() => openConfigure(skill).runNow())("Configure")
+                } else {
+                  val loadedReg: js.UndefOr[js.Dynamic] =
+                    if (state.value.loadedModules.contains(jsModule))
+                      js.Dynamic.global.skillRegistrations.selectDynamic(jsModule)
+                    else
+                      js.undefined
+                  loadedReg.toOption match {
+                    case None =>
+                      Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", gap = 1, mt = 1))(
+                        CircularProgress.set("size", 20)(),
+                        Typography
+                          .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
+                            "Loading configuration UI...",
+                          ),
+                      )
+                    case Some(reg) =>
+                      val initialStr = state.value.configJson.get(skill.name).flatten.getOrElse("{}")
+                      val onSaveFn: js.Function1[String, Unit] = (json: String) => saveConfig(skill, json).runNow()
+                      val props = js.Dynamic.literal(
+                        initialConfigStr = initialStr,
+                        onSave = onSaveFn,
+                      )
+                      val element = ReactDOM.createPortalLike(reg.component, props)
+                      Box.set(
+                        "sx",
+                        js.Dynamic
+                          .literal(mt = 1, p = 1.5, border = "1px solid", borderColor = "divider", borderRadius = 1),
+                      )(
+                        Box.set(
+                          "sx",
+                          js.Dynamic
+                            .literal(display = "flex", justifyContent = "space-between", alignItems = "center", mb = 1),
+                        )(
+                          Typography.set("variant", "subtitle2")("Configuration"),
+                          if (state.value.configSaving.contains(skill.name))
+                            CircularProgress.set("size", 18)()
+                          else <.span(),
+                        ),
+                        state.value.configError
+                          .get(skill.name)
+                          .fold(EmptyVdom)(err =>
+                            Alert.set("severity", "error").set("sx", js.Dynamic.literal(mb = 1))(err),
+                          ),
+                        element,
+                      )
+                  }
+                }
             }
 
           def renderToolCard(tool: SkillToolInfo): VdomElement = {
@@ -166,6 +309,7 @@ object SkillsPage {
                       TableCell()("Tier"),
                       TableCell()("Tools"),
                       TableCell()("Enabled"),
+                      TableCell()(""),
                     ),
                   ),
                   TableBody()(
@@ -205,25 +349,86 @@ object SkillsPage {
                               if (isToggling)
                                 CircularProgress.set("size", 20)()
                               else
-                                Switch
-                                  .set("checked", skill.enabled)
-                                  .set("size", "small")
-                                  .set("onChange", (_: js.Any) => toggleEnabled(skill).runNow())(),
+                                Switch.withProps(
+                                  SwitchProps()
+                                    .asInstanceOf[SwitchBaseProps]
+                                    .setChecked(skill.enabled)
+                                    .setOnChange(
+                                      (
+                                        _,
+                                        _,
+                                      ) => toggleEnabled(skill),
+                                    )
+                                    .asInstanceOf[SwitchProps],
+                                )(),
+                            ),
+                            TableCell()(
+                              skill.configJsModule.fold[VdomNode](EmptyVdom) { _ =>
+                                MuiButton
+                                  .size("small")
+                                  .variant("outlined")
+                                  .onClick(() => openConfigure(skill).runNow())("Configure")
+                              },
                             ),
                           ),
                       ) ++ (
-                        if (isExpanded)
+                        if (isExpanded) {
+                          val keywordsRow: List[VdomElement] =
+                            if (skill.keywords.nonEmpty)
+                              List(
+                                Box
+                                  .set(
+                                    "sx",
+                                    js.Dynamic
+                                      .literal(
+                                        display = "flex",
+                                        flexWrap = "wrap",
+                                        gap = 0.5,
+                                        mb = 1.5,
+                                        alignItems = "center",
+                                      ),
+                                  )(
+                                    Typography
+                                      .set("variant", "caption")
+                                      .set(
+                                        "sx",
+                                        js.Dynamic.literal(color = "text.secondary", mr = 0.5, alignSelf = "center"),
+                                      )(
+                                        "Keywords:",
+                                      ),
+                                    <.span(
+                                      skill.keywords.map(kw =>
+                                        Chip
+                                          .withKey(kw)
+                                          .set("label", kw)
+                                          .set("size", "small")
+                                          .set("variant", "outlined")
+                                          .set("sx", js.Dynamic.literal(fontFamily = "monospace"))(),
+                                      )*,
+                                    ),
+                                  ),
+                              )
+                            else List.empty
+                          val configRow: List[VdomElement] =
+                            if (skill.configJsModule.isDefined)
+                              List(
+                                Box
+                                  .set("sx", js.Dynamic.literal(mt = 1, mb = 1))(
+                                    renderConfigPanel(skill),
+                                  ),
+                              )
+                            else List.empty
+                          val detailChildren: List[VdomElement] =
+                            keywordsRow ++ configRow ++ skill.tools.map(renderToolCard)
                           scala.List[VdomElement](
                             TableRow
                               .withKey(s"${skill.name}-detail")(
-                                TableCell.colSpan(5)(
-                                  Box.set("sx", js.Dynamic.literal(p = 1.5))(
-                                    skill.tools.map(renderToolCard)*,
-                                  ),
+                                TableCell.colSpan(6)(
+                                  Box.set("sx", js.Dynamic.literal(p = 1.5))(detailChildren*),
                                 ),
                               ),
                           )
-                        else scala.List.empty
+                        } else scala.List.empty
                       )
                     }*,
                   ),
@@ -231,6 +436,40 @@ object SkillsPage {
               ),
           )
       }
+
+  private def injectSkillScript(
+    jsModule: String,
+    onLoaded: Callback,
+  ): Callback =
+    Callback {
+      val scriptId = s"skill-script-$jsModule"
+      if (dom.document.getElementById(scriptId) != null) {
+        // Script tag already in DOM — module was loaded in a previous session; fire callback immediately.
+        onLoaded.runNow()
+      } else {
+        val script = dom.document.createElement("script").asInstanceOf[html.Script]
+        script.id = scriptId
+        script.src = s"/skills/$jsModule-skill.js"
+        script.onload = (_: dom.Event) => onLoaded.runNow()
+        dom.document.body.appendChild(script)
+      }
+    }
+
+  private object ReactDOM {
+
+    def createPortalLike(
+      rawComponent: js.Dynamic,
+      props:        js.Dynamic,
+    ): VdomElement =
+      // ScalaJS-React 4.x boxes props as { a: propsValue } for all ScalaFnComponent types.
+      // The raw component function reads b.a to get props, so we must pass { a: props }.
+      VdomElement(
+        js.Dynamic.global.React
+          .createElement(rawComponent, js.Dynamic.literal(a = props))
+          .asInstanceOf[japgolly.scalajs.react.facade.React.Element],
+      )
+
+  }
 
   def apply(user: User): VdomElement = component(user)
 

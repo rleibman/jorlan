@@ -266,18 +266,23 @@ trait ConversationRepository[F[_]] {
   */
 trait SkillRepository[F[_]] {
 
-  def getById(id:         SkillId):             F[Option[SkillRecord]]
-  def search(s:           SkillSearch):         F[List[SkillRecord]]
-  def upsert(skill:       SkillRecord):         F[SkillRecord]
-  def getVersion(id:      SkillVersionId):      F[Option[SkillVersion]]
-  def searchVersions(s:   SkillVersionSearch):  F[List[SkillVersion]]
-  def upsertVersion(v:    SkillVersion):        F[SkillVersion]
-  def getConnector(id:    ConnectorInstanceId): F[Option[ConnectorInstance]]
-  def searchConnectors(s: ConnectorSearch):     F[List[ConnectorInstance]]
-  def upsertConnector(ci: ConnectorInstance):   F[ConnectorInstance]
-  def listSkills():                             F[List[SkillInfo]]
-  def enableSkill(name:   String):              F[Unit]
-  def disableSkill(name:  String):              F[Unit]
+  def getById(id:          SkillId):             F[Option[SkillRecord]]
+  def search(s:            SkillSearch):         F[List[SkillRecord]]
+  def upsert(skill:        SkillRecord):         F[SkillRecord]
+  def getVersion(id:       SkillVersionId):      F[Option[SkillVersion]]
+  def searchVersions(s:    SkillVersionSearch):  F[List[SkillVersion]]
+  def upsertVersion(v:     SkillVersion):        F[SkillVersion]
+  def getConnector(id:     ConnectorInstanceId): F[Option[ConnectorInstance]]
+  def searchConnectors(s:  ConnectorSearch):     F[List[ConnectorInstance]]
+  def upsertConnector(ci:  ConnectorInstance):   F[ConnectorInstance]
+  def listSkills():                              F[List[SkillInfo]]
+  def enableSkill(name:    String):              F[Unit]
+  def disableSkill(name:   String):              F[Unit]
+  def getSkillConfig(name: String):              F[Option[String]]
+  def updateSkillConfig(
+    name:       String,
+    configJson: String,
+  ): F[Boolean]
   def invokeTool(
     toolName: String,
     argsJson: String,
@@ -522,6 +527,29 @@ trait ServerInfoRepository[F[_]] {
 
 }
 
+/** FULLTEXT search index for dynamic tool selection.
+  *
+  * One row per registered skill. Populated by [[jorlan.service.skills.SkillRegistryLive]] on skill registration and
+  * cleared on unregistration. Searching returns skill names ordered by FULLTEXT relevance, allowing [[AgentRunnerImpl]]
+  * to present only the most relevant tools to the LLM.
+  */
+trait SkillIndexRepository[F[_]] {
+
+  def upsert(
+    skillId:    SkillId,
+    keywords:   String,
+    searchText: String,
+  ): F[Unit]
+  def search(
+    query: String,
+    limit: Int,
+  ):                                             F[List[(SkillId, String)]]
+  def removeBySkillId(skillId:     SkillId):     F[Unit]
+  def removeBySkillName(skillName: String):      F[Unit]
+  def keepOnly(skillNames:         Set[String]): F[Unit]
+
+}
+
 /** Aggregate of all repositories, for convenient injection into application services. */
 trait Repositories[F[_]] {
 
@@ -537,5 +565,6 @@ trait Repositories[F[_]] {
   def setting:       ServerSettingsRepository[F]
   def extCredential: ExternalCredentialRepository[F]
   def serverInfo:    ServerInfoRepository[F]
+  def skillIndex:    SkillIndexRepository[F]
 
 }

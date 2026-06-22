@@ -56,7 +56,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
   ): UIO[(UserId, AgentId)] =
     for {
       user  <- userRepo.upsert(User(UserId.empty, s"User$suffix", s"$suffix@test.local", T0, T0)).orDie
-      agent <- agentRepo.upsert(Agent(AgentId.empty, s"Agent$suffix", None, None, 0, T0)).orDie
+      agent <- agentRepo.upsert(Agent(AgentId.empty, s"Agent$suffix", None, None, 0, createdAt = T0)).orDie
     } yield (user.id, agent.id)
 
   override def spec: Spec[ZIORepositories & TestEnvironment & Scope, Any] =

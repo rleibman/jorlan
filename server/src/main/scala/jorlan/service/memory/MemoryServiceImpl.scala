@@ -88,6 +88,7 @@ class MemoryServiceImpl(
           repo.memory.updateScope(id, newScope).mapBoth(JorlanError(_), _ => r.copy(scope = newScope))
       }
 
+  @scala.annotation.nowarn("msg=IsUnionOf")
   override def checkpoint(
     sessionId: AgentSessionId,
     messages:  List[Message],
@@ -106,6 +107,25 @@ class MemoryServiceImpl(
           .getOrElse(record.value.toString)
         classifier.classify(contentText).flatMap { scope =>
           repo.memory.upsert(record.copy(scope = scope)).mapError(JorlanError(_)).unit
+        }
+      }
+      _ <- ZIO.when(should) {
+        Clock.instant.flatMap { now =>
+          repo.eventLog
+            .append(
+              EventLog[Nothing](
+                id = EventLogId.empty,
+                eventType = EventType.MemoryCheckpointed,
+                actorId = Some(userId),
+                agentId = Option.when(agentId != AgentId.empty)(agentId),
+                sessionId = Some(sessionId),
+                resource = None,
+                payloadJson = None,
+                occurredAt = now,
+              ),
+            )
+            .mapError(JorlanError(_))
+            .unit
         }
       }
     } yield ()

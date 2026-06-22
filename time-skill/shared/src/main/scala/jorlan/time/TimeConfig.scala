@@ -12,4 +12,4 @@ package jorlan.time
 
 import zio.json.JsonCodec
 
-case class TimeConfig() derives JsonCodec
+case class TimeConfig(defaultTimezone: String = "UTC") derives JsonCodec

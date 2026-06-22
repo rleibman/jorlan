@@ -43,6 +43,23 @@ class WorkspaceSkill(
     name = "workspace",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "workspace",
+      "file",
+      "files",
+      "read file",
+      "write file",
+      "directory",
+      "folder",
+      "document",
+      "content",
+      "edit",
+      "search file",
+      "delete",
+      "snapshot",
+      "code",
+      "text",
+    ),
     tools = List(
       ToolDescriptor(
         name = "workspace.read",

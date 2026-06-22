@@ -57,6 +57,11 @@ object JorlanSchema {
 
   inline def qConnectorInstances = quote(querySchema[ConnectorInstance]("connectorInstance"))
 
+  case class SkillSearchResult(
+    id:   Long,
+    name: String,
+  )
+
   inline def qMemoryRecords = quote(querySchema[MemoryRecord]("memoryRecord"))
 
   inline def qMemoryEmbeddings = quote(querySchema[MemoryEmbedding]("memoryEmbedding"))
@@ -174,6 +179,8 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
     new ZIOServerInfoRepository {
       override def statusCheck(): RepositoryTask[Json] = ZIO.succeed(Json.Obj())
     }
+
+  override def skillIndex: ZIOSkillIndexRepository = QuillSkillIndexRepository(qc)
 
 }
 
@@ -377,6 +384,10 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
                 t,
                 e,
               ) => t.trustLevel -> e.trustLevel,
+              (
+                t,
+                e,
+              ) => t.prioritizedSkills -> e.prioritizedSkills,
             )
             .returningGenerated(_.id),
         ).map(id => agent.copy(id = id)),
@@ -646,6 +657,13 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
     argsJson: String,
   ): RepositoryTask[Option[String]] =
     ZIO.fail(RepositoryError("invokeTool not implemented in QuillSkillRepository"))
+  override def getSkillConfig(name: String): RepositoryTask[Option[String]] =
+    ZIO.fail(RepositoryError("getSkillConfig not implemented in QuillSkillRepository"))
+  override def updateSkillConfig(
+    name:       String,
+    configJson: String,
+  ): RepositoryTask[Boolean] =
+    ZIO.fail(RepositoryError("updateSkillConfig not implemented in QuillSkillRepository"))
 
 }
 
@@ -1604,5 +1622,120 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
     ZIO.fail(RepositoryError("revokeOAuth not implemented in QuillExternalCredentialRepository"))
   override def oauthStatus(provider: String): RepositoryTask[Option[OAuthStatus]] =
     ZIO.fail(RepositoryError("oauthStatus not implemented in QuillExternalCredentialRepository"))
+
+}
+
+// ─── SkillIndex ────────────────────────────────────────────────────────────────
+
+private class QuillSkillIndexRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOSkillIndexRepository {
+
+  import JorlanSchema.*
+  import qc.ctx.*
+
+  override def upsert(
+    skillId:    SkillId,
+    keywords:   String,
+    searchText: String,
+  ): RepositoryTask[Unit] = {
+    val id = skillId.value
+    exec(
+      qc.ctx
+        .run(
+          quote {
+            infix"""INSERT INTO skillIndex (skillId, keywords, searchText)
+                  VALUES (${lift(id)}, ${lift(keywords)}, ${lift(searchText)})
+                  ON DUPLICATE KEY UPDATE
+                    keywords   = VALUES(keywords),
+                    searchText = VALUES(searchText)""".as[Action[Long]]
+          },
+        ).unit,
+    )
+  }
+
+  override def search(
+    query: String,
+    limit: Int,
+  ): RepositoryTask[List[(SkillId, String)]] = {
+    val lim = limit
+    // Convert to BOOLEAN MODE to avoid the NL-mode 50% threshold (words appearing in >50% of rows
+    // are suppressed in NL mode, which silences common skill verbs like "fetch", "get", "send").
+    // Each token gets a + prefix (required) and * suffix (prefix match); if the whole query yields
+    // no hits we fall back to a plain OR search so partial queries still return results.
+    val boolQuery = query
+      .split("\\s+")
+      .filter(_.length >= 3)
+      .map(w => s"+${w.replaceAll("[+\\-><()~*\"@]", "")}*")
+      .mkString(" ")
+    val fallbackQuery = query
+      .split("\\s+")
+      .filter(_.length >= 3)
+      .map(w => s"${w.replaceAll("[+\\-><()~*\"@]", "")}*")
+      .mkString(" ")
+    val bq = if (boolQuery.nonEmpty) boolQuery else fallbackQuery
+    val fq = if (fallbackQuery.nonEmpty) fallbackQuery else query
+    exec(
+      qc.ctx
+        .run(
+          quote {
+            infix"""SELECT s.id AS id, s.name AS name
+                  FROM skillIndex si
+                  JOIN skill s ON s.id = si.skillId
+                  WHERE MATCH(si.keywords)   AGAINST(${lift(bq)} IN BOOLEAN MODE) > 0
+                     OR MATCH(si.searchText) AGAINST(${lift(fq)} IN BOOLEAN MODE) > 0
+                  ORDER BY
+                    (MATCH(si.keywords)   AGAINST(${lift(bq)} IN BOOLEAN MODE) * 3.0
+                    + MATCH(si.searchText) AGAINST(${lift(fq)} IN BOOLEAN MODE)) DESC
+                  LIMIT ${lift(lim)}""".as[Query[SkillSearchResult]]
+          },
+        ).map(_.map { case SkillSearchResult(id, name) => (SkillId(id), name) }),
+    )
+  }
+
+  override def removeBySkillId(skillId: SkillId): RepositoryTask[Unit] = {
+    val id = skillId.value
+    exec(
+      qc.ctx
+        .run(
+          quote {
+            infix"DELETE FROM skillIndex WHERE skillId = ${lift(id)}".as[Action[Long]]
+          },
+        ).unit,
+    )
+  }
+
+  override def removeBySkillName(skillName: String): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          quote {
+            infix"""DELETE si FROM skillIndex si
+                  JOIN skill s ON s.id = si.skillId
+                  WHERE s.name = ${lift(skillName)}""".as[Action[Long]]
+          },
+        ).unit,
+    )
+
+  override def keepOnly(skillNames: Set[String]): RepositoryTask[Unit] =
+    if (skillNames.isEmpty) ZIO.unit
+    else {
+      val placeholders = skillNames.toList.map(_ => "?").mkString(", ")
+      val sql = s"DELETE si FROM skillIndex si JOIN skill s ON s.id = si.skillId WHERE s.name NOT IN ($placeholders)"
+      exec(
+        ZIO
+          .service[DataSource].flatMap { ds =>
+            ZIO.attempt {
+              import scala.language.unsafeNulls
+              val conn = ds.getConnection().nn
+              try {
+                val stmt = conn.prepareStatement(sql).nn
+                try {
+                  skillNames.toList.zipWithIndex.foreach { case (name, i) => stmt.setString(i + 1, name) }
+                  stmt.executeUpdate()
+                } finally stmt.close()
+              } finally conn.close()
+            }
+          }.unit,
+      )
+    }
 
 }

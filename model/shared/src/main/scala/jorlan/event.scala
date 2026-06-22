@@ -53,7 +53,8 @@ enum EventType derives JsonCodec {
   // ─── Scheduler ───────────────────────────────────────────────────────────────
   case SchedulerJobQueued, SchedulerJobStarted, SchedulerJobCompleted, SchedulerJobFailed, SchedulerJobCancelled
   case SchedulerJobPaused, SchedulerJobResumed, SchedulerJobTriggered, SchedulerJobDeleted
-  case SchedulerTriggerAdded
+  case SchedulerTriggerAdded, SchedulerTriggerDeleted
+  case SchedulerJobUpdated
 
   // ─── Email ───────────────────────────────────────────────────────────────────
   case EmailMessageRead, EmailMessageSent, EmailDraftCreated, EmailMessageArchived, EmailMessageDeleted

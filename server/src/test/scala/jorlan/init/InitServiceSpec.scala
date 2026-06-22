@@ -202,6 +202,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           CapabilityName("admin.personality.read"),
           CapabilityName("admin.personality.update"),
           CapabilityName("admin.user.list"),
+          CapabilityName("admin.settings"),
           CapabilityName("user.create"),
           CapabilityName("user.update"),
           CapabilityName("role.create"),

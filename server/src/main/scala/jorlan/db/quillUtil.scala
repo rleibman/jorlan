@@ -185,6 +185,19 @@ given MappedEncoding[String, Json] =
     s.fromJson[Json].fold(error => throw RuntimeException(s"Invalid JSON value: $error"), identity),
   )
 
+given MappedEncoding[List[String], String] = MappedEncoding(v => v.toJson)
+given MappedEncoding[String, List[String]] =
+  MappedEncoding(s =>
+    // Quill interop: throw is required — see note above.
+    // Guard against NULL from a nullable JSON column (V029 adds prioritizedSkills as JSON NULL).
+    if (s == null || s.isEmpty) List.empty
+    else
+      s.fromJson[List[String]].fold(
+          error => throw RuntimeException(s"Invalid List[String] JSON value: $error"),
+          identity,
+        ),
+  )
+
 given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
 given MappedEncoding[String, Vector[Float]] =
   MappedEncoding(s =>

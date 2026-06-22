@@ -39,12 +39,13 @@ enum SessionStatus derives JsonCodec {
   *   explicit approval. Controlled by an administrator.
   */
 case class Agent(
-  id:           AgentId,
-  name:         String,
-  description:  Option[String],
-  defaultModel: Option[ModelId],
-  trustLevel:   Int = 0,
-  createdAt:    Instant,
+  id:                AgentId,
+  name:              String,
+  description:       Option[String],
+  defaultModel:      Option[ModelId],
+  trustLevel:        Int = 0,
+  prioritizedSkills: List[String] = List.empty,
+  createdAt:         Instant,
 ) derives JsonCodec
 
 /** A single runtime instance of an [[Agent]] executing on behalf of a [[User]]. Each session maintains its own

@@ -848,9 +848,14 @@ object InMemoryRepositories {
             saved = record.copy(id = SkillId(id))
             _ <- store.update(_.updated(id, saved))
           } yield saved
-        override def listSkills():               RepositoryTask[List[SkillInfo]] = ZIO.succeed(List.empty)
-        override def enableSkill(name:  String): RepositoryTask[Unit] = ZIO.unit
-        override def disableSkill(name: String): RepositoryTask[Unit] = ZIO.unit
+        override def listSkills():                 RepositoryTask[List[SkillInfo]] = ZIO.succeed(List.empty)
+        override def enableSkill(name:    String): RepositoryTask[Unit] = ZIO.unit
+        override def disableSkill(name:   String): RepositoryTask[Unit] = ZIO.unit
+        override def getSkillConfig(name: String): RepositoryTask[Option[String]] = ZIO.none
+        override def updateSkillConfig(
+          name:       String,
+          configJson: String,
+        ): RepositoryTask[Boolean] = ZIO.succeed(false)
         override def invokeTool(
           toolName: String,
           argsJson: String,
@@ -999,6 +1004,7 @@ object InMemoryRepositories {
         override def setting:       ZIOServerSettingsRepository = settingsRepo
         override def extCredential: ZIOExternalCredentialRepository = original.extCredential
         override def serverInfo:    ZIOServerInfoRepository = original.serverInfo
+        override def skillIndex:    ZIOSkillIndexRepository = original.skillIndex
       })
     }
 
@@ -1054,6 +1060,21 @@ object InMemoryRepositories {
         override def serverInfo:    ZIOServerInfoRepository =
           new ZIOServerInfoRepository {
             override def statusCheck(): RepositoryTask[Json] = ZIO.succeed(Json.Obj())
+          }
+        override def skillIndex: ZIOSkillIndexRepository =
+          new ZIOSkillIndexRepository {
+            override def upsert(
+              skillId:    SkillId,
+              keywords:   String,
+              searchText: String,
+            ): RepositoryTask[Unit] = ZIO.unit
+            override def search(
+              query: String,
+              limit: Int,
+            ): RepositoryTask[List[(SkillId, String)]] = ZIO.succeed(List.empty)
+            override def removeBySkillId(skillId:     SkillId):     RepositoryTask[Unit] = ZIO.unit
+            override def removeBySkillName(skillName: String):      RepositoryTask[Unit] = ZIO.unit
+            override def keepOnly(skillNames:         Set[String]): RepositoryTask[Unit] = ZIO.unit
           }
       }
     }

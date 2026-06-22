@@ -99,6 +99,8 @@ class TelegramConnectorSkill(
     name = "telegram",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    configKey = Some("skill.telegram"),
+    configJsModule = Some("jorlan-telegram"),
     tools = List(
       ToolDescriptor(
         name = "telegram.send_message",

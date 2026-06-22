@@ -10,61 +10,34 @@
 
 package jorlan.google
 
-import zio.json.*
+import japgolly.scalajs.react.*
+import japgolly.scalajs.react.vdom.html_<^.*
 
 import scala.scalajs.js
 
 object GoogleUI {
 
-  // Match the string-based JS facade from the Host
   @js.native
   private trait SkillProps extends js.Object {
 
     val initialConfigStr: String = js.native
-    val onSave:           String => Unit = js.native
+    val onSave:           js.Function1[String, Unit] = js.native
 
   }
 
-  import japgolly.scalajs.react.*
-  import japgolly.scalajs.react.vdom.html_<^.*
-
-  import scala.scalajs.js
-
-  private val GoogleWidget = ScalaFnComponent
-    .withHooks[SkillProps]
-    .useStateBy { props =>
-      val parsed = props.initialConfigStr
-        .fromJson[GoogleConfig]
-        .getOrElse(GoogleConfig())
-    }
-    .render(
-      (
-        props,
-        s,
-      ) => <.div("Google Skill Configuration"),
+  private val GoogleWidget = ScalaFnComponent[SkillProps] { _ =>
+    <.div(
+      ^.style := js.Dynamic.literal(color = "#666", fontStyle = "italic"),
+      "The Google Services skill has no configurable settings.",
     )
-
-  ScalaComponent
-    .builder[Unit]("GoogleWidget")
-    .renderStatic(<.div("Google Skill v1")) // TODO configuration goes here
-    .build
+  }
 
   def main(args: Array[String]): Unit = {
-
-    // Start background operation
-    val pollingIntervalId = js.timers.setInterval(5000) {
-      println("Google plugin...")
-    }
-    // Package component and send to host
     val payload = js.Dynamic.literal(
       "component" -> GoogleWidget.raw,
-      // CRITICAL: The cleanup callback executed by the host on removal
-      "onUnload" -> (() => {
-        js.timers.clearInterval(pollingIntervalId)
-        println("Google plugin cleaned up background intervals successfully.")
-      }),
+      "onUnload"  -> (() => ()),
     )
-    js.Dynamic.global.registerRemoteSkill("google-skill", payload)
+    js.Dynamic.global.registerRemoteSkill("jorlan-google-services", payload)
   }
 
 }

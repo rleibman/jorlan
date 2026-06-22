@@ -149,13 +149,22 @@ trait ConnectorSkill extends Skill {
   * @param tools
   *   the tools this skill exposes; each tool is addressable by its [[ToolDescriptor.name]]
   */
+/** @param configKey
+  *   Key in `server_settings` where this skill's JSON config is stored (e.g. `"skill.weather"`). `None` for
+  *   non-configurable skills.
+  * @param configJsModule
+  *   The SBT artifact name / JS module identifier for this skill's config UI (e.g. `"jorlan-weather"`). The UI file is
+  *   served at `/skills/<configJsModule>-skill.js`. `None` for non-configurable skills.
+  */
 case class SkillDescriptor(
-  name:          String,
-  tier:          SkillTier,
-  tools:         List[ToolDescriptor],
-  skillVersion:  SemVer | String,
-  keywords:      List[String] = List.empty,
-  jorlanVersion: SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+  name:           String,
+  tier:           SkillTier,
+  tools:          List[ToolDescriptor],
+  skillVersion:   SemVer | String,
+  keywords:       List[String] = List.empty,
+  jorlanVersion:  SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+  configKey:      Option[String] = None,
+  configJsModule: Option[String] = None,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

@@ -10,61 +10,103 @@
 
 package jorlan.weather
 
+import japgolly.scalajs.react.*
+import japgolly.scalajs.react.vdom.html_<^.*
 import zio.json.*
 
 import scala.scalajs.js
 
 object WeatherUI {
 
-  // Match the string-based JS facade from the Host
   @js.native
   private trait SkillProps extends js.Object {
 
     val initialConfigStr: String = js.native
-    val onSave:           String => Unit = js.native
+    val onSave:           js.Function1[String, Unit] = js.native
 
   }
 
-  import japgolly.scalajs.react.*
-  import japgolly.scalajs.react.vdom.html_<^.*
-
-  import scala.scalajs.js
+  private def targetValue(e: Any): String =
+    e.asInstanceOf[js.Dynamic].target.value.asInstanceOf[String]
 
   private val WeatherWidget = ScalaFnComponent
     .withHooks[SkillProps]
-    .useStateBy { props =>
-      val parsed = props.initialConfigStr
-        .fromJson[WeatherConfig]
-        .getOrElse(WeatherConfig())
-    }
-    .render(
+    .useStateBy(props => props.initialConfigStr.fromJson[WeatherConfig].getOrElse(WeatherConfig()))
+    .render {
       (
         props,
-        s,
-      ) => <.div("Weather Skill Configuration"),
-    )
-
-  ScalaComponent
-    .builder[Unit]("WeatherWidget")
-    .renderStatic(<.div("Weather Skill v1")) // TODO configuration goes here
-    .build
+        state,
+      ) =>
+        val cfg = state.value
+        <.div(
+          ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "12px", maxWidth = "480px"),
+          <.label(
+            ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
+            <.span("API Key"),
+            <.input(
+              ^.`type`      := "password",
+              ^.value       := cfg.apiKey,
+              ^.placeholder := "OpenWeatherMap API key",
+              ^.onChange ==> { e => state.setState(cfg.copy(apiKey = targetValue(e))) },
+              ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
+            ),
+          ),
+          <.label(
+            ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
+            <.span("Base URL"),
+            <.input(
+              ^.`type` := "text",
+              ^.value  := cfg.baseUrl,
+              ^.onChange ==> { e => state.setState(cfg.copy(baseUrl = targetValue(e))) },
+              ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
+            ),
+          ),
+          <.label(
+            ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
+            <.span("Units (metric / imperial / standard)"),
+            <.input(
+              ^.`type` := "text",
+              ^.value  := cfg.units,
+              ^.onChange ==> { e => state.setState(cfg.copy(units = targetValue(e))) },
+              ^.style := js.Dynamic
+                .literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "140px"),
+            ),
+          ),
+          <.div(
+            ^.style := js.Dynamic.literal(display = "flex", gap = "8px"),
+            <.button(
+              ^.onClick --> Callback(props.onSave(state.value.toJson)),
+              ^.style := js.Dynamic.literal(
+                padding = "8px 16px",
+                background = "#1976d2",
+                color = "white",
+                border = "none",
+                borderRadius = "4px",
+                cursor = "pointer",
+              ),
+              "Save",
+            ),
+            <.button(
+              ^.onClick --> state.setState(props.initialConfigStr.fromJson[WeatherConfig].getOrElse(WeatherConfig())),
+              ^.style := js.Dynamic.literal(
+                padding = "8px 16px",
+                background = "#e0e0e0",
+                border = "none",
+                borderRadius = "4px",
+                cursor = "pointer",
+              ),
+              "Reset",
+            ),
+          ),
+        )
+    }
 
   def main(args: Array[String]): Unit = {
-
-    // Start background operation
-    val pollingIntervalId = js.timers.setInterval(5000) {
-      println("Weather plugin fetching latest temperatures...")
-    }
-    // Package component and send to host
     val payload = js.Dynamic.literal(
       "component" -> WeatherWidget.raw,
-      // CRITICAL: The cleanup callback executed by the host on removal
-      "onUnload" -> (() => {
-        js.timers.clearInterval(pollingIntervalId)
-        println("Weather plugin cleaned up background intervals successfully.")
-      }),
+      "onUnload"  -> (() => ()),
     )
-    js.Dynamic.global.registerRemoteSkill("weather-skill", payload)
+    js.Dynamic.global.registerRemoteSkill("jorlan-weather", payload)
   }
 
 }

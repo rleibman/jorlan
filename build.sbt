@@ -91,7 +91,7 @@ val zioInteropCatsVersion = "23.1.0.13"
 val bouncyCastleVersion = "1.84"
 val googleApiClientVersion = "2.9.0"
 val googleApisGmailVersion = "v1-rev20260525-2.0.0"
-val googleApisCalendarVersion = "v3-rev20260517-2.0.0"
+val googleApisCalendarVersion = "v3-rev20260614-2.0.0"
 val googleApisDriveVersion = "v3-rev20260428-2.0.0"
 val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
@@ -105,7 +105,7 @@ val dispatchHttpVersion = "2.0.0"
 val flywayVersion = "12.9.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
-val jsoniterVersion = "2.38.15"
+val jsoniterVersion = "2.38.16"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
@@ -277,19 +277,37 @@ lazy val skillModule: CrossProject => CrossProject =
         _.withModuleKind(ModuleKind.NoModule)
           .withOutputPatterns(org.scalajs.linker.interface.OutputPatterns.fromJSFile("%s-skill.js"))
       },
-      // FIX: Use Def.setting and := so sbt can safely read name.value
       Compile / scalaJSMainModuleInitializer := Def.task {
         (Compile / scalaJSMainModuleInitializer).value.map { initializer =>
           initializer.withModuleID(name.value)
         }
       }.value,
       scalaJSUseMainModuleInitializer := true,
+      // Compile skill JS and copy to the global debugDist/skills or dist/skills directories.
+      // Each skill's JS file is served at /skills/<name>-skill.js.
+      debugDist := {
+        val _       = (Compile / fastLinkJS).value
+        val srcDir  = (Compile / fastLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir  = (ThisBuild / baseDirectory).value / "debugDist" / "skills"
+        IO.createDirectory(outDir)
+        (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        outDir
+      },
+      dist := {
+        val _       = (Compile / fullLinkJS).value
+        val srcDir  = (Compile / fullLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir  = (ThisBuild / baseDirectory).value / "dist" / "skills"
+        IO.createDirectory(outDir)
+        (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        outDir
+      },
     )
     .settings(
       commonSettings,
       buildInfoPackage := "jorlan.skill",
       scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-weather",
       libraryDependencies ++= Seq(
         "dev.zio" %% "zio"      % zioVersion withSources (),
         "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
@@ -309,6 +327,7 @@ lazy val telegramConnector =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("telegram"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-telegram")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
@@ -322,6 +341,7 @@ lazy val calculatorSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("calculator"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-calculator")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
@@ -335,6 +355,7 @@ lazy val lyrionSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("lyrion"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-lyrion")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
@@ -343,6 +364,7 @@ lazy val emailConnector =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("email"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-email")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
@@ -359,6 +381,7 @@ lazy val unitConversionSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("unit-conversion"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-unit-conversion")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "org.typelevel" %% "squants" % "1.8.3" withSources (),
@@ -372,6 +395,7 @@ lazy val httpFetchSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("http-fetch"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-http-fetch")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
@@ -380,6 +404,7 @@ lazy val weatherSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("weather"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-weather")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Time Skill — java.time-based timezone/datetime skill (no external dependencies)
@@ -388,6 +413,7 @@ lazy val timeSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("time-skill"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-time")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Market Data — Alpha Vantage market data skill
@@ -396,6 +422,7 @@ lazy val marketDataSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("market-data"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-market-data")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Search Skill — Tavily web search API
@@ -404,6 +431,7 @@ lazy val searchSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("search"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-search")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
@@ -412,6 +440,7 @@ lazy val googleServices =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("google-services"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-google-services")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "com.google.api-client" % "google-api-client"               % googleApiClientVersion withSources (),

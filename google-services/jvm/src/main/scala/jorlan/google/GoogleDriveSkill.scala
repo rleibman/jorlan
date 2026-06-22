@@ -33,6 +33,23 @@ class GoogleDriveSkill(
     name = "drive",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "Drive",
+      "file",
+      "document",
+      "Google Drive",
+      "storage",
+      "upload",
+      "download",
+      "share",
+      "folder",
+      "Docs",
+      "Sheets",
+      "Slides",
+      "PDF",
+      "cloud storage",
+      "list files",
+    ),
     tools = List(
       ToolDescriptor(
         name = "drive.listFiles",

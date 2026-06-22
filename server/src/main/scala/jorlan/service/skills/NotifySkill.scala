@@ -30,6 +30,20 @@ class NotifySkill(router: NotificationRouter) extends Skill {
     name = "notify",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "notify",
+      "alert",
+      "message",
+      "send message",
+      "ping",
+      "push",
+      "notification",
+      "Telegram",
+      "channel",
+      "broadcast",
+      "inform",
+      "tell user",
+    ),
     tools = List(
       ToolDescriptor(
         name = "notify.user",

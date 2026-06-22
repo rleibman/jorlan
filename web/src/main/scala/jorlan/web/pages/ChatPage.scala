@@ -200,12 +200,13 @@ object ChatPage {
                       " ",
                       <.span(^.style := js.Dynamic.literal(color = color))(prefix),
                       " ",
-                      msg.content,
+                      <.span(^.style := js.Dynamic.literal(whiteSpace = "pre-wrap"))(msg.content),
                     )
                   }*,
                 ),
                 if (state.value.streaming && state.value.streamBuffer.nonEmpty)
                   <.div(
+                    ^.style := js.Dynamic.literal(whiteSpace = "pre-wrap"),
                     <.span(^.style := js.Dynamic.literal(color = "#7c3aed"))("✦"),
                     " ",
                     state.value.streamBuffer,

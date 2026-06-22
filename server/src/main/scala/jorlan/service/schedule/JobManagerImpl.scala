@@ -126,6 +126,30 @@ class JobManagerImpl(
   override def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit] =
     repo.scheduler.deleteJob(id).mapError(JorlanError(_)).unit
 
+  override def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[JorlanError, SchedulerJob] =
+    getJob(id).flatMap { existing =>
+      val updated = existing.copy(
+        name = name,
+        prompt = prompt,
+        maxRetries = maxRetries,
+        backoffSeconds = backoffSeconds,
+        backoffPolicy = backoffPolicy,
+        missedRunPolicy = missedRunPolicy,
+      )
+      repo.scheduler.upsertJob(updated).mapError(JorlanError(_))
+    }
+
+  override def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit] =
+    repo.scheduler.deleteTrigger(id).mapError(JorlanError(_)).unit
+
 }
 
 object JobManagerImpl {

@@ -26,7 +26,7 @@ import scala.language.unsafeNulls
   * No external dependencies, no API key, no server_settings entry. Registers unconditionally. All four tools require
   * the `time.read` capability.
   */
-class TimeSkill extends Skill {
+class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
 
   private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
@@ -70,7 +70,7 @@ class TimeSkill extends Skill {
   private def timeNow(args: Json): IO[JorlanError, Json] =
     args match {
       case Json.Obj(fields) =>
-        val tzName = fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse("UTC")
+        val tzName = fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
         for {
           zone    <- parseZone(tzName)
           instant <- Clock.instant
@@ -128,7 +128,7 @@ class TimeSkill extends Skill {
       case (None, _)                        => ZIO.fail(ValidationError("missing field 'datetime'"))
       case (_, None)                        => ZIO.fail(ValidationError("missing field 'duration'"))
       case (Some(dtStr), Some(durationStr)) =>
-        val tzStr = tzStrOpt.getOrElse("UTC")
+        val tzStr = tzStrOpt.getOrElse(config.defaultTimezone)
         for {
           zone      <- parseZone(tzStr)
           zdt       <- parseDatetime(dtStr, zone)
@@ -153,8 +153,8 @@ class TimeSkill extends Skill {
     }
     val fromStrOpt = fields.collectFirst { case ("from", Json.Str(v)) => v }
     val toStrOpt = fields.collectFirst { case ("to", Json.Str(v)) => v }
-    val fromTzStr = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }.getOrElse("UTC")
-    val toTzStr = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }.getOrElse("UTC")
+    val fromTzStr = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
+    val toTzStr = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
     (fromStrOpt, toStrOpt) match {
       case (None, _)                    => ZIO.fail(ValidationError("missing field 'from'"))
       case (_, None)                    => ZIO.fail(ValidationError("missing field 'to'"))
@@ -200,6 +200,28 @@ class TimeSkill extends Skill {
     name = "time",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    configKey = Some("skill.time"),
+    configJsModule = Some("jorlan-time"),
+    keywords = List(
+      "time",
+      "clock",
+      "timezone",
+      "datetime",
+      "date",
+      "when",
+      "hours",
+      "minutes",
+      "seconds",
+      "schedule",
+      "UTC",
+      "local time",
+      "current time",
+      "convert timezone",
+      "duration",
+      "elapsed",
+      "difference",
+      "daylight saving",
+    ),
     tools = List(
       ToolDescriptor(
         name = "time.now",

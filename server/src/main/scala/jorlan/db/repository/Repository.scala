@@ -100,4 +100,6 @@ type ZIOExternalCredentialRepository = ExternalCredentialRepository[RepositoryTa
 
 type ZIOServerInfoRepository = ServerInfoRepository[RepositoryTask]
 
+type ZIOSkillIndexRepository = SkillIndexRepository[RepositoryTask]
+
 type ZIORepositories = Repositories[RepositoryTask]
