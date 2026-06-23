@@ -41,6 +41,43 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
        |  "Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 25 requests per day."
        |}""".stripMargin
 
+  private val sampleNewsBody: String =
+    """|{
+       |  "feed": [
+       |    {
+       |      "title": "Apple Reports Record Earnings",
+       |      "url": "https://example.com/apple-earnings",
+       |      "summary": "Apple exceeded analyst expectations...",
+       |      "overall_sentiment_label": "Bullish",
+       |      "ticker_sentiment": [
+       |        {
+       |          "ticker": "AAPL",
+       |          "relevance_score": "0.95",
+       |          "ticker_sentiment_label": "Bullish"
+       |        }
+       |      ]
+       |    },
+       |    {
+       |      "title": "Tech Sector Outlook",
+       |      "url": "https://example.com/tech-outlook",
+       |      "summary": "The tech sector continues to...",
+       |      "overall_sentiment_label": "Neutral",
+       |      "ticker_sentiment": [
+       |        {
+       |          "ticker": "MSFT",
+       |          "relevance_score": "0.50",
+       |          "ticker_sentiment_label": "Neutral"
+       |        }
+       |      ]
+       |    }
+       |  ]
+       |}""".stripMargin
+
+  private val informationRateLimitBody: String =
+    """|{
+       |  "Information": "Thank you for using Alpha Vantage! Our standard API rate limit is..."
+       |}""".stripMargin
+
   private val sampleSearchBody: String =
     """|{
        |  "bestMatches": [
@@ -148,6 +185,81 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
           skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
           result <- skill.invoke(dummyCtx, "market.unknown", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.news returns parsed news items with per-ticker sentiment") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleNewsBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield result match {
+          case Json.Arr(items) =>
+            assert(items.length)(equalTo(2)) && {
+              val firstFields = items.head match {
+                case Json.Obj(fs) => fs.toMap
+                case _            => Map.empty
+              }
+              assert(firstFields.get("title"))(isSome(equalTo(Json.Str("Apple Reports Record Earnings")))) &&
+              assert(firstFields.get("sentiment"))(isSome(equalTo(Json.Str("Bullish"))))
+            }
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.news returns empty array when apiKey is blank") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("", client)
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield assert(result)(equalTo(Json.Obj("error" -> Json.Str("Alpha Vantage API key not configured"))))
+      }.provide(Client.default),
+      test("returns rate-limit error for Information key variant") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(informationRateLimitBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield assert(result)(
+          equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
+        )
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("dashboardData returns quotes for SPY DIA GLD") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          result <- skill.dashboardData(dummyCtx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("quotes", Json.Arr(items)) => items.length == 3; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("dashboardData returns error when apiKey is blank") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("", client)
+          result <- skill.dashboardData(dummyCtx)
+        } yield assert(result)(equalTo(Json.Obj("error" -> Json.Str("No API key configured"))))
+      }.provide(Client.default),
+      test("market.search returns empty array for non-matching response") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Unknown")))
+        } yield assert(result)(equalTo(Json.Arr()))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.quote returns error when Global Quote is absent") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("error", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
       }.provide(Server.defaultWith(_.port(0)), Client.default),
     ) @@ TestAspect.withLiveClock
 

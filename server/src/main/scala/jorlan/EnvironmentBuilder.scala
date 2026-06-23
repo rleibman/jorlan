@@ -28,6 +28,7 @@ import jorlan.google.{
 }
 import jorlan.*
 import jorlan.service.*
+import jorlan.service.DashboardService
 import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
@@ -135,6 +136,7 @@ object EnvironmentBuilder {
         MemoryServiceImpl.live,
         NotificationRouter.live,
         SkillRegistry.liveSecure,
+        DashboardService.live,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         TriggerEngine.live,

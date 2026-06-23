@@ -18,6 +18,7 @@ import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.*
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
 import jorlan.service.*
 import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.skills.SkillRegistry
@@ -428,14 +429,40 @@ object JorlanAPI {
 
   /** GQL-safe view of a registered skill and its tools. */
   case class SkillInfo(
-    name:           String,
-    tier:           String,
-    tools:          List[SkillToolInfo],
-    enabled:        Boolean,
-    keywords:       List[String],
-    configKey:      Option[String],
-    configJsModule: Option[String],
+    name:              String,
+    tier:              String,
+    tools:             List[SkillToolInfo],
+    enabled:           Boolean,
+    keywords:          List[String],
+    configKey:         Option[String],
+    configJsModule:    Option[String],
+    dashboardJsModule: Option[String],
+    hasDashboardData:  Boolean,
   ) derives Schema.SemiAuto, ArgBuilder
+
+  /** A timestamped count bucket for time-series charts. */
+  case class TimeSeriesPoint(
+    timestampMs: Long,
+    count:       Int,
+  ) derives Schema.SemiAuto
+
+  /** A named count for distribution charts. */
+  case class NamedCount(
+    name:  String,
+    count: Int,
+  ) derives Schema.SemiAuto
+
+  /** Aggregated system metrics returned by the `dashboardStats` query. */
+  case class DashboardStats(
+    activeSessionCount:     Int,
+    eventCountToday:        Int,
+    skillInvocationCount:   Int,
+    schedulerSuccessRate:   Double,
+    eventVolumeSeries:      List[TimeSeriesPoint],
+    skillInvocationsByName: List[NamedCount],
+    sessionStatusCounts:    List[NamedCount],
+    jobOutcomeCounts:       List[NamedCount],
+  ) derives Schema.SemiAuto
 
   /** GQL-safe view of one channel identity for a contact result. */
   case class ContactIdentityResult(
@@ -670,6 +697,10 @@ object JorlanAPI {
     allRoles: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     /** Returns the current checkpoint policy configuration. */
     checkpointPolicy: ZIO[JorlanApiEnv & JorlanSession, JorlanError, CheckpointPolicyConfig],
+    /** Returns aggregated system metrics for the dashboard. */
+    dashboardStats: ZIO[JorlanApiEnv & JorlanSession, JorlanError, DashboardStats],
+    /** Returns per-skill dashboard JSON data for a skill that implements HasDashboardData. */
+    skillDashboardData: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
   )
 
   case class Mutations(
@@ -949,6 +980,8 @@ object JorlanAPI {
               keywords = skill.descriptor.keywords,
               configKey = skill.descriptor.configKey,
               configJsModule = skill.descriptor.configJsModule,
+              dashboardJsModule = skill.descriptor.dashboardJsModule,
+              hasDashboardData = skill.isInstanceOf[HasDashboardData],
             )
           },
           contacts = name =>
@@ -1031,6 +1064,34 @@ object JorlanAPI {
               _       <- requireCapability("memory.read", actorId)
               config  <- ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
             } yield config,
+          dashboardStats =
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.list", actorId)
+              stats   <- ZIO.serviceWithZIO[DashboardService](_.globalStats)
+            } yield DashboardStats(
+              activeSessionCount = stats.activeSessionCount,
+              eventCountToday = stats.eventCountToday,
+              skillInvocationCount = stats.skillInvocationCount,
+              schedulerSuccessRate = stats.schedulerSuccessRate,
+              eventVolumeSeries = stats.eventVolumeSeries.map(p => TimeSeriesPoint(p.timestampMs, p.count)),
+              skillInvocationsByName = stats.skillInvocationsByName.map(c => NamedCount(c.name, c.count)),
+              sessionStatusCounts = stats.sessionStatusCounts.map(c => NamedCount(c.name, c.count)),
+              jobOutcomeCounts = stats.jobOutcomeCounts.map(c => NamedCount(c.name, c.count)),
+            ),
+          skillDashboardData = skillName =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("agent.session.list", actorId)
+              skillOpt <- ZIO.serviceWithZIO[SkillRegistry](_.getSkill[jorlan.connector.Skill](skillName))
+              result   <- skillOpt match {
+                case Some(s: jorlan.connector.HasDashboardData) =>
+                  val ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
+                  s.dashboardData(ctx).map(json => Some(json.toJson))
+                case _ =>
+                  ZIO.succeed(None)
+              }
+            } yield result,
           skillConfig = name =>
             for {
               actorId <- actorIdFromSession

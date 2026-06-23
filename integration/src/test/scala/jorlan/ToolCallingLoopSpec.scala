@@ -135,6 +135,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       OAuthStateStore.live(),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.stepsLayer(steps),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -146,6 +147,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      DashboardService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

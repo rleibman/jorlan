@@ -90,6 +90,7 @@ object GraphQLApiSpec
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -101,6 +102,7 @@ object GraphQLApiSpec
       ZLayer.succeed(ConnectorManager.empty),
       stubOAuthCredentialService,
       Client.default.orDie,
+      DashboardService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

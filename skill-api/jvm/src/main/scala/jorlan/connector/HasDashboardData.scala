@@ -8,19 +8,18 @@
  * permission, please contact the copyright holders and delete this file.
  */
 
-package zio.json
+package jorlan.connector
 
-import zio.json.literal.JsonLiteralMacros
-
-import zio.json.*
+import jorlan.*
+import zio.*
 import zio.json.ast.Json
 
-package object literal {
+/** Optional mixin for skills that want to contribute per-skill metrics to the dashboard.
+  *
+  * Implement `dashboardData` to return any JSON blob the skill's UI widget understands.
+  */
+trait HasDashboardData { self: Skill =>
 
-  extension (inline sc: StringContext) {
-
-    inline final def json(inline args: Any*): Json = ${ JsonLiteralMacros.jsonImpl('sc, 'args) }
-
-  }
+  def dashboardData(ctx: InvocationContext): IO[JorlanError, Json]
 
 }

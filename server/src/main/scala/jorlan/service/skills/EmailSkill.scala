@@ -11,7 +11,7 @@
 package jorlan.service.skills
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.EmailProvider
 import just.semver.SemVer
 import zio.*
@@ -33,7 +33,7 @@ import zio.json.literal.*
   */
 class EmailSkill(
   emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
-) extends Skill {
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
@@ -332,6 +332,27 @@ class EmailSkill(
           "count" -> Json.Num(msgs.size),
         )
     }
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] =
+    emailProvider
+      .listMessages(ctx.actorId, 5, Some("is:unread"))
+      .map { msgs =>
+        Json.Obj(
+          "unreadCount"    -> Json.Num(msgs.size),
+          "recentMessages" -> Json.Arr(
+            msgs.map(m =>
+              Json.Obj(
+                "from"    -> Json.Str(m.from),
+                "subject" -> Json.Str(m.subject),
+                "date"    -> Json.Str(m.date.toString),
+              ),
+            )*,
+          ),
+        )
+      }
+      .catchAll(e =>
+        ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg), "unreadCount" -> Json.Num(0), "recentMessages" -> Json.Arr())),
+      )
 
 }
 

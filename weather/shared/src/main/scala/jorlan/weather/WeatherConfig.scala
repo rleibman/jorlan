@@ -13,7 +13,8 @@ package jorlan.weather
 import zio.json.JsonCodec
 
 case class WeatherConfig(
-  apiKey:  String = "",
-  baseUrl: String = "https://api.openweathermap.org/data/2.5",
-  units:   String = "metric",
+  apiKey:          String = "",
+  baseUrl:         String = "https://api.openweathermap.org/data/2.5",
+  units:           String = "metric",
+  defaultLocation: String = "New York",
 ) derives JsonCodec

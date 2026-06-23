@@ -232,6 +232,47 @@ object WeatherSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(dummyCtx, "weather.unknown", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Client.default),
+      test("dashboardData returns weather for default location") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleCurrentBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg.copy(defaultLocation = "London"), client, s"http://localhost:$port")
+          result <- skill.dashboardData(dummyCtx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("temperature", _) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("location", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("dashboardData returns error JSON when apiKey is blank") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(WeatherConfig(apiKey = "", defaultLocation = "London"), client)
+          result <- skill.dashboardData(dummyCtx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("error", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Client.default),
+      test("weather.current with units override succeeds and returns temperature") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleCurrentBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(
+            dummyCtx,
+            "weather.current",
+            Json.Obj("location" -> Json.Str("London"), "units" -> Json.Str("imperial")),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("temperature", _) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("description", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
     ) @@ TestAspect.withLiveClock
 
 }

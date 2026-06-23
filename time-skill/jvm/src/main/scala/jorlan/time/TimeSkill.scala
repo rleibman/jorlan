@@ -11,7 +11,7 @@
 package jorlan.time
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
@@ -27,7 +27,7 @@ import scala.language.unsafeNulls
   * No external dependencies, no API key, no server_settings entry. Registers unconditionally. All four tools require
   * the `time.read` capability.
   */
-class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
+class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboardData {
 
   private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
@@ -291,6 +291,24 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
       case "time.diff"         => timeDiff(args)
       case other               => ZIO.fail(ValidationError(s"unknown tool '$other'"))
     }
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")
+    val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    for {
+      zone <- ZIO
+        .attempt(java.time.ZoneId.of(config.defaultTimezone)).mapError(e =>
+          JorlanError(s"Invalid timezone: ${e.getMessage}"),
+        )
+      instant <- Clock.instant
+      zdt = instant.atZone(zone)
+    } yield Json.Obj(
+      "datetime" -> Json.Str(zdt.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+      "timezone" -> Json.Str(config.defaultTimezone),
+      "date"     -> Json.Str(zdt.format(formatter)),
+      "time"     -> Json.Str(zdt.format(timeFormatter)),
+    )
+  }
 
 }
 

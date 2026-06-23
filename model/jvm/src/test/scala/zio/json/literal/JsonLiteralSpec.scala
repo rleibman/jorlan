@@ -94,7 +94,7 @@ object JsonLiteralSpec extends ZIOSpecDefault {
         },
         test("interpolate multiple values") {
           val name = "Bob"
-          val age  = 25
+          val age = 25
           assertTrue(json"""{"name": $name, "age": $age}""" == parseUnsafe("""{"name":"Bob","age":25}"""))
         },
         test("interpolate a value into an array") {

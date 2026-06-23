@@ -112,9 +112,8 @@ object ChatPage {
                                       AsyncCallbackRepositories.agent
                                         .submitMessage(sid, nextMsg)
                                         .completeWith(
-                                          PageUtils.onError(err =>
-                                            state.modState(_.copy(streaming = false, error = err)),
-                                          ),
+                                          PageUtils
+                                            .onError(err => state.modState(_.copy(streaming = false, error = err))),
                                         )
                                         .runNow()
                                     }

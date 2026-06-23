@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService & Client
+  ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -368,14 +368,15 @@ object Jorlan extends ZIOApp {
 
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
-      _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
-      _                <- ZIO.serviceWithZIO[ZIORepositories] { repos =>
-        repos.memory.purgeExpired
-          .tap(n => ZIO.logDebug(s"Memory purge: removed $n expired record(s)"))
-          .mapError(JorlanError(_))
-          .repeat(Schedule.spaced(1.hour))
-          .forkDaemon
-      }.unit
+      _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _ <- ZIO
+        .serviceWithZIO[ZIORepositories] { repos =>
+          repos.memory.purgeExpired
+            .tap(n => ZIO.logDebug(s"Memory purge: removed $n expired record(s)"))
+            .mapError(JorlanError(_))
+            .repeat(Schedule.spaced(1.hour))
+            .forkDaemon
+        }.unit
       _                <- registerBuiltInSkills
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]

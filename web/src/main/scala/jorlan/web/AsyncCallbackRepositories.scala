@@ -769,6 +769,42 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       prompt = v.prompt,
     )
 
+  def dashboardStats(): AsyncCallback[Option[DashboardStats]] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Queries.dashboardStats(
+          JorlanClient.DashboardStats.view(
+            JorlanClient.TimeSeriesPoint.view,
+            JorlanClient.NamedCount.view,
+            JorlanClient.NamedCount.view,
+            JorlanClient.NamedCount.view,
+          ),
+        ),
+      )
+      .map(_.map(toDashboardStats))
+
+  def skillDashboardData(skillName: String): AsyncCallback[Option[String]] =
+    adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.skillDashboardData(skillName))
+
+  private def toDashboardStats(
+    v: JorlanClient.DashboardStats.DashboardStatsView[
+      JorlanClient.TimeSeriesPoint.TimeSeriesPointView,
+      JorlanClient.NamedCount.NamedCountView,
+      JorlanClient.NamedCount.NamedCountView,
+      JorlanClient.NamedCount.NamedCountView,
+    ],
+  ): DashboardStats =
+    DashboardStats(
+      activeSessionCount = v.activeSessionCount,
+      eventCountToday = v.eventCountToday,
+      skillInvocationCount = v.skillInvocationCount,
+      schedulerSuccessRate = v.schedulerSuccessRate,
+      eventVolumeSeries = v.eventVolumeSeries.map(p => DashboardTimeSeriesPoint(p.timestampMs, p.count)),
+      skillInvocationsByName = v.skillInvocationsByName.map(c => DashboardNamedCount(c.name, c.count)),
+      sessionStatusCounts = v.sessionStatusCounts.map(c => DashboardNamedCount(c.name, c.count)),
+      jobOutcomeCounts = v.jobOutcomeCounts.map(c => DashboardNamedCount(c.name, c.count)),
+    )
+
   private def toSkillInfo(
     v: JorlanClient.SkillInfo.SkillInfoView[JorlanClient.SkillToolInfo.SkillToolInfoView],
   ): SkillInfo =
@@ -780,6 +816,8 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       keywords = v.keywords,
       configKey = v.configKey,
       configJsModule = v.configJsModule,
+      dashboardJsModule = v.dashboardJsModule,
+      hasDashboardData = v.hasDashboardData,
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =

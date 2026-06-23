@@ -36,13 +36,39 @@ case class SkillToolInfo(
   examplePrompts:       List[String],
 ) derives JsonCodec
 
+/** A timestamped count bucket for time-series dashboard charts. */
+case class DashboardTimeSeriesPoint(
+  timestampMs: Long,
+  count:       Int,
+) derives JsonCodec
+
+/** A named count for dashboard distribution charts. */
+case class DashboardNamedCount(
+  name:  String,
+  count: Int,
+) derives JsonCodec
+
+/** Aggregated system metrics for the dashboard page. */
+case class DashboardStats(
+  activeSessionCount:     Int,
+  eventCountToday:        Int,
+  skillInvocationCount:   Int,
+  schedulerSuccessRate:   Double,
+  eventVolumeSeries:      List[DashboardTimeSeriesPoint],
+  skillInvocationsByName: List[DashboardNamedCount],
+  sessionStatusCounts:    List[DashboardNamedCount],
+  jobOutcomeCounts:       List[DashboardNamedCount],
+) derives JsonCodec
+
 /** A registered skill visible via the API. */
 case class SkillInfo(
-  name:           String,
-  tier:           SkillTier,
-  tools:          List[SkillToolInfo],
-  enabled:        Boolean = true,
-  keywords:       List[String] = List.empty,
-  configKey:      Option[String] = None,
-  configJsModule: Option[String] = None,
+  name:              String,
+  tier:              SkillTier,
+  tools:             List[SkillToolInfo],
+  enabled:           Boolean = true,
+  keywords:          List[String] = List.empty,
+  configKey:         Option[String] = None,
+  configJsModule:    Option[String] = None,
+  dashboardJsModule: Option[String] = None,
+  hasDashboardData:  Boolean = false,
 ) derives JsonCodec

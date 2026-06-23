@@ -14,6 +14,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.User
 import jorlan.web.pages.*
+import jorlan.web.pages.DashboardPage
 import org.scalajs.dom
 
 import scala.language.unsafeNulls
@@ -35,6 +36,7 @@ enum AppPage(
   val icon:  String,
 ) {
 
+  case Dashboard extends AppPage("#/dashboard", "Dashboard", "dashboard")
   case Chat extends AppPage("#/", "Chat", "chat")
   case Sessions extends AppPage("#/sessions", "Sessions", "list")
   case Approvals extends AppPage("#/approvals", "Approvals", "approval")
@@ -107,6 +109,7 @@ object AppRouter {
             ),
             if (state.value.page != AppPage.Chat && state.value.page != AppPage.EventLog)
               state.value.page match {
+                case AppPage.Dashboard => DashboardPage(user)
                 case AppPage.Chat      => EmptyVdom
                 case AppPage.Sessions  => SessionsPage(user)
                 case AppPage.Approvals => ApprovalsPage(user)

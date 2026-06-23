@@ -254,7 +254,7 @@ class InitServiceImpl(
             .flatMap { existing =>
               val grant = existing.headOption match {
                 case Some(g) => g.copy(approvalMode = mode, expiresAt = None)
-                case None =>
+                case None    =>
                   CapabilityGrant(
                     id = CapabilityGrantId.empty,
                     capability = cap,

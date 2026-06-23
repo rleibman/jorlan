@@ -30,8 +30,10 @@ object InMemoryRepositories {
   // ─── User ─────────────────────────────────────────────────────────────────────
 
   class InMemoryUserRepo(
-    idGen: Ref[Long],
-    store: Ref[Map[Long, User]],
+    idGen:   Ref[Long],
+    store:   Ref[Map[Long, User]],
+    ciIdGen: Ref[Long],
+    ciStore: Ref[Map[Long, ChannelIdentity]],
   ) extends ZIOUserRepository {
 
     override def getById(id: UserId): RepositoryTask[Option[User]] =
@@ -57,11 +59,21 @@ object InMemoryRepositories {
         m.get(id.value).fold((0L, m))(u => (1L, m.updated(id.value, u.copy(active = false))))
       }
 
-    override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] = ZIO.succeed(List.empty)
+    override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
+      ciStore.get.map(_.values.filter(_.userId == userId).toList)
+
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
-      ZIO.die(RuntimeException("not implemented"))
+      for {
+        id <- if (ci.id == ChannelIdentityId.empty) ciIdGen.updateAndGet(_ + 1) else ZIO.succeed(ci.id.value)
+        saved = ci.copy(id = ChannelIdentityId(id))
+        _ <- ciStore.update(_.updated(id, saved))
+      } yield saved
+
     override def deleteChannelIdentity(id: ChannelIdentityId): RepositoryTask[Long] =
-      ZIO.die(RuntimeException("not implemented"))
+      ciStore.modify { m =>
+        if (m.contains(id.value)) (1L, m.removed(id.value)) else (0L, m)
+      }
+
     override def login(
       email:    String,
       password: String,
@@ -75,7 +87,15 @@ object InMemoryRepositories {
     override def userByChannelIdentity(
       channelType:   ChannelType,
       channelUserId: String,
-    ):                                                  RepositoryTask[Option[User]] = ZIO.none
+    ): RepositoryTask[Option[User]] =
+      for {
+        cis <- ciStore.get
+        ciOpt = cis.values.find(ci => ci.channelType == channelType && ci.channelUserId == channelUserId)
+        user <- ciOpt match {
+          case Some(ci) => store.get.map(_.get(ci.userId.value))
+          case None     => ZIO.none
+        }
+      } yield user
     override def findContacts(nameOpt: Option[String]): RepositoryTask[Json] = ZIO.succeed(Json.Arr())
 
   }
@@ -83,9 +103,12 @@ object InMemoryRepositories {
   object InMemoryUserRepo {
 
     def make: UIO[InMemoryUserRepo] =
-      (Ref.make(0L) <*> Ref.make(Map.empty[Long, User])).map { case (idGen, store) =>
-        InMemoryUserRepo(idGen, store)
-      }
+      for {
+        idGen   <- Ref.make(0L)
+        store   <- Ref.make(Map.empty[Long, User])
+        ciIdGen <- Ref.make(0L)
+        ciStore <- Ref.make(Map.empty[Long, ChannelIdentity])
+      } yield InMemoryUserRepo(idGen, store, ciIdGen, ciStore)
 
     val layer: ULayer[ZIOUserRepository] = ZLayer(make.map(r => r: ZIOUserRepository))
 
@@ -1022,9 +1045,7 @@ object InMemoryRepositories {
   ): ULayer[ZIORepositories] =
     ZLayer.fromZIO {
       for {
-        userRepo <- userRepoOpt.fold((Ref.make(0L) <*> Ref.make(Map.empty[Long, User])).map { case (idGen, store) =>
-          InMemoryUserRepo(idGen, store)
-        })(ZIO.succeed)
+        userRepo         <- userRepoOpt.fold(InMemoryUserRepo.make)(ZIO.succeed)
         agentRepo        <- agentRepoOpt.fold(InMemoryAgentRepo.make)(ZIO.succeed)
         conversationRepo <- conversationRepoOpt.fold(InMemoryConversationRepo.make)(ZIO.succeed)
         skillRepo        <- skillRepoOpt.fold(InMemorySkillRepo.make)(ZIO.succeed)

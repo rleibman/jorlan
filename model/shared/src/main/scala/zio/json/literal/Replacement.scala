@@ -29,7 +29,11 @@ final class Replacement private (
 
 object Replacement {
 
-  def apply(idx: Int, arg: Expr[Any])(using q: Quotes): Replacement = {
+  def apply(
+    idx:     Int,
+    arg:     Expr[Any],
+  )(using q: Quotes,
+  ): Replacement = {
     import q.reflect.*
     arg match {
       case '{ $a: t } =>
@@ -39,7 +43,7 @@ object Replacement {
         val widenedTpe = TypeRepr.of[t].widen
         val jsonExpr: Expr[Json] = widenedTpe.asType match {
           case '[w] =>
-            val wa      = a.asExprOf[w]
+            val wa = a.asExprOf[w]
             val encoder = Expr.summon[JsonEncoder[w]].getOrElse {
               report.errorAndAbort(
                 s"No JsonEncoder[${widenedTpe.show}] found for json interpolation argument at position $idx",
@@ -49,7 +53,7 @@ object Replacement {
               $encoder.toJsonAST($wa) match {
                 case Right(json) => json
                 case Left(err)   =>
-                  throw new RuntimeException(s"JsonEncoder failed for argument ${ ${ Expr(idx) } }: $err")
+                  throw new RuntimeException(s"JsonEncoder failed for argument ${${ Expr(idx) }}: $err")
               }
             }
         }

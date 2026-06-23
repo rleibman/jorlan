@@ -11,7 +11,7 @@
 package jorlan.market
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -33,7 +33,7 @@ class MarketDataSkill(
   apiKey:  String,
   client:  Client,
   baseUrl: String = "https://www.alphavantage.co/query",
-) extends Skill {
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "market",
@@ -287,5 +287,61 @@ class MarketDataSkill(
           .getOrElse(Json.Arr())
       case _ => Json.Arr()
     }
+
+  private val dashboardTickers = List(
+    ("SPY", "S&P 500"),
+    ("DIA", "Dow Jones"),
+    ("GLD", "Gold"),
+  )
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    if (apiKey.isBlank)
+      ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
+    else
+      ZIO
+        .foreach(dashboardTickers) { case (symbol, name) =>
+          val url =
+            s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
+          fetchJson(url)
+            .flatMap(checkRateLimit)
+            .map {
+              case Json.Obj(fields) =>
+                fields
+                  .collectFirst { case ("Global Quote", Json.Obj(q)) => q }
+                  .map { q =>
+                    def qfield(key: String): Json = q.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
+                    Json.Obj(
+                      "symbol"        -> Json.Str(symbol),
+                      "name"          -> Json.Str(name),
+                      "price"         -> qfield("05. price"),
+                      "change"        -> qfield("09. change"),
+                      "changePercent" -> qfield("10. change percent"),
+                    )
+                  }
+                  .getOrElse(
+                    Json.Obj(
+                      "symbol"        -> Json.Str(symbol),
+                      "name"          -> Json.Str(name),
+                      "price"         -> Json.Str("N/A"),
+                      "change"        -> Json.Str(""),
+                      "changePercent" -> Json.Str(""),
+                    ),
+                  )
+              case other => other
+            }
+            .catchAll(_ =>
+              ZIO.succeed(
+                Json.Obj(
+                  "symbol"        -> Json.Str(symbol),
+                  "name"          -> Json.Str(name),
+                  "price"         -> Json.Str("N/A"),
+                  "change"        -> Json.Str(""),
+                  "changePercent" -> Json.Str(""),
+                ),
+              ),
+            )
+        }
+        .map(quotes => Json.Obj("quotes" -> Json.Arr(quotes*)))
+  }
 
 }

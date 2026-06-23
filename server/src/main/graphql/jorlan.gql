@@ -261,6 +261,17 @@ type ContactResult {
   identities: [ContactIdentityResult!]!
 }
 
+type DashboardStats {
+  activeSessionCount: Int!
+  eventCountToday: Int!
+  skillInvocationCount: Int!
+  schedulerSuccessRate: Float!
+  eventVolumeSeries: [TimeSeriesPoint!]!
+  skillInvocationsByName: [NamedCount!]!
+  sessionStatusCounts: [NamedCount!]!
+  jobOutcomeCounts: [NamedCount!]!
+}
+
 type EventLogJson {
   id: EventLogId!
   eventType: EventType!
@@ -336,6 +347,11 @@ type Mutations {
   updateSkillConfig(name: String!, configJson: String!): Boolean
 }
 
+type NamedCount {
+  name: String!
+  count: Int!
+}
+
 type OAuthStartResult {
   authUrl: String!
 }
@@ -386,6 +402,8 @@ type Queries {
   userChannelIdentities(value: UserId!): [ChannelIdentity!]
   allRoles(page: Int, pageSize: Int): [Role!]
   checkpointPolicy: CheckpointPolicyConfig
+  dashboardStats: DashboardStats
+  skillDashboardData(value: String!): String
 }
 
 type ResponseChunk {
@@ -441,6 +459,8 @@ type SkillInfo {
   keywords: [String!]!
   configKey: String
   configJsModule: String
+  dashboardJsModule: String
+  hasDashboardData: Boolean!
 }
 
 type SkillToolInfo {
@@ -455,6 +475,11 @@ type Subscriptions {
   eventLogTail: EventLogJson
   agentResponseStream(value: AgentSessionId!): ResponseChunk
   toolEvents(value: AgentSessionId!): ToolEventResult
+}
+
+type TimeSeriesPoint {
+  timestampMs: Long!
+  count: Int!
 }
 
 type ToolEventResult {

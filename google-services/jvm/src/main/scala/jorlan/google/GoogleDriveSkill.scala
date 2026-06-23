@@ -55,8 +55,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.listFiles",
         description = "List files in Google Drive, optionally filtered by folder or search query.",
-        inputSchema =
-          json"""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -68,8 +67,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.readFile",
         description = "Read the text content of a Google Drive file (Google Docs are exported as plain text).",
-        inputSchema =
-          json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -80,8 +78,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.downloadFile",
         description = "Download a binary file from Google Drive. The file bytes are stored as an Artifact.",
-        inputSchema =
-          json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(

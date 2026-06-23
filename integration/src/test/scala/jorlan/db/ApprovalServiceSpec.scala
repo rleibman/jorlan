@@ -183,6 +183,7 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
     ).provideSomeLayer[ZIORepositories](
       ZLayer.makeSome[ZIORepositories, CapabilityEvaluator & ApprovalService](
         CapabilityEvaluatorImpl.live,
+        EventLogHub.live,
         ApprovalServiceImpl.live,
       ),
     )) @@ TestAspect.sequential

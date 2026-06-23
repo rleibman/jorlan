@@ -11,7 +11,7 @@
 package jorlan.lyrion
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -36,13 +36,7 @@ import zio.json.literal.*
 class LyrionSkill(
   settings: LyrionConfig,
   client:   Client,
-) extends Skill {
-
-  // TODO tools that we need to add:
-  // lyrion.alarm.list, lyrion.alarm.create, lyrion.alarm.delete, lyrion.alarm.update
-  // lyrion.album.search
-  // lyrion.artist.search
-  // lyrion.song.search
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "lyrion",
@@ -67,7 +61,16 @@ class LyrionSkill(
       "skip",
       "speaker",
       "stop",
-      "alarm"
+      "genre",
+      "search",
+      "jazz",
+      "rock",
+      "pop",
+      "classical",
+      "queue",
+      "shuffle",
+      "random",
+      "alarm",
     ),
     configKey = Some("skill.lyrion"),
     configJsModule = Some("jorlan-lyrion"),
@@ -176,6 +179,131 @@ class LyrionSkill(
           "What's in the playlist?",
           "Show me the queue",
           "List all songs in the current playlist",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.search",
+        description = "Search the music library for artists, albums, songs, and genres matching a text query. Returns IDs that can be passed to lyrion.queue.",
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"Search text, e.g. 'Prince', 'Thriller', 'jazzy piano'"},"count":{"type":"integer","description":"Max results per category (default 10)"}},"required":["query"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "Search for Prince in my music library",
+          "Find albums by Miles Davis",
+          "Search for jazz tracks",
+          "What music do I have by Beethoven?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.browse.genres",
+        description = "List all music genres available in the library with their IDs.",
+        inputSchema = json"""{"type":"object","properties":{}}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "What genres are in my music library?",
+          "List all music genres",
+          "What kinds of music do I have?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.browse.artists",
+        description = "List artists in the library, optionally filtered by genre ID.",
+        inputSchema = json"""{"type":"object","properties":{"genreId":{"type":"string","description":"Filter by genre ID (from lyrion.browse.genres)"},"count":{"type":"integer","description":"Max results (default 100)"}},"required":[]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "List jazz artists",
+          "Show me rock artists in my library",
+          "Who are all the artists in my collection?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.browse.albums",
+        description = "List albums, optionally filtered by artist ID or genre ID.",
+        inputSchema = json"""{"type":"object","properties":{"artistId":{"type":"string","description":"Filter by artist ID (from lyrion.search or lyrion.browse.artists)"},"genreId":{"type":"string","description":"Filter by genre ID (from lyrion.browse.genres)"},"count":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "List albums by Prince",
+          "Show me jazz albums",
+          "What albums do I have?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.browse.songs",
+        description = "List songs, optionally filtered by album ID or artist ID.",
+        inputSchema = json"""{"type":"object","properties":{"albumId":{"type":"string","description":"Filter by album ID (from lyrion.browse.albums)"},"artistId":{"type":"string","description":"Filter by artist ID"},"count":{"type":"integer","description":"Max results (default 50)"}},"required":[]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "List tracks on Purple Rain",
+          "Show songs by Miles Davis",
+          "What songs are on that album?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.queue",
+        description = "Load music into a player's queue and start playing. Use 'type' to specify what to play (artist/album/genre/song) and 'id' from a previous search or browse call. Set 'mode' to 'load' (replace queue and play immediately, default) or 'add' (append to queue).",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"type":{"type":"string","enum":["artist","album","genre","song"],"description":"Type of music to queue"},"id":{"type":"string","description":"ID of the artist, album, genre, or song (from lyrion.search or lyrion.browse.*)"},"mode":{"type":"string","enum":["load","add"],"description":"'load' replaces the queue and plays immediately; 'add' appends without interrupting"}},"required":["playerId","type","id"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "Play something by Prince",
+          "Play some jazz music",
+          "Queue up some sexy R&B",
+          "Put on the Purple Rain album",
+          "Add some Miles Davis to the queue",
+          "Play a random jazz artist",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.alarm.list",
+        description = "List all alarms configured for a player.",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "What alarms are set in the bedroom?",
+          "Show me the music alarms",
+          "List alarms for the living room player",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.alarm.create",
+        description = "Create a new alarm on a player. 'time' is HH:MM (24-hour). 'days' is an array of day names (Mon Tue Wed Thu Fri Sat Sun) or the shortcut strings 'daily', 'weekdays', or 'weekends'. 'repeat' defaults to true.",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"time":{"type":"string","description":"Alarm time in HH:MM 24-hour format, e.g. '07:30'"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"Days to trigger the alarm"},"enabled":{"type":"boolean","description":"Whether the alarm is active (default true)"},"repeat":{"type":"boolean","description":"Whether the alarm repeats (default true)"},"volume":{"type":"integer","description":"Override volume 0-100, or -1 to use current volume (default -1)"}},"required":["playerId","time","days"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "Set a wake-up alarm at 7am on weekdays",
+          "Create a music alarm for 8:30 every day",
+          "Wake me with music at 6:45 on Monday and Friday",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.alarm.update",
+        description =
+          "Update an existing alarm. Only the fields you provide are changed. Use lyrion.alarm.list to get alarm IDs.",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"},"time":{"type":"string","description":"New alarm time in HH:MM 24-hour format"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"New days setting"},"enabled":{"type":"boolean","description":"Enable or disable the alarm"},"repeat":{"type":"boolean","description":"Whether the alarm repeats"},"volume":{"type":"integer","description":"Volume override 0-100 or -1"}},"required":["playerId","id"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "Move the 7am alarm to 7:30",
+          "Disable the weekday alarm",
+          "Change the alarm to ring on weekends too",
+        ),
+      ),
+      ToolDescriptor(
+        name = "lyrion.alarm.delete",
+        description = "Delete an alarm from a player. Use lyrion.alarm.list to get alarm IDs.",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"}},"required":["playerId","id"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("lyrion.control")),
+        examplePrompts = List(
+          "Delete the 7am alarm",
+          "Remove all my alarms",
+          "Cancel the weekday music alarm",
         ),
       ),
     ),
@@ -299,16 +427,26 @@ class LyrionSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     tool match {
-      case "lyrion.players"  => listPlayers()
-      case "lyrion.status"   => requireStr(args, "playerId").flatMap(playerStatus)
-      case "lyrion.play"     => requireStr(args, "playerId").flatMap(play)
-      case "lyrion.pause"    => requireStr(args, "playerId").flatMap(pause)
-      case "lyrion.stop"     => requireStr(args, "playerId").flatMap(stop)
-      case "lyrion.volume"   => invokeVolume(args)
-      case "lyrion.next"     => requireStr(args, "playerId").flatMap(next)
-      case "lyrion.previous" => requireStr(args, "playerId").flatMap(previous)
-      case "lyrion.playlist" => requireStr(args, "playerId").flatMap(playlist)
-      case other             => ZIO.fail(ValidationError(s"lyrion: unknown tool '$other'"))
+      case "lyrion.players"        => listPlayers()
+      case "lyrion.status"         => requireStr(args, "playerId").flatMap(playerStatus)
+      case "lyrion.play"           => requireStr(args, "playerId").flatMap(play)
+      case "lyrion.pause"          => requireStr(args, "playerId").flatMap(pause)
+      case "lyrion.stop"           => requireStr(args, "playerId").flatMap(stop)
+      case "lyrion.volume"         => invokeVolume(args)
+      case "lyrion.next"           => requireStr(args, "playerId").flatMap(next)
+      case "lyrion.previous"       => requireStr(args, "playerId").flatMap(previous)
+      case "lyrion.playlist"       => requireStr(args, "playerId").flatMap(playlist)
+      case "lyrion.search"         => search(args)
+      case "lyrion.browse.genres"  => browseGenres()
+      case "lyrion.browse.artists" => browseArtists(args)
+      case "lyrion.browse.albums"  => browseAlbums(args)
+      case "lyrion.browse.songs"   => browseSongs(args)
+      case "lyrion.queue"          => queue(args)
+      case "lyrion.alarm.list"     => requireStr(args, "playerId").flatMap(alarmList)
+      case "lyrion.alarm.create"   => alarmCreate(args)
+      case "lyrion.alarm.update"   => alarmUpdate(args)
+      case "lyrion.alarm.delete"   => alarmDelete(args)
+      case other                   => ZIO.fail(ValidationError(s"lyrion: unknown tool '$other'"))
     }
 
   private def listPlayers(): IO[JorlanError, Json] =
@@ -389,6 +527,325 @@ class LyrionSkill(
         )
       }*)
     }
+
+  private def search(args: Json): IO[JorlanError, Json] =
+    for {
+      query <- requireStr(args, "query")
+      count = optInt(args, "count").getOrElse(10)
+      encoded = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)
+      result <- rpc("", List(Json.Str("search"), Json.Num(0), Json.Num(count * 3), Json.Str(s"term:$query")))
+    } yield {
+      val artists = arrField(result, "artists_loop").map { a =>
+        Json.Obj(
+          "type" -> Json.Str("artist"),
+          "id"   -> Json.Str(strField(a, "id")),
+          "name" -> Json.Str(strField(a, "artist")),
+        )
+      }
+      val albums = arrField(result, "albums_loop").map { a =>
+        Json.Obj(
+          "type"   -> Json.Str("album"),
+          "id"     -> Json.Str(strField(a, "id")),
+          "name"   -> Json.Str(strField(a, "album")),
+          "artist" -> Json.Str(strField(a, "artist")),
+        )
+      }
+      val songs = arrField(result, "tracks_loop").take(count).map { s =>
+        Json.Obj(
+          "type"   -> Json.Str("song"),
+          "id"     -> Json.Str(strField(s, "id")),
+          "name"   -> Json.Str(strField(s, "title")),
+          "artist" -> Json.Str(strField(s, "artist")),
+          "album"  -> Json.Str(strField(s, "album")),
+        )
+      }
+      Json.Obj(
+        "query"   -> Json.Str(query),
+        "artists" -> Json.Arr(artists.take(count)*),
+        "albums"  -> Json.Arr(albums.take(count)*),
+        "songs"   -> Json.Arr(songs*),
+      )
+    }
+
+  private def browseGenres(): IO[JorlanError, Json] =
+    rpc("", List(Json.Str("genres"), Json.Num(0), Json.Num(200))).map { result =>
+      Json.Arr(
+        arrField(result, "genres_loop").map { g =>
+          Json.Obj("id" -> Json.Str(strField(g, "id")), "name" -> Json.Str(strField(g, "genre")))
+        }*,
+      )
+    }
+
+  private def browseArtists(args: Json): IO[JorlanError, Json] = {
+    val count = optInt(args, "count").getOrElse(100)
+    val filters = optStr(args, "genreId").map(id => List(Json.Str(s"genre_id:$id"))).getOrElse(List.empty)
+    rpc("", List(Json.Str("artists"), Json.Num(0), Json.Num(count)) ++ filters).map { result =>
+      Json.Arr(
+        arrField(result, "artists_loop").map { a =>
+          Json.Obj("id" -> Json.Str(strField(a, "id")), "name" -> Json.Str(strField(a, "artist")))
+        }*,
+      )
+    }
+  }
+
+  private def browseAlbums(args: Json): IO[JorlanError, Json] = {
+    val count = optInt(args, "count").getOrElse(50)
+    val filters = List(
+      optStr(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
+      optStr(args, "genreId").map(id => Json.Str(s"genre_id:$id")),
+    ).flatten
+    rpc("", List(Json.Str("albums"), Json.Num(0), Json.Num(count), Json.Str("tags:la")) ++ filters).map { result =>
+      Json.Arr(
+        arrField(result, "albums_loop").map { a =>
+          Json.Obj(
+            "id"     -> Json.Str(strField(a, "id")),
+            "name"   -> Json.Str(strField(a, "album")),
+            "artist" -> Json.Str(strField(a, "artist")),
+            "year"   -> Json.Str(strField(a, "year")),
+          )
+        }*,
+      )
+    }
+  }
+
+  private def browseSongs(args: Json): IO[JorlanError, Json] = {
+    val count = optInt(args, "count").getOrElse(50)
+    val filters = List(
+      optStr(args, "albumId").map(id => Json.Str(s"album_id:$id")),
+      optStr(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
+    ).flatten
+    rpc("", List(Json.Str("songs"), Json.Num(0), Json.Num(count), Json.Str("tags:alta")) ++ filters).map { result =>
+      Json.Arr(
+        arrField(result, "titles_loop").map { s =>
+          Json.Obj(
+            "id"       -> Json.Str(strField(s, "id")),
+            "title"    -> Json.Str(strField(s, "title")),
+            "artist"   -> Json.Str(strField(s, "artist")),
+            "album"    -> Json.Str(strField(s, "album")),
+            "tracknum" -> Json.Str(strField(s, "tracknum")),
+          )
+        }*,
+      )
+    }
+  }
+
+  private def queue(args: Json): IO[JorlanError, Json] =
+    for {
+      playerId <- requireStr(args, "playerId")
+      itemType <- requireStr(args, "type")
+      id       <- requireStr(args, "id")
+      mode = optStr(args, "mode").getOrElse("load")
+      validMode <- ZIO
+        .fromOption(Some(mode).filter(m => m == "load" || m == "add"))
+        .orElseFail(ValidationError(s"lyrion.queue: mode must be 'load' or 'add', got '$mode'"))
+      idParam <- itemType match {
+        case "artist" => ZIO.succeed(s"artist_id:$id")
+        case "album"  => ZIO.succeed(s"album_id:$id")
+        case "genre"  => ZIO.succeed(s"genre_id:$id")
+        case "song"   => ZIO.succeed(s"track_id:$id")
+        case other    =>
+          ZIO.fail(ValidationError(s"lyrion.queue: unknown type '$other'; expected artist|album|genre|song"))
+      }
+      _ <- rpc(playerId, List(Json.Str("playlistcontrol"), Json.Str(s"cmd:$validMode"), Json.Str(idParam)))
+    } yield Json.Obj(
+      "ok"       -> Json.Bool(true),
+      "playerId" -> Json.Str(playerId),
+      "type"     -> Json.Str(itemType),
+      "id"       -> Json.Str(id),
+      "mode"     -> Json.Str(validMode),
+    )
+
+  /** Parse "HH:MM" into seconds since midnight. */
+  private def parseTimeHHMM(t: String): IO[JorlanError, Int] =
+    t.split(":").toList match {
+      case hStr :: mStr :: Nil =>
+        ZIO
+          .attempt(hStr.toInt * 3600 + mStr.toInt * 60)
+          .mapError(_ => ValidationError(s"Invalid time '$t'; expected HH:MM 24-hour format"))
+          .flatMap { secs =>
+            if (secs < 0 || secs >= 86400) ZIO.fail(ValidationError(s"Time '$t' out of range"))
+            else ZIO.succeed(secs)
+          }
+      case _ => ZIO.fail(ValidationError(s"Invalid time '$t'; expected HH:MM 24-hour format"))
+    }
+
+  /** Format seconds since midnight as "HH:MM". */
+  private def formatTimeHHMM(secs: Int): String = {
+    val h = secs / 3600
+    val m = (secs % 3600) / 60
+    f"$h%02d:$m%02d"
+  }
+
+  /** Parse a days specification into Lyrion's `dow` string.
+    *
+    * Lyrion uses a string of digits where each digit is the day index: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday,
+    * 4=Thursday, 5=Friday, 6=Saturday.
+    */
+  private def parseDays(args: Json): IO[JorlanError, String] = {
+    val dayMap = Map(
+      "Sun" -> "0",
+      "Mon" -> "1",
+      "Tue" -> "2",
+      "Wed" -> "3",
+      "Thu" -> "4",
+      "Fri" -> "5",
+      "Sat" -> "6",
+    )
+    args match {
+      case Json.Obj(fields) =>
+        fields.collectFirst { case ("days", v) => v } match {
+          case None                       => ZIO.succeed("0123456") // default: every day
+          case Some(Json.Str("daily"))    => ZIO.succeed("0123456")
+          case Some(Json.Str("weekdays")) => ZIO.succeed("12345")
+          case Some(Json.Str("weekends")) => ZIO.succeed("06")
+          case Some(Json.Arr(dayArr))     =>
+            val days = dayArr.collect { case Json.Str(d) => dayMap.getOrElse(d, "") }.filter(_.nonEmpty).sorted
+            if (days.isEmpty) ZIO.fail(ValidationError("No valid day names provided"))
+            else ZIO.succeed(days.mkString)
+          case Some(other) => ZIO.fail(ValidationError(s"Invalid 'days' value: $other"))
+        }
+      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
+    }
+  }
+
+  /** Convert a Lyrion dow string (e.g. "0123456") back to human-readable day names. */
+  private def formatDow(dow: String): List[String] = {
+    val names = Map("0" -> "Sun", "1" -> "Mon", "2" -> "Tue", "3" -> "Wed", "4" -> "Thu", "5" -> "Fri", "6" -> "Sat")
+    dow.split("").toList.flatMap(names.get)
+  }
+
+  private def alarmList(playerId: String): IO[JorlanError, Json] =
+    rpc(
+      playerId,
+      List(Json.Str("alarms"), Json.Num(0), Json.Num(100), Json.Str("filter:defined"), Json.Str("tags:all")),
+    ).map { result =>
+      Json.Arr(
+        arrField(result, "alarms_loop").map { a =>
+          val timeSecs = numField(a, "time").intValue
+          val dow = strField(a, "dow")
+          Json.Obj(
+            "id"      -> Json.Str(strField(a, "id")),
+            "time"    -> Json.Str(formatTimeHHMM(timeSecs)),
+            "days"    -> Json.Arr(formatDow(dow).map(Json.Str(_))*),
+            "enabled" -> Json.Bool(boolField(a, "enabled")),
+            "repeat"  -> Json.Bool(boolField(a, "repeat")),
+            "volume"  -> Json.Num(numField(a, "volume")),
+          )
+        }*,
+      )
+    }
+
+  private def alarmCreate(args: Json): IO[JorlanError, Json] =
+    for {
+      playerId <- requireStr(args, "playerId")
+      timeStr  <- requireStr(args, "time")
+      timeSecs <- parseTimeHHMM(timeStr)
+      dow      <- parseDays(args)
+      enabled = optInt(args, "enabled")
+        .map(_ != 0).orElse(args match {
+          case Json.Obj(f) => f.collectFirst { case ("enabled", Json.Bool(b)) => b }
+          case _           => None
+        }).getOrElse(true)
+      repeat = optInt(args, "repeat")
+        .map(_ != 0).orElse(args match {
+          case Json.Obj(f) => f.collectFirst { case ("repeat", Json.Bool(b)) => b }
+          case _           => None
+        }).getOrElse(true)
+      volume = optInt(args, "volume").getOrElse(-1)
+      params = List(
+        Json.Str("alarm"),
+        Json.Str("add"),
+        Json.Str(s"time:$timeSecs"),
+        Json.Str(s"dow:$dow"),
+        Json.Str(s"enabled:${if (enabled) 1 else 0}"),
+        Json.Str(s"repeat:${if (repeat) 1 else 0}"),
+        Json.Str(s"volume:$volume"),
+      )
+      result <- rpc(playerId, params)
+    } yield Json.Obj(
+      "ok"      -> Json.Bool(true),
+      "id"      -> Json.Str(strField(result, "id")),
+      "time"    -> Json.Str(timeStr),
+      "days"    -> Json.Arr(formatDow(dow).map(Json.Str(_))*),
+      "enabled" -> Json.Bool(enabled),
+      "repeat"  -> Json.Bool(repeat),
+    )
+
+  private def alarmUpdate(args: Json): IO[JorlanError, Json] =
+    for {
+      playerId     <- requireStr(args, "playerId")
+      id           <- requireStr(args, "id")
+      timeParamOpt <- optStr(args, "time")
+        .map(t => parseTimeHHMM(t).map(s => Some(s"time:$s")))
+        .getOrElse(ZIO.succeed(None))
+      dowParamOpt <- args match {
+        case Json.Obj(f) if f.exists { case ("days", _) => true; case _ => false } =>
+          parseDays(args).map(d => Some(s"dow:$d"))
+        case _ => ZIO.succeed(None)
+      }
+      enabledParamOpt = args match {
+        case Json.Obj(f) =>
+          f.collectFirst {
+            case ("enabled", Json.Bool(b)) => s"enabled:${if (b) 1 else 0}"
+            case ("enabled", Json.Num(n))  => s"enabled:${n.intValue}"
+          }
+        case _ => None
+      }
+      repeatParamOpt = args match {
+        case Json.Obj(f) =>
+          f.collectFirst {
+            case ("repeat", Json.Bool(b)) => s"repeat:${if (b) 1 else 0}"
+            case ("repeat", Json.Num(n))  => s"repeat:${n.intValue}"
+          }
+        case _ => None
+      }
+      volumeParamOpt = optInt(args, "volume").map(v => s"volume:$v")
+      updateParams = List(
+        Some(s"id:$id"),
+        timeParamOpt,
+        dowParamOpt,
+        enabledParamOpt,
+        repeatParamOpt,
+        volumeParamOpt,
+      ).flatten
+      _ <-
+        if (updateParams.size <= 1) ZIO.fail(ValidationError("lyrion.alarm.update: no fields to update"))
+        else ZIO.unit
+      _ <- rpc(playerId, Json.Str("alarm") :: Json.Str("update") :: updateParams.map(Json.Str(_)))
+    } yield Json.Obj("ok" -> Json.Bool(true), "id" -> Json.Str(id))
+
+  private def alarmDelete(args: Json): IO[JorlanError, Json] =
+    for {
+      playerId <- requireStr(args, "playerId")
+      id       <- requireStr(args, "id")
+      _        <- rpc(playerId, List(Json.Str("alarm"), Json.Str("delete"), Json.Str(s"id:$id")))
+    } yield Json.Obj("ok" -> Json.Bool(true), "id" -> Json.Str(id))
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] =
+    listPlayers()
+      .flatMap {
+        case Json.Arr(players) =>
+          ZIO
+            .foreach(players) {
+              case p @ Json.Obj(fields) =>
+                val playerId = fields.collectFirst { case ("id", Json.Str(id)) => id }.getOrElse("")
+                if (playerId.isEmpty) ZIO.succeed(p)
+                else
+                  playerStatus(playerId)
+                    .map { status =>
+                      val statusFields: scala.collection.immutable.List[(String, Json)] = status match {
+                        case Json.Obj(sf) => sf.toList
+                        case _            => scala.collection.immutable.List.empty
+                      }
+                      Json.Obj((fields.toList ++ statusFields)*)
+                    }
+                    .catchAll(_ => ZIO.succeed(p))
+              case other => ZIO.succeed(other)
+            }
+            .map(enriched => Json.Obj("players" -> Json.Arr(enriched*)))
+        case other => ZIO.succeed(Json.Obj("players" -> Json.Arr()))
+      }
+      .catchAll(e => ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg), "players" -> Json.Arr())))
 
 }
 

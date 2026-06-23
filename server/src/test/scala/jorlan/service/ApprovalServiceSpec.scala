@@ -66,6 +66,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
     ZLayer.make[ZIORepositories & CapabilityEvaluator & ApprovalService](
       InMemoryRepositories.live(),
       CapabilityEvaluatorImpl.live,
+      EventLogHub.live,
       ApprovalServiceImpl.live,
     )
 

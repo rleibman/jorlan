@@ -101,6 +101,7 @@ object SubscriptionClientIntegrationSpec
       OAuthStateStore.live(),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.layer(List("hello ", "world")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -112,6 +113,7 @@ object SubscriptionClientIntegrationSpec
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      DashboardService.live,
     )
 
   override val bootstrap: ZLayer[Any, Any, FullEnv] =

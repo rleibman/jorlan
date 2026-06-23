@@ -175,6 +175,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         agentRepoLayer,
         hubLayer,
         ToolEventHub.live,
+        EventLogHub.live,
         capEval,
         session,
         FakeModelGateway.layer(List("ok")),
@@ -190,6 +191,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         approvalSvcLayer,
         noOpNotificationRouter,
         oauthCredSvcLayer,
+        DashboardService.live,
         Client.default.orDie,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
       ).orDie
@@ -224,6 +226,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
       modelSuite,
       oauthSuite,
       invokeToolSuite,
+      miscSuite,
+      jobLifecycleSuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -1004,6 +1008,385 @@ object JorlanAPISpec extends ZIOSpecDefault {
         // SkillRegistry returns errors as JSON strings, not GraphQL errors
         result.errors.isEmpty,
         dataStr.contains("Error:"),
+      )
+    }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── Misc queries/mutations not covered elsewhere ─────────────────────────────
+
+  private val miscSuite = suite("Misc queries and mutations")(
+    test("skills query returns registered skills") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skills { name tools { name } } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("contacts query returns empty list when no users") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ contacts(value: "alice") { userId displayName } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("contacts"))
+    }.provideLayer(makeAppLayer()),
+    test("contacts query fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ contacts(value: "alice") { userId displayName } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("listApprovals query returns empty list") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listApprovals { id } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("listCapabilities query returns empty list") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ listCapabilities { id capability } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("checkpointPolicy query returns default policy") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ checkpointPolicy { onSessionEnd onUserRequest } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("dashboardStats query returns empty stats") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """{ dashboardStats { activeSessionCount eventCountToday skillInvocationCount schedulerSuccessRate } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("activeSessionCount"))
+    }.provideLayer(makeAppLayer()),
+    test("skillDashboardData query returns None for skill without dashboard") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillDashboardData(value: "memory") }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("allRoles query returns empty list initially") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ allRoles { id name } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("userCapabilityGrants query returns empty list for new user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ userCapabilityGrants(value: 1) { id capability } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("userChannelIdentities query returns empty list for new user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ userChannelIdentities(value: 1) { id channelUserId } }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("skillConfig query fails for unknown skill") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillConfig(value: "nonexistent") }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("deactivateUser mutation returns false for non-existent user") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { deactivateUser(value: 999) }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("notifyUser mutation succeeds with notify.send capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { notifyUser(userId: 1, message: "hello") }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("notifyUser mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { notifyUser(userId: 1, message: "hello") }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("grantCapability mutation succeeds with permission.grant") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { grantCapability(userId: 1, capability: "some.cap", approvalMode: Persistent) { id capability } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("grantCapability mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { grantCapability(userId: 1, capability: "some.cap", approvalMode: Persistent) { id capability } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("enableSkill mutation succeeds with admin.settings capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { enableSkill(value: "memory") }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("disableSkill mutation succeeds with admin.settings capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { disableSkill(value: "memory") }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("updateCheckpointPolicy mutation succeeds with admin.settings capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { updateCheckpointPolicy(onSessionEnd: false, onUserRequest: true, beforeExternalEffect: false) { onSessionEnd onUserRequest } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("reloadMcpServers mutation succeeds with admin.mcp.reload capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { reloadMcpServers(value: {}) }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("updateSkillConfig mutation fails for skill not registered in tests") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { updateSkillConfig(name: "nonexistent-skill", configJson: "{}") }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("updateJob mutation fails when caller does not own the job") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { updateJob(value: { jobId: 999 }) { id name } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("requestCheckpoint mutation succeeds with memory.read capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        // session id 999 does not exist but the mutation should return true (best-effort)
+        result <- interp.execute("""mutation { requestCheckpoint(value: 999) }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("linkChannelIdentity mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { linkChannelIdentity(userId: 1, channelUserId: "t-123", channelType: "Telegram") { id channelUserId } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("revokeCapabilityGrant mutation fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { revokeCapabilityGrant(value: 1) }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("revokeCapabilityGrant succeeds after granting a capability") {
+      for {
+        interp      <- ZIO.service[Interp]
+        grantResult <- interp.execute(
+          """mutation { grantCapability(userId: 1, capability: "test.cap", approvalMode: Persistent) { id } }""",
+        )
+        grantId = extractLong(grantResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { revokeCapabilityGrant(value: $grantId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("linkChannelIdentity succeeds with admin.user.manage") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute("""mutation { createUser(displayName: "Link User", email: "link@test.com") { id } }""")
+        result <- interp.execute(
+          """mutation { linkChannelIdentity(userId: 1, channelUserId: "tg-42", channelType: "Telegram") { id channelUserId } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("tg-42"))
+    }.provideLayer(makeAppLayer()),
+    test("linkChannelIdentity fails for unknown channel type") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { linkChannelIdentity(userId: 1, channelUserId: "x", channelType: "InvalidType") { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("unlinkChannelIdentity succeeds after linking") {
+      for {
+        interp     <- ZIO.service[Interp]
+        linkResult <- interp.execute(
+          """mutation { linkChannelIdentity(userId: 1, channelUserId: "tg-99", channelType: "Telegram") { id } }""",
+        )
+        ciId = extractLong(linkResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { unlinkChannelIdentity(value: $ciId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("userChannelIdentities query returns identities after linking") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { linkChannelIdentity(userId: 1, channelUserId: "ch-123", channelType: "Slack") { id } }""",
+        )
+        result <- interp.execute("""{ userChannelIdentities(value: 1) { id channelUserId } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("ch-123"))
+    }.provideLayer(makeAppLayer()),
+    test("userCapabilityGrants returns grants after granting") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { grantCapability(userId: 1, capability: "some.granted.cap", approvalMode: Persistent) { id } }""",
+        )
+        result <- interp.execute("""{ userCapabilityGrants(value: 1) { id capability } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("some.granted.cap"))
+    }.provideLayer(makeAppLayer()),
+    test("contacts query returns user when matching query") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { createUser(displayName: "Alice Wonderland", email: "alice@test.com") { id } }""",
+        )
+        result <- interp.execute("""{ contacts(value: "alice") { userId displayName } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("Alice Wonderland"))
+    }.provideLayer(makeAppLayer()),
+    test("deactivateUser returns true when user exists") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          """mutation { createUser(displayName: "To Deactivate", email: "deact@test.com") { id } }""",
+        )
+        userId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { deactivateUser(value: $userId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("allRoles returns roles after creating one") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute("""mutation { createRole(name: "admin-role", description: "admin") { id } }""")
+        result <- interp.execute("""{ allRoles { id name } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("admin-role"))
+    }.provideLayer(makeAppLayer()),
+  )
+
+  private val jobLifecycleSuite = suite("Job lifecycle mutations")(
+    test("pauseJob succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "pause-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { pauseJob(value: $jobId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("resumeJob succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "resume-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        _      <- interp.execute(s"""mutation { pauseJob(value: $jobId) }""")
+        result <- interp.execute(s"""mutation { resumeJob(value: $jobId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("cancelJob succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "cancel-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { cancelJob(value: $jobId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("deleteJob succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "delete-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { deleteJob(value: $jobId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("triggerNow succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "trigger-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { triggerNow(value: $jobId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("updateJob succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "update-me", prompt: "original", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { updateJob(id: $jobId, name: "updated-name", prompt: "new prompt", maxRetries: 2, backoffSeconds: 30, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("updated-name"))
+    }.provideLayer(makeAppLayer()),
+    test("addTrigger succeeds when caller owns the job") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "trigger-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id jobId } }""",
+        )
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("jobId"))
+    }.provideLayer(makeAppLayer()),
+    test("deleteTrigger succeeds after adding a trigger") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "dt-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        triggerResult <- interp.execute(
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+        )
+        triggerId = extractLong(triggerResult.data.toString, "id")
+        result <- interp.execute(s"""mutation { deleteTrigger(value: $triggerId) }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("true"))
+    }.provideLayer(makeAppLayer()),
+    test("triggers query returns trigger after addTrigger") {
+      for {
+        interp       <- ZIO.service[Interp]
+        _            <- interp.execute("""mutation { createSession { id } }""")
+        createResult <- interp.execute(
+          """mutation { createJob(name: "trigger-list-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+        )
+        jobId = extractLong(createResult.data.toString, "id")
+        addTrigResult <- interp.execute(
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+        )
+        result <- interp.execute(s"""{ triggers(value: $jobId) { id } }""")
+      } yield assertTrue(
+        addTrigResult.errors.isEmpty,
+        result.errors.isEmpty,
+        !result.data.toString.contains("[]"),
       )
     }.provideLayer(makeAppLayer()),
   )

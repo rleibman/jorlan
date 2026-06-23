@@ -11,7 +11,7 @@
 package jorlan.weather
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -33,7 +33,7 @@ class WeatherSkill(
   config:  WeatherConfig,
   client:  Client,
   baseUrl: String = "https://api.openweathermap.org/data/2.5",
-) extends Skill {
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "weather",
@@ -288,6 +288,42 @@ class WeatherSkill(
         }
       case other => other
     }
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    if (config.apiKey.isBlank)
+      ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
+    else {
+      val location = config.defaultLocation
+      val url = s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(config.units)}"
+      fetchJson(url)
+        .map {
+          case Json.Obj(fields) =>
+            val mainFields = fields.collectFirst { case ("main", Json.Obj(m)) => m.toMap }.getOrElse(Map.empty)
+            val windSpeed = fields
+              .collectFirst { case ("wind", Json.Obj(w)) =>
+                w.collectFirst { case ("speed", v) => v }.getOrElse(Json.Num(0))
+              }.getOrElse(Json.Num(0))
+            val description = fields
+              .collectFirst { case ("weather", Json.Arr(arr)) =>
+                arr
+                  .collectFirst { case Json.Obj(w) =>
+                    w.collectFirst { case ("description", v) => v }.getOrElse(Json.Str(""))
+                  }.getOrElse(Json.Str(""))
+              }.getOrElse(Json.Str(""))
+            Json.Obj(
+              "location"    -> Json.Str(location),
+              "temperature" -> mainFields.getOrElse("temp", Json.Num(0)),
+              "feelsLike"   -> mainFields.getOrElse("feels_like", Json.Num(0)),
+              "humidity"    -> mainFields.getOrElse("humidity", Json.Num(0)),
+              "description" -> description,
+              "windSpeed"   -> windSpeed,
+              "units"       -> Json.Str(config.units),
+            )
+          case other => other
+        }
+        .catchAll(e => ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg))))
+    }
+  }
 
   private def encode(s: String): String =
     java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8)

@@ -124,7 +124,7 @@ val scalaJavaTimeVersion = "2.7.0"
 val scalajsDomVersion = "2.8.1"
 val scalajsReactVersion = "4.0.0"
 val scalatagsVersion = "0.13.1"
-val stlibVersion = "1.0.0"
+val stlibVersion = "1.1.0"
 val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.6"
@@ -183,6 +183,10 @@ lazy val model =
     )
     .jvmSettings(
       scalacOptions ++= scala3Opts :+ "-Werror",
+      // Fork so scoverage 2.x measurement files are flushed when the test JVM exits.
+      Test / fork              := true,
+      // Exclude macro-only packages; their code runs at compile time and is never instrumented.
+      coverageExcludedPackages := "zio\\.json\\.literal.*",
       libraryDependencies ++= Seq(
         "dev.zio"     %% "zio"                 % zioVersion withSources (),
         "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
@@ -198,6 +202,7 @@ lazy val model =
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
     .jsSettings(
+      coverageEnabled := false,
       scalacOptions ++= scala3Opts,
       libraryDependencies ++= Seq(
         "net.leibman"               % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %% isn't working.
@@ -217,6 +222,7 @@ lazy val gqlClient =
     .in(file("gql-client"))
     .dependsOn(model)
     .jsSettings(
+      coverageEnabled := false,
       libraryDependencies ++= Seq(
         "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
         "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
@@ -245,6 +251,7 @@ lazy val skillApi =
     .settings(commonSettings)
     .dependsOn(model)
     .jsSettings(
+      coverageEnabled := false,
       libraryDependencies ++= Seq(
         "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
         "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
@@ -276,6 +283,7 @@ lazy val skillModule: CrossProject => CrossProject =
     .dependsOn(model, skillApi)
     .jsEnablePlugins(ScalaJSPlugin)
     .jsSettings(
+      coverageEnabled := false,
       scalaJSLinkerConfig ~= {
         _.withModuleKind(ModuleKind.NoModule)
           .withOutputPatterns(org.scalajs.linker.interface.OutputPatterns.fromJSFile("%s-skill.js"))
@@ -289,18 +297,18 @@ lazy val skillModule: CrossProject => CrossProject =
       // Compile skill JS and copy to the global debugDist/skills or dist/skills directories.
       // Each skill's JS file is served at /skills/<name>-skill.js.
       debugDist := {
-        val _       = (Compile / fastLinkJS).value
-        val srcDir  = (Compile / fastLinkJS / scalaJSLinkerOutputDirectory).value
-        val outDir  = (ThisBuild / baseDirectory).value / "debugDist" / "skills"
+        val _ = (Compile / fastLinkJS).value
+        val srcDir = (Compile / fastLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir = (ThisBuild / baseDirectory).value / "debugDist" / "skills"
         IO.createDirectory(outDir)
         (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
         (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
         outDir
       },
       dist := {
-        val _       = (Compile / fullLinkJS).value
-        val srcDir  = (Compile / fullLinkJS / scalaJSLinkerOutputDirectory).value
-        val outDir  = (ThisBuild / baseDirectory).value / "dist" / "skills"
+        val _ = (Compile / fullLinkJS).value
+        val srcDir = (Compile / fullLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir = (ThisBuild / baseDirectory).value / "dist" / "skills"
         IO.createDirectory(outDir)
         (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
         (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
@@ -321,6 +329,10 @@ lazy val skillModule: CrossProject => CrossProject =
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
       Test / fork := false,
+    )
+    .jvmSettings(
+      // Fork JVM tests so scoverage 2.x measurement files are flushed on JVM exit.
+      Test / fork := true,
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -369,6 +381,8 @@ lazy val emailConnector =
     .configureCross(skillModule)
     .settings(name := "jorlan-email")
     .jvmSettings(
+      // Email provider code requires real IMAP/SMTP/PGP infrastructure; no unit-testable code paths.
+      coverageExcludedPackages := "jorlan\\.email.*",
       libraryDependencies ++= Seq(
         "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
         "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
@@ -445,6 +459,10 @@ lazy val googleServices =
     .configureCross(skillModule)
     .settings(name := "jorlan-google-services")
     .jvmSettings(
+      // Exclude actual Google API provider implementations — they make live Google SDK calls
+      // and are not testable in unit tests without real OAuth credentials.
+      coverageExcludedFiles :=
+        ".*GoogleCalendarProvider.*;.*GmailProvider.*;.*GoogleDriveProvider.*;.*GoogleContactsProvider.*;.*GoogleApiProvider.*",
       libraryDependencies ++= Seq(
         "com.google.api-client" % "google-api-client"               % googleApiClientVersion withSources (),
         "com.google.apis"       % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
@@ -617,6 +635,7 @@ lazy val shell = project
     run / fork                       := true,
     run / connectInput               := true,
     coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*",
+    coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
@@ -767,6 +786,7 @@ lazy val ai = project
       "dev.langchain4j"    % "langchain4j-ollama"   % langchain4jOllamaVersion withSources (),
       "dev.langchain4j"    % "langchain4j-easy-rag" % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-qdrant"   % langchainLibrariesVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-mariadb"  % langchainLibrariesVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),

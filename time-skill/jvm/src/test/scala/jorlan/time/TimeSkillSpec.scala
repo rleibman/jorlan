@@ -215,6 +215,74 @@ object TimeSkillSpec extends ZIOSpecDefault {
           exit <- skill.invoke(ctx, "time.unknown", Json.Obj()).exit
         } yield assert(exit)(fails(isSubtype[ValidationError](anything)))
       },
+      test("dashboardData returns date, time, and timezone fields") {
+        for {
+          _      <- TestClock.setTime(fixedInstant)
+          result <- skill.dashboardData(ctx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("datetime", _) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("date", _) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("time", _) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("timezone", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      },
+      test("time.convert missing toTimezone field fails with ValidationError") {
+        val args = Json.Obj(
+          "datetime"     -> Json.Str("2026-06-16T12:00:00"),
+          "fromTimezone" -> Json.Str("UTC"),
+        )
+        for {
+          exit <- skill.invoke(ctx, "time.convert", args).exit
+        } yield assert(exit)(fails(isSubtype[ValidationError](anything)))
+      },
+      test("time.add_duration missing datetime field fails with ValidationError") {
+        val args = Json.Obj(
+          "duration" -> Json.Str("PT1H"),
+          "timezone" -> Json.Str("UTC"),
+        )
+        for {
+          exit <- skill.invoke(ctx, "time.add_duration", args).exit
+        } yield assert(exit)(fails(isSubtype[ValidationError](anything)))
+      },
+      test("time.add_duration with Period duration (P7D) works") {
+        val args = Json.Obj(
+          "datetime" -> Json.Str("2026-06-16T10:00:00"),
+          "timezone" -> Json.Str("UTC"),
+          "duration" -> Json.Str("P7D"),
+        )
+        for {
+          result <- skill.invoke(ctx, "time.add_duration", args)
+        } yield {
+          val res = strField(result, "result")
+          assertTrue(res.exists(_.contains("2026-06-23")))
+        }
+      },
+      test("time.diff with explicit timezones returns positive totalSeconds") {
+        val args = Json.Obj(
+          "from"         -> Json.Str("2026-06-16T10:00:00"),
+          "to"           -> Json.Str("2026-06-16T11:00:00"),
+          "fromTimezone" -> Json.Str("UTC"),
+          "toTimezone"   -> Json.Str("America/New_York"),
+        )
+        for {
+          result <- skill.invoke(ctx, "time.diff", args)
+        } yield {
+          val totalSecs = numField(result, "totalSeconds")
+          assertTrue(totalSecs.isDefined)
+        }
+      },
+      test("time.now uses default timezone from config when not specified") {
+        val skillWithTz = new TimeSkill(TimeConfig(defaultTimezone = "America/Chicago"))
+        for {
+          _      <- TestClock.setTime(fixedInstant)
+          result <- skillWithTz.invoke(ctx, "time.now", Json.Obj())
+        } yield {
+          val tz = strField(result, "timezone")
+          assertTrue(tz.contains("America/Chicago"))
+        }
+      },
     )
 
 }

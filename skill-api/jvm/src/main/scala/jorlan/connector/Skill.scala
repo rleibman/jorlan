@@ -157,14 +157,15 @@ trait ConnectorSkill extends Skill {
   *   served at `/skills/<configJsModule>-skill.js`. `None` for non-configurable skills.
   */
 case class SkillDescriptor(
-  name:           String,
-  tier:           SkillTier,
-  tools:          List[ToolDescriptor],
-  skillVersion:   SemVer | String,
-  keywords:       List[String] = List.empty,
-  jorlanVersion:  SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
-  configKey:      Option[String] = None,
-  configJsModule: Option[String] = None,
+  name:              String,
+  tier:              SkillTier,
+  tools:             List[ToolDescriptor],
+  skillVersion:      SemVer | String,
+  keywords:          List[String] = List.empty,
+  jorlanVersion:     SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+  configKey:         Option[String] = None,
+  configJsModule:    Option[String] = None,
+  dashboardJsModule: Option[String] = None,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

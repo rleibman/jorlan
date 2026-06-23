@@ -210,6 +210,7 @@ object JorlanEndToEndSpec
       OAuthStateStore.live(),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -221,6 +222,7 @@ object JorlanEndToEndSpec
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      DashboardService.live,
     )
 
   private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]

@@ -26,7 +26,11 @@ import zio.json.ast.Json
   */
 object JsonLiteralMacros {
 
-  def jsonImpl(sc: Expr[StringContext], args: Expr[Seq[Any]])(using q: Quotes): Expr[Json] = {
+  def jsonImpl(
+    sc:      Expr[StringContext],
+    args:    Expr[Seq[Any]],
+  )(using q: Quotes,
+  ): Expr[Json] = {
     import q.reflect.*
 
     val stringParts: Seq[String] = sc match {
@@ -49,7 +53,11 @@ object JsonLiteralMacros {
     }
   }
 
-  private def walkJson(json: Json, replacements: Seq[Replacement])(using q: Quotes): Expr[Json] = {
+  private def walkJson(
+    json:         Json,
+    replacements: Seq[Replacement],
+  )(using q:      Quotes,
+  ): Expr[Json] = {
     import q.reflect.*
     json match {
       case Json.Null    => '{ Json.Null }
@@ -60,7 +68,8 @@ object JsonLiteralMacros {
         val s = Expr(n.toPlainString)
         '{ Json.Num(new java.math.BigDecimal($s)) }
       case Json.Str(s) =>
-        replacements.find(_.placeholder == s)
+        replacements
+          .find(_.placeholder == s)
           .fold {
             val se = Expr(s)
             '{ Json.Str($se) }
@@ -70,7 +79,7 @@ object JsonLiteralMacros {
         '{ Json.Arr(zio.Chunk[Json](${ Varargs(elemExprs) }*)) }
       case Json.Obj(fields) =>
         val fieldExprs: List[Expr[(String, Json)]] = fields.map { case (k, v) =>
-          val key   = replacements.find(_.placeholder == k).fold(Expr(k))(_.asKey)
+          val key = replacements.find(_.placeholder == k).fold(Expr(k))(_.asKey)
           val value = walkJson(v, replacements)
           '{ ($key, $value) }
         }.toList

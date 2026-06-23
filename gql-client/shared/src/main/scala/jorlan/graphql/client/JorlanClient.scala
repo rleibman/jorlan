@@ -162,6 +162,29 @@ def view[IdentitiesSelection](identitiesSelection: SelectionBuilder[ContactIdent
 }
 
 
+type DashboardStats
+object DashboardStats {
+  
+final case class DashboardStatsView[EventVolumeSeriesSelection, SkillInvocationsByNameSelection, SessionStatusCountsSelection, JobOutcomeCountsSelection](activeSessionCount: Int, eventCountToday: Int, skillInvocationCount: Int, schedulerSuccessRate: Double, eventVolumeSeries: List[EventVolumeSeriesSelection], skillInvocationsByName: List[SkillInvocationsByNameSelection], sessionStatusCounts: List[SessionStatusCountsSelection], jobOutcomeCounts: List[JobOutcomeCountsSelection])
+
+
+
+
+type ViewSelection[EventVolumeSeriesSelection, SkillInvocationsByNameSelection, SessionStatusCountsSelection, JobOutcomeCountsSelection] = SelectionBuilder[DashboardStats, DashboardStatsView[EventVolumeSeriesSelection, SkillInvocationsByNameSelection, SessionStatusCountsSelection, JobOutcomeCountsSelection]]
+
+def view[EventVolumeSeriesSelection, SkillInvocationsByNameSelection, SessionStatusCountsSelection, JobOutcomeCountsSelection](eventVolumeSeriesSelection: SelectionBuilder[TimeSeriesPoint, EventVolumeSeriesSelection], skillInvocationsByNameSelection: SelectionBuilder[NamedCount, SkillInvocationsByNameSelection], sessionStatusCountsSelection: SelectionBuilder[NamedCount, SessionStatusCountsSelection], jobOutcomeCountsSelection: SelectionBuilder[NamedCount, JobOutcomeCountsSelection]): ViewSelection[EventVolumeSeriesSelection, SkillInvocationsByNameSelection, SessionStatusCountsSelection, JobOutcomeCountsSelection] = (activeSessionCount ~ eventCountToday ~ skillInvocationCount ~ schedulerSuccessRate ~ eventVolumeSeries(eventVolumeSeriesSelection) ~ skillInvocationsByName(skillInvocationsByNameSelection) ~ sessionStatusCounts(sessionStatusCountsSelection) ~ jobOutcomeCounts(jobOutcomeCountsSelection)).map { case (activeSessionCount, eventCountToday, skillInvocationCount, schedulerSuccessRate, eventVolumeSeries, skillInvocationsByName, sessionStatusCounts, jobOutcomeCounts) => DashboardStatsView(activeSessionCount, eventCountToday, skillInvocationCount, schedulerSuccessRate, eventVolumeSeries, skillInvocationsByName, sessionStatusCounts, jobOutcomeCounts) }
+
+  def activeSessionCount: SelectionBuilder[DashboardStats, Int] = _root_.caliban.client.SelectionBuilder.Field("activeSessionCount", Scalar())
+  def eventCountToday: SelectionBuilder[DashboardStats, Int] = _root_.caliban.client.SelectionBuilder.Field("eventCountToday", Scalar())
+  def skillInvocationCount: SelectionBuilder[DashboardStats, Int] = _root_.caliban.client.SelectionBuilder.Field("skillInvocationCount", Scalar())
+  def schedulerSuccessRate: SelectionBuilder[DashboardStats, Double] = _root_.caliban.client.SelectionBuilder.Field("schedulerSuccessRate", Scalar())
+  def eventVolumeSeries[A](innerSelection: SelectionBuilder[TimeSeriesPoint, A]): SelectionBuilder[DashboardStats, List[A]] = _root_.caliban.client.SelectionBuilder.Field("eventVolumeSeries", ListOf(Obj(innerSelection)))
+  def skillInvocationsByName[A](innerSelection: SelectionBuilder[NamedCount, A]): SelectionBuilder[DashboardStats, List[A]] = _root_.caliban.client.SelectionBuilder.Field("skillInvocationsByName", ListOf(Obj(innerSelection)))
+  def sessionStatusCounts[A](innerSelection: SelectionBuilder[NamedCount, A]): SelectionBuilder[DashboardStats, List[A]] = _root_.caliban.client.SelectionBuilder.Field("sessionStatusCounts", ListOf(Obj(innerSelection)))
+  def jobOutcomeCounts[A](innerSelection: SelectionBuilder[NamedCount, A]): SelectionBuilder[DashboardStats, List[A]] = _root_.caliban.client.SelectionBuilder.Field("jobOutcomeCounts", ListOf(Obj(innerSelection)))
+}
+
+
 type EventLogJson
 object EventLogJson {
   
@@ -227,6 +250,23 @@ def view: ViewSelection = (id ~ provider ~ contextWindow ~ supportsStreaming).ma
   def provider: SelectionBuilder[ModelInfo, String] = _root_.caliban.client.SelectionBuilder.Field("provider", Scalar())
   def contextWindow: SelectionBuilder[ModelInfo, Int] = _root_.caliban.client.SelectionBuilder.Field("contextWindow", Scalar())
   def supportsStreaming: SelectionBuilder[ModelInfo, Boolean] = _root_.caliban.client.SelectionBuilder.Field("supportsStreaming", Scalar())
+}
+
+
+type NamedCount
+object NamedCount {
+  
+final case class NamedCountView(name: String, count: Int)
+
+
+
+
+type ViewSelection = SelectionBuilder[NamedCount, NamedCountView]
+
+def view: ViewSelection = (name ~ count).map { case (name, count) => NamedCountView(name, count) }
+
+  def name: SelectionBuilder[NamedCount, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+  def count: SelectionBuilder[NamedCount, Int] = _root_.caliban.client.SelectionBuilder.Field("count", Scalar())
 }
 
 
@@ -400,14 +440,14 @@ def view: ViewSelection = (id ~ jobId ~ triggerType ~ expression ~ enabled ~ cre
 type SkillInfo
 object SkillInfo {
   
-final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String])
+final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String], dashboardJsModule: scala.Option[String], hasDashboardData: Boolean)
 
 
 
 
 type ViewSelection[ToolsSelection] = SelectionBuilder[SkillInfo, SkillInfoView[ToolsSelection]]
 
-def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule) }
+def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule ~ dashboardJsModule ~ hasDashboardData).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) }
 
   def name: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
   def tier: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
@@ -416,6 +456,8 @@ def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSe
   def keywords: SelectionBuilder[SkillInfo, List[String]] = _root_.caliban.client.SelectionBuilder.Field("keywords", ListOf(Scalar()))
   def configKey: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("configKey", OptionOf(Scalar()))
   def configJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("configJsModule", OptionOf(Scalar()))
+  def dashboardJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("dashboardJsModule", OptionOf(Scalar()))
+  def hasDashboardData: SelectionBuilder[SkillInfo, Boolean] = _root_.caliban.client.SelectionBuilder.Field("hasDashboardData", Scalar())
 }
 
 
@@ -435,6 +477,23 @@ def view: ViewSelection = (name ~ description ~ requiredCapabilities ~ examplePr
   def description: SelectionBuilder[SkillToolInfo, String] = _root_.caliban.client.SelectionBuilder.Field("description", Scalar())
   def requiredCapabilities: SelectionBuilder[SkillToolInfo, List[String]] = _root_.caliban.client.SelectionBuilder.Field("requiredCapabilities", ListOf(Scalar()))
   def examplePrompts: SelectionBuilder[SkillToolInfo, List[String]] = _root_.caliban.client.SelectionBuilder.Field("examplePrompts", ListOf(Scalar()))
+}
+
+
+type TimeSeriesPoint
+object TimeSeriesPoint {
+  
+final case class TimeSeriesPointView(timestampMs: Long, count: Int)
+
+
+
+
+type ViewSelection = SelectionBuilder[TimeSeriesPoint, TimeSeriesPointView]
+
+def view: ViewSelection = (timestampMs ~ count).map { case (timestampMs, count) => TimeSeriesPointView(timestampMs, count) }
+
+  def timestampMs: SelectionBuilder[TimeSeriesPoint, Long] = _root_.caliban.client.SelectionBuilder.Field("timestampMs", Scalar())
+  def count: SelectionBuilder[TimeSeriesPoint, Int] = _root_.caliban.client.SelectionBuilder.Field("count", Scalar())
 }
 
 
@@ -504,6 +563,8 @@ object Queries {
   def userChannelIdentities[A](value : jorlan.UserId)(innerSelection: SelectionBuilder[ChannelIdentity, A])(implicit encoder0: ArgEncoder[jorlan.UserId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("userChannelIdentities", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "UserId!")))
   def allRoles[A](page : scala.Option[Int] = None, pageSize : scala.Option[Int] = None)(innerSelection: SelectionBuilder[Role, A])(implicit encoder0: ArgEncoder[scala.Option[Int]]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("allRoles", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")))
   def checkpointPolicy[A](innerSelection: SelectionBuilder[CheckpointPolicyConfig, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("checkpointPolicy", OptionOf(Obj(innerSelection)))
+  def dashboardStats[A](innerSelection: SelectionBuilder[DashboardStats, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("dashboardStats", OptionOf(Obj(innerSelection)))
+  def skillDashboardData(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("skillDashboardData", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
 }
 
 
