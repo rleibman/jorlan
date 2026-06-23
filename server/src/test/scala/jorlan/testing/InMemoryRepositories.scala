@@ -58,6 +58,7 @@ object InMemoryRepositories {
     override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
       ciStore.get.map(_.values.filter(_.userId == userId).toList)
 
+
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
       for {
         id <- if (ci.id == ChannelIdentityId.empty) ciIdGen.updateAndGet(_ + 1) else ZIO.succeed(ci.id.value)
