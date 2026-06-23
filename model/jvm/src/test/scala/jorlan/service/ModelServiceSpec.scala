@@ -482,12 +482,186 @@ object ModelServiceSpec extends ZIOSpecDefault {
     },
   )
 
+  // ─── MemoryService companion accessors ───────────────────────────────────
+
+  private class StubMemoryService extends MemoryService {
+    private val nowInst = java.time.Instant.now()
+    private val stubRecord = MemoryRecord(
+      id = MemoryRecordId(1L),
+      scope = MemoryScope.User,
+      userId = Some(UserId(1L)),
+      workspaceId = None,
+      agentId = None,
+      recordKey = "test.key",
+      value = zio.json.ast.Json.Str("value"),
+      ttl = None,
+      createdAt = nowInst,
+      updatedAt = nowInst,
+    )
+    override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
+    override def query(scope: MemoryScope, userId: UserId, agentId: AgentId, text: Option[String]): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List(stubRecord))
+    override def forget(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, Boolean] = ZIO.succeed(true)
+    override def markShared(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
+    override def markPrivate(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
+    override def checkpoint(sessionId: AgentSessionId, messages: List[Message], userId: UserId, agentId: AgentId, trigger: CheckpointTrigger): IO[JorlanError, Unit] = ZIO.unit
+    override def requestCheckpoint(sessionId: AgentSessionId, userId: UserId, agentId: AgentId): IO[JorlanError, Unit] = ZIO.unit
+    override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = ZIO.succeed(CheckpointPolicyConfig.default)
+    override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
+  }
+
+  private val stubMemoryLayer: ULayer[MemoryService] = ZLayer.succeed(new StubMemoryService())
+
+  private def nowInst = java.time.Instant.now()
+  private def stubRecord = MemoryRecord(
+    id = MemoryRecordId(1L),
+    scope = MemoryScope.User,
+    userId = Some(UserId(1L)),
+    workspaceId = None,
+    agentId = None,
+    recordKey = "test.key",
+    value = zio.json.ast.Json.Str("value"),
+    ttl = None,
+    createdAt = nowInst,
+    updatedAt = nowInst,
+  )
+
+  private val memoryServiceCompanionSuite = suite("MemoryService companion accessors")(
+    test("store accessor delegates to service") {
+      MemoryService.store(stubRecord).map(r => assertTrue(r.recordKey == "test.key"))
+        .provide(stubMemoryLayer)
+    },
+    test("query accessor delegates to service") {
+      MemoryService.query(MemoryScope.User, UserId(1L), AgentId(1L)).map(list =>
+        assertTrue(list.nonEmpty)
+      ).provide(stubMemoryLayer)
+    },
+    test("forget accessor delegates to service") {
+      MemoryService.forget(MemoryRecordId(1L), UserId(1L)).map(result =>
+        assertTrue(result)
+      ).provide(stubMemoryLayer)
+    },
+    test("markShared accessor delegates to service") {
+      MemoryService.markShared(MemoryRecordId(1L), UserId(1L)).map(r =>
+        assertTrue(r.recordKey == "test.key")
+      ).provide(stubMemoryLayer)
+    },
+    test("markPrivate accessor delegates to service") {
+      MemoryService.markPrivate(MemoryRecordId(1L), UserId(1L)).map(r =>
+        assertTrue(r.recordKey == "test.key")
+      ).provide(stubMemoryLayer)
+    },
+    test("checkpoint accessor delegates to service") {
+      MemoryService.checkpoint(AgentSessionId(1L), List.empty, UserId(1L), AgentId(1L), CheckpointTrigger.SessionEnd)
+        .as(assertCompletes)
+        .provide(stubMemoryLayer)
+    },
+    test("requestCheckpoint accessor delegates to service") {
+      MemoryService.requestCheckpoint(AgentSessionId(1L), UserId(1L), AgentId(1L))
+        .as(assertCompletes)
+        .provide(stubMemoryLayer)
+    },
+    test("getCheckpointPolicy accessor delegates to service") {
+      MemoryService.getCheckpointPolicy.map(cfg =>
+        assertTrue(cfg == CheckpointPolicyConfig.default)
+      ).provide(stubMemoryLayer)
+    },
+    test("updateCheckpointPolicy accessor delegates to service") {
+      MemoryService.updateCheckpointPolicy(CheckpointPolicyConfig.default)
+        .as(assertCompletes)
+        .provide(stubMemoryLayer)
+    },
+  )
+
+  // ─── CorrelationId ────────────────────────────────────────────────────────
+
+  private val correlationIdSuite = suite("CorrelationId")(
+    test("key is 'correlationId'") {
+      assertTrue(CorrelationId.key == "correlationId")
+    },
+    test("withNew annotates with a correlation ID") {
+      for {
+        idOpt <- CorrelationId.withNew(CorrelationId.get)
+      } yield assertTrue(idOpt.isDefined)
+    },
+    test("withId annotates with the given ID") {
+      val testId = "test-corr-123"
+      for {
+        idOpt <- CorrelationId.withId(testId)(CorrelationId.get)
+      } yield assertTrue(idOpt.contains(testId))
+    },
+    test("get returns None outside a withNew/withId block") {
+      for {
+        idOpt <- CorrelationId.get
+      } yield assertTrue(idOpt.isEmpty)
+    },
+    test("withNew produces different IDs on each call") {
+      for {
+        id1 <- CorrelationId.withNew(CorrelationId.get)
+        id2 <- CorrelationId.withNew(CorrelationId.get)
+      } yield assertTrue(id1 != id2)
+    },
+  )
+
+  // ─── ModelError types ─────────────────────────────────────────────────────
+
+  private val modelErrorSuite = suite("ModelError types")(
+    test("ModelUnavailable has correct message") {
+      val e: ModelError = ModelUnavailable("LLM provider unreachable")
+      assertTrue(e.msg == "LLM provider unreachable") && assertTrue(!e.isTransient)
+    },
+    test("ModelTimeout is transient") {
+      val e: ModelError = ModelTimeout("timed out after 30s")
+      assertTrue(e.isTransient)
+    },
+    test("ModelResponseMalformed has correct message") {
+      val e: ModelError = ModelResponseMalformed("unexpected JSON format")
+      assertTrue(e.msg == "unexpected JSON format")
+    },
+  )
+
+  // ─── AgentMessage types ───────────────────────────────────────────────────
+
+  private val agentMessageSuite = suite("AgentMessage types")(
+    test("SystemMsg holds content") {
+      val msg = SystemMsg("You are a helpful assistant.")
+      assertTrue(msg.content == "You are a helpful assistant.")
+    },
+    test("UserMsg holds content") {
+      val msg = UserMsg("What is the weather?")
+      assertTrue(msg.content == "What is the weather?")
+    },
+    test("AssistantMsg holds content") {
+      val msg = AssistantMsg("The weather is sunny.")
+      assertTrue(msg.content == "The weather is sunny.")
+    },
+    test("ToolCallMsg holds id, name, and argsJson") {
+      val msg = ToolCallMsg(id = "call-1", name = "units.convert", argsJson = """{"value":1}""")
+      assertTrue(msg.id == "call-1") && assertTrue(msg.name == "units.convert")
+    },
+    test("ToolResultMsg holds id, name, and resultJson") {
+      val msg = ToolResultMsg(id = "call-1", name = "units.convert", resultJson = """{"result":1000}""")
+      assertTrue(msg.resultJson == """{"result":1000}""")
+    },
+    test("ToolSpec holds name, description, inputSchemaJson") {
+      val spec = ToolSpec(
+        name = "units.convert",
+        description = "Convert units",
+        inputSchemaJson = """{"type":"object"}""",
+      )
+      assertTrue(spec.name == "units.convert") && assertTrue(spec.description == "Convert units")
+    },
+  )
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ModelServiceSpec")(
       riskClassifierSuite,
       approvalPolicyEngineSuite,
       eventLogFilterSuite,
       checkpointPolicySuite,
+      memoryServiceCompanionSuite,
+      correlationIdSuite,
+      modelErrorSuite,
+      agentMessageSuite,
     )
 
 }
