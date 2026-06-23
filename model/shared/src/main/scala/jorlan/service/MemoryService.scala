@@ -217,6 +217,19 @@ trait MemoryService {
   /** Persist and apply a new [[CheckpointPolicyConfig]]. */
   def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit]
 
+  /** Find memories semantically similar to `queryText` using vector similarity.
+    *
+    * Returns an empty list if the embedding service is unavailable rather than failing. Results are not filtered by
+    * [[MemoryAccessPolicy]] — caller is responsible for only querying scopes the user is permitted to read.
+    */
+  def semanticQuery(
+    scope:     MemoryScope,
+    userId:    UserId,
+    agentId:   AgentId,
+    queryText: String,
+    limit:     Int = 5,
+  ): IO[JorlanError, List[MemoryRecord]]
+
 }
 
 object MemoryService {

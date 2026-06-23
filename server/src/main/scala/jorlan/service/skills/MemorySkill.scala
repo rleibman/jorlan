@@ -6,6 +6,8 @@
 
 package jorlan.service.skills
 
+import ai.{EmbeddingModel, EmbeddingStore}
+import dev.langchain4j.store.embedding.{EmbeddingSearchRequest, filter as lc4jFilter}
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.*
@@ -17,12 +19,18 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
+import scala.jdk.CollectionConverters.*
+
 /** Tier 0 memory skill — explicit agent-directed memory operations.
   *
   * These bypass [[CheckpointSummarizer]] and write/read directly via [[MemoryService]]. Intended to be invoked from the
   * GraphQL API (user shell commands) and from the ReAct tool-calling loop via [[SkillRegistry]].
   */
-class MemorySkill(memoryService: MemoryService) extends Skill {
+class MemorySkill(
+  memoryService:  MemoryService,
+  embeddingStore: EmbeddingStore,
+  embeddingModel: EmbeddingModel,
+) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = MemorySkill.skillName,
@@ -101,6 +109,20 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
         examplePrompts = List(
           "Make memory 42 private again",
           "That shared note about the API key should be private",
+        ),
+      ),
+      ToolDescriptor(
+        name = "memory.search_semantic",
+        description =
+          "Search memories by meaning rather than exact keywords. Use when you need to find memories about a topic without knowing the exact wording stored.",
+        inputSchema =
+          json"""{"type":"object","properties":{"query":{"type":"string","description":"Natural language description of what you are looking for"},"limit":{"type":"integer","description":"Maximum number of results to return (default 5)"}},"required":["query"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("memory.read")),
+        examplePrompts = List(
+          "Do you know anything about my food preferences?",
+          "What did I tell you about the project timeline?",
+          "Find anything related to my work schedule",
         ),
       ),
     ),
@@ -188,6 +210,13 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
           rec <- markPrivate(id, ctx.actorId)
         } yield Json.Obj("id" -> Json.Str(rec.id.value.toString), "scope" -> Json.Str(rec.scope.toString))
 
+      case "memory.search_semantic" =>
+        for {
+          query <- field("query")
+          limit  = optField("limit").flatMap(_.toIntOption).getOrElse(5)
+          results <- searchSemantic(query, ctx.actorId, limit)
+        } yield Json.Arr(results.map(Json.Str(_))*)
+
       case other =>
         ZIO.fail(ValidationError(s"unknown tool '$other'"))
     }
@@ -246,6 +275,25 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
     requestingUserId: UserId,
   ): IO[JorlanError, MemoryRecord] =
     memoryService.markPrivate(id, requestingUserId)
+
+  def searchSemantic(
+    query:  String,
+    userId: UserId,
+    limit:  Int,
+  ): IO[JorlanError, List[String]] = {
+    import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
+    ZIO.attemptBlocking {
+      val queryEmbedding = embeddingModel.embed(query).content()
+      val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
+      val request = EmbeddingSearchRequest
+        .builder()
+        .queryEmbedding(queryEmbedding)
+        .maxResults(limit)
+        .filter(filter)
+        .build()
+      embeddingStore.search(request).matches().asScala.toList.map(_.embedded().text())
+    }.mapError(e => JorlanError(e.getMessage.nn))
+  }
 
 }
 

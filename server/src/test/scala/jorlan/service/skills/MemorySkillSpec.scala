@@ -13,27 +13,34 @@ import jorlan.service.MemoryService
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.skills.MemorySkill
-import jorlan.testing.InMemoryRepositories
+import ai.{EmbeddingModel, EmbeddingStore}
+import jorlan.testing.{InMemoryRepositories, NoOpEmbeddingLayers}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
-object MemorySkillSpec extends ZIOSpec[MemoryService] {
+object MemorySkillSpec extends ZIOSpec[MemoryService & EmbeddingStore & EmbeddingModel] {
 
   private val userId = UserId(1L)
   private val agentId = AgentId(1L)
 
-  override val bootstrap: ULayer[MemoryService] =
-    ZLayer.make[MemoryService](
+  override val bootstrap: ULayer[MemoryService & EmbeddingStore & EmbeddingModel] =
+    ZLayer.make[MemoryService & EmbeddingStore & EmbeddingModel](
       InMemoryRepositories.live(),
       FakeModelGateway.layer(List()),
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
     )
 
-  private def makeSkill: URIO[MemoryService, MemorySkill] =
-    ZIO.serviceWith[MemoryService](new MemorySkill(_))
+  private def makeSkill: URIO[MemoryService & EmbeddingStore & EmbeddingModel, MemorySkill] =
+    for {
+      svc   <- ZIO.service[MemoryService]
+      store <- ZIO.service[EmbeddingStore]
+      model <- ZIO.service[EmbeddingModel]
+    } yield new MemorySkill(svc, store, model)
 
-  override def spec: Spec[MemoryService & TestEnvironment & Scope, Any] =
+  override def spec: Spec[MemoryService & EmbeddingStore & EmbeddingModel & TestEnvironment & Scope, Any] =
     suite("MemorySkill")(
       test("remember stores and is retrievable via search") {
         for {

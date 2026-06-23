@@ -11,7 +11,7 @@ import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.{CheckpointTrigger, MemoryService}
-import jorlan.testing.InMemoryRepositories
+import jorlan.testing.{InMemoryRepositories, NoOpEmbeddingLayers}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -24,6 +24,8 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
       FakeModelGateway.layer(List()),
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
     )
 
@@ -234,6 +236,8 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
           ZLayer.make[MemoryService](
             InMemoryRepositories.live(),
             FakeModelGateway.layer(List("- User prefers Scala\n")),
+            NoOpEmbeddingLayers.embeddingStoreLayer,
+            NoOpEmbeddingLayers.embeddingModelLayer,
             MemoryServiceImpl.live,
           ),
         ),
@@ -251,6 +255,8 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
           ZLayer.make[MemoryService](
             InMemoryRepositories.live(),
             FakeModelGateway.layer(List("- my password is hunter2\n")),
+            NoOpEmbeddingLayers.embeddingStoreLayer,
+            NoOpEmbeddingLayers.embeddingModelLayer,
             MemoryServiceImpl.live,
           ),
         ),

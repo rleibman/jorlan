@@ -96,7 +96,7 @@ class AgentRunnerImpl(
         for {
           _      <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars)")
           _      <- ConversationLogger.logUserMessage(sessionId, actorId, content)
-          memCtx <- buildMemoryContext(sessionId, actorId, agentId)
+          memCtx <- buildMemoryContext(sessionId, actorId, agentId, content)
           systemPrompt = Personality.buildSystemPrompt(personality) + memCtx
           _ <- ZIO.logDebug(
             s"[session:$sessionId] system prompt (${systemPrompt.length} chars):\n$systemPrompt",
@@ -480,23 +480,33 @@ class AgentRunnerImpl(
     sessionId: AgentSessionId,
     actorId:   Option[UserId],
     agentId:   AgentId,
+    query:     String,
   ): UIO[String] =
     actorId.fold(ZIO.succeed("")) { userId =>
       val queryScopes = List(MemoryScope.User, MemoryScope.Shared)
       Clock.instant.flatMap { now =>
-        ZIO
+        val importanceFiber = ZIO
           .foreach(queryScopes) { scope =>
             memoryService.query(scope, userId, agentId, text = None)
           }
-          .map { results =>
-            val valid = results.flatten.filter(r => r.ttl.forall(_.isAfter(now)))
-            if (valid.isEmpty) ""
+          .map(_.flatten.filter(r => r.ttl.forall(_.isAfter(now))))
+
+        val semanticFiber = memoryService
+          .semanticQuery(MemoryScope.User, userId, agentId, query, limit = 5)
+          .orElseSucceed(List.empty)
+
+        (importanceFiber <&> semanticFiber)
+          .map { case (byImportance, bySemantic) =>
+            val seenIds  = scala.collection.mutable.Set.empty[MemoryRecordId]
+            val semantic = bySemantic.filter(r => r.ttl.forall(_.isAfter(now)) && seenIds.add(r.id))
+            val sorted   = byImportance.sortBy(-_.importance)
+            val important = sorted
+              .filter(r => r.importance >= alwaysInjectMinImportance && seenIds.add(r.id))
+            val filler = sorted
+              .filter(r => r.importance < alwaysInjectMinImportance && seenIds.add(r.id))
+            val selected = (semantic ++ important ++ filler).take(memoryPromptBudget)
+            if (selected.isEmpty) ""
             else {
-              val sorted = valid.sortBy(-_.importance)
-              val selected = sorted
-                .filter(_.importance >= alwaysInjectMinImportance)
-                .appendedAll(sorted.filter(_.importance < alwaysInjectMinImportance))
-                .take(memoryPromptBudget)
               val lines = selected
                 .map { r =>
                   r.value.asObject.flatMap(_.get("text")).flatMap(_.asString).getOrElse(r.value.toString)

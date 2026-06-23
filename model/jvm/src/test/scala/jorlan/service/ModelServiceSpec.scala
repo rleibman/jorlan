@@ -507,6 +507,7 @@ object ModelServiceSpec extends ZIOSpecDefault {
     override def requestCheckpoint(sessionId: AgentSessionId, userId: UserId, agentId: AgentId): IO[JorlanError, Unit] = ZIO.unit
     override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = ZIO.succeed(CheckpointPolicyConfig.default)
     override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
+    override def semanticQuery(scope: MemoryScope, userId: UserId, agentId: AgentId, queryText: String, limit: Int): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List.empty)
   }
 
   private val stubMemoryLayer: ULayer[MemoryService] = ZLayer.succeed(new StubMemoryService())

@@ -209,6 +209,8 @@ object JorlanEndToEndSpec
       EventLogHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
       skillRegistryLayer,
       AgentRunnerImpl.live,

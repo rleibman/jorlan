@@ -12,7 +12,7 @@ import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.skills.SkillRegistry
-import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
 import zio.stream.ZStream
 import zio.test.*
@@ -305,6 +305,8 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             FakeConfigurationService.layer,
             AgentRunnerImpl.live,
             MemoryServiceImpl.live,
+            NoOpEmbeddingLayers.embeddingStoreLayer,
+            NoOpEmbeddingLayers.embeddingModelLayer,
           )
         } yield assertTrue(result.exists(_.contains("User prefers Scala")))
       },

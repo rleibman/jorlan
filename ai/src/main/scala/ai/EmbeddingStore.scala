@@ -8,6 +8,7 @@ package ai
 
 // $COVERAGE-OFF$
 import dev.langchain4j.data.segment.TextSegment
+import dev.langchain4j.model.embedding.{EmbeddingModel => JEmbeddingModel}
 import dev.langchain4j.store.embedding.mariadb.MariaDbEmbeddingStore
 import dev.langchain4j.store.embedding.qdrant.QdrantEmbeddingStore
 import zio.*
@@ -15,27 +16,24 @@ import zio.*
 import javax.sql.DataSource
 
 type EmbeddingStore = dev.langchain4j.store.embedding.EmbeddingStore[TextSegment]
+type EmbeddingModel = JEmbeddingModel
 
 object EmbeddingStore {
 
-  def mariadb(collectionName: String): ZLayer[LangChainConfig & DataSource, Throwable, EmbeddingStore] = {
+  def mariadb(tableName: String): ZLayer[LangChainConfig & DataSource, Throwable, EmbeddingStore] = {
     ZLayer.fromZIO {
       for {
         config     <- ZIO.service[LangChainConfig]
         dataSource <- ZIO.service[DataSource]
-        ret        <-
-          ZIO.scoped {
-            ZIO.acquireRelease(
-              ZIO.attemptBlocking(
-                MariaDbEmbeddingStore
-                  .builder()
-                  .datasource(dataSource)
-                  .build(),
-              ),
-            ) { store =>
-              ZIO.logInfo("Closing store")
-            }
-          }
+        ret        <- ZIO.attemptBlocking(
+          MariaDbEmbeddingStore
+            .builder()
+            .datasource(dataSource)
+            .table(tableName)
+            .dimension(config.embeddingDimensions)
+            .createTable(false)
+            .build(),
+        )
       } yield ret: EmbeddingStore
     }
   }

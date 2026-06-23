@@ -61,6 +61,14 @@ class NoOpMemoryService extends MemoryService {
 
   override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
 
+  override def semanticQuery(
+    scope:     MemoryScope,
+    userId:    UserId,
+    agentId:   AgentId,
+    queryText: String,
+    limit:     Int,
+  ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List.empty)
+
 }
 
 object NoOpMemoryService {

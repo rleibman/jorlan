@@ -178,6 +178,8 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
 
   override def skillIndex: ZIOSkillIndexRepository = QuillSkillIndexRepository(qc)
 
+  val dataSourceLayer: ULayer[DataSource] = qc.dataSourceLayer
+
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────

@@ -196,6 +196,11 @@ enum SessionStatus {
   Cancelled
 }
 
+input McpEnvVarInput {
+  key: String!
+  value: String!
+}
+
 type AgentSession {
   id: AgentSessionId!
   agentId: AgentId!
@@ -283,6 +288,21 @@ type EventLogJson {
   occurredAt: Instant!
 }
 
+type McpEnvVar {
+  key: String!
+  value: String!
+}
+
+type McpServerView {
+  name: String!
+  transport: String!
+  command: String
+  args: [String!]!
+  env: [McpEnvVar!]!
+  url: String
+  enabled: Boolean!
+}
+
 type MemoryRecord {
   id: MemoryRecordId!
   scope: MemoryScope!
@@ -342,6 +362,8 @@ type Mutations {
   requestCheckpoint(value: AgentSessionId!): Boolean
   updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
   reloadMcpServers(value: Unit!): Boolean
+  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!): McpServerView
+  deleteMcpServer(value: String!): Boolean
   enableSkill(value: String!): Boolean
   disableSkill(value: String!): Boolean
   updateSkillConfig(name: String!, configJson: String!): Boolean
@@ -404,6 +426,7 @@ type Queries {
   checkpointPolicy: CheckpointPolicyConfig
   dashboardStats: DashboardStats
   skillDashboardData(value: String!): String
+  mcpServers: [McpServerView!]
 }
 
 type ResponseChunk {

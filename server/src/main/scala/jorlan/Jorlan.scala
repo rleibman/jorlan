@@ -8,6 +8,7 @@ package jorlan
 
 import _root_.auth.*
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.*
 import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
@@ -44,7 +45,8 @@ type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
   JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
-    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub
+    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub &
+    EmbeddingStore & EmbeddingModel
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -138,14 +140,16 @@ object Jorlan extends ZIOApp {
 
   private def registerBuiltInSkills: ZIO[JorlanEnvironment, JorlanError, Unit] =
     (for {
-      registry     <- ZIO.service[SkillRegistry]
-      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-      memService   <- ZIO.service[MemoryService]
-      jobManager   <- ZIO.service[JobManager]
-      repos        <- ZIO.service[ZIORepositories]
-      notifRouter  <- ZIO.service[NotificationRouter]
-      httpClient   <- ZIO.service[Client]
-      oauthCredSvc <- ZIO.service[OAuthCredentialService]
+      registry       <- ZIO.service[SkillRegistry]
+      config         <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      memService     <- ZIO.service[MemoryService]
+      embeddingStore <- ZIO.service[EmbeddingStore]
+      embeddingModel <- ZIO.service[EmbeddingModel]
+      jobManager     <- ZIO.service[JobManager]
+      repos          <- ZIO.service[ZIORepositories]
+      notifRouter    <- ZIO.service[NotificationRouter]
+      httpClient     <- ZIO.service[Client]
+      oauthCredSvc   <- ZIO.service[OAuthCredentialService]
       workRoot     <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
       pgpService = PgpService.noOp
       emailCfg = config.jorlan.email
@@ -171,7 +175,7 @@ object Jorlan extends ZIOApp {
       contactProvider <- GoogleContactsProvider(oauthCredSvc)
       // ── Always-registered skills (no external API key required) ──────────────
       _ <- registry.register(CalculatorSkill())
-      _ <- registry.register(MemorySkill(memService))
+      _ <- registry.register(MemorySkill(memService, embeddingStore, embeddingModel))
       _ <- registry.register(SchedulerSkill(jobManager))
       _ <- registry.register(ContactsSkill(repos))
       _ <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
