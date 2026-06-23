@@ -140,19 +140,10 @@ val zioVersion = "2.1.26"
 
 lazy val commonSettings = Seq(
   organization     := "net.leibman",
-  startYear        := Some(2024),
+  startYear        := Some(2026),
   organizationName := "Roberto Leibman",
-  headerLicense    := Some(
-    HeaderLicense.Custom(
-      """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
-        |
-        |This source code is protected under international copyright law.  All rights
-        |reserved and protected by the copyright holders.
-        |This file is confidential and only available to authorized individuals with the
-        |permission of the copyright holders.  If you encounter this file and do not have
-        |permission, please contact the copyright holders and delete this file.""".stripMargin,
-    ),
-  ),
+  headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
+  licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
   resolvers += Resolver.mavenLocal,
 )
 
@@ -184,7 +175,7 @@ lazy val model =
     .jvmSettings(
       scalacOptions ++= scala3Opts :+ "-Werror",
       // Fork so scoverage 2.x measurement files are flushed when the test JVM exits.
-      Test / fork              := true,
+      Test / fork := true,
       // Exclude macro-only packages; their code runs at compile time and is never instrumented.
       coverageExcludedPackages := "zio\\.json\\.literal.*",
       libraryDependencies ++= Seq(
@@ -856,7 +847,7 @@ lazy val commonWeb: Project => Project =
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     organizationName                     := "Roberto Leibman",
-    startYear                            := Some(2024),
+    startYear                            := Some(2026),
     Compile / unmanagedSourceDirectories := Seq((Compile / scalaSource).value),
     Test / unmanagedSourceDirectories    := Seq((Test / scalaSource).value),
     //    webpackDevServerPort                 := 8009
@@ -944,15 +935,7 @@ lazy val root = project
     name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
-    headerLicense  := Some(
-      HeaderLicense.Custom(
-        """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
-          |
-          |This source code is protected under international copyright law.  All rights
-          |reserved and protected by the copyright holders.
-          |This file is confidential and only available to authorized individuals with the
-          |permission of the copyright holders.  If you encounter this file and do not have
-          |permission, please contact the copyright holders and delete this file.""".stripMargin,
-      ),
-    ),
+    startYear        := Some(2026),
+    licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
+    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax))
   )
