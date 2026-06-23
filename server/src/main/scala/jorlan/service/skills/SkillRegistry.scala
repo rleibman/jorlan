@@ -87,6 +87,27 @@ trait SkillRegistry {
   def isDisabled(name:   String): UIO[Boolean]
   def disabledSet:                UIO[Set[String]]
 
+  /** Register a factory that can rebuild a configurable skill from its raw JSON config string.
+    *
+    * Call once per configurable skill at startup. When [[reloadSkillConfig]] is later invoked (e.g. after the user
+    * saves new settings), the factory re-creates the skill so the running server picks up the change without a restart.
+    */
+  def registerSkillFactory(
+    configKey: String,
+    factory:   String => IO[JorlanError, Skill],
+  ): UIO[Unit]
+
+  /** Re-create and re-register the skill associated with `configKey` using the supplied JSON string.
+    *
+    * Looks up the factory registered via [[registerSkillFactory]], creates a fresh skill instance, un-registers the old
+    * instance, registers the new one, and enables it (the user explicitly saved a config, so it should be active).
+    * Fails with [[JorlanError]] if no factory is registered for `configKey`.
+    */
+  def reloadSkillConfig(
+    configKey:  String,
+    configJson: String,
+  ): IO[JorlanError, Unit]
+
 }
 
 object SkillRegistry {
@@ -97,20 +118,22 @@ object SkillRegistry {
   val live: ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
-        ref      <- Ref.make(Map.empty[String, Skill])
-        cache    <- makeCache
-        disabled <- Ref.make(Set.empty[String])
-      } yield SkillRegistryLive(ref, None, cache, disabled, None, None, 5, 1.0),
+        ref       <- Ref.make(Map.empty[String, Skill])
+        cache     <- makeCache
+        disabled  <- Ref.make(Set.empty[String])
+        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
+      } yield SkillRegistryLive(ref, None, cache, disabled, None, None, 5, 1.0, factories),
     )
 
   /** Build a registry pre-populated with the given skills (capability enforcement and DB index disabled; for tests). */
   def liveWith(skills: Skill*): ULayer[SkillRegistry] =
     ZLayer.fromZIO(
       for {
-        ref      <- Ref.make(Map.empty[String, Skill])
-        cache    <- makeCache
-        disabled <- Ref.make(Set.empty[String])
-        registry = SkillRegistryLive(ref, None, cache, disabled, None, None, 5, 1.0)
+        ref       <- Ref.make(Map.empty[String, Skill])
+        cache     <- makeCache
+        disabled  <- Ref.make(Set.empty[String])
+        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
+        registry = SkillRegistryLive(ref, None, cache, disabled, None, None, 4, 1.0, factories)
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
     )
@@ -124,6 +147,7 @@ object SkillRegistry {
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
+        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
       } yield SkillRegistryLive(
         ref,
         Some(evaluator),
@@ -131,8 +155,9 @@ object SkillRegistry {
         disabled,
         Some(repos.skill),
         Some(repos.skillIndex),
-        5,
+        4,
         1.0,
+        factories,
       ),
     )
 
@@ -145,6 +170,7 @@ object SkillRegistry {
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
+        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
         registry = SkillRegistryLive(
           ref,
           Some(evaluator),
@@ -152,8 +178,9 @@ object SkillRegistry {
           disabled,
           Some(repos.skill),
           Some(repos.skillIndex),
-          5,
+          4,
           1.0,
+          factories,
         )
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
@@ -192,6 +219,7 @@ class SkillRegistryLive(
   skillIndexRepo: Option[ZIOSkillIndexRepository],
   topN:           Int,
   recentBoost:    Double,
+  skillFactories: Ref[Map[String, String => IO[JorlanError, Skill]]],
 ) extends SkillRegistry {
 
   override def register(skill: Skill): UIO[Unit] =
@@ -346,6 +374,29 @@ class SkillRegistryLive(
       _     <- skills.update(_.filterNot { case (name, _) => pred(name) })
       _     <- toolSpecsCache.set(None)
       _ <- skillIndexRepo.fold(ZIO.unit)(repo => ZIO.foreachDiscard(names)(name => repo.removeBySkillName(name).ignore))
+    } yield ()
+
+  override def registerSkillFactory(
+    configKey: String,
+    factory:   String => IO[JorlanError, Skill],
+  ): UIO[Unit] =
+    skillFactories.update(_.updated(configKey, factory))
+
+  override def reloadSkillConfig(
+    configKey:  String,
+    configJson: String,
+  ): IO[JorlanError, Unit] =
+    for {
+      factories <- skillFactories.get
+      factory   <- ZIO
+        .fromOption(factories.get(configKey))
+        .orElseFail(JorlanError(s"No reload factory registered for config key '$configKey'"))
+      newSkill <- factory(configJson)
+      current  <- skills.get
+      oldNames = current.values.filter(_.descriptor.configKey.contains(configKey)).map(_.descriptor.name).toList
+      _ <- ZIO.foreachDiscard(oldNames)(unregister)
+      _ <- register(newSkill)
+      _ <- enableSkill(newSkill.descriptor.name)
     } yield ()
 
   override def enableSkill(name: String): UIO[Unit] =

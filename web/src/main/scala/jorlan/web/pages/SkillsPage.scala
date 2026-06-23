@@ -14,13 +14,20 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.MuiButton
+import jorlan.web.components.{MuiButton, Toast, ToastMessage, ToastSeverity}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import net.leibman.jorlan.muiMaterial.internalSwitchBaseMod.SwitchBaseProps
 import net.leibman.jorlan.muiMaterial.switchSwitchMod.SwitchProps
 import org.scalajs.dom
 import org.scalajs.dom.html
+
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.tableTableMod.TableOwnProps
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -38,6 +45,7 @@ object SkillsPage {
     configJson:    Map[String, Option[String]],
     configSaving:  Set[String],
     configError:   Map[String, String],
+    toast:         Option[ToastMessage],
   )
 
   val component =
@@ -55,6 +63,7 @@ object SkillsPage {
           configJson = Map.empty,
           configSaving = Set.empty,
           configError = Map.empty,
+          toast = None,
         ),
       )
       .useEffectOnMountBy {
@@ -157,6 +166,7 @@ object SkillsPage {
                         configSaving = s.configSaving - skill.name,
                         configJson = s.configJson + (skill.name -> Some(json)),
                         configError = s.configError - skill.name,
+                        toast = Some(ToastMessage(s"Configuration saved for '${skill.name}'", ToastSeverity.Success)),
                       ),
                     )
                     .asAsyncCallback
@@ -190,12 +200,24 @@ object SkillsPage {
                       js.undefined
                   loadedReg.toOption match {
                     case None =>
-                      Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", gap = 1, mt = 1))(
-                        CircularProgress.set("size", 20)(),
-                        Typography
-                          .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
-                            "Loading configuration UI...",
-                          ),
+                      Box.withProps(
+                        BoxOwnProps[Theme]()
+                          .setSx(
+                            js.Dynamic
+                              .literal(display = "flex", alignItems = "center", gap = 1, mt = 1).asInstanceOf[SxProps[
+                                Theme,
+                              ]],
+                          ).asInstanceOf[Box.Props],
+                      )(
+                        CircularProgress.size(20)(),
+                        Typography.withProps(
+                          TypographyOwnProps()
+                            .setVariant("body2").setSx(
+                              js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                            ).asInstanceOf[Typography.Props],
+                        )(
+                          "Loading configuration UI...",
+                        ),
                       )
                     case Some(reg) =>
                       val initialStr = state.value.configJson.get(skill.name).flatten.getOrElse("{}")
@@ -205,25 +227,42 @@ object SkillsPage {
                         onSave = onSaveFn,
                       )
                       val element = ReactDOM.createPortalLike(reg.component, props)
-                      Box.set(
-                        "sx",
-                        js.Dynamic
-                          .literal(mt = 1, p = 1.5, border = "1px solid", borderColor = "divider", borderRadius = 1),
+                      Box.withProps(
+                        BoxOwnProps[Theme]()
+                          .setSx(
+                            js.Dynamic
+                              .literal(
+                                mt = 1,
+                                p = 1.5,
+                                border = "1px solid",
+                                borderColor = "divider",
+                                borderRadius = 1,
+                              ).asInstanceOf[SxProps[Theme]],
+                          ).asInstanceOf[Box.Props],
                       )(
-                        Box.set(
-                          "sx",
-                          js.Dynamic
-                            .literal(display = "flex", justifyContent = "space-between", alignItems = "center", mb = 1),
+                        Box.withProps(
+                          BoxOwnProps[Theme]()
+                            .setSx(
+                              js.Dynamic
+                                .literal(
+                                  display = "flex",
+                                  justifyContent = "space-between",
+                                  alignItems = "center",
+                                  mb = 1,
+                                ).asInstanceOf[SxProps[Theme]],
+                            ).asInstanceOf[Box.Props],
                         )(
-                          Typography.set("variant", "subtitle2")("Configuration"),
+                          Typography.withProps(
+                            TypographyOwnProps().setVariant("subtitle2").asInstanceOf[Typography.Props],
+                          )("Configuration"),
                           if (state.value.configSaving.contains(skill.name))
-                            CircularProgress.set("size", 18)()
+                            CircularProgress.size(18)()
                           else <.span(),
                         ),
                         state.value.configError
                           .get(skill.name)
                           .fold(EmptyVdom)(err =>
-                            Alert.set("severity", "error").set("sx", js.Dynamic.literal(mb = 1))(err),
+                            Alert.severity("error").sx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])(err),
                           ),
                         element,
                       )
@@ -234,19 +273,30 @@ object SkillsPage {
           def renderToolCard(tool: SkillToolInfo): VdomElement = {
             val capSection: VdomElement =
               if (tool.requiredCapabilities.nonEmpty)
-                Box.set("sx", js.Dynamic.literal(display = "flex", flexWrap = "wrap", gap = 0.5, mb = 1))(
-                  Typography
-                    .set("variant", "caption")
-                    .set("sx", js.Dynamic.literal(mr = 0.5, alignSelf = "center", color = "text.secondary"))(
-                      "Requires:",
-                    ),
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic
+                        .literal(display = "flex", flexWrap = "wrap", gap = 0.5, mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Box.Props],
+                )(
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("caption").setSx(
+                        js.Dynamic
+                          .literal(mr = 0.5, alignSelf = "center", color = "text.secondary").asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Typography.Props],
+                  )(
+                    "Requires:",
+                  ),
                   <.span(
                     tool.requiredCapabilities.map(cap =>
                       Chip
-                        .withKey(cap)
-                        .set("label", cap)
-                        .set("size", "small")
-                        .set("variant", "outlined")(),
+                        .withProps(
+                          ChipOwnProps().setLabel(cap).setSize("small").setVariant("outlined").asInstanceOf[Chip.Props],
+                        ).withKey(cap)(),
                     )*,
                   ),
                 )
@@ -254,18 +304,31 @@ object SkillsPage {
 
             val exampleSection: VdomElement =
               if (tool.examplePrompts.nonEmpty)
-                Box.set("sx", js.Dynamic.literal(mt = 0.5))(
-                  Typography
-                    .set("variant", "caption")
-                    .set("sx", js.Dynamic.literal(color = "text.secondary", display = "block", mb = 0.5))(
-                      "Example prompts:",
-                    ),
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(js.Dynamic.literal(mt = 0.5).asInstanceOf[SxProps[Theme]]).asInstanceOf[Box.Props],
+                )(
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("caption").setSx(
+                        js.Dynamic
+                          .literal(color = "text.secondary", display = "block", mb = 0.5).asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Typography.Props],
+                  )(
+                    "Example prompts:",
+                  ),
                   <.div(
                     tool.examplePrompts.map(prompt =>
                       Typography
-                        .withKey(prompt)
-                        .set("variant", "body2")
-                        .set("sx", js.Dynamic.literal(fontStyle = "italic", color = "text.secondary", pl = 1))(
+                        .withProps(
+                          TypographyOwnProps()
+                            .setVariant("body2").setSx(
+                              js.Dynamic
+                                .literal(fontStyle = "italic", color = "text.secondary", pl = 1).asInstanceOf[SxProps[
+                                  Theme,
+                                ]],
+                            ).asInstanceOf[Typography.Props],
+                        ).withKey(prompt)(
                           prompt,
                         ),
                     )*,
@@ -274,34 +337,55 @@ object SkillsPage {
               else <.span()
 
             Box
-              .withKey(tool.name)
-              .set(
-                "sx",
-                js.Dynamic.literal(border = "1px solid", borderColor = "divider", borderRadius = 1, p = 1.5, mb = 1),
-              )(
-                Typography
-                  .set("variant", "subtitle2")
-                  .set("sx", js.Dynamic.literal(fontFamily = "monospace", mb = 0.5))(tool.name),
-                Typography
-                  .set("variant", "body2")
-                  .set("sx", js.Dynamic.literal(mb = 1, color = "text.secondary"))(tool.description),
+              .withProps(
+                BoxOwnProps[Theme]()
+                  .setSx(
+                    js.Dynamic
+                      .literal(
+                        border = "1px solid",
+                        borderColor = "divider",
+                        borderRadius = 1,
+                        p = 1.5,
+                        mb = 1,
+                      ).asInstanceOf[SxProps[Theme]],
+                  ).asInstanceOf[Box.Props],
+              ).withKey(tool.name)(
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(fontFamily = "monospace", mb = 0.5).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )(tool.name),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("body2").setSx(
+                      js.Dynamic.literal(mb = 1, color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )(tool.description),
                 capSection,
                 exampleSection,
               )
           }
 
           <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Skill Registry"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography
+                .withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Skill Registry"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.skills.isEmpty)
-              Alert.set("severity", "info")("No skills registered.")
+              Alert.severity("info")("No skills registered.")
             else
               TableContainer()(
-                Table.set("size", "small")(
+                Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                   TableHead()(
                     TableRow()(
                       TableCell()(),
@@ -319,35 +403,43 @@ object SkillsPage {
                       scala.List[VdomElement](
                         TableRow
                           .withKey(skill.name)(
-                            TableCell.set("sx", js.Dynamic.literal(width = "40px"))(
+                            TableCell.sx(js.Dynamic.literal(width = "40px").asInstanceOf[SxProps[Theme]])(
                               MuiButton
                                 .size("small")
                                 .onClick(() => toggleExpand(skill.name).runNow())(if (isExpanded) "▲" else "▼"),
                             ),
                             TableCell()(
-                              Typography
-                                .set("variant", "body2")
-                                .set(
-                                  "sx",
-                                  js.Dynamic.literal(
-                                    color = if (skill.enabled) "text.primary" else "text.disabled",
-                                    fontStyle = if (skill.enabled) "normal" else "italic",
-                                  ),
-                                )(skill.name),
+                              Typography.withProps(
+                                TypographyOwnProps()
+                                  .setVariant("body2")
+                                  .setSx(
+                                    js.Dynamic
+                                      .literal(
+                                        color = if (skill.enabled) "text.primary" else "text.disabled",
+                                        fontStyle = if (skill.enabled) "normal" else "italic",
+                                      ).asInstanceOf[SxProps[Theme]],
+                                  )
+                                  .asInstanceOf[Typography.Props],
+                              )(skill.name),
                             ),
                             TableCell()(
-                              Chip.set("label", skill.tier.toString).set("size", "small")(),
+                              Chip.withProps(
+                                ChipOwnProps().setLabel(skill.tier.toString).setSize("small").asInstanceOf[Chip.Props],
+                              )(),
                             ),
                             TableCell()(
-                              Typography
-                                .set("variant", "body2")
-                                .set("sx", js.Dynamic.literal(color = "text.secondary"))(
-                                  s"${skill.tools.size} tool${if (skill.tools.size == 1) "" else "s"}",
-                                ),
+                              Typography.withProps(
+                                TypographyOwnProps()
+                                  .setVariant("body2").setSx(
+                                    js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                                  ).asInstanceOf[Typography.Props],
+                              )(
+                                s"${skill.tools.size} tool${if (skill.tools.size == 1) "" else "s"}",
+                              ),
                             ),
                             TableCell()(
                               if (isToggling)
-                                CircularProgress.set("size", 20)()
+                                CircularProgress.size(20)()
                               else
                                 Switch.withProps(
                                   SwitchProps()
@@ -376,64 +468,87 @@ object SkillsPage {
                           val keywordsRow: List[VdomElement] =
                             if (skill.keywords.nonEmpty)
                               List(
-                                Box
-                                  .set(
-                                    "sx",
-                                    js.Dynamic
-                                      .literal(
-                                        display = "flex",
-                                        flexWrap = "wrap",
-                                        gap = 0.5,
-                                        mb = 1.5,
-                                        alignItems = "center",
-                                      ),
+                                Box.withProps(
+                                  BoxOwnProps[Theme]()
+                                    .setSx(
+                                      js.Dynamic
+                                        .literal(
+                                          display = "flex",
+                                          flexWrap = "wrap",
+                                          gap = 0.5,
+                                          mb = 1.5,
+                                          alignItems = "center",
+                                        ).asInstanceOf[SxProps[Theme]],
+                                    ).asInstanceOf[Box.Props],
+                                )(
+                                  Typography.withProps(
+                                    TypographyOwnProps()
+                                      .setVariant("caption").setSx(
+                                        js.Dynamic
+                                          .literal(
+                                            color = "text.secondary",
+                                            mr = 0.5,
+                                            alignSelf = "center",
+                                          ).asInstanceOf[SxProps[Theme]],
+                                      ).asInstanceOf[Typography.Props],
                                   )(
-                                    Typography
-                                      .set("variant", "caption")
-                                      .set(
-                                        "sx",
-                                        js.Dynamic.literal(color = "text.secondary", mr = 0.5, alignSelf = "center"),
-                                      )(
-                                        "Keywords:",
-                                      ),
-                                    <.span(
-                                      skill.keywords.map(kw =>
-                                        Chip
-                                          .withKey(kw)
-                                          .set("label", kw)
-                                          .set("size", "small")
-                                          .set("variant", "outlined")
-                                          .set("sx", js.Dynamic.literal(fontFamily = "monospace"))(),
-                                      )*,
-                                    ),
+                                    "Keywords:",
                                   ),
+                                  <.span(
+                                    skill.keywords.map(kw =>
+                                      Chip
+                                        .withProps(
+                                          ChipOwnProps()
+                                            .setLabel(kw).setSize("small").setVariant("outlined").setSx(
+                                              js.Dynamic.literal(fontFamily = "monospace").asInstanceOf[SxProps[Theme]],
+                                            ).asInstanceOf[Chip.Props],
+                                        ).withKey(kw)(),
+                                    )*,
+                                  ),
+                                ),
                               )
                             else List.empty
                           val configRow: List[VdomElement] =
                             if (skill.configJsModule.isDefined)
                               List(
-                                Box
-                                  .set("sx", js.Dynamic.literal(mt = 1, mb = 1))(
-                                    renderConfigPanel(skill),
-                                  ),
+                                Box.withProps(
+                                  BoxOwnProps[Theme]()
+                                    .setSx(
+                                      js.Dynamic.literal(mt = 1, mb = 1).asInstanceOf[SxProps[Theme]],
+                                    ).asInstanceOf[Box.Props],
+                                )(
+                                  renderConfigPanel(skill),
+                                ),
                               )
                             else List.empty
                           val detailChildren: List[VdomElement] =
                             keywordsRow ++ configRow ++ skill.tools.map(renderToolCard)
-                          scala.List[VdomElement](
-                            TableRow
-                              .withKey(s"${skill.name}-detail")(
-                                TableCell.colSpan(6)(
-                                  Box.set("sx", js.Dynamic.literal(p = 1.5))(detailChildren*),
+                          scala
+                            .List[VdomElement](
+                              TableRow
+                                .withKey(s"${skill.name}-detail")(
+                                  TableCell
+                                    .colSpan(6)(
+                                      Box
+                                        .withProps(
+                                          BoxOwnProps[Theme]()
+                                            .setSx(
+                                              js.Dynamic.literal(p = 1.5).asInstanceOf[SxProps[Theme]],
+                                            ).asInstanceOf[Box.Props],
+                                        )(detailChildren*),
+                                    ),
                                 ),
-                              ),
-                          )
+                            )
                         } else scala.List.empty
                       )
                     }*,
                   ),
                 ),
               ),
+            Toast(
+              message = state.value.toast,
+              onClose = state.modState(_.copy(toast = None)),
+            ),
           )
       }
 

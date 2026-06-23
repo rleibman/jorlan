@@ -34,7 +34,7 @@ enum CheckpointTrigger {
   *   fire before every tool invocation; generates a safety snapshot; off by default (expensive)
   */
 case class CheckpointPolicyConfig(
-  onSessionEnd:         Boolean = true,
+  onSessionEnd:         Boolean = false,
   onUserRequest:        Boolean = true,
   timedIntervalTurns:   Option[Int] = Some(10),
   beforeExternalEffect: Boolean = false,

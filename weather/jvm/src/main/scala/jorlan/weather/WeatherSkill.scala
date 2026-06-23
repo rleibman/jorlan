@@ -201,6 +201,7 @@ class WeatherSkill(
       units = unitsOpt.getOrElse(config.units)
       url =
         s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(units)}"
+      _   <- ZIO.logDebug(s"Fetching current weather: $url")
       raw <- fetchJson(url)
     } yield raw match {
       case Json.Obj(fields) =>

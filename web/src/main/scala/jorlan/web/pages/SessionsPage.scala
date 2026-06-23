@@ -18,6 +18,12 @@ import jorlan.web.components.{MuiButton, MuiTablePagination}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
+
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
@@ -148,8 +154,14 @@ object SessionsPage {
             .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
 
           <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Sessions"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Sessions"),
               MuiButton
                 .variant("contained")
                 .size("small")
@@ -159,7 +171,7 @@ object SessionsPage {
                 .size("small")
                 .onClick(() => reload().runNow())("Refresh"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             if (state.value.loading)
               CircularProgress()
             else
@@ -184,7 +196,9 @@ object SessionsPage {
                             ),
                           ),
                           TableCell()(
-                            Chip.set("label", session.status.toString).set("size", "small")(),
+                            Chip.withProps(
+                              ChipOwnProps().setLabel(session.status.toString).setSize("small").asInstanceOf[Chip.Props],
+                            )(),
                           ),
                           TableCell()(session.modelId.map(_.value).getOrElse("—")),
                           TableCell()(session.createdAt.toString.take(19)),
@@ -224,7 +238,12 @@ object SessionsPage {
             Dialog(state.value.showCreate)(
               DialogTitle()("New Session"),
               DialogContent()(
-                Typography.set("variant", "body2").set("sx", js.Dynamic.literal(mb = 1))("Model (optional):"),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("body2").setSx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]]).asInstanceOf[
+                      Typography.Props,
+                    ],
+                )("Model (optional):"),
                 <.select(
                   ^.style := js.Dynamic.literal(width = "100%", padding = "8px", fontSize = "1rem"),
                   ^.value := state.value.selectedModelId.map(_.value).getOrElse(""),

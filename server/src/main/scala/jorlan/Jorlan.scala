@@ -33,6 +33,7 @@ import jorlan.units.UnitConversionSkill
 import jorlan.weather.*
 import zio.*
 import zio.http.*
+import zio.json.DecoderOps
 import zio.logging.backend.SLF4J
 
 import java.io.*
@@ -298,6 +299,55 @@ object Jorlan extends ZIOApp {
               registry.disableSkill("weather") *>
               ZIO.logInfo("weather skill registered but disabled (set skill.weather in server_settings to enable)")
         }
+      // ── Register reload factories for config-dependent skills ─────────────────
+      _ <- registry.registerSkillFactory(
+        "skill.time",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[TimeConfig])
+            .mapError(e => JorlanError(s"Invalid time config: $e"))
+            .map(cfg => TimeSkill(cfg)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.market",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[AlphaVantageConfig])
+            .mapError(e => JorlanError(s"Invalid market config: $e"))
+            .map(cfg => MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.httpFetch",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[HttpFetchConfig])
+            .mapError(e => JorlanError(s"Invalid httpFetch config: $e"))
+            .map(cfg => HttpFetchSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.lyrion",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[LyrionConfig])
+            .mapError(e => JorlanError(s"Invalid lyrion config: $e"))
+            .map(cfg => LyrionSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.search",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[SearchConfig])
+            .mapError(e => JorlanError(s"Invalid search config: $e"))
+            .map(cfg => SearchSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.weather",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[WeatherConfig])
+            .mapError(e => JorlanError(s"Invalid weather config: $e"))
+            .map(cfg => WeatherSkill(cfg, httpClient, cfg.baseUrl)),
+      )
       // ── MCP servers ───────────────────────────────────────────────────────────
       _ <- ZIO
         .scoped {
@@ -319,6 +369,13 @@ object Jorlan extends ZIOApp {
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
       _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _                <- ZIO.serviceWithZIO[ZIORepositories] { repos =>
+        repos.memory.purgeExpired
+          .tap(n => ZIO.logDebug(s"Memory purge: removed $n expired record(s)"))
+          .mapError(JorlanError(_))
+          .repeat(Schedule.spaced(1.hour))
+          .forkDaemon
+      }.unit
       _                <- registerBuiltInSkills
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]
@@ -349,8 +406,8 @@ object Jorlan extends ZIOApp {
       )
       randomConnectionId <- ConnectionId.randomZIO
       _                  <- (for {
-        _      <- initService.topUpAdminCapabilities
         _      <- startServices
+        _      <- initService.topUpAdminCapabilities
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
       } yield ())
@@ -371,8 +428,8 @@ object Jorlan extends ZIOApp {
         _      <- initDone.await
         _      <- serverFiber.interrupt
         _      <- ZIO.logInfo("Server initialized — switching to full application routes")
-        _      <- initService.topUpAdminCapabilities
         _      <- startServices
+        _      <- initService.topUpAdminCapabilities
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
       } yield ())

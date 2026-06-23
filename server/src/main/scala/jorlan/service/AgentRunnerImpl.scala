@@ -300,7 +300,7 @@ class AgentRunnerImpl(
       _ <- sessionHub.publish(sentinel)
       _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined)
       _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg)
-      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg)
+      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg).forkDaemon
       _ <- logEvent(sessionId, EventType.AgentResponseCompleted, actorId)
     } yield ()
 

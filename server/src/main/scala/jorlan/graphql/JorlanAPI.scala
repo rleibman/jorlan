@@ -1476,7 +1476,8 @@ object JorlanAPI {
                 .fromEither(input.configJson.fromJson[zio.json.ast.Json])
                 .mapError(e => JorlanError(s"Invalid config JSON: $e"))
               _ <- ZIO.serviceWithZIO[ZIORepositories](_.setting.set(key, json)).mapError(JorlanError(_))
-              _ <- ZIO.logInfo(s"Skill config updated for '${input.name}' (key=$key); restart server to apply")
+              _ <- ZIO.serviceWithZIO[SkillRegistry](_.reloadSkillConfig(key, input.configJson))
+              _ <- ZIO.logInfo(s"Skill config reloaded live for '${input.name}' (key=$key)")
             } yield true,
         ),
         Subscriptions(

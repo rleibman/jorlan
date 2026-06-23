@@ -234,15 +234,9 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
   )
 
-  // email.send, calendar.write, http_fetch.call, and mcp.call require per-invocation approval per design spec.
-  // http_fetch.call is per-invocation because each fetch is an outbound external network request.
-  // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
-  private val perInvocationCapabilities: Set[CapabilityName] = Set(
-    CapabilityName("email.send"),
-    CapabilityName("calendar.write"),
-    CapabilityName("http_fetch.call"),
-    CapabilityName("mcp.call"),
-  )
+  // Admin user gets all capabilities as Persistent grants — no per-invocation approval friction.
+  // Per-invocation mode is reserved for non-admin users who may need scoped approval flows.
+  private val perInvocationCapabilities: Set[CapabilityName] = Set.empty
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
     skillRegistry.allAdminCapabilities.map(skillCaps => (systemCapabilities ++ skillCaps).distinct)
@@ -254,22 +248,27 @@ class InitServiceImpl(
     allAdminCaps.flatMap { caps =>
       ZIO
         .foreachDiscard(caps) { cap =>
-          val mode =
-            if (perInvocationCapabilities.contains(cap)) ApprovalMode.PerInvocation
-            else ApprovalMode.Persistent
-          repo.permission.upsertCapabilityGrant(
-            CapabilityGrant(
-              id = CapabilityGrantId.empty,
-              capability = cap,
-              scopeJson = None,
-              granteeId = userId,
-              grantorId = None,
-              approvalMode = mode,
-              expiresAt = None,
-              resourceConstraints = None,
-              createdAt = now,
-            ),
-          )
+          val mode = ApprovalMode.Persistent
+          repo.permission
+            .getGrantsForCapability(userId, cap)
+            .flatMap { existing =>
+              val grant = existing.headOption match {
+                case Some(g) => g.copy(approvalMode = mode, expiresAt = None)
+                case None =>
+                  CapabilityGrant(
+                    id = CapabilityGrantId.empty,
+                    capability = cap,
+                    scopeJson = None,
+                    granteeId = userId,
+                    grantorId = None,
+                    approvalMode = mode,
+                    expiresAt = None,
+                    resourceConstraints = None,
+                    createdAt = now,
+                  )
+              }
+              repo.permission.upsertCapabilityGrant(grant)
+            }
         }
         .mapError(JorlanError(_))
     }

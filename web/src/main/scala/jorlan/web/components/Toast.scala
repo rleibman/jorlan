@@ -49,17 +49,14 @@ object Toast {
       Snackbar
         .open(props.message.isDefined)
         .autoHideDuration(4000)
-        .set(
-          "onClose",
-          js.Any.fromFunction2(
-            (
-              _,
-              _: js.Any,
-            ) => props.onClose.runNow(),
-          ),
+        .onClose(
+          (
+            _,
+            _,
+          ) => props.onClose,
         )(
           Alert
-            .set("severity", severityStr)(
+            .severity(severityStr)(
               props.message.map(_.message).getOrElse(""),
             ),
         )

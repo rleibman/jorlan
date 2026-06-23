@@ -18,6 +18,13 @@ import jorlan.web.components.*
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.tableTableMod.TableOwnProps
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
+
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
@@ -314,7 +321,15 @@ object SchedulerPage {
             Dialog(state.value.showCreate)(
               DialogTitle()("New Scheduler Job"),
               DialogContent()(
-                Box.set("sx", js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2, pt = 1))(
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic
+                        .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
+                          Theme,
+                        ]],
+                    ).asInstanceOf[Box.Props],
+                )(
                   MuiTextField
                     .label("Job Name")
                     .value(f.name)
@@ -327,8 +342,8 @@ object SchedulerPage {
                     .label("Prompt (sent to LLM on each trigger)")
                     .value(f.prompt)
                     .fullWidth(true)
-                    .set("multiline", true)
-                    .set("rows", 3)
+                    .multiline(true)
+                    .rows(3)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
                       state.setState(state.value.copy(createForm = f.copy(prompt = v))).runNow()
@@ -355,7 +370,9 @@ object SchedulerPage {
                         .setState(state.value.copy(createForm = f.copy(backoffSeconds = v.toIntOption.getOrElse(60))))
                         .runNow()
                     }(),
-                  Typography.set("variant", "caption")("Backoff Policy"),
+                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                    "Backoff Policy",
+                  ),
                   MuiSelect
                     .value(f.backoffPolicy.toString)
                     .fullWidth(true)
@@ -367,7 +384,9 @@ object SchedulerPage {
                       MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
                       MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
                     ),
-                  Typography.set("variant", "caption")("Missed Run Policy"),
+                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                    "Missed Run Policy",
+                  ),
                   MuiSelect
                     .value(f.missedRunPolicy.toString)
                     .fullWidth(true)
@@ -383,7 +402,9 @@ object SchedulerPage {
                       MuiMenuItem
                         .value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
                     ),
-                  Typography.set("variant", "caption")("Trigger Type"),
+                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                    "Trigger Type",
+                  ),
                   MuiSelect
                     .value(f.triggerType.toString)
                     .fullWidth(true)
@@ -432,7 +453,15 @@ object SchedulerPage {
               Dialog(true)(
                 DialogTitle()("Edit Scheduler Job"),
                 DialogContent()(
-                  Box.set("sx", js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2, pt = 1))(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Box.Props],
+                  )(
                     MuiTextField
                       .label("Job Name")
                       .value(ef.name)
@@ -445,8 +474,8 @@ object SchedulerPage {
                       .label("Prompt (sent to LLM on each trigger)")
                       .value(ef.prompt)
                       .fullWidth(true)
-                      .set("multiline", true)
-                      .set("rows", 3)
+                      .multiline(true)
+                      .rows(3)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
                         state.setState(state.value.copy(editForm = Some(ef.copy(prompt = v)))).runNow()
@@ -477,7 +506,9 @@ object SchedulerPage {
                           )
                           .runNow()
                       }(),
-                    Typography.set("variant", "caption")("Backoff Policy"),
+                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                      "Backoff Policy",
+                    ),
                     MuiSelect
                       .value(ef.backoffPolicy.toString)
                       .fullWidth(true)
@@ -489,7 +520,9 @@ object SchedulerPage {
                         MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
                         MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
                       ),
-                    Typography.set("variant", "caption")("Missed Run Policy"),
+                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                      "Missed Run Policy",
+                    ),
                     MuiSelect
                       .value(ef.missedRunPolicy.toString)
                       .fullWidth(true)
@@ -520,8 +553,18 @@ object SchedulerPage {
               Dialog(true)(
                 DialogTitle()("Add Trigger"),
                 DialogContent()(
-                  Box.set("sx", js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2, pt = 1))(
-                    Typography.set("variant", "caption")("Trigger Type"),
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                      "Trigger Type",
+                    ),
                     MuiSelect
                       .value(af.triggerType.toString)
                       .fullWidth(true)
@@ -561,8 +604,14 @@ object SchedulerPage {
                 ),
               )
             },
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Scheduler"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Scheduler"),
               MuiButton
                 .variant("contained")
                 .size("small")
@@ -588,15 +637,15 @@ object SchedulerPage {
                   }
                 }("Refresh"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.jobs.isEmpty)
-              Alert.set("severity", "info")("No scheduler jobs found.")
+              Alert.severity("info")("No scheduler jobs found.")
             else
               <.div(
                 TableContainer()(
-                  Table.set("size", "small")(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Name"),
@@ -616,14 +665,22 @@ object SchedulerPage {
                               TableCell()(job.name),
                               TableCell()(
                                 Chip
-                                  .set("label", job.status.toString)
-                                  .set("color", statusColor(job.status))
-                                  .set("size", "small")(),
+                                  .withProps(
+                                    ChipOwnProps()
+                                      .setLabel(job.status.toString).setColor(statusColor(job.status)).setSize(
+                                        "small",
+                                      ).asInstanceOf[Chip.Props],
+                                  )(),
                               ),
                               TableCell()(job.scheduledAt.toString.take(19)),
                               TableCell()(s"${job.retryCount}/${job.maxRetries}"),
                               TableCell()(
-                                Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
+                                Box.withProps(
+                                  BoxOwnProps[Theme]()
+                                    .setSx(
+                                      js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
+                                    ).asInstanceOf[Box.Props],
+                                )(
                                   job.status match {
                                     case JobStatus.Paused =>
                                       MuiButton
@@ -663,7 +720,7 @@ object SchedulerPage {
                                     MuiButton
                                       .size("small")
                                       .variant("outlined")
-                                      .set("color", "error")
+                                      .color("error")
                                       .onClick(() =>
                                         jobAction(
                                           AsyncCallbackRepositories.scheduler.cancelJob(job.id),
@@ -714,7 +771,7 @@ object SchedulerPage {
                                   MuiButton
                                     .size("small")
                                     .variant("outlined")
-                                    .set("color", "error")
+                                    .color("error")
                                     .onClick(() => deleteJob(job.id).runNow())("Delete"),
                                 ),
                               ),
@@ -730,42 +787,79 @@ object SchedulerPage {
                                   TableRow
                                     .withKey(s"${job.id.value}-triggers")(
                                       TableCell.colSpan(6)(
-                                        Box.set("sx", js.Dynamic.literal(pl = 4, pt = 1, pb = 1))(
+                                        Box.withProps(
+                                          BoxOwnProps[Theme]()
+                                            .setSx(
+                                              js.Dynamic.literal(pl = 4, pt = 1, pb = 1).asInstanceOf[SxProps[Theme]],
+                                            ).asInstanceOf[Box.Props],
+                                        )(
                                           if (job.prompt.nonEmpty)
-                                            Box.set("sx", js.Dynamic.literal(mb = 1))(
-                                              Typography.set("variant", "subtitle2")("Prompt"),
-                                              Typography
-                                                .set("variant", "body2").set(
-                                                  "sx",
-                                                  js.Dynamic.literal(fontStyle = "italic"),
-                                                )(job.prompt),
+                                            Box.withProps(
+                                              BoxOwnProps[Theme]()
+                                                .setSx(
+                                                  js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                                                ).asInstanceOf[Box.Props],
+                                            )(
+                                              Typography.withProps(
+                                                TypographyOwnProps()
+                                                  .setVariant("subtitle2").asInstanceOf[Typography.Props],
+                                              )("Prompt"),
+                                              Typography.withProps(
+                                                TypographyOwnProps()
+                                                  .setVariant("body2").setSx(
+                                                    js.Dynamic
+                                                      .literal(fontStyle = "italic").asInstanceOf[SxProps[Theme]],
+                                                  ).asInstanceOf[Typography.Props],
+                                              )(job.prompt),
                                             )
                                           else EmptyVdom,
                                           job.resultJson.fold(EmptyVdom) { r =>
                                             val color =
                                               if (job.status == JobStatus.Failed) "error.main" else "text.secondary"
-                                            Box.set("sx", js.Dynamic.literal(mb = 1))(
-                                              Typography.set("variant", "subtitle2")(
+                                            Box.withProps(
+                                              BoxOwnProps[Theme]()
+                                                .setSx(
+                                                  js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                                                ).asInstanceOf[Box.Props],
+                                            )(
+                                              Typography.withProps(
+                                                TypographyOwnProps()
+                                                  .setVariant("subtitle2").asInstanceOf[Typography.Props],
+                                              )(
                                                 if (job.status == JobStatus.Failed) "Error" else "Result",
                                               ),
-                                              Typography
-                                                .set("variant", "body2")
-                                                .set(
-                                                  "sx",
-                                                  js.Dynamic.literal(
-                                                    color = color,
-                                                    whiteSpace = "pre-wrap",
-                                                    fontFamily = "monospace",
-                                                    fontSize = "0.8em",
-                                                  ),
-                                                )(r),
+                                              Typography.withProps(
+                                                TypographyOwnProps()
+                                                  .setVariant("body2")
+                                                  .setSx(
+                                                    js.Dynamic
+                                                      .literal(
+                                                        color = color,
+                                                        whiteSpace = "pre-wrap",
+                                                        fontFamily = "monospace",
+                                                        fontSize = "0.8em",
+                                                      ).asInstanceOf[SxProps[Theme]],
+                                                  )
+                                                  .asInstanceOf[Typography.Props],
+                                              )(r),
                                             )
                                           },
-                                          Box.set(
-                                            "sx",
-                                            js.Dynamic.literal(display = "flex", alignItems = "center", gap = 1, mb = 1),
+                                          Box.withProps(
+                                            BoxOwnProps[Theme]()
+                                              .setSx(
+                                                js.Dynamic
+                                                  .literal(
+                                                    display = "flex",
+                                                    alignItems = "center",
+                                                    gap = 1,
+                                                    mb = 1,
+                                                  ).asInstanceOf[SxProps[Theme]],
+                                              ).asInstanceOf[Box.Props],
                                           )(
-                                            Typography.set("variant", "subtitle2")("Triggers"),
+                                            Typography.withProps(
+                                              TypographyOwnProps()
+                                                .setVariant("subtitle2").asInstanceOf[Typography.Props],
+                                            )("Triggers"),
                                             MuiButton
                                               .size("small")
                                               .variant("outlined")
@@ -788,7 +882,7 @@ object SchedulerPage {
                                           if (ts.isEmpty)
                                             <.span("No triggers configured.")
                                           else
-                                            Table.set("size", "small")(
+                                            Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                                               TableHead()(
                                                 TableRow()(
                                                   TableCell()("Type"),
@@ -808,7 +902,7 @@ object SchedulerPage {
                                                         MuiButton
                                                           .size("small")
                                                           .variant("outlined")
-                                                          .set("color", "error")
+                                                          .color("error")
                                                           .onClick(() => doDeleteTrigger(job.id, t.id).runNow())(
                                                             "Delete",
                                                           ),

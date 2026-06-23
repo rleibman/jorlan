@@ -20,6 +20,12 @@ import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
 
 import java.time.Instant
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
+
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
@@ -209,14 +215,20 @@ object MemoryPage {
             .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
 
           <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Memory"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Memory"),
               MuiButton
                 .variant("contained")
                 .size("small")
                 .onClick(() => state.setState(state.value.copy(showStore = true)).runNow())("+ Remember"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             MuiTextField
               .label("Search")
               .value(state.value.search)
@@ -229,7 +241,7 @@ object MemoryPage {
               }),
             if (state.value.loading) CircularProgress()
             else if (state.value.memories.isEmpty)
-              Alert.set("severity", "info")("No memories found.")
+              Alert.severity("info")("No memories found.")
             else
               <.div(
                 TableContainer()(
@@ -249,7 +261,9 @@ object MemoryPage {
                         TableRow.withKey(mem.id.value.toString)(
                           TableCell()(mem.recordKey),
                           TableCell()(
-                            Chip.set("label", mem.scope.toString).set("size", "small")(),
+                            Chip.withProps(
+                              ChipOwnProps().setLabel(mem.scope.toString).setSize("small").asInstanceOf[Chip.Props],
+                            )(),
                           ),
                           TableCell()(
                             <.span(^.title := v)(
@@ -258,7 +272,12 @@ object MemoryPage {
                           ),
                           TableCell()(mem.createdAt.toString.take(19)),
                           TableCell()(
-                            Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1))(
+                            Box.withProps(
+                              BoxOwnProps[Theme]()
+                                .setSx(
+                                  js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
+                                ).asInstanceOf[Box.Props],
+                            )(
                               if (mem.scope != MemoryScope.Shared)
                                 MuiButton
                                   .variant("outlined")

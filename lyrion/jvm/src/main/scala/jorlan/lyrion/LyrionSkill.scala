@@ -66,6 +66,7 @@ class LyrionSkill(
       "skip",
       "speaker",
       "stop",
+      "alarm"
     ),
     configKey = Some("skill.lyrion"),
     configJsModule = Some("jorlan-lyrion"),

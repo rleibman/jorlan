@@ -92,10 +92,14 @@ object MuiSelect {
   @scala.inline
   open class Builder(val args: js.Array[Any]) extends AnyVal with StBuildingComponent[js.Object] {
 
-    inline def value(value:     String):  this.type = set("value", value.asInstanceOf[js.Any])
-    inline def label(value:     String):  this.type = set("label", value.asInstanceOf[js.Any])
-    inline def variant(value:   String):  this.type = set("variant", value.asInstanceOf[js.Any])
-    inline def fullWidth(value: Boolean): this.type = set("fullWidth", value.asInstanceOf[js.Any])
+    inline def value(value:     String):           this.type = set("value", value.asInstanceOf[js.Any])
+    inline def value(value:     js.Array[String]): this.type = set("value", value.asInstanceOf[js.Any])
+    inline def label(value:     String):           this.type = set("label", value.asInstanceOf[js.Any])
+    inline def variant(value:   String):           this.type = set("variant", value.asInstanceOf[js.Any])
+    inline def fullWidth(value: Boolean):          this.type = set("fullWidth", value.asInstanceOf[js.Any])
+    inline def multiple(value:  Boolean):          this.type = set("multiple", value.asInstanceOf[js.Any])
+    inline def renderValue(value: js.Function1[js.Any, String]): this.type =
+      set("renderValue", value.asInstanceOf[js.Any])
     inline def onChange(value: js.Function1[js.Dynamic, Unit]): this.type = set("onChange", value.asInstanceOf[js.Any])
     inline def sx(value:       js.Object):                      this.type = set("sx", value.asInstanceOf[js.Any])
 

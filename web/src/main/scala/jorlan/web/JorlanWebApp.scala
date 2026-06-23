@@ -105,7 +105,7 @@ object JorlanWebApp {
             CssBaseline(),
             // OAuth callback result banner — shown when redirected back from Google with ?oauth=success/error
             oauthToast.value.fold(EmptyVdom) { result =>
-              Alert.set("severity", if (result == "success") "success" else "error")(
+              Alert.severity(if (result == "success") "success" else "error")(
                 if (result == "success") "Google account connected successfully."
                 else "Failed to connect Google account. Please try again.",
               )

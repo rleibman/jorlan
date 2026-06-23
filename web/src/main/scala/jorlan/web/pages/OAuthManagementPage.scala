@@ -17,6 +17,12 @@ import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
+
 import scala.language.unsafeNulls
 import scala.scalajs.js
 
@@ -95,10 +101,17 @@ object OAuthManagementPage {
             }
 
           <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Connected Accounts"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography
+                .withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Connected Accounts"),
             ),
-            state.value.error.fold(EmptyVdom)(msg => Alert.set("severity", "error")(msg)),
+            state.value.error.fold(EmptyVdom)(msg => Alert.severity("error")(msg)),
             if (state.value.loading) {
               CircularProgress()
             } else {
@@ -115,12 +128,15 @@ object OAuthManagementPage {
                     SupportedProviders.flatMap { provider =>
                       val connected = state.value.connectedProviders.contains(provider)
                       scala.List[VdomElement](
-                        TableRow.set("key", provider)(
+                        TableRow.withKey(provider)(
                           TableCell(provider.capitalize),
                           TableCell(
-                            Chip
-                              .set("label", if (connected) "Connected" else "Not connected")
-                              .set("color", if (connected) "success" else "default")(),
+                            Chip.withProps(
+                              ChipOwnProps()
+                                .setLabel(if (connected) "Connected" else "Not connected")
+                                .setColor(if (connected) "success" else "default")
+                                .asInstanceOf[Chip.Props],
+                            )(),
                           ),
                           TableCell(
                             if (connected) {

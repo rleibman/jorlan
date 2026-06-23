@@ -92,8 +92,7 @@ object AppRouter {
             // and in-progress prompt text survive page navigation. CSS hides it when inactive.
             <.div(
               ^.style := js.Dynamic.literal(
-                display = if (state.value.page == AppPage.Chat) "flex" else "none",
-                height = "100%",
+                display = if (state.value.page == AppPage.Chat) "block" else "none",
               ),
             )(
               ChatPage(user),

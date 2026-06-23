@@ -33,17 +33,25 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
 
   private val systemPrompt =
     """You are a memory summarizer for an AI assistant system.
-      |Given a conversation, extract a concise bullet-point list of important facts.
+      |Given a conversation, extract a concise bullet-point list of facts about the USER ONLY.
       |
       |Tag each bullet with one of these types:
       |- [PREF]     User preferences and settings (language, timezone, communication style)
       |- [FACT]     Facts the user stated about themselves, their project, or their domain
-      |- [DECISION] Decisions made during the conversation
+      |- [DECISION] Decisions the USER made during the conversation
       |- [CONTEXT]  Short-lived session context (current task, immediate next steps)
       |
       |Format: one fact per line, starting with "- [TYPE] ".
       |Be concise. Omit greetings, pleasantries, and transient chit-chat.
-      |Return only the bullet list, nothing else.""".stripMargin
+      |Return only the bullet list, nothing else.
+      |
+      |STRICT RULES — violating these produces bad memory:
+      |- DO NOT record what the assistant said, suggested, or recommended.
+      |- DO NOT record phrases like "the assistant suggested", "Claude recommended", "I was told".
+      |- DO NOT record current task state or next steps ("currently working on", "next step is").
+      |- DO NOT record observations about the conversation itself.
+      |- Only record facts, preferences, and decisions explicitly stated or made by the USER.
+      |- If a bullet would violate these rules, omit it entirely.""".stripMargin
 
   private val typeImportance: Map[String, Int] = Map(
     "PREF"     -> 8,
@@ -106,7 +114,12 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
                       (text, importanceFor(tag))
                     case None => (stripped, 5)
                   }
-                  val ttl = Option.when(importance <= 4)(now.plusSeconds(30L * 24 * 60 * 60))
+                  val ttl: Option[java.time.Instant] = importance match {
+                    case i if i <= 4 => Some(now.plusSeconds(4L * 60 * 60))
+                    case 6           => Some(now.plusSeconds(7L * 24 * 60 * 60))
+                    case 7           => Some(now.plusSeconds(365L * 24 * 60 * 60))
+                    case _           => None
+                  }
                   MemoryRecord(
                     id = MemoryRecordId.empty,
                     scope = MemoryScope.User,
@@ -120,7 +133,11 @@ class CheckpointSummarizerImpl(modelGateway: ModelGateway) extends CheckpointSum
                     updatedAt = now,
                     importance = importance,
                   )
-                }.toList
+                }
+                .filter(_.importance >= 4)
+                .toList
+                .sortBy(-_.importance)
+                .take(10)
             }
           }
         }
