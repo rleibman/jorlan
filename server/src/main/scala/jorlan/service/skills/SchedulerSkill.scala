@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service.skills
@@ -17,6 +13,7 @@ import jorlan.service.JobManager
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Tier 0 scheduler skill — agent-directed job management.
   *
@@ -28,14 +25,30 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
     name = "scheduler",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "schedule",
+      "cron",
+      "job",
+      "timer",
+      "recurring",
+      "automation",
+      "trigger",
+      "task",
+      "reminder",
+      "periodic",
+      "interval",
+      "delay",
+      "run at",
+      "every",
+      "daily",
+      "weekly",
+      "hourly",
+    ),
     tools = List(
       ToolDescriptor(
         name = "scheduler.create_job",
         description = "Create a new scheduled job that runs on a cron expression. Returns the created job ID.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"name":{"type":"string","description":"Human-readable job name"},"cronExpression":{"type":"string","description":"Cron expression (e.g. '0 10 * * *' for daily at 10am)"},"input":{"type":"string","description":"Optional JSON input to pass to the job"}},"required":["name","cronExpression"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"name":{"type":"string","description":"Human-readable job name"},"cronExpression":{"type":"string","description":"Cron expression (e.g. '0 10 * * *' for daily at 10am)"},"input":{"type":"string","description":"Optional JSON input to pass to the job"}},"required":["name","cronExpression"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -47,7 +60,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.list_jobs",
         description = "List all scheduled jobs for the current agent. Each job has a `status` field reflecting its LAST EXECUTION outcome (Pending=waiting to run, Running=currently executing, Success=last run succeeded, Failed=last run failed, Paused=manually paused, Cancelled=cancelled). A Failed status means the job's last execution encountered an error — the job itself still exists and may have a next run scheduled. Use this tool to report the list of scheduled jobs, including any that failed.",
-        inputSchema = Json.decoder.decodeJson("""{"type":"object","properties":{}}""").getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{}}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -59,10 +72,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.pause_job",
         description = "Pause a scheduled job so it stops firing until resumed.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -74,10 +84,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.resume_job",
         description = "Resume a previously paused scheduled job.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -89,10 +96,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.cancel_job",
         description = "Permanently cancel and delete a scheduled job.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -104,10 +108,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.trigger_now",
         description = "Trigger an immediate run of an existing scheduled job outside its cron schedule.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"Scheduler job ID"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(

@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.web.pages
@@ -17,6 +13,13 @@ import jorlan.web.AsyncCallbackRepositories
 import jorlan.web.components.{MuiButton, MuiTablePagination, MuiTextField}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
+
+import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
+import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import net.leibman.jorlan.muiMaterial.tableTableMod.TableOwnProps
+import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
+import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
+import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -416,14 +419,20 @@ object UsersPage {
           val editEmail = state.value.editState.map(_.email).getOrElse("")
 
           <.div(
-            Box.set("sx", js.Dynamic.literal(display = "flex", alignItems = "center", mb = 2, gap = 2))(
-              Typography.set("variant", "h5")("Users"),
+            Box.withProps(
+              BoxOwnProps[Theme]()
+                .setSx(
+                  js.Dynamic
+                    .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
+                ).asInstanceOf[Box.Props],
+            )(
+              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Users"),
               MuiButton.variant("contained").onClick(() => openCreate().runNow())("Create User"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.set("severity", "error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             if (state.value.loading) CircularProgress()
             else if (state.value.users.isEmpty)
-              Alert.set("severity", "info")("No users found.")
+              Alert.severity("info")("No users found.")
             else
               <.div(
                 TableContainer()(
@@ -443,41 +452,49 @@ object UsersPage {
                           TableCell()(user.displayName),
                           TableCell()(user.email),
                           TableCell()(
-                            Chip
-                              .set("label", if (user.active) "Active" else "Inactive")
-                              .set("color", if (user.active) "success" else "default")
-                              .set("size", "small")(),
+                            Chip.withProps(
+                              ChipOwnProps()
+                                .setLabel(if (user.active) "Active" else "Inactive").setColor(
+                                  if (user.active) "success" else "default",
+                                ).setSize("small").asInstanceOf[Chip.Props],
+                            )(),
                           ),
                           TableCell()(user.createdAt.toString.take(19)),
                           TableCell()(
-                            Box.set("sx", js.Dynamic.literal(display = "flex", gap = 1, flexWrap = "wrap"))(
+                            Box.withProps(
+                              BoxOwnProps[Theme]()
+                                .setSx(
+                                  js.Dynamic
+                                    .literal(display = "flex", gap = 1, flexWrap = "wrap").asInstanceOf[SxProps[Theme]],
+                                ).asInstanceOf[Box.Props],
+                            )(
                               MuiButton
                                 .variant("outlined")
-                                .set("size", "small")
+                                .size("small")
                                 .onClick(() => openEdit(user).runNow())("Edit"),
                               MuiButton
                                 .variant("outlined")
-                                .set("size", "small")
+                                .size("small")
                                 .onClick(() => openPerms(user).runNow())("Capabilities"),
                               MuiButton
                                 .variant("outlined")
-                                .set("size", "small")
+                                .size("small")
                                 .onClick(() => openRoles(user).runNow())("Roles"),
                               MuiButton
                                 .variant("outlined")
-                                .set("size", "small")
+                                .size("small")
                                 .onClick(() => openIdentities(user).runNow())("Identities"),
                               if (user.active)
                                 MuiButton
                                   .variant("outlined")
-                                  .set("size", "small")
-                                  .set("color", "error")
+                                  .size("small")
+                                  .color("error")
                                   .onClick(() => handleDeactivate(user).runNow())("Deactivate")
                               else
                                 MuiButton
                                   .variant("outlined")
-                                  .set("size", "small")
-                                  .set("color", "success")
+                                  .size("small")
+                                  .color("success")
                                   .onClick(() => handleReactivate(user).runNow())("Reactivate"),
                             ),
                           ),
@@ -512,7 +529,6 @@ object UsersPage {
                   .value(editDisplayName)
                   .fullWidth(true)
                   .variant("outlined")
-                  .set("margin", "normal")
                   .onChange(e =>
                     state
                       .setState(
@@ -525,7 +541,6 @@ object UsersPage {
                   .value(editEmail)
                   .fullWidth(true)
                   .variant("outlined")
-                  .set("margin", "normal")
                   .onChange(e =>
                     state
                       .setState(
@@ -540,7 +555,7 @@ object UsersPage {
                 MuiButton.variant("text").onClick(() => closeEdit().runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
-                  .set("disabled", state.value.saving)
+                  .disabled(state.value.saving)
                   .onClick(() => saveEdit().runNow())("Save"),
               ),
             ),
@@ -552,7 +567,6 @@ object UsersPage {
                   .value(state.value.createName)
                   .fullWidth(true)
                   .variant("outlined")
-                  .set("margin", "normal")
                   .onChange(e =>
                     state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow(),
                   ),
@@ -561,7 +575,6 @@ object UsersPage {
                   .value(state.value.createEmail)
                   .fullWidth(true)
                   .variant("outlined")
-                  .set("margin", "normal")
                   .onChange(e =>
                     state.setState(state.value.copy(createEmail = e.target.value.asInstanceOf[String])).runNow(),
                   ),
@@ -570,7 +583,7 @@ object UsersPage {
                 MuiButton.variant("text").onClick(() => closeCreate().runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
-                  .set("disabled", state.value.saving)
+                  .disabled(state.value.saving)
                   .onClick(() => saveCreate().runNow())("Create"),
               ),
             ),
@@ -579,14 +592,23 @@ object UsersPage {
                 s"Capabilities — ${state.value.permsUser.map(_.displayName).getOrElse("")}",
               ),
               DialogContent()(
-                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Existing grants:"),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Existing grants:"),
                 if (state.value.grants.isEmpty)
-                  Typography
-                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
-                      "No capability grants.",
-                    )
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("body2").setSx(
+                        js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Typography.Props],
+                  )(
+                    "No capability grants.",
+                  )
                 else
-                  Table.set("size", "small")(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Capability"),
@@ -601,33 +623,38 @@ object UsersPage {
                           TableCell()(g.approvalMode.toString),
                           TableCell()(
                             MuiButton
-                              .set("size", "small")
-                              .set("color", "error")
+                              .size("small")
+                              .color("error")
                               .onClick(() => revokeGrant(g.id).runNow())("Revoke"),
                           ),
                         )
                       }*,
                     ),
                   ),
-                Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1))(
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic.literal(mt = 2, display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Box.Props],
+                )(
                   MuiTextField
                     .label("Capability")
                     .value(state.value.newCap)
-                    .set("size", "small")
+                    .size("small")
                     .onChange(e =>
                       state.setState(state.value.copy(newCap = e.target.value.asInstanceOf[String])).runNow(),
                     ),
                   MuiTextField
                     .label("Mode")
                     .value(state.value.newMode)
-                    .set("size", "small")
+                    .size("small")
                     .onChange(e =>
                       state.setState(state.value.copy(newMode = e.target.value.asInstanceOf[String])).runNow(),
                     ),
                   MuiButton
                     .variant("contained")
-                    .set("size", "small")
-                    .set("disabled", state.value.newCap.trim.isEmpty)
+                    .size("small")
+                    .disabled(state.value.newCap.trim.isEmpty)
                     .onClick(() => grantCapability().runNow())("Grant"),
                 ),
               ),
@@ -640,14 +667,23 @@ object UsersPage {
                 s"Roles — ${state.value.rolesUser.map(_.displayName).getOrElse("")}",
               ),
               DialogContent()(
-                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Assigned roles:"),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Assigned roles:"),
                 if (state.value.userRoles.isEmpty)
-                  Typography
-                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
-                      "No roles assigned.",
-                    )
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("body2").setSx(
+                        js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Typography.Props],
+                  )(
+                    "No roles assigned.",
+                  )
                 else
-                  Table.set("size", "small")(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Role"),
@@ -660,8 +696,8 @@ object UsersPage {
                           TableCell()(r.name),
                           TableCell()(
                             MuiButton
-                              .set("size", "small")
-                              .set("color", "error")
+                              .size("small")
+                              .color("error")
                               .onClick(() => removeRole(r.id).runNow())("Remove"),
                           ),
                         )
@@ -674,8 +710,18 @@ object UsersPage {
                         <.option(^.key := r.id.value.toString, ^.value := r.id.value.toString)(r.name)
                       }*,
                     )
-                  Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1, alignItems = "center"))(
-                    Typography.set("variant", "body2")("Assign role:"),
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(mt = 2, display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    Typography.withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])(
+                      "Assign role:",
+                    ),
                     <.select(
                       ^.value := state.value.assignRoleId,
                       ^.onChange ==> { (e: ReactEventFromInput) =>
@@ -685,8 +731,8 @@ object UsersPage {
                     ),
                     MuiButton
                       .variant("contained")
-                      .set("size", "small")
-                      .set("disabled", state.value.assignRoleId.trim.isEmpty)
+                      .size("small")
+                      .disabled(state.value.assignRoleId.trim.isEmpty)
                       .onClick(() => assignRole().runNow())("Assign"),
                   )
                 },
@@ -700,14 +746,23 @@ object UsersPage {
                 s"Channel Identities — ${state.value.identsUser.map(_.displayName).getOrElse("")}",
               ),
               DialogContent()(
-                Typography.set("variant", "subtitle2").set("sx", js.Dynamic.literal(mb = 1))("Linked identities:"),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Linked identities:"),
                 if (state.value.identities.isEmpty)
-                  Typography
-                    .set("variant", "body2").set("sx", js.Dynamic.literal(color = "text.secondary"))(
-                      "No channel identities.",
-                    )
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("body2").setSx(
+                        js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Typography.Props],
+                  )(
+                    "No channel identities.",
+                  )
                 else
-                  Table.set("size", "small")(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Channel"),
@@ -724,8 +779,8 @@ object UsersPage {
                           TableCell()(if (ci.verified) "Yes" else "No"),
                           TableCell()(
                             MuiButton
-                              .set("size", "small")
-                              .set("color", "error")
+                              .size("small")
+                              .color("error")
                               .onClick(() => unlinkIdentity(ci.id).runNow())("Unlink"),
                           ),
                         )
@@ -738,7 +793,15 @@ object UsersPage {
                         <.option(^.key := ct.toString, ^.value := ct.toString)(ct.toString)
                       }*,
                     )
-                  Box.set("sx", js.Dynamic.literal(mt = 2, display = "flex", gap = 1, alignItems = "center"))(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(mt = 2, display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Box.Props],
+                  )(
                     <.select(
                       ^.value := state.value.newChType,
                       ^.onChange ==> { (e: ReactEventFromInput) =>
@@ -749,14 +812,14 @@ object UsersPage {
                     MuiTextField
                       .label("Channel User ID")
                       .value(state.value.newChUserId)
-                      .set("size", "small")
+                      .size("small")
                       .onChange(e =>
                         state.setState(state.value.copy(newChUserId = e.target.value.asInstanceOf[String])).runNow(),
                       ),
                     MuiButton
                       .variant("contained")
-                      .set("size", "small")
-                      .set("disabled", state.value.newChUserId.trim.isEmpty)
+                      .size("small")
+                      .disabled(state.value.newChUserId.trim.isEmpty)
                       .onClick(() => linkIdentity().runNow())("Link"),
                   )
                 },

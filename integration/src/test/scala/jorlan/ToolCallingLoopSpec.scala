@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan
@@ -135,6 +131,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       OAuthStateStore.live(),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.stepsLayer(steps),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -146,6 +143,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      DashboardService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

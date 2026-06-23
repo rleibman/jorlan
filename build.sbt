@@ -91,7 +91,7 @@ val zioInteropCatsVersion = "23.1.0.13"
 val bouncyCastleVersion = "1.84"
 val googleApiClientVersion = "2.9.0"
 val googleApisGmailVersion = "v1-rev20260525-2.0.0"
-val googleApisCalendarVersion = "v3-rev20260517-2.0.0"
+val googleApisCalendarVersion = "v3-rev20260614-2.0.0"
 val googleApisDriveVersion = "v3-rev20260428-2.0.0"
 val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
@@ -105,7 +105,7 @@ val dispatchHttpVersion = "2.0.0"
 val flywayVersion = "12.9.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
-val jsoniterVersion = "2.38.15"
+val jsoniterVersion = "2.38.16"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
@@ -124,7 +124,7 @@ val scalaJavaTimeVersion = "2.7.0"
 val scalajsDomVersion = "2.8.1"
 val scalajsReactVersion = "4.0.0"
 val scalatagsVersion = "0.13.1"
-val stlibVersion = "1.0.0"
+val stlibVersion = "1.1.0"
 val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.6"
@@ -140,19 +140,10 @@ val zioVersion = "2.1.26"
 
 lazy val commonSettings = Seq(
   organization     := "net.leibman",
-  startYear        := Some(2024),
+  startYear        := Some(2026),
   organizationName := "Roberto Leibman",
-  headerLicense    := Some(
-    HeaderLicense.Custom(
-      """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
-        |
-        |This source code is protected under international copyright law.  All rights
-        |reserved and protected by the copyright holders.
-        |This file is confidential and only available to authorized individuals with the
-        |permission of the copyright holders.  If you encounter this file and do not have
-        |permission, please contact the copyright holders and delete this file.""".stripMargin,
-    ),
-  ),
+  headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
+  licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
   resolvers += Resolver.mavenLocal,
 )
 
@@ -183,6 +174,10 @@ lazy val model =
     )
     .jvmSettings(
       scalacOptions ++= scala3Opts :+ "-Werror",
+      // Fork so scoverage 2.x measurement files are flushed when the test JVM exits.
+      Test / fork := true,
+      // Exclude macro-only packages; their code runs at compile time and is never instrumented.
+      coverageExcludedPackages := "zio\\.json\\.literal.*",
       libraryDependencies ++= Seq(
         "dev.zio"     %% "zio"                 % zioVersion withSources (),
         "dev.zio"     %% "zio-nio"             % zioNioVersion withSources (),
@@ -192,9 +187,13 @@ lazy val model =
         "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
         "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
         "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+        "dev.zio"     %% "zio-test"            % zioVersion % Test withSources (),
+        "dev.zio"     %% "zio-test-sbt"        % zioVersion % Test withSources (),
       ),
+      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
     .jsSettings(
+      coverageEnabled := false,
       scalacOptions ++= scala3Opts,
       libraryDependencies ++= Seq(
         "net.leibman"               % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %% isn't working.
@@ -214,6 +213,7 @@ lazy val gqlClient =
     .in(file("gql-client"))
     .dependsOn(model)
     .jsSettings(
+      coverageEnabled := false,
       libraryDependencies ++= Seq(
         "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
         "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
@@ -242,6 +242,7 @@ lazy val skillApi =
     .settings(commonSettings)
     .dependsOn(model)
     .jsSettings(
+      coverageEnabled := false,
       libraryDependencies ++= Seq(
         "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
         "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
@@ -273,23 +274,42 @@ lazy val skillModule: CrossProject => CrossProject =
     .dependsOn(model, skillApi)
     .jsEnablePlugins(ScalaJSPlugin)
     .jsSettings(
+      coverageEnabled := false,
       scalaJSLinkerConfig ~= {
         _.withModuleKind(ModuleKind.NoModule)
           .withOutputPatterns(org.scalajs.linker.interface.OutputPatterns.fromJSFile("%s-skill.js"))
       },
-      // FIX: Use Def.setting and := so sbt can safely read name.value
       Compile / scalaJSMainModuleInitializer := Def.task {
         (Compile / scalaJSMainModuleInitializer).value.map { initializer =>
           initializer.withModuleID(name.value)
         }
       }.value,
       scalaJSUseMainModuleInitializer := true,
+      // Compile skill JS and copy to the global debugDist/skills or dist/skills directories.
+      // Each skill's JS file is served at /skills/<name>-skill.js.
+      debugDist := {
+        val _ = (Compile / fastLinkJS).value
+        val srcDir = (Compile / fastLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir = (ThisBuild / baseDirectory).value / "debugDist" / "skills"
+        IO.createDirectory(outDir)
+        (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        outDir
+      },
+      dist := {
+        val _ = (Compile / fullLinkJS).value
+        val srcDir = (Compile / fullLinkJS / scalaJSLinkerOutputDirectory).value
+        val outDir = (ThisBuild / baseDirectory).value / "dist" / "skills"
+        IO.createDirectory(outDir)
+        (srcDir * GlobFilter("*-skill.js")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
+        outDir
+      },
     )
     .settings(
       commonSettings,
       buildInfoPackage := "jorlan.skill",
       scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-weather",
       libraryDependencies ++= Seq(
         "dev.zio" %% "zio"      % zioVersion withSources (),
         "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
@@ -299,6 +319,10 @@ lazy val skillModule: CrossProject => CrossProject =
         "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+      Test / fork := false,
+    )
+    .jvmSettings(
+      // Fork JVM tests so scoverage 2.x measurement files are flushed on JVM exit.
       Test / fork := true,
     )
 
@@ -309,6 +333,7 @@ lazy val telegramConnector =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("telegram"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-telegram")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
@@ -322,6 +347,7 @@ lazy val calculatorSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("calculator"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-calculator")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
@@ -335,6 +361,7 @@ lazy val lyrionSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("lyrion"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-lyrion")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
@@ -343,7 +370,10 @@ lazy val emailConnector =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("email"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-email")
     .jvmSettings(
+      // Email provider code requires real IMAP/SMTP/PGP infrastructure; no unit-testable code paths.
+      coverageExcludedPackages := "jorlan\\.email.*",
       libraryDependencies ++= Seq(
         "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
         "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
@@ -359,6 +389,7 @@ lazy val unitConversionSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("unit-conversion"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-unit-conversion")
     .jvmSettings(
       libraryDependencies ++= Seq(
         "org.typelevel" %% "squants" % "1.8.3" withSources (),
@@ -372,6 +403,7 @@ lazy val httpFetchSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("http-fetch"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-http-fetch")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Weather Skill — OpenWeatherMap current conditions, forecast, and alerts
@@ -380,6 +412,7 @@ lazy val weatherSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("weather"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-weather")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Time Skill — java.time-based timezone/datetime skill (no external dependencies)
@@ -388,6 +421,7 @@ lazy val timeSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("time-skill"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-time")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Market Data — Alpha Vantage market data skill
@@ -396,6 +430,7 @@ lazy val marketDataSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("market-data"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-market-data")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Search Skill — Tavily web search API
@@ -404,6 +439,7 @@ lazy val searchSkill =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("search"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-search")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
@@ -412,7 +448,12 @@ lazy val googleServices =
   crossProject(JSPlatform, JVMPlatform)
     .in(file("google-services"))
     .configureCross(skillModule)
+    .settings(name := "jorlan-google-services")
     .jvmSettings(
+      // Exclude actual Google API provider implementations — they make live Google SDK calls
+      // and are not testable in unit tests without real OAuth credentials.
+      coverageExcludedFiles :=
+        ".*GoogleCalendarProvider.*;.*GmailProvider.*;.*GoogleDriveProvider.*;.*GoogleContactsProvider.*;.*GoogleApiProvider.*",
       libraryDependencies ++= Seq(
         "com.google.api-client" % "google-api-client"               % googleApiClientVersion withSources (),
         "com.google.apis"       % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
@@ -585,6 +626,7 @@ lazy val shell = project
     run / fork                       := true,
     run / connectInput               := true,
     coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*",
+    coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
@@ -735,6 +777,7 @@ lazy val ai = project
       "dev.langchain4j"    % "langchain4j-ollama"   % langchain4jOllamaVersion withSources (),
       "dev.langchain4j"    % "langchain4j-easy-rag" % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-qdrant"   % langchainLibrariesVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-mariadb"  % langchainLibrariesVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
@@ -804,7 +847,7 @@ lazy val commonWeb: Project => Project =
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     organizationName                     := "Roberto Leibman",
-    startYear                            := Some(2024),
+    startYear                            := Some(2026),
     Compile / unmanagedSourceDirectories := Seq((Compile / scalaSource).value),
     Test / unmanagedSourceDirectories    := Seq((Test / scalaSource).value),
     //    webpackDevServerPort                 := 8009
@@ -892,15 +935,7 @@ lazy val root = project
     name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
-    headerLicense  := Some(
-      HeaderLicense.Custom(
-        """Copyright (c) 2026 Roberto Leibman - All Rights Reserved
-          |
-          |This source code is protected under international copyright law.  All rights
-          |reserved and protected by the copyright holders.
-          |This file is confidential and only available to authorized individuals with the
-          |permission of the copyright holders.  If you encounter this file and do not have
-          |permission, please contact the copyright holders and delete this file.""".stripMargin,
-      ),
-    ),
+    startYear        := Some(2026),
+    licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
+    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax))
   )

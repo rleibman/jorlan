@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.web
@@ -24,7 +20,11 @@ import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import scala.scalajs.js.annotation.JSExport
+import scala.scalajs.js.annotation.{JSExport, JSImport}
+
+@js.native
+@JSImport("react", JSImport.Namespace)
+private object ReactModule extends js.Object
 
 object JorlanWebApp {
 
@@ -101,7 +101,7 @@ object JorlanWebApp {
             CssBaseline(),
             // OAuth callback result banner — shown when redirected back from Google with ?oauth=success/error
             oauthToast.value.fold(EmptyVdom) { result =>
-              Alert.set("severity", if (result == "success") "success" else "error")(
+              Alert.severity(if (result == "success") "success" else "error")(
                 if (result == "success") "Google account connected successfully."
                 else "Failed to connect Google account. Please try again.",
               )
@@ -122,6 +122,8 @@ object JorlanWebApp {
 
   @JSExport
   def main(args: Array[String]): Unit = {
+    // Expose bundled React as window.React so skill scripts (NoModule) can reference it as a global.
+    dom.window.asInstanceOf[js.Dynamic].React = ReactModule.asInstanceOf[js.Dynamic]
     val container = dom.document.getElementById("content")
     val root = ReactDOMClient.createRoot(container)
     root.render(component())

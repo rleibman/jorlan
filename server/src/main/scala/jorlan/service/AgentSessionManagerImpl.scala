@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service
@@ -24,6 +20,7 @@ class AgentSessionManagerImpl(
   repo:                 ZIORepositories,
   modelGateway:         ModelGateway,
   cachedDefaultAgentId: Ref[Option[AgentId]],
+  eventLogHub:          EventLogHub,
 ) extends AgentSessionManager {
 
   private val defaultAgentName = "Jorlan Interactive"
@@ -67,8 +64,8 @@ class AgentSessionManagerImpl(
         createdAt = now,
         updatedAt = now,
       )
-      saved <- repo.agent.upsertSession(session).mapError(JorlanError(_))
-      _     <- repo.eventLog.append(
+      saved    <- repo.agent.upsertSession(session).mapError(JorlanError(_))
+      logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.SessionCreated,
@@ -80,6 +77,7 @@ class AgentSessionManagerImpl(
           occurredAt = now,
         ),
       )
+      _ <- eventLogHub.publishTyped(logEntry)
     } yield saved
 
   override def getSession(id: AgentSessionId): IO[JorlanError, Option[AgentSession]] =
@@ -99,7 +97,7 @@ class AgentSessionManagerImpl(
       saved <- repo.agent
         .upsertSession(session.copy(status = status, updatedAt = now))
         .mapError(JorlanError(_))
-      _ <- repo.eventLog.append(
+      logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -111,6 +109,7 @@ class AgentSessionManagerImpl(
           occurredAt = now,
         ),
       )
+      _ <- eventLogHub.publishTyped(logEntry)
     } yield saved
 
   override def suspendSession(id: AgentSessionId): IO[JorlanError, AgentSession] =
@@ -143,13 +142,14 @@ class AgentSessionManagerImpl(
 object AgentSessionManagerImpl {
 
   /** Constructs the layer. Allocates a [[Ref]] for the cached default agent ID. */
-  val live: URLayer[ZIORepositories & ModelGateway, AgentSessionManager] =
+  val live: URLayer[ZIORepositories & ModelGateway & EventLogHub, AgentSessionManager] =
     ZLayer.fromZIO(
       for {
         repo         <- ZIO.service[ZIORepositories]
         modelGateway <- ZIO.service[ModelGateway]
+        hub          <- ZIO.service[EventLogHub]
         cached       <- Ref.make(Option.empty[AgentId])
-      } yield AgentSessionManagerImpl(repo, modelGateway, cached),
+      } yield AgentSessionManagerImpl(repo, modelGateway, cached, hub),
     )
 
 }

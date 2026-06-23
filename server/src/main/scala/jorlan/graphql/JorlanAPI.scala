@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.graphql
@@ -18,12 +14,13 @@ import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
 import jorlan.db.repository.*
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
 import jorlan.service.*
 import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
-import zio.json.{EncoderOps, JsonEncoder}
+import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
 import zio.stream.ZStream
 
 import java.time.Instant
@@ -180,6 +177,22 @@ object JorlanAPI {
       repr = _.toString,
     )
 
+  private given Schema[Any, RetryBackoffPolicy] =
+    Schema.enumSchema[RetryBackoffPolicy](
+      name = "RetryBackoffPolicy",
+      values = RetryBackoffPolicy.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
   private given Schema[Any, ApprovalStatus] =
     Schema.enumSchema[ApprovalStatus](
       name = "ApprovalStatus",
@@ -276,6 +289,21 @@ object JorlanAPI {
       repr = _.toString,
     )
 
+  private given Schema[Any, MissedRunPolicy] =
+    Schema.enumSchema[MissedRunPolicy](
+      name = "MissedRunPolicy",
+      values = MissedRunPolicy.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
   private given Schema[Any, MemoryScope] =
     Schema.enumSchema[MemoryScope](
       name = "MemoryScope",
@@ -294,12 +322,6 @@ object JorlanAPI {
 
   private given Schema[Any, TriggerType] =
     Schema.scalarSchema("TriggerType", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, MissedRunPolicy] =
-    Schema.scalarSchema("MissedRunPolicy", None, None, None, e => Value.StringValue(e.toString))
-
-  private given Schema[Any, RetryBackoffPolicy] =
-    Schema.scalarSchema("RetryBackoffPolicy", None, None, None, e => Value.StringValue(e.toString))
 
   private given Schema[Any, SkillId] =
     Schema.scalarSchema("SkillId", None, None, None, id => Value.IntValue(id.value))
@@ -326,6 +348,18 @@ object JorlanAPI {
   private given ArgBuilder[SchedulerTriggerId] = ArgBuilder.long.map(SchedulerTriggerId(_))
   private given ArgBuilder[ApprovalRequestId] = ArgBuilder.long.map(ApprovalRequestId(_))
 
+  private given ArgBuilder[RetryBackoffPolicy] =
+    ArgBuilder.enumString[RetryBackoffPolicy] { s =>
+      RetryBackoffPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
+          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
+        )
+    }
+  private given ArgBuilder[MissedRunPolicy] =
+    ArgBuilder.enumString[MissedRunPolicy] { s =>
+      MissedRunPolicy.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
+    }
   private given ArgBuilder[ChannelType] =
     ArgBuilder.enumString[ChannelType] { s =>
       ChannelType.values
@@ -378,18 +412,6 @@ object JorlanAPI {
       TriggerType.values
         .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
     }
-  private given ArgBuilder[RetryBackoffPolicy] =
-    ArgBuilder.string.flatMap { s =>
-      RetryBackoffPolicy.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(
-          CalibanError.ExecutionError(s"Invalid RetryBackoffPolicy '$s'"),
-        )
-    }
-  private given ArgBuilder[MissedRunPolicy] =
-    ArgBuilder.string.flatMap { s =>
-      MissedRunPolicy.values
-        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid MissedRunPolicy '$s'"))
-    }
 
   // ─── Query input types ────────────────────────────────────────────────────────
 
@@ -403,11 +425,40 @@ object JorlanAPI {
 
   /** GQL-safe view of a registered skill and its tools. */
   case class SkillInfo(
-    name:    String,
-    tier:    String,
-    tools:   List[SkillToolInfo],
-    enabled: Boolean,
+    name:              String,
+    tier:              String,
+    tools:             List[SkillToolInfo],
+    enabled:           Boolean,
+    keywords:          List[String],
+    configKey:         Option[String],
+    configJsModule:    Option[String],
+    dashboardJsModule: Option[String],
+    hasDashboardData:  Boolean,
   ) derives Schema.SemiAuto, ArgBuilder
+
+  /** A timestamped count bucket for time-series charts. */
+  case class TimeSeriesPoint(
+    timestampMs: Long,
+    count:       Int,
+  ) derives Schema.SemiAuto
+
+  /** A named count for distribution charts. */
+  case class NamedCount(
+    name:  String,
+    count: Int,
+  ) derives Schema.SemiAuto
+
+  /** Aggregated system metrics returned by the `dashboardStats` query. */
+  case class DashboardStats(
+    activeSessionCount:     Int,
+    eventCountToday:        Int,
+    skillInvocationCount:   Int,
+    schedulerSuccessRate:   Double,
+    eventVolumeSeries:      List[TimeSeriesPoint],
+    skillInvocationsByName: List[NamedCount],
+    sessionStatusCounts:    List[NamedCount],
+    jobOutcomeCounts:       List[NamedCount],
+  ) derives Schema.SemiAuto
 
   /** GQL-safe view of one channel identity for a contact result. */
   case class ContactIdentityResult(
@@ -554,6 +605,17 @@ object JorlanAPI {
     expression:  String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `updateJob` — updates mutable configuration of an existing job. */
+  case class UpdateJobInput(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int = 0,
+    backoffSeconds:  Int = 60,
+    backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
+    missedRunPolicy: MissedRunPolicy = MissedRunPolicy.Skip,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `decideApproval` — approve or reject a pending approval request. */
   case class DecideApprovalInput(
     requestId: ApprovalRequestId,
@@ -570,6 +632,11 @@ object JorlanAPI {
   case class InvokeToolInput(
     toolName: String,
     argsJson: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  case class UpdateSkillConfigInput(
+    name:       String,
+    configJson: String,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Result type for `oauthStatus` — whether the user has connected credentials for a provider. */
@@ -610,6 +677,8 @@ object JorlanAPI {
     availableModels: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ModelInfo]],
     /** Returns all registered skills and their tools. */
     skills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillInfo]],
+    /** Returns the current config JSON for a configurable skill. Requires `admin.settings`. */
+    skillConfig: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
     /** Case-insensitive substring search on user displayName, with channel identities. Requires `contacts.read`. */
     contacts: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ContactResult]],
     /** Returns OAuth connection status for a given provider. */
@@ -624,6 +693,10 @@ object JorlanAPI {
     allRoles: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     /** Returns the current checkpoint policy configuration. */
     checkpointPolicy: ZIO[JorlanApiEnv & JorlanSession, JorlanError, CheckpointPolicyConfig],
+    /** Returns aggregated system metrics for the dashboard. */
+    dashboardStats: ZIO[JorlanApiEnv & JorlanSession, JorlanError, DashboardStats],
+    /** Returns per-skill dashboard JSON data for a skill that implements HasDashboardData. */
+    skillDashboardData: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
   )
 
   case class Mutations(
@@ -649,6 +722,8 @@ object JorlanAPI {
     cancelJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     triggerNow:        SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     deleteJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    updateJob:         UpdateJobInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SchedulerJob],
+    deleteTrigger:     SchedulerTriggerId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     decideApproval:    DecideApprovalInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     terminateSession:  AgentSessionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Send a notification to a user's preferred channel. Requires `notify.send` capability. */
@@ -681,6 +756,10 @@ object JorlanAPI {
     enableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Disables a skill by name (including built-in skills). Requires `admin.settings`. */
     disableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Stores new config JSON for a configurable skill. Requires `admin.settings`. Returns `true`; the new config takes
+      * effect on the next server restart.
+      */
+    updateSkillConfig: UpdateSkillConfigInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
   )
 
   private case class Subscriptions(
@@ -759,9 +838,9 @@ object JorlanAPI {
     actorId:   Option[UserId],
     resource:  Option[Any],
     now:       Instant,
-  ): ZIO[ZIORepositories, JorlanError, Unit] =
-    ZIO
-      .serviceWithZIO[ZIORepositories](
+  ): ZIO[ZIORepositories & EventLogHub, JorlanError, Unit] =
+    for {
+      logEntry <- ZIO.serviceWithZIO[ZIORepositories](
         _.eventLog.append(
           EventLog[Nothing](
             id = EventLogId.empty,
@@ -775,7 +854,8 @@ object JorlanAPI {
           ),
         ),
       )
-      .unit
+      _ <- ZIO.serviceWithZIO[EventLogHub](_.publishTyped(logEntry))
+    } yield ()
 
   // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -893,6 +973,11 @@ object JorlanAPI {
                 ),
               ),
               enabled = !dis.contains(skill.descriptor.name),
+              keywords = skill.descriptor.keywords,
+              configKey = skill.descriptor.configKey,
+              configJsModule = skill.descriptor.configJsModule,
+              dashboardJsModule = skill.descriptor.dashboardJsModule,
+              hasDashboardData = skill.isInstanceOf[HasDashboardData],
             )
           },
           contacts = name =>
@@ -975,6 +1060,47 @@ object JorlanAPI {
               _       <- requireCapability("memory.read", actorId)
               config  <- ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
             } yield config,
+          dashboardStats =
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("agent.session.list", actorId)
+              stats   <- ZIO.serviceWithZIO[DashboardService](_.globalStats)
+            } yield DashboardStats(
+              activeSessionCount = stats.activeSessionCount,
+              eventCountToday = stats.eventCountToday,
+              skillInvocationCount = stats.skillInvocationCount,
+              schedulerSuccessRate = stats.schedulerSuccessRate,
+              eventVolumeSeries = stats.eventVolumeSeries.map(p => TimeSeriesPoint(p.timestampMs, p.count)),
+              skillInvocationsByName = stats.skillInvocationsByName.map(c => NamedCount(c.name, c.count)),
+              sessionStatusCounts = stats.sessionStatusCounts.map(c => NamedCount(c.name, c.count)),
+              jobOutcomeCounts = stats.jobOutcomeCounts.map(c => NamedCount(c.name, c.count)),
+            ),
+          skillDashboardData = skillName =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("agent.session.list", actorId)
+              skillOpt <- ZIO.serviceWithZIO[SkillRegistry](_.getSkill[jorlan.connector.Skill](skillName))
+              result   <- skillOpt match {
+                case Some(s: jorlan.connector.HasDashboardData) =>
+                  val ctx = jorlan.connector.InvocationContext(actorId = actorId, agentId = None, sessionId = None)
+                  s.dashboardData(ctx).map(json => Some(json.toJson))
+                case _ =>
+                  ZIO.succeed(None)
+              }
+            } yield result,
+          skillConfig = name =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              skills  <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
+              skill   <- ZIO
+                .fromOption(skills.find(_.descriptor.name == name))
+                .orElseFail(JorlanError(s"Skill '$name' not found"))
+              key <- ZIO
+                .fromOption(skill.descriptor.configKey)
+                .orElseFail(JorlanError(s"Skill '$name' has no configurable settings"))
+              json <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get(key)).mapError(JorlanError(_))
+            } yield json.map(_.toJson),
         ),
         Mutations(
           createUser = input =>
@@ -1210,6 +1336,33 @@ object JorlanAPI {
               now     <- Clock.instant
               _       <- logEvent(EventType.SchedulerJobDeleted, Some(actorId), None, now)
             } yield true,
+          updateJob = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(input.id, actorId)
+              job     <- ZIO.serviceWithZIO[JobManager](
+                _.updateJob(
+                  input.id,
+                  input.name,
+                  input.prompt,
+                  input.maxRetries,
+                  input.backoffSeconds,
+                  input.backoffPolicy,
+                  input.missedRunPolicy,
+                ),
+              )
+              now <- Clock.instant
+              _   <- logEvent(EventType.SchedulerJobUpdated, Some(actorId), None, now)
+            } yield job,
+          deleteTrigger = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- ZIO.serviceWithZIO[JobManager](_.deleteTrigger(id))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerTriggerDeleted, Some(actorId), None, now)
+            } yield true,
           decideApproval = input =>
             for {
               actorId <- actorIdFromSession
@@ -1366,10 +1519,42 @@ object JorlanAPI {
               updated <- disabledArrayWith(name, remove = false)
               _       <- ZIO.serviceWithZIO[ZIORepositories](_.setting.set("skill.disabled", updated))
             } yield true,
+          updateSkillConfig = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              skills  <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
+              skill   <- ZIO
+                .fromOption(skills.find(_.descriptor.name == input.name))
+                .orElseFail(JorlanError(s"Skill '${input.name}' not found"))
+              key <- ZIO
+                .fromOption(skill.descriptor.configKey)
+                .orElseFail(JorlanError(s"Skill '${input.name}' has no configurable settings"))
+              json <- ZIO
+                .fromEither(input.configJson.fromJson[zio.json.ast.Json])
+                .mapError(e => JorlanError(s"Invalid config JSON: $e"))
+              _ <- ZIO.serviceWithZIO[ZIORepositories](_.setting.set(key, json)).mapError(JorlanError(_))
+              _ <- ZIO.serviceWithZIO[SkillRegistry](_.reloadSkillConfig(key, input.configJson))
+              _ <- ZIO.logInfo(s"Skill config reloaded live for '${input.name}' (key=$key)")
+            } yield true,
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,
-          eventLogTail = ZStream.empty,
+          eventLogTail = ZStream.unwrap(
+            for {
+              hub    <- ZIO.service[EventLogHub]
+              repos  <- ZIO.service[ZIORepositories]
+              recent <- repos.eventLog
+                .search(
+                  EventLogFilter(
+                    pageSize = 50,
+                    sorts = Some(Sort(EventLogOrder.Id, OrderDirection.Desc)),
+                  ),
+                )
+                .mapError(JorlanError(_))
+              live <- hub.subscribe
+            } yield ZStream.fromIterable(recent.reverse) ++ live,
+          ),
           agentResponseStream = sessionId =>
             ZStream.unwrap(
               for {

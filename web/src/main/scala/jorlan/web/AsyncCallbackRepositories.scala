@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.web
@@ -276,8 +272,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.cancelJob(id)).map(_.getOrElse(false))
     override def triggerNow(id: SchedulerJobId): AsyncCallback[Boolean] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.triggerNow(id)).map(_.getOrElse(false))
-    override def upsertTrigger(t:  SchedulerTrigger):   AsyncCallback[SchedulerTrigger] = ???
-    override def deleteTrigger(id: SchedulerTriggerId): AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def upsertTrigger(t: SchedulerTrigger):    AsyncCallback[SchedulerTrigger] = ???
+    override def deleteTrigger(id: SchedulerTriggerId): AsyncCallback[Long] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.deleteTrigger(id)).map(o => if (o.getOrElse(false)) 1L else 0L)
     override def claimJob(
       id:              SchedulerJobId,
       workerId:        String,
@@ -335,6 +333,33 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
             summon[Conversion[JorlanClient.SchedulerTrigger.SchedulerTriggerView, SchedulerTrigger]](v),
           )
         case None => AsyncCallback.throwException(new RuntimeException("addTrigger returned no trigger"))
+      }
+
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): AsyncCallback[SchedulerJob] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Mutations.updateJob(
+          id = id,
+          name = name,
+          prompt = prompt,
+          maxRetries = maxRetries,
+          backoffSeconds = backoffSeconds,
+          backoffPolicy = backoffPolicy,
+          missedRunPolicy = missedRunPolicy,
+        )(JorlanClient.SchedulerJob.view),
+      )
+      .flatMap {
+        case Some(v) =>
+          AsyncCallback.pure(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v))
+        case None => AsyncCallback.throwException(new RuntimeException("updateJob returned no job"))
       }
 
   // ── Sub-repo: User ─────────────────────────────────────────────────────────
@@ -459,6 +484,15 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.enableSkill(name)).void
     override def disableSkill(name: String): AsyncCallback[Unit] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.disableSkill(name)).void
+    override def getSkillConfig(name: String): AsyncCallback[Option[String]] =
+      adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.skillConfig(name))
+    override def updateSkillConfig(
+      name:       String,
+      configJson: String,
+    ): AsyncCallback[Boolean] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.updateSkillConfig(name, configJson))
+        .map(_.getOrElse(false))
   }
 
   override val eventLog: EventLogRepository[AsyncCallback] = new EventLogRepository[AsyncCallback] {
@@ -546,6 +580,23 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
   override val serverInfo: ServerInfoRepository[AsyncCallback] = new ServerInfoRepository[AsyncCallback] {
     override def statusCheck(): AsyncCallback[Json] = AsyncCallback.pure(Json.Null)
+  }
+
+  // ── Sub-repo: SkillIndex (client-side no-op; filtering is server-side) ────
+
+  override val skillIndex: SkillIndexRepository[AsyncCallback] = new SkillIndexRepository[AsyncCallback] {
+    override def upsert(
+      skillId:    SkillId,
+      keywords:   String,
+      searchText: String,
+    ): AsyncCallback[Unit] = AsyncCallback.pure(())
+    override def search(
+      query: String,
+      limit: Int,
+    ): AsyncCallback[List[(SkillId, String)]] = AsyncCallback.pure(List.empty)
+    override def removeBySkillId(skillId:     SkillId):     AsyncCallback[Unit] = AsyncCallback.pure(())
+    override def removeBySkillName(skillName: String):      AsyncCallback[Unit] = AsyncCallback.pure(())
+    override def keepOnly(skillNames:         Set[String]): AsyncCallback[Unit] = AsyncCallback.pure(())
   }
 
   // ── Subscription helpers ───────────────────────────────────────────────────
@@ -714,6 +765,42 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       prompt = v.prompt,
     )
 
+  def dashboardStats(): AsyncCallback[Option[DashboardStats]] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Queries.dashboardStats(
+          JorlanClient.DashboardStats.view(
+            JorlanClient.TimeSeriesPoint.view,
+            JorlanClient.NamedCount.view,
+            JorlanClient.NamedCount.view,
+            JorlanClient.NamedCount.view,
+          ),
+        ),
+      )
+      .map(_.map(toDashboardStats))
+
+  def skillDashboardData(skillName: String): AsyncCallback[Option[String]] =
+    adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.skillDashboardData(skillName))
+
+  private def toDashboardStats(
+    v: JorlanClient.DashboardStats.DashboardStatsView[
+      JorlanClient.TimeSeriesPoint.TimeSeriesPointView,
+      JorlanClient.NamedCount.NamedCountView,
+      JorlanClient.NamedCount.NamedCountView,
+      JorlanClient.NamedCount.NamedCountView,
+    ],
+  ): DashboardStats =
+    DashboardStats(
+      activeSessionCount = v.activeSessionCount,
+      eventCountToday = v.eventCountToday,
+      skillInvocationCount = v.skillInvocationCount,
+      schedulerSuccessRate = v.schedulerSuccessRate,
+      eventVolumeSeries = v.eventVolumeSeries.map(p => DashboardTimeSeriesPoint(p.timestampMs, p.count)),
+      skillInvocationsByName = v.skillInvocationsByName.map(c => DashboardNamedCount(c.name, c.count)),
+      sessionStatusCounts = v.sessionStatusCounts.map(c => DashboardNamedCount(c.name, c.count)),
+      jobOutcomeCounts = v.jobOutcomeCounts.map(c => DashboardNamedCount(c.name, c.count)),
+    )
+
   private def toSkillInfo(
     v: JorlanClient.SkillInfo.SkillInfoView[JorlanClient.SkillToolInfo.SkillToolInfoView],
   ): SkillInfo =
@@ -722,6 +809,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       tier = SkillTier.valueOf(v.tier),
       tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
       enabled = v.enabled,
+      keywords = v.keywords,
+      configKey = v.configKey,
+      configJsModule = v.configJsModule,
+      dashboardJsModule = v.dashboardJsModule,
+      hasDashboardData = v.hasDashboardData,
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =

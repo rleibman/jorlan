@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.google
@@ -17,6 +13,7 @@ import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 import java.time.Instant
 
@@ -38,11 +35,27 @@ class GoogleCalendarSkill(
     name = "calendar",
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     tier = SkillTier.BuiltIn,
+    keywords = List(
+      "calendar",
+      "event",
+      "meeting",
+      "appointment",
+      "schedule",
+      "invite",
+      "reminder",
+      "Google Calendar",
+      "RSVP",
+      "recurring",
+      "availability",
+      "book",
+      "agenda",
+      "due date",
+    ),
     tools = List(
       ToolDescriptor(
         name = "calendar.listCalendars",
         description = "List all available calendars for the authenticated user.",
-        inputSchema = parseSchema("""{"type":"object","properties":{},"required":[]}"""),
+        inputSchema = json"""{"type":"object","properties":{},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -53,8 +66,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.listEvents",
         description = "List events in a calendar within an optional time range.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID (default: 'primary')"},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format"},"timeMax":{"type":"string","description":"End time in ISO 8601 format"}}}"""),
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID (default: 'primary')"},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format"},"timeMax":{"type":"string","description":"End time in ISO 8601 format"}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -66,8 +78,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.getEvent",
         description = "Get details for a specific calendar event.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID"}},"required":["calendarId","eventId"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -78,8 +89,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.createEvent",
         description = "Create a new calendar event.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format"},"end":{"type":"string","description":"End time in ISO 8601 format"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format"},"end":{"type":"string","description":"End time in ISO 8601 format"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -91,8 +101,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.updateEvent",
         description = "Update an existing calendar event.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string"},"summary":{"type":"string"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"}},"required":["calendarId","eventId"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string"},"summary":{"type":"string"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -104,8 +113,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.deleteEvent",
         description = "Delete a calendar event.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID to delete"}},"required":["calendarId","eventId"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID to delete"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(

@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service.skills
@@ -16,6 +12,7 @@ import jorlan.db.repository.ZIORepositories
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for user, role, and capability-grant management.
   *
@@ -43,15 +40,29 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     name = "user_mgmt",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "user",
+      "account",
+      "admin",
+      "permission",
+      "role",
+      "authentication",
+      "profile",
+      "settings",
+      "create user",
+      "delete user",
+      "grant",
+      "revoke",
+      "access control",
+      "login",
+      "identity",
+      "capability",
+    ),
     tools = List(
       ToolDescriptor(
         name = "user_mgmt.list_users",
         description = "List or search users in the system. Supports optional filters for name substring, active status, and pagination.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"page":{"type":"integer","description":"Zero-based page index (default 0)"},"pageSize":{"type":"integer","description":"Results per page (default 20)"},"nameContains":{"type":"string","description":"Filter by display name substring (case-insensitive)"},"active":{"type":"boolean","description":"Filter by active status"}},"required":[]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"page":{"type":"integer","description":"Zero-based page index (default 0)"},"pageSize":{"type":"integer","description":"Results per page (default 20)"},"nameContains":{"type":"string","description":"Filter by display name substring (case-insensitive)"},"active":{"type":"boolean","description":"Filter by active status"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("admin.user.list")),
         examplePrompts = List(
@@ -62,11 +73,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.get_user",
         description = "Fetch a single user by their numeric ID. Returns an empty object if not found.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID to get"}},"required":["userId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID to get"}},"required":["userId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("admin.user.list")),
         examplePrompts = List(
@@ -77,11 +84,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.create_user",
         description = "Create a new user account with a display name, email, and password.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"displayName":{"type":"string","description":"Human-readable name"},"email":{"type":"string","description":"Login email address"},"password":{"type":"string","description":"Initial password (min 12 chars)"}},"required":["displayName","email","password"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"displayName":{"type":"string","description":"Human-readable name"},"email":{"type":"string","description":"Login email address"},"password":{"type":"string","description":"Initial password (min 12 chars)"}},"required":["displayName","email","password"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("user.create")),
         examplePrompts = List(
@@ -92,11 +95,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.update_user",
         description = "Update a user's display name or email address.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"displayName":{"type":"string","description":"New display name"},"email":{"type":"string","description":"New email address"}},"required":["userId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"displayName":{"type":"string","description":"New display name"},"email":{"type":"string","description":"New email address"}},"required":["userId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("user.update")),
         examplePrompts = List(
@@ -107,11 +106,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.deactivate_user",
         description = "Soft-deactivate a user account so they can no longer log in.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID to deactivate"}},"required":["userId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID to deactivate"}},"required":["userId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("user.update")),
         examplePrompts = List(
@@ -122,11 +117,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.list_roles",
         description = "List all roles in the system, with optional pagination.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"page":{"type":"integer","description":"Zero-based page index (default 0)"},"pageSize":{"type":"integer","description":"Results per page (default 20)"}},"required":[]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"page":{"type":"integer","description":"Zero-based page index (default 0)"},"pageSize":{"type":"integer","description":"Results per page (default 20)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("admin.user.list")),
         examplePrompts = List(
@@ -137,11 +128,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.create_role",
         description = "Create a new role with a name and optional description.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"name":{"type":"string","description":"Role name"},"description":{"type":"string","description":"Optional description of what this role grants"}},"required":["name"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"name":{"type":"string","description":"Role name"},"description":{"type":"string","description":"Optional description of what this role grants"}},"required":["name"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("role.create")),
         examplePrompts = List(
@@ -152,11 +139,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.assign_role",
         description = "Assign an existing role to a user.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"roleId":{"type":"integer","description":"Numeric role ID"}},"required":["userId","roleId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"roleId":{"type":"integer","description":"Numeric role ID"}},"required":["userId","roleId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("role.assign")),
         examplePrompts = List(
@@ -167,11 +150,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.revoke_role",
         description = "Remove a role from a user.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"roleId":{"type":"integer","description":"Numeric role ID"}},"required":["userId","roleId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"roleId":{"type":"integer","description":"Numeric role ID"}},"required":["userId","roleId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("role.revoke")),
         examplePrompts = List(
@@ -182,11 +161,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.list_grants",
         description = "List all capability grants for a specific user.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"}},"required":["userId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"}},"required":["userId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("admin.user.list")),
         examplePrompts = List(
@@ -197,11 +172,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.grant_capability",
         description = "Grant a named capability to a user. The approvalMode controls how strictly the system requires approval before each use.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"capability":{"type":"string","description":"Dot-separated capability name, e.g. shell.execute"},"approvalMode":{"type":"string","enum":["Persistent","Once","Session","Timed","PerInvocation","Denied"],"description":"Approval mode (default Persistent)"}},"required":["userId","capability"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"userId":{"type":"integer","description":"Numeric user ID"},"capability":{"type":"string","description":"Dot-separated capability name, e.g. shell.execute"},"approvalMode":{"type":"string","enum":["Persistent","Once","Session","Timed","PerInvocation","Denied"],"description":"Approval mode (default Persistent)"}},"required":["userId","capability"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("permission.grant")),
         examplePrompts = List(
@@ -212,11 +183,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       ToolDescriptor(
         name = "user_mgmt.revoke_grant",
         description = "Revoke a specific capability grant by its grant ID.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"grantId":{"type":"integer","description":"Numeric capability grant ID"}},"required":["grantId"]}""",
-          )
-          .getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"grantId":{"type":"integer","description":"Numeric capability grant ID"}},"required":["grantId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("permission.revoke")),
         examplePrompts = List(

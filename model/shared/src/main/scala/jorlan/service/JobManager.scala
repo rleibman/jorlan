@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service
@@ -115,6 +111,20 @@ trait JobManager {
   /** Permanently delete the job and all of its triggers. */
   def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit]
 
+  /** Update the mutable configuration of a job (name, prompt, retry settings). Status and timestamps are unchanged. */
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[JorlanError, SchedulerJob]
+
+  /** Remove a trigger from its job. */
+  def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit]
+
 }
 
 object JobManager {
@@ -163,5 +173,21 @@ object JobManager {
 
   def deleteJob(id: SchedulerJobId): ZIO[JobManager, JorlanError, Unit] =
     ZIO.serviceWithZIO[JobManager](_.deleteJob(id))
+
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): ZIO[JobManager, JorlanError, SchedulerJob] =
+    ZIO.serviceWithZIO[JobManager](
+      _.updateJob(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy),
+    )
+
+  def deleteTrigger(id: SchedulerTriggerId): ZIO[JobManager, JorlanError, Unit] =
+    ZIO.serviceWithZIO[JobManager](_.deleteTrigger(id))
 
 }

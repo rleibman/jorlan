@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package ai
@@ -18,7 +14,6 @@ import dev.langchain4j.model.chat.request.{ChatRequest, ChatRequestParameters, R
 import dev.langchain4j.model.ollama.{OllamaChatModel, OllamaStreamingChatModel}
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever
 import dev.langchain4j.service.{AiServices, TokenStream}
-import dev.langchain4j.store.embedding.EmbeddingStore
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import zio.*
 import zio.stream.ZStream
@@ -87,12 +82,12 @@ object LangChainServiceBuilder {
     )
 
   def streamingAssistantLayerWithStore: URLayer[
-    StreamingChatLanguageModel & ChatMemory & EmbeddingStoreWrapper & LangChainConfig,
+    StreamingChatLanguageModel & ChatMemory & EmbeddingStore & LangChainConfig,
     StreamAssistant,
   ] =
     ZLayer.fromZIO(
       for {
-        store       <- ZIO.serviceWith[EmbeddingStoreWrapper](_.store)
+        store       <- ZIO.service[EmbeddingStore]
         chatMemory  <- ZIO.service[ChatMemory]
         streamModel <- ZIO.service[StreamingChatLanguageModel]
       } yield {
@@ -105,7 +100,7 @@ object LangChainServiceBuilder {
       },
     )
 
-  private def chatAssistant(storeOpt: Option[EmbeddingStore[TextSegment]] = None)
+  private def chatAssistant(storeOpt: Option[EmbeddingStore] = None)
     : ZIO[ChatLanguageModel & ChatMemory, Nothing, ChatAssistant] =
     for {
       chatMemory <- ZIO.service[ChatMemory] // Do we really want memory? Should it be "by user"?
@@ -120,10 +115,10 @@ object LangChainServiceBuilder {
     }
 
   val chatAssistantLayerWithStore
-    : URLayer[EmbeddingStoreWrapper & ChatLanguageModel & ChatMemory & LangChainConfig, ChatAssistant] =
+    : URLayer[EmbeddingStore & ChatLanguageModel & ChatMemory & LangChainConfig, ChatAssistant] =
     ZLayer.fromZIO(
       for {
-        store      <- ZIO.serviceWith[EmbeddingStoreWrapper](_.store)
+        store      <- ZIO.service[EmbeddingStore]
         chatMemory <- ZIO.service[ChatMemory]
         model      <- ZIO.service[ChatLanguageModel]
       } yield {
@@ -137,10 +132,10 @@ object LangChainServiceBuilder {
       },
     )
 
-  def chatAssistantLayer(storeOpt: Option[EmbeddingStore[TextSegment]] = None)
+  def chatAssistantLayer(storeOpt: Option[EmbeddingStore] = None)
     : URLayer[ChatLanguageModel & ChatMemory & LangChainConfig, ChatAssistant] = ZLayer.fromZIO(chatAssistant(storeOpt))
 
-  def streamingAssistantLayer(storeOpt: Option[EmbeddingStore[TextSegment]] = None)
+  def streamingAssistantLayer(storeOpt: Option[EmbeddingStore] = None)
     : URLayer[StreamingChatLanguageModel & ChatMemory & LangChainConfig, StreamAssistant] =
     ZLayer.fromZIO(
       for {

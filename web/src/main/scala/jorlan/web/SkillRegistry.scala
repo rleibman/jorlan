@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.web
@@ -15,6 +11,7 @@ import japgolly.scalajs.react.vdom.VdomElement
 import org.scalajs.dom
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 import scala.collection.mutable
 import scala.scalajs.js
@@ -25,7 +22,7 @@ object SkillRegistry {
 
   // Host state storing the skill configurations as ZIO JSON AST fragments
   private var currentConfigs = Map[String, Json](
-    "weather-skill" -> """{"city": "Paris"}""".fromJson[Json].getOrElse(Json.Null),
+    "weather-skill" -> json"""{"city": "Paris"}""",
   )
 
 //  @JSExportTopLevel("registerRemoteSkill")
@@ -75,11 +72,6 @@ object SkillRegistry {
     val bridgedComponent = JsComponent[js.Object, Children.None, js.Object](jsComponentRaw)
 
     val renderedElement: VdomElement = bridgedComponent(pluginProps.asInstanceOf[js.Object])
-    loadedSkills.put(skillId, renderedElement)
-
-    if (!js.isUndefined(rawPayload.onUnload)) {
-      cleanupHooks.put(skillId, rawPayload.onUnload.asInstanceOf[js.Function0[Unit]])
-    }
 
     // Render 'renderedElement' into your main dashboard layout
   }

@@ -1,22 +1,19 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.weather
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for fetching weather data via the OpenWeatherMap API.
   *
@@ -32,20 +29,40 @@ class WeatherSkill(
   config:  WeatherConfig,
   client:  Client,
   baseUrl: String = "https://api.openweathermap.org/data/2.5",
-) extends Skill {
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "weather",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "weather",
+      "forecast",
+      "temperature",
+      "celsius",
+      "farenheit",
+      "rain",
+      "humidity",
+      "wind",
+      "climate",
+      "conditions",
+      "outdoor",
+      "sunny",
+      "cloudy",
+      "storm",
+      "precipitation",
+      "UV index",
+      "feels like",
+      "alert",
+      "warning",
+    ),
+    configKey = Some("skill.weather"),
+    configJsModule = Some("jorlan-weather"),
     tools = List(
       ToolDescriptor(
         name = "weather.current",
         description = "Fetch current weather conditions for a named location. Returns temperature, feels_like, humidity, description, wind_speed, and visibility.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -57,10 +74,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.forecast",
         description = "Fetch a simplified multi-day weather forecast for a named location. Returns a list of forecast entries with date, temp_min, temp_max, and description.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'"},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'"},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -72,10 +86,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.alerts",
         description = "Fetch active weather alerts for a geographic coordinate (latitude/longitude). Returns a list of alerts with event, start, end, and description.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"lat":{"type":"number","description":"Latitude"},"lon":{"type":"number","description":"Longitude"}},"required":["lat","lon"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"lat":{"type":"number","description":"Latitude"},"lon":{"type":"number","description":"Longitude"}},"required":["lat","lon"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -178,6 +189,7 @@ class WeatherSkill(
       units = unitsOpt.getOrElse(config.units)
       url =
         s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(units)}"
+      _   <- ZIO.logDebug(s"Fetching current weather: $url")
       raw <- fetchJson(url)
     } yield raw match {
       case Json.Obj(fields) =>
@@ -272,6 +284,42 @@ class WeatherSkill(
         }
       case other => other
     }
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    if (config.apiKey.isBlank)
+      ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
+    else {
+      val location = config.defaultLocation
+      val url = s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(config.units)}"
+      fetchJson(url)
+        .map {
+          case Json.Obj(fields) =>
+            val mainFields = fields.collectFirst { case ("main", Json.Obj(m)) => m.toMap }.getOrElse(Map.empty)
+            val windSpeed = fields
+              .collectFirst { case ("wind", Json.Obj(w)) =>
+                w.collectFirst { case ("speed", v) => v }.getOrElse(Json.Num(0))
+              }.getOrElse(Json.Num(0))
+            val description = fields
+              .collectFirst { case ("weather", Json.Arr(arr)) =>
+                arr
+                  .collectFirst { case Json.Obj(w) =>
+                    w.collectFirst { case ("description", v) => v }.getOrElse(Json.Str(""))
+                  }.getOrElse(Json.Str(""))
+              }.getOrElse(Json.Str(""))
+            Json.Obj(
+              "location"    -> Json.Str(location),
+              "temperature" -> mainFields.getOrElse("temp", Json.Num(0)),
+              "feelsLike"   -> mainFields.getOrElse("feels_like", Json.Num(0)),
+              "humidity"    -> mainFields.getOrElse("humidity", Json.Num(0)),
+              "description" -> description,
+              "windSpeed"   -> windSpeed,
+              "units"       -> Json.Str(config.units),
+            )
+          case other => other
+        }
+        .catchAll(e => ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg))))
+    }
+  }
 
   private def encode(s: String): String =
     java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8)

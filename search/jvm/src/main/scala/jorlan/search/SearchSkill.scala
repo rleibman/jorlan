@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.search
@@ -17,21 +13,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
-
-/** Configuration for the Tavily search API skill.
-  *
-  * @param apiKey
-  *   Tavily API key (required)
-  * @param baseUrl
-  *   Base URL for the Tavily API; override in tests
-  * @param maxResults
-  *   Default maximum number of results to return
-  */
-case class SearchConfig(
-  apiKey:     String,
-  baseUrl:    String = "https://api.tavily.com",
-  maxResults: Int = 5,
-) derives JsonCodec
+import zio.json.literal.*
 
 /** Built-in skill for web search via the Tavily API.
   *
@@ -52,29 +34,59 @@ class SearchSkill(
     name = "search",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "search",
+      "web",
+      "internet",
+      "find",
+      "lookup",
+      "browse",
+      "query",
+      "information",
+      "news",
+      "research",
+      "results",
+      "articles",
+      "links",
+      "Tavily",
+      "web search",
+      "online",
+      "current",
+      "today",
+      "latest",
+      "recent",
+      "real-time",
+      "now",
+      "live",
+      "up-to-date",
+      "price",
+      "closing",
+      "market",
+      "stock",
+      "index",
+    ),
+    configKey = Some("skill.search"),
+    configJsModule = Some("jorlan-search"),
     tools = List(
       ToolDescriptor(
         name = "search.web",
         description = "Search the web for up-to-date information. Returns a list of relevant results with title, URL, content snippet, and relevance score.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"query":{"type":"string","description":"The search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"searchDepth":{"type":"string","description":"Search depth: basic (default) or advanced (uses more credits)"}},"required":["query"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"The search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"searchDepth":{"type":"string","description":"Search depth: basic (default) or advanced (uses more credits)"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("search.read")),
         examplePrompts = List(
           "Search the web for recent news about ZIO",
           "Find information about Scala 3 features",
           "What are the latest developments in AI?",
+          "What did the S&P 500 close at today?",
+          "What is the current price of gold?",
+          "What happened in the news today?",
         ),
       ),
       ToolDescriptor(
         name = "search.news",
         description = "Search for recent news articles on a topic. Returns a list of news results with title, URL, content snippet, and relevance score.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"query":{"type":"string","description":"The news search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"days":{"type":"integer","description":"Limit results to the past N days"}},"required":["query"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"The news search query"},"maxResults":{"type":"integer","description":"Maximum number of results (default: 5)"},"days":{"type":"integer","description":"Limit results to the past N days"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("search.read")),
         examplePrompts = List(
@@ -86,10 +98,7 @@ class SearchSkill(
       ToolDescriptor(
         name = "search.extract",
         description = "Extract the full text content from one or more URLs. Returns a list of URL/content pairs.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"urls":{"type":"array","items":{"type":"string"},"description":"List of URLs to extract content from"}},"required":["urls"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"urls":{"type":"array","items":{"type":"string"},"description":"List of URLs to extract content from"}},"required":["urls"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("search.read")),
         examplePrompts = List(

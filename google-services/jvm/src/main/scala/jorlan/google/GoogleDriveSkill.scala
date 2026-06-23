@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.google
@@ -17,6 +13,7 @@ import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for reading files from Google Drive.
   *
@@ -33,12 +30,28 @@ class GoogleDriveSkill(
     name = "drive",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "Drive",
+      "file",
+      "document",
+      "Google Drive",
+      "storage",
+      "upload",
+      "download",
+      "share",
+      "folder",
+      "Docs",
+      "Sheets",
+      "Slides",
+      "PDF",
+      "cloud storage",
+      "list files",
+    ),
     tools = List(
       ToolDescriptor(
         name = "drive.listFiles",
         description = "List files in Google Drive, optionally filtered by folder or search query.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}"""),
+        inputSchema = json"""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -50,8 +63,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.readFile",
         description = "Read the text content of a Google Drive file (Google Docs are exported as plain text).",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -62,8 +74,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.downloadFile",
         description = "Download a binary file from Google Drive. The file bytes are stored as an Artifact.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(

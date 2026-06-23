@@ -1,20 +1,17 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.time
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 import java.time.{Duration as JDuration, LocalDateTime, Period, ZoneId, ZonedDateTime}
 import java.time.format.DateTimeFormatter
@@ -26,7 +23,7 @@ import scala.language.unsafeNulls
   * No external dependencies, no API key, no server_settings entry. Registers unconditionally. All four tools require
   * the `time.read` capability.
   */
-class TimeSkill extends Skill {
+class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboardData {
 
   private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
@@ -70,7 +67,7 @@ class TimeSkill extends Skill {
   private def timeNow(args: Json): IO[JorlanError, Json] =
     args match {
       case Json.Obj(fields) =>
-        val tzName = fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse("UTC")
+        val tzName = fields.collectFirst { case ("timezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
         for {
           zone    <- parseZone(tzName)
           instant <- Clock.instant
@@ -128,7 +125,7 @@ class TimeSkill extends Skill {
       case (None, _)                        => ZIO.fail(ValidationError("missing field 'datetime'"))
       case (_, None)                        => ZIO.fail(ValidationError("missing field 'duration'"))
       case (Some(dtStr), Some(durationStr)) =>
-        val tzStr = tzStrOpt.getOrElse("UTC")
+        val tzStr = tzStrOpt.getOrElse(config.defaultTimezone)
         for {
           zone      <- parseZone(tzStr)
           zdt       <- parseDatetime(dtStr, zone)
@@ -153,8 +150,8 @@ class TimeSkill extends Skill {
     }
     val fromStrOpt = fields.collectFirst { case ("from", Json.Str(v)) => v }
     val toStrOpt = fields.collectFirst { case ("to", Json.Str(v)) => v }
-    val fromTzStr = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }.getOrElse("UTC")
-    val toTzStr = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }.getOrElse("UTC")
+    val fromTzStr = fields.collectFirst { case ("fromTimezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
+    val toTzStr = fields.collectFirst { case ("toTimezone", Json.Str(v)) => v }.getOrElse(config.defaultTimezone)
     (fromStrOpt, toStrOpt) match {
       case (None, _)                    => ZIO.fail(ValidationError("missing field 'from'"))
       case (_, None)                    => ZIO.fail(ValidationError("missing field 'to'"))
@@ -200,14 +197,33 @@ class TimeSkill extends Skill {
     name = "time",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    configKey = Some("skill.time"),
+    configJsModule = Some("jorlan-time"),
+    keywords = List(
+      "time",
+      "clock",
+      "timezone",
+      "datetime",
+      "date",
+      "when",
+      "hours",
+      "minutes",
+      "seconds",
+      "schedule",
+      "UTC",
+      "local time",
+      "current time",
+      "convert timezone",
+      "duration",
+      "elapsed",
+      "difference",
+      "daylight saving",
+    ),
     tools = List(
       ToolDescriptor(
         name = "time.now",
         description = "Return the current date and time in a given IANA timezone (e.g. 'America/New_York', 'Europe/London', 'UTC'). Defaults to UTC when timezone is omitted.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"timezone":{"type":"string","description":"IANA timezone name, e.g. 'America/New_York'. Defaults to UTC."}},"required":[]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"timezone":{"type":"string","description":"IANA timezone name, e.g. 'America/New_York'. Defaults to UTC."}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -220,10 +236,7 @@ class TimeSkill extends Skill {
       ToolDescriptor(
         name = "time.convert",
         description = "Convert an ISO 8601 datetime string from one timezone to another. Accepts datetimes with or without a UTC offset.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string, e.g. '2026-06-16T14:30:00' or '2026-06-16T14:30:00Z'"},"fromTimezone":{"type":"string","description":"IANA source timezone, e.g. 'America/New_York'"},"toTimezone":{"type":"string","description":"IANA target timezone, e.g. 'Asia/Tokyo'"}},"required":["datetime","fromTimezone","toTimezone"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string, e.g. '2026-06-16T14:30:00' or '2026-06-16T14:30:00Z'"},"fromTimezone":{"type":"string","description":"IANA source timezone, e.g. 'America/New_York'"},"toTimezone":{"type":"string","description":"IANA target timezone, e.g. 'Asia/Tokyo'"}},"required":["datetime","fromTimezone","toTimezone"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -234,10 +247,7 @@ class TimeSkill extends Skill {
       ToolDescriptor(
         name = "time.add_duration",
         description = "Add an ISO 8601 duration (e.g. 'PT2H30M', 'P1D', 'P1Y2M3DT4H5M6S') to a datetime and return the resulting datetime.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string"},"timezone":{"type":"string","description":"IANA timezone for interpreting the datetime. Defaults to UTC."},"duration":{"type":"string","description":"ISO 8601 duration, e.g. 'PT2H30M' (2h 30m), 'P1D' (1 day)"}},"required":["datetime","duration"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string"},"timezone":{"type":"string","description":"IANA timezone for interpreting the datetime. Defaults to UTC."},"duration":{"type":"string","description":"ISO 8601 duration, e.g. 'PT2H30M' (2h 30m), 'P1D' (1 day)"}},"required":["datetime","duration"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -249,10 +259,7 @@ class TimeSkill extends Skill {
       ToolDescriptor(
         name = "time.diff",
         description = "Calculate the duration between two ISO 8601 datetimes and return the result in seconds, broken down into days/hours/minutes/seconds with a human-readable summary.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"from":{"type":"string","description":"ISO 8601 start datetime"},"to":{"type":"string","description":"ISO 8601 end datetime"},"fromTimezone":{"type":"string","description":"IANA timezone for the 'from' datetime. Defaults to UTC."},"toTimezone":{"type":"string","description":"IANA timezone for the 'to' datetime. Defaults to UTC."}},"required":["from","to"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"from":{"type":"string","description":"ISO 8601 start datetime"},"to":{"type":"string","description":"ISO 8601 end datetime"},"fromTimezone":{"type":"string","description":"IANA timezone for the 'from' datetime. Defaults to UTC."},"toTimezone":{"type":"string","description":"IANA timezone for the 'to' datetime. Defaults to UTC."}},"required":["from","to"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -280,6 +287,24 @@ class TimeSkill extends Skill {
       case "time.diff"         => timeDiff(args)
       case other               => ZIO.fail(ValidationError(s"unknown tool '$other'"))
     }
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")
+    val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    for {
+      zone <- ZIO
+        .attempt(java.time.ZoneId.of(config.defaultTimezone)).mapError(e =>
+          JorlanError(s"Invalid timezone: ${e.getMessage}"),
+        )
+      instant <- Clock.instant
+      zdt = instant.atZone(zone)
+    } yield Json.Obj(
+      "datetime" -> Json.Str(zdt.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+      "timezone" -> Json.Str(config.defaultTimezone),
+      "date"     -> Json.Str(zdt.format(formatter)),
+      "time"     -> Json.Str(zdt.format(timeFormatter)),
+    )
+  }
 
 }
 

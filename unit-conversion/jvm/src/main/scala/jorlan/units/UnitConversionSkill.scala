@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.units
@@ -22,6 +18,7 @@ import squants.thermal.*
 import squants.time.*
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Tier 0 unit conversion skill.
   *
@@ -372,14 +369,35 @@ class UnitConversionSkill extends Skill {
     name = "units",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "convert",
+      "units",
+      "measurement",
+      "length",
+      "weight",
+      "mass",
+      "temperature",
+      "distance",
+      "metric",
+      "imperial",
+      "celsius",
+      "fahrenheit",
+      "kilometers",
+      "miles",
+      "kilograms",
+      "pounds",
+      "volume",
+      "speed",
+      "area",
+      "energy",
+      "power",
+      "storage",
+    ),
     tools = List(
       ToolDescriptor(
         name = "units.convert",
         description = "Convert a numeric value from one unit of measure to another. Supports length, mass, temperature, volume, speed, area, energy, power, time, and digital storage units.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"value":{"type":"number","description":"The numeric value to convert"},"fromUnit":{"type":"string","description":"The source unit (e.g. 'km', 'C', 'kg', 'mph')"},"toUnit":{"type":"string","description":"The target unit (e.g. 'm', 'F', 'lb', 'km/h')"}},"required":["value","fromUnit","toUnit"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"value":{"type":"number","description":"The numeric value to convert"},"fromUnit":{"type":"string","description":"The source unit (e.g. 'km', 'C', 'kg', 'mph')"},"toUnit":{"type":"string","description":"The target unit (e.g. 'm', 'F', 'lb', 'km/h')"}},"required":["value","fromUnit","toUnit"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List.empty,
         examplePrompts = List(

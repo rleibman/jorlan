@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service
@@ -34,7 +30,7 @@ enum CheckpointTrigger {
   *   fire before every tool invocation; generates a safety snapshot; off by default (expensive)
   */
 case class CheckpointPolicyConfig(
-  onSessionEnd:         Boolean = true,
+  onSessionEnd:         Boolean = false,
   onUserRequest:        Boolean = true,
   timedIntervalTurns:   Option[Int] = Some(10),
   beforeExternalEffect: Boolean = false,

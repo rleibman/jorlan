@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.shell.commands
@@ -63,6 +59,8 @@ object CommandHandler {
       case ShellCommand.Skills                                   => showSkills
       case ShellCommand.SkillsEnable(name)                       => enableSkill(name)
       case ShellCommand.SkillsDisable(name)                      => disableSkill(name)
+      case ShellCommand.SkillsGetConfig(name)                    => getSkillConfig(name)
+      case ShellCommand.SkillsSetConfig(name, json)              => setSkillConfig(name, json)
       case ShellCommand.ContactsFind(name)                       => findContacts(name)
       case ShellCommand.Capabilities                             => showCapabilities
       case ShellCommand.AgentsList                               => listAgents
@@ -990,6 +988,27 @@ object CommandHandler {
     repo(_.skill.disableSkill(name)).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not disable skill '$name': $err")),
       _ => screen(_.addMessage(MessageKind.System, s"Skill '$name' disabled.")),
+    )
+
+  private def getSkillConfig(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.skill.getSkillConfig(name)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not get config for skill '$name': $err")),
+      {
+        case None    => screen(_.addMessage(MessageKind.System, s"No configuration stored for skill '$name'."))
+        case Some(j) => screen(_.addMessage(MessageKind.System, s"Config for '$name':\n$j"))
+      },
+    )
+
+  private def setSkillConfig(
+    name: String,
+    json: String,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.skill.updateSkillConfig(name, json)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not set config for skill '$name': $err")),
+      _ =>
+        screen(
+          _.addMessage(MessageKind.System, s"Config for '$name' saved. Restart the server for changes to take effect."),
+        ),
     )
 
   private def findContacts(name: String): ZIO[Env, Nothing, Unit] = {

@@ -33,6 +33,12 @@
 </head>
 <body>
 <div id="content" style="height:100%;"></div>
+<script>
+  window.skillRegistrations = {};
+  window.registerRemoteSkill = function(name, payload) {
+    window.skillRegistrations[name] = payload;
+  };
+</script>
 <script type="text/javascript" src="jorlan-web-opt-bundle.js"></script>
 </body>
 </html>

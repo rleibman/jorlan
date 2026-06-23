@@ -2,15 +2,15 @@
     "version": "1.4.0",
     "project": {
         "name": "stlib-build",
-        "directory": "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project",
-        "workspaceDir": "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project",
+        "directory": "/home/rleibman/projects/jorlan/stLib/project",
+        "workspaceDir": "/home/rleibman/projects/jorlan/stLib/project",
         "sources": [
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/scala",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/scala-2.12",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/scala-2",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/java",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/scala-sbt-1.0",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/target/scala-2.12/sbt-1.0/src_managed/main"
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/scala",
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/scala-2.12",
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/scala-2",
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/java",
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/scala-sbt-1.0",
+            "/home/rleibman/projects/jorlan/stLib/project/target/scala-2.12/sbt-1.0/src_managed/main"
         ],
         "dependencies": [
             
@@ -211,11 +211,11 @@
             "/home/rleibman/.cache/coursier/v1/https/repo1.maven.org/maven2/org/typelevel/jawn-parser_2.12/1.6.0/jawn-parser_2.12-1.6.0.jar",
             "/home/rleibman/.cache/coursier/v1/https/repo1.maven.org/maven2/org/typelevel/cats-kernel_2.12/2.13.0/cats-kernel_2.12-2.13.0.jar"
         ],
-        "out": "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/.bloop/stlib-build",
-        "classesDir": "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/.bloop/stlib-build/scala-2.12/sbt-1.0/classes",
+        "out": "/home/rleibman/projects/jorlan/stLib/project/.bloop/stlib-build",
+        "classesDir": "/home/rleibman/projects/jorlan/stLib/project/.bloop/stlib-build/scala-2.12/sbt-1.0/classes",
         "resources": [
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/src/main/resources",
-            "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/target/scala-2.12/sbt-1.0/resource_managed/main"
+            "/home/rleibman/projects/jorlan/stLib/project/src/main/resources",
+            "/home/rleibman/projects/jorlan/stLib/project/target/scala-2.12/sbt-1.0/resource_managed/main"
         ],
         "scala": {
             "organization": "org.scala-lang",
@@ -322,7 +322,7 @@
             "config": {
                 "home": "/home/rleibman/.sdkman/candidates/java/23.ea.8-open",
                 "options": [
-                    "-Duser.dir=/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project"
+                    "-Duser.dir=/home/rleibman/projects/jorlan/stLib/project"
                 ]
             },
             "mainClass": [
@@ -331,11 +331,11 @@
             "runtimeConfig": {
                 "home": "/home/rleibman/.sdkman/candidates/java/23.ea.8-open",
                 "options": [
-                    "-Duser.dir=/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project"
+                    "-Duser.dir=/home/rleibman/projects/jorlan/stLib/project"
                 ]
             },
             "classpath": [
-                "/home/rleibman/projects/jorlan/.claude/worktrees/phase-15/stLib/project/.bloop/stlib-build/scala-2.12/sbt-1.0/classes",
+                "/home/rleibman/projects/jorlan/stLib/project/.bloop/stlib-build/scala-2.12/sbt-1.0/classes",
                 "/home/rleibman/.cache/coursier/v1/https/repo1.maven.org/maven2/com/github/sbt/sbt-git_2.12_1.0/2.1.0/sbt-git_2.12_1.0-2.1.0.jar",
                 "/home/rleibman/.cache/coursier/v1/https/repo1.maven.org/maven2/de/heikoseeberger/sbt-header_2.12_1.0/5.10.0/sbt-header-5.10.0.jar",
                 "/home/rleibman/.cache/coursier/v1/https/repo1.maven.org/maven2/com/github/cb372/sbt-explicit-dependencies_2.12_1.0/0.3.1/sbt-explicit-dependencies-0.3.1.jar",

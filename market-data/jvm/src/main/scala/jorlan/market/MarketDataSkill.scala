@@ -1,22 +1,19 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.market
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for fetching market data via the Alpha Vantage API.
   *
@@ -32,35 +29,64 @@ class MarketDataSkill(
   apiKey:  String,
   client:  Client,
   baseUrl: String = "https://www.alphavantage.co/query",
-) extends Skill {
+) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "market",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "stocks",
+      "market",
+      "finance",
+      "trading",
+      "price",
+      "portfolio",
+      "investment",
+      "shares",
+      "equity",
+      "ticker",
+      "quote",
+      "dividend",
+      "NASDAQ",
+      "NYSE",
+      "stock price",
+      "earnings",
+      "company",
+      "index",
+      "indices",
+      "S&P",
+      "S&P 500",
+      "Dow Jones",
+      "closing price",
+      "close",
+      "market cap",
+      "ETF",
+      "fund",
+      "today",
+      "current price",
+    ),
+    configKey = Some("skill.market"),
+    configJsModule = Some("jorlan-market-data"),
     tools = List(
       ToolDescriptor(
         name = "market.quote",
         description = "Fetch a real-time stock quote for a ticker symbol. Returns price, change, change percentage, volume, and the latest trading day.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
           "What is the current price of Apple stock?",
           "Get a quote for TSLA",
           "How is MSFT trading today?",
+          "What did the S&P 500 close at today?",
+          "What is the Dow Jones index at right now?",
         ),
       ),
       ToolDescriptor(
         name = "market.search",
         description = "Search for ticker symbols matching a keyword query. Returns up to 5 matching securities with symbol, name, type, and region.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"query":{"type":"string","description":"Search keyword, e.g. Apple or Tesla"}},"required":["query"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"Search keyword, e.g. Apple or Tesla"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
@@ -72,10 +98,7 @@ class MarketDataSkill(
       ToolDescriptor(
         name = "market.news",
         description = "Fetch the latest news headlines and sentiment for a ticker symbol. Returns up to 5 recent news items with title, URL, summary, sentiment, and relevance score.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
@@ -260,5 +283,61 @@ class MarketDataSkill(
           .getOrElse(Json.Arr())
       case _ => Json.Arr()
     }
+
+  private val dashboardTickers = List(
+    ("SPY", "S&P 500"),
+    ("DIA", "Dow Jones"),
+    ("GLD", "Gold"),
+  )
+
+  override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
+    if (apiKey.isBlank)
+      ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
+    else
+      ZIO
+        .foreach(dashboardTickers) { case (symbol, name) =>
+          val url =
+            s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
+          fetchJson(url)
+            .flatMap(checkRateLimit)
+            .map {
+              case Json.Obj(fields) =>
+                fields
+                  .collectFirst { case ("Global Quote", Json.Obj(q)) => q }
+                  .map { q =>
+                    def qfield(key: String): Json = q.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
+                    Json.Obj(
+                      "symbol"        -> Json.Str(symbol),
+                      "name"          -> Json.Str(name),
+                      "price"         -> qfield("05. price"),
+                      "change"        -> qfield("09. change"),
+                      "changePercent" -> qfield("10. change percent"),
+                    )
+                  }
+                  .getOrElse(
+                    Json.Obj(
+                      "symbol"        -> Json.Str(symbol),
+                      "name"          -> Json.Str(name),
+                      "price"         -> Json.Str("N/A"),
+                      "change"        -> Json.Str(""),
+                      "changePercent" -> Json.Str(""),
+                    ),
+                  )
+              case other => other
+            }
+            .catchAll(_ =>
+              ZIO.succeed(
+                Json.Obj(
+                  "symbol"        -> Json.Str(symbol),
+                  "name"          -> Json.Str(name),
+                  "price"         -> Json.Str("N/A"),
+                  "change"        -> Json.Str(""),
+                  "changePercent" -> Json.Str(""),
+                ),
+              ),
+            )
+        }
+        .map(quotes => Json.Obj("quotes" -> Json.Arr(quotes*)))
+  }
 
 }

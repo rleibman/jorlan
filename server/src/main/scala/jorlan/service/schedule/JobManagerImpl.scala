@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service.schedule
@@ -125,6 +121,30 @@ class JobManagerImpl(
 
   override def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit] =
     repo.scheduler.deleteJob(id).mapError(JorlanError(_)).unit
+
+  override def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[JorlanError, SchedulerJob] =
+    getJob(id).flatMap { existing =>
+      val updated = existing.copy(
+        name = name,
+        prompt = prompt,
+        maxRetries = maxRetries,
+        backoffSeconds = backoffSeconds,
+        backoffPolicy = backoffPolicy,
+        missedRunPolicy = missedRunPolicy,
+      )
+      repo.scheduler.upsertJob(updated).mapError(JorlanError(_))
+    }
+
+  override def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit] =
+    repo.scheduler.deleteTrigger(id).mapError(JorlanError(_)).unit
 
 }
 

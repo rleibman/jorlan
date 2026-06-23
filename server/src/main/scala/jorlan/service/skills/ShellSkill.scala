@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service.skills
@@ -54,6 +50,26 @@ class ShellSkill(
     name = "shell",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "shell",
+      "bash",
+      "command",
+      "terminal",
+      "execute",
+      "script",
+      "system",
+      "process",
+      "file system",
+      "ls",
+      "grep",
+      "run",
+      "chmod",
+      "find",
+      "pipe",
+      "cat",
+      "directory",
+      "list files",
+    ),
     tools = List(
       ToolDescriptor(
         name = "shell.run",
@@ -282,13 +298,39 @@ class ShellSkill(
             )
             rawResult <- cmdWithCwd.run
               .flatMap { process =>
-                for {
-                  stdout   <- process.stdout.string
-                  stderr   <- process.stderr.string
-                  exitCode <- process.exitCode
-                } yield (exitCode.code, stdout, stderr)
+                val limit = (MaxSafeOutputBytes + 1).toLong
+                val readStdout = process.stdout.stream.take(limit).runCollect
+                val readStderr = process.stderr.stream.take(limit).runCollect
+                val readAll = readStdout
+                  .zipPar(readStderr)
+                  .flatMap { case (outChunk, errChunk) =>
+                    process.exitCode.map { code =>
+                      (
+                        code.code,
+                        truncateOutput(new String(outChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+                        truncateOutput(new String(errChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+                      )
+                    }
+                  }
+                // Use raceWith instead of .timeout so we can kill the process before interrupting the read
+                // fibers. ZIO 2 Fiber.interrupt waits for finalisation; on Linux, InputStream.read() on a
+                // process pipe is not interruptible via Thread.interrupt(), so reads block until the process
+                // exits. Killing the process first closes the pipe, making read() return EOF immediately.
+                readAll.raceWith(ZIO.sleep(timeoutSecs.seconds))(
+                  leftDone = (
+                    exit,
+                    timerFiber,
+                  ) =>
+                    timerFiber.interrupt *> (exit match {
+                      case Exit.Success(a)     => ZIO.some(a)
+                      case Exit.Failure(cause) => ZIO.failCause(cause)
+                    }),
+                  rightDone = (
+                    _,
+                    readFiber,
+                  ) => process.killForcibly.orDie *> readFiber.interrupt.as(None),
+                )
               }
-              .timeout(timeoutSecs.seconds)
               .mapError(e => JorlanError(s"shell.run: ${e.getMessage}"))
             (exitCode, stdout, stderr) = rawResult match {
               case Some(t) => t
@@ -319,46 +361,62 @@ class ShellSkill(
 
   // ─── sandbox helpers ──────────────────────────────────────────────────────
 
-  /** Resolve a relative-or-absolute path against sandboxRoot, rejecting traversal. */
+  /** Resolve a relative-or-absolute path against sandboxRoot, rejecting both `..` traversal and symlinks that point
+    * outside the sandbox. Uses `toRealPath()` to follow all symlinks before comparing, so a symlink inside the sandbox
+    * root that points outside (e.g. `sandboxRoot/etc -> /etc`) is caught.
+    */
   private def resolveSafePath(relOrAbs: String): IO[JorlanError, Path] =
     ZIO
       .attempt(sandboxRoot.resolve(relOrAbs).normalize())
       .mapError(e => JorlanError(s"shell: invalid path: ${e.getMessage}"))
-      .flatMap { resolved =>
+      .flatMap { lexical =>
         for {
-          rootReal <- ZIO.attemptBlocking(sandboxRoot.toRealPath()).orElseSucceed(sandboxRoot)
-          real     <- ZIO.attemptBlocking(resolved.toRealPath()).orElseSucceed(resolved)
-          _        <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
-        } yield resolved
+          rootReal <- ZIO
+            .attemptBlocking(sandboxRoot.toRealPath())
+            .mapError(e => JorlanError(s"shell: cannot resolve sandbox root: ${e.getMessage}"))
+          real <- ZIO
+            .attemptBlocking(lexical.toRealPath())
+            .mapError(_ => JorlanError(s"Path does not exist: '$relOrAbs'"))
+          _ <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
+        } yield real
       }
 
-  /** Run a command (binary + args), capture its stdout+stderr, apply the 64 KB cap. */
+  /** Run a command (binary + args), capture its stdout+stderr, apply the 64 KB cap.
+    *
+    * stdout and stderr are drained concurrently to prevent deadlock when one pipe fills while we are blocked reading
+    * the other. Each stream is capped at MaxSafeOutputBytes+1 bytes before being collected, so no more than ~128 KB
+    * total reaches the heap regardless of process output size.
+    */
   private def runSafeCommand(
     binary:  String,
     cmdArgs: Seq[String],
   ): IO[JorlanError, Json] = {
     val cmd = Command(binary, cmdArgs*)
+    val limit = (MaxSafeOutputBytes + 1).toLong
     cmd.run
       .flatMap { process =>
-        val limit = (MaxSafeOutputBytes + 1).toLong
-        for {
-          stdoutChunk <- process.stdout.stream.take(limit).runCollect
-          stderrChunk <- process.stderr.stream.take(limit).runCollect
-          exitCode    <- process.exitCode
-        } yield (
-          exitCode.code,
-          truncateOutput(new String(stdoutChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
-          truncateOutput(new String(stderrChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
-        )
+        val readStdout = process.stdout.stream.take(limit).runCollect
+        val readStderr = process.stderr.stream.take(limit).runCollect
+        readStdout
+          .zipPar(readStderr)
+          .flatMap { case (outChunk, errChunk) =>
+            process.exitCode.map { code =>
+              (
+                code.code,
+                truncateOutput(new String(outChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+                truncateOutput(new String(errChunk.toArray, java.nio.charset.StandardCharsets.UTF_8)),
+              )
+            }
+          }
       }
-      .timeout(10.seconds).mapBoth(
+      .timeout(10.seconds)
+      .mapBoth(
         e => JorlanError(s"$binary: ${e.getMessage}"),
         {
           case Some((code, out, err)) =>
-            val truncOut = truncateOutput(out)
             Json.Obj(
               "exitCode" -> Json.Num(code),
-              "stdout"   -> Json.Str(truncOut),
+              "stdout"   -> Json.Str(out),
               "stderr"   -> Json.Str(err),
             )
           case None =>

@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service.memory
@@ -231,7 +227,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
               Message(MessageId.empty, ConversationId.empty, MessageRole.User, "I use Scala", None, now),
             )
             before <- svc.query(MemoryScope.User, userId, agentId)
-            _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
+            _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.UserRequest)
             after  <- svc.query(MemoryScope.User, userId, agentId)
           } yield assertTrue(after.size > before.size)
         }.provide(
@@ -248,7 +244,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
             msgs = List(
               Message(MessageId.empty, ConversationId.empty, MessageRole.User, "my password", None, now),
             )
-            _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
+            _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.UserRequest)
             result <- svc.query(MemoryScope.Private, userId, agentId)
           } yield assertTrue(result.exists(_.recordKey.startsWith("chk.")))
         }.provide(

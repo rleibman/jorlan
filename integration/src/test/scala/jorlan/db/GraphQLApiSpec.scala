@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.db
@@ -90,6 +86,7 @@ object GraphQLApiSpec
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
       ToolEventHub.live,
+      EventLogHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
       MemoryServiceImpl.live,
@@ -101,6 +98,7 @@ object GraphQLApiSpec
       ZLayer.succeed(ConnectorManager.empty),
       stubOAuthCredentialService,
       Client.default.orDie,
+      DashboardService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

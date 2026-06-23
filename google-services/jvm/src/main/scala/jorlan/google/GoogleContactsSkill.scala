@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.google
@@ -17,6 +13,7 @@ import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for reading contacts from Google Contacts (People API).
   *
@@ -33,12 +30,24 @@ class GoogleContactsSkill(
     name = "google_contacts",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "contacts",
+      "address book",
+      "people",
+      "phone number",
+      "Google Contacts",
+      "vCard",
+      "name",
+      "email address",
+      "organization",
+      "find person",
+      "lookup contact",
+    ),
     tools = List(
       ToolDescriptor(
         name = "google_contacts.list_contacts",
         description = "List contacts from the authenticated user's Google Contacts.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of contacts to return (default 50)"}},"required":[]}"""),
+        inputSchema = json"""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of contacts to return (default 50)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(
@@ -50,8 +59,7 @@ class GoogleContactsSkill(
       ToolDescriptor(
         name = "google_contacts.search_contacts",
         description = "Search Google Contacts by name, email, or other text.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"query":{"type":"string","description":"Search term (name, email, phone, etc.)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 20)"}},"required":["query"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"Search term (name, email, phone, etc.)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 20)"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(
@@ -63,8 +71,7 @@ class GoogleContactsSkill(
       ToolDescriptor(
         name = "google_contacts.get_contact",
         description = "Retrieve a specific Google Contact by its People API resource name.",
-        inputSchema =
-          parseSchema("""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name, e.g. 'people/c1234567890'"}},"required":["resourceName"]}"""),
+        inputSchema = json"""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name, e.g. 'people/c1234567890'"}},"required":["resourceName"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(

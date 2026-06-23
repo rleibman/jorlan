@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service
@@ -28,8 +24,9 @@ import java.time.Instant
   *   6. For direct `Allowed`/`Denied` results: write a `CapabilityAllowed`/`CapabilityDenied` audit event
   */
 private class ApprovalServiceImpl(
-  evaluator: CapabilityEvaluator,
-  repo:      ZIORepositories,
+  evaluator:   CapabilityEvaluator,
+  repo:        ZIORepositories,
+  eventLogHub: EventLogHub,
 ) extends ApprovalService {
 
   override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
@@ -61,7 +58,7 @@ private class ApprovalServiceImpl(
         case ApprovalStatus.Pending =>
           ZIO.fail(JorlanError("recordApprovalDecision called with Pending status — invariant violated"))
       }
-      _ <- repo.eventLog.append(
+      logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -73,6 +70,7 @@ private class ApprovalServiceImpl(
           occurredAt = now,
         ),
       )
+      _ <- eventLogHub.publishTyped(logEntry)
     } yield saved
 
   override def expireStaleRequests(): IO[JorlanError, Long] = repo.permission.expireAllStaleApprovalRequests()
@@ -82,9 +80,9 @@ private class ApprovalServiceImpl(
     actorId: Option[UserId],
   ): IO[JorlanError, ApprovalRequest] =
     for {
-      now   <- Clock.instant
-      saved <- repo.permission.createApprovalRequest(req)
-      _     <- repo.eventLog.append(
+      now      <- Clock.instant
+      saved    <- repo.permission.createApprovalRequest(req)
+      logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = EventType.ApprovalRequested,
@@ -96,6 +94,7 @@ private class ApprovalServiceImpl(
           occurredAt = now,
         ),
       )
+      _ <- eventLogHub.publishTyped(logEntry)
     } yield saved
 
   private def loadExistingApprovals(
@@ -116,8 +115,8 @@ private class ApprovalServiceImpl(
     eventType: EventType,
     now:       Instant,
   ): IO[JorlanError, Unit] =
-    repo.eventLog
-      .append(
+    for {
+      logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
           eventType = eventType,
@@ -128,13 +127,15 @@ private class ApprovalServiceImpl(
           payloadJson = None,
           occurredAt = now,
         ),
-      ).unit
+      )
+      _ <- eventLogHub.publishTyped(logEntry)
+    } yield ()
 
 }
 
 object ApprovalServiceImpl {
 
-  val live: URLayer[CapabilityEvaluator & ZIORepositories, ApprovalService] =
-    ZLayer.fromFunction(ApprovalServiceImpl(_, _))
+  val live: URLayer[CapabilityEvaluator & ZIORepositories & EventLogHub, ApprovalService] =
+    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _))
 
 }

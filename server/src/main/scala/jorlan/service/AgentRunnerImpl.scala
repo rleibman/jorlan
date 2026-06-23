@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.service
@@ -30,13 +26,14 @@ private case class ReactLoopEnv(
 )
 
 /** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, cached personality,
-  * and per-session turn counters used by the timed-interval checkpoint trigger.
+  * cached agents, and per-session turn counters used by the timed-interval checkpoint trigger.
   */
 private class AgentRunnerState(
   val seeded:            Ref[Set[AgentSessionId]],
   val activeConvs:       Ref[Map[AgentSessionId, ConversationId]],
   val cachedAgentIds:    Ref[Map[AgentSessionId, AgentId]],
   val cachedPersonality: Ref[Option[Personality]],
+  val cachedAgents:      Ref[Map[AgentId, Agent]],
   val turnCounts:        Ref[Map[AgentSessionId, Int]],
 )
 
@@ -48,8 +45,9 @@ private object AgentRunnerState {
       activeConvs       <- Ref.make(Map.empty[AgentSessionId, ConversationId])
       cachedAgentIds    <- Ref.make(Map.empty[AgentSessionId, AgentId])
       cachedPersonality <- Ref.make(Option.empty[Personality])
+      cachedAgents      <- Ref.make(Map.empty[AgentId, Agent])
       turnCounts        <- Ref.make(Map.empty[AgentSessionId, Int])
-    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds, cachedPersonality, turnCounts)
+    } yield AgentRunnerState(seeded, activeConvs, cachedAgentIds, cachedPersonality, cachedAgents, turnCounts)
 
 }
 
@@ -91,6 +89,9 @@ class AgentRunnerImpl(
       _           <- ensureSeeded(sessionId, actorId, agentId)
       convId      <- getOrCreateConversation(sessionId)
       personality <- loadPersonality
+      agent       <-
+        if (agentId == AgentId.empty) ZIO.succeed(Option.empty[Agent])
+        else loadAgent(agentId).map(Some(_)).orElseSucceed(None)
       work =
         for {
           _      <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars)")
@@ -100,9 +101,14 @@ class AgentRunnerImpl(
           _ <- ZIO.logDebug(
             s"[session:$sessionId] system prompt (${systemPrompt.length} chars):\n$systemPrompt",
           )
-          _     <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
-          tools <- skillRegistry.allToolSpecs
+          _ <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
           initialMessages = buildInitialMessages(systemPrompt, content)
+          tools <- skillRegistry.filteredToolSpecs(
+            prompt = content,
+            expertise = agent.flatMap(_.description).getOrElse(""),
+            recentToolNames = List.empty, // no history yet at start of turn
+            prioritizedSkills = agent.map(_.prioritizedSkills).getOrElse(List.empty),
+          )
           ctx = InvocationContext(
             actorId = actorId.getOrElse(UserId.empty),
             agentId = Option.when(agentId != AgentId.empty)(agentId),
@@ -203,6 +209,11 @@ class AgentRunnerImpl(
                       .Obj("tool" -> zio.json.ast.Json.Str(name), "payload" -> zio.json.ast.Json.Str(resultJsonStr)),
                   ),
                 )
+                _ <- ZIO.when(!isError) {
+                  toolSpecificEventType.get(name).fold(ZIO.unit) { specificType =>
+                    logEvent(sessionId, specificType, actorId, agentId)
+                  }
+                }
                 newMessages = messages ++ List(
                   ToolCallMsg(id, name, argsJson),
                   ToolResultMsg(id, name, resultJsonStr),
@@ -212,6 +223,29 @@ class AgentRunnerImpl(
           }
     }
   }
+
+  // Maps specific tool names to their domain-level EventType so that the skill implementation
+  // (which has no access to the event log) doesn't need to produce these entries itself.
+  // Only logged on success; failures are already covered by the generic SkillFailed event.
+  private val toolSpecificEventType: Map[String, EventType] = Map(
+    "email.list"             -> EventType.EmailMessageRead,
+    "email.read"             -> EventType.EmailMessageRead,
+    "email.search"           -> EventType.EmailMessageRead,
+    "email.send"             -> EventType.EmailMessageSent,
+    "email.reply"            -> EventType.EmailMessageSent,
+    "email.draft"            -> EventType.EmailDraftCreated,
+    "email.archive"          -> EventType.EmailMessageArchived,
+    "email.delete"           -> EventType.EmailMessageDeleted,
+    "calendar.listCalendars" -> EventType.CalendarEventRead,
+    "calendar.listEvents"    -> EventType.CalendarEventRead,
+    "calendar.getEvent"      -> EventType.CalendarEventRead,
+    "calendar.createEvent"   -> EventType.CalendarEventCreated,
+    "calendar.updateEvent"   -> EventType.CalendarEventUpdated,
+    "calendar.deleteEvent"   -> EventType.CalendarEventDeleted,
+    "drive.listFiles"        -> EventType.DriveFileListed,
+    "drive.readFile"         -> EventType.DriveFileRead,
+    "drive.downloadFile"     -> EventType.DriveFileRead,
+  )
 
   private def logEvent(
     sessionId:   AgentSessionId,
@@ -262,7 +296,7 @@ class AgentRunnerImpl(
       _ <- sessionHub.publish(sentinel)
       _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined)
       _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg)
-      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg)
+      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg).forkDaemon
       _ <- logEvent(sessionId, EventType.AgentResponseCompleted, actorId)
     } yield ()
 
@@ -271,6 +305,21 @@ class AgentRunnerImpl(
     connectionId: ConnectionId,
   ): UIO[ZStream[Any, Nothing, ResponseChunk]] =
     sessionHub.subscribe(sessionId, connectionId)
+
+  private def loadAgent(agentId: AgentId): IO[JorlanError, Agent] =
+    runnerState.cachedAgents.get.flatMap { cache =>
+      cache.get(agentId) match {
+        case Some(a) => ZIO.succeed(a)
+        case None    =>
+          repo.agent
+            .getById(agentId)
+            .mapError(JorlanError(_))
+            .flatMap {
+              case Some(a) => runnerState.cachedAgents.update(_ + (agentId -> a)).as(a)
+              case None    => ZIO.fail(JorlanError(s"Agent $agentId not found"))
+            }
+      }
+    }
 
   private def resolveAgentId(sessionId: AgentSessionId): IO[JorlanError, AgentId] =
     cachedAgentIds.get.flatMap { cache =>

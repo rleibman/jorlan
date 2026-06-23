@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan
@@ -28,11 +24,12 @@ import jorlan.service.*
 import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
-import jorlan.time.TimeSkill
+import jorlan.time.{TimeConfig, TimeSkill}
 import jorlan.units.UnitConversionSkill
 import jorlan.weather.*
 import zio.*
 import zio.http.*
+import zio.json.DecoderOps
 import zio.logging.backend.SLF4J
 
 import java.io.*
@@ -41,13 +38,13 @@ import java.util.concurrent.TimeUnit
 
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService & Client
+  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
+  ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
   JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
-    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService
+    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -172,97 +169,210 @@ object Jorlan extends ZIOApp {
       calProvider     <- GoogleCalendarProvider(oauthCredSvc)
       driveProvider   <- GoogleDriveProvider(oauthCredSvc)
       contactProvider <- GoogleContactsProvider(oauthCredSvc)
-      _               <- registry.register(CalculatorSkill())
-//      _               <- registry.register(MemorySkill(memService))
-//      _               <- registry.register(SchedulerSkill(jobManager))
+      // ── Always-registered skills (no external API key required) ──────────────
+      _ <- registry.register(CalculatorSkill())
+      _ <- registry.register(MemorySkill(memService))
+      _ <- registry.register(SchedulerSkill(jobManager))
       _ <- registry.register(ContactsSkill(repos))
-//      _               <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
-//      _               <- registry.register(ShellSkill(config.jorlan.shell, repos))
-//      _               <- registry.register(NotifySkill(notifRouter))
-//      _               <- registry.register(EmailSkill(emailProvider))
-//      _               <- registry.register(GoogleCalendarSkill(calProvider))
-//      _               <- registry.register(GoogleContactsSkill(contactProvider))
-//      _               <- registry.register(GoogleDriveSkill(driveProvider))
-      _ <- registry.register(TimeSkill())
+      _ <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
+      _ <- registry.register(ShellSkill(config.jorlan.shell, repos))
+      _ <- registry.register(NotifySkill(notifRouter))
+      _ <- ZIO
+        .attempt(java.time.ZoneId.systemDefault().getId)
+        .orElseSucceed("UTC")
+        .flatMap { sysTz =>
+          repos.setting
+            .get("skill.time")
+            .mapError(e => new Throwable(e.msg))
+            .flatMap {
+              case Some(json) =>
+                json.as[TimeConfig] match {
+                  case Right(cfg) => registry.register(TimeSkill(cfg))
+                  case Left(err)  =>
+                    registry.register(TimeSkill(TimeConfig(sysTz))) *>
+                      ZIO.logWarning(s"time skill: invalid config JSON '$err', using system timezone $sysTz")
+                }
+              case None =>
+                repos.setting
+                  .set(
+                    "skill.time",
+                    zio.json.ast.Json.Obj("defaultTimezone" -> zio.json.ast.Json.Str(sysTz)),
+                  )
+                  .mapError(e => new Throwable(e.msg)) *>
+                  registry.register(TimeSkill(TimeConfig(sysTz))) *>
+                  ZIO.logInfo(s"time skill: initialized with system timezone $sysTz")
+            }
+        }
       _ <- registry.register(UnitConversionSkill())
-//      _               <- registry.register(UserManagementSkill(repos))
+      _ <- registry.register(UserManagementSkill(repos))
+      _ <- registry.register(EmailSkill(emailProvider))
+      _ <- registry.register(GoogleCalendarSkill(calProvider))
+      _ <- registry.register(GoogleContactsSkill(contactProvider))
+      _ <- registry.register(GoogleDriveSkill(driveProvider))
+      // ── Config-dependent skills: always register, disable when config is missing ─
       _ <- repos.setting
         .get("skill.market")
         .mapError(e => new Throwable(e.msg))
         .flatMap {
           case Some(json) =>
             json.as[AlphaVantageConfig] match {
-              case Right(cfg) =>
-                registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
-              case Left(err) =>
-                ZIO.logWarning(s"Skipping market skill: invalid config JSON: $err")
+              case Right(cfg) => registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
+              case Left(err)  =>
+                registry.register(MarketDataSkill("", httpClient)) *>
+                  registry.disableSkill("market") *>
+                  ZIO.logWarning(s"market skill registered but disabled: invalid config JSON: $err")
             }
           case None =>
-            ZIO.logDebug("Market data skill not configured (set skill.market in server_settings to enable)")
+            registry.register(MarketDataSkill("", httpClient)) *>
+              registry.disableSkill("market") *>
+              ZIO.logInfo("market skill registered but disabled (set skill.market in server_settings to enable)")
         }
-      _ <- repos.setting.get("skill.httpFetch").flatMap {
-        case Some(json) =>
-          json.as[HttpFetchConfig] match {
-            case Right(cfg) =>
-              registry.register(HttpFetchSkill(cfg, httpClient))
-            case Left(err) =>
-              ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
-          }
-        case None =>
-          ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
-      }
-      _ <- repos.setting.get("skill.lyrion").flatMap {
-        case Some(json) =>
-          json.as[LyrionConfig] match {
-            case Right(cfg) =>
-              registry.register(LyrionSkill(cfg, httpClient))
-            case Left(err) =>
-              ZIO.logWarning(s"Skipping lyrion skill: invalid config JSON: $err")
-          }
-        case None =>
-          ZIO.logDebug("Lyrion skill not configured (set skill.lyrion in server_settings to enable)")
-      }
-      _ <- repos.setting.get("skill.search").flatMap {
-        case Some(json) =>
-          json.as[SearchConfig] match {
-            case Right(cfg) =>
-              registry.register(SearchSkill(cfg, httpClient))
-            case Left(err) =>
-              ZIO.logWarning(s"Skipping search skill: invalid config JSON: $err")
-          }
-        case None =>
-          ZIO.logDebug("Search skill not configured (set skill.search in server_settings to enable)")
-      }
-      _ <- repos.setting.get("skill.weather").flatMap {
-        case Some(json) =>
-          json.as[WeatherConfig] match {
-            case Right(cfg) =>
-              registry.register(WeatherSkill(cfg, httpClient, cfg.baseUrl))
-            case Left(err) =>
-              ZIO.logWarning(s"Skipping weather skill: invalid config JSON: $err")
-          }
-        case None =>
-          ZIO.logDebug("Weather skill not configured (set skill.weather in server_settings to enable)")
-      }
-      // Load MCP servers from server_settings
+      _ <- repos.setting
+        .get("skill.httpFetch")
+        .mapError(e => new Throwable(e.msg))
+        .flatMap {
+          case Some(json) =>
+            json.as[HttpFetchConfig] match {
+              case Right(cfg) => registry.register(HttpFetchSkill(cfg, httpClient))
+              case Left(err)  =>
+                registry.register(HttpFetchSkill(HttpFetchConfig(), httpClient)) *>
+                  registry.disableSkill("http_fetch") *>
+                  ZIO.logWarning(s"http_fetch skill registered but disabled: invalid config JSON: $err")
+            }
+          case None =>
+            registry.register(HttpFetchSkill(HttpFetchConfig(), httpClient)) *>
+              registry.disableSkill("http_fetch") *>
+              ZIO.logInfo("http_fetch skill registered but disabled (set skill.httpFetch in server_settings to enable)")
+        }
+      _ <- repos.setting
+        .get("skill.lyrion")
+        .mapError(e => new Throwable(e.msg))
+        .flatMap {
+          case Some(json) =>
+            json.as[LyrionConfig] match {
+              case Right(cfg) => registry.register(LyrionSkill(cfg, httpClient))
+              case Left(err)  =>
+                registry.register(LyrionSkill(LyrionConfig(), httpClient)) *>
+                  registry.disableSkill("lyrion") *>
+                  ZIO.logWarning(s"lyrion skill registered but disabled: invalid config JSON: $err")
+            }
+          case None =>
+            registry.register(LyrionSkill(LyrionConfig(), httpClient)) *>
+              registry.disableSkill("lyrion") *>
+              ZIO.logInfo("lyrion skill registered but disabled (set skill.lyrion in server_settings to enable)")
+        }
+      _ <- repos.setting
+        .get("skill.search")
+        .mapError(e => new Throwable(e.msg))
+        .flatMap {
+          case Some(json) =>
+            json.as[SearchConfig] match {
+              case Right(cfg) => registry.register(SearchSkill(cfg, httpClient))
+              case Left(err)  =>
+                registry.register(SearchSkill(SearchConfig(apiKey = ""), httpClient)) *>
+                  registry.disableSkill("search") *>
+                  ZIO.logWarning(s"search skill registered but disabled: invalid config JSON: $err")
+            }
+          case None =>
+            registry.register(SearchSkill(SearchConfig(apiKey = ""), httpClient)) *>
+              registry.disableSkill("search") *>
+              ZIO.logInfo("search skill registered but disabled (set skill.search in server_settings to enable)")
+        }
+      _ <- repos.setting
+        .get("skill.weather")
+        .mapError(e => new Throwable(e.msg))
+        .flatMap {
+          case Some(json) =>
+            json.as[WeatherConfig] match {
+              case Right(cfg) => registry.register(WeatherSkill(cfg, httpClient, cfg.baseUrl))
+              case Left(err)  =>
+                registry.register(WeatherSkill(WeatherConfig(), httpClient)) *>
+                  registry.disableSkill("weather") *>
+                  ZIO.logWarning(s"weather skill registered but disabled: invalid config JSON: $err")
+            }
+          case None =>
+            registry.register(WeatherSkill(WeatherConfig(), httpClient)) *>
+              registry.disableSkill("weather") *>
+              ZIO.logInfo("weather skill registered but disabled (set skill.weather in server_settings to enable)")
+        }
+      // ── Register reload factories for config-dependent skills ─────────────────
+      _ <- registry.registerSkillFactory(
+        "skill.time",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[TimeConfig])
+            .mapError(e => JorlanError(s"Invalid time config: $e"))
+            .map(cfg => TimeSkill(cfg)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.market",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[AlphaVantageConfig])
+            .mapError(e => JorlanError(s"Invalid market config: $e"))
+            .map(cfg => MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.httpFetch",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[HttpFetchConfig])
+            .mapError(e => JorlanError(s"Invalid httpFetch config: $e"))
+            .map(cfg => HttpFetchSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.lyrion",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[LyrionConfig])
+            .mapError(e => JorlanError(s"Invalid lyrion config: $e"))
+            .map(cfg => LyrionSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.search",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[SearchConfig])
+            .mapError(e => JorlanError(s"Invalid search config: $e"))
+            .map(cfg => SearchSkill(cfg, httpClient)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.weather",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[WeatherConfig])
+            .mapError(e => JorlanError(s"Invalid weather config: $e"))
+            .map(cfg => WeatherSkill(cfg, httpClient, cfg.baseUrl)),
+      )
+      // ── MCP servers ───────────────────────────────────────────────────────────
       _ <- ZIO
         .scoped {
           McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
         }.mapError(e => new Throwable(e.msg))
+      // ── Apply explicit skill.disabled list from server_settings ───────────────
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>
           val names = elems.collect { case zio.json.ast.Json.Str(s) => s }
           ZIO.foreachDiscard(names)(name => registry.disableSkill(name))
         case _ => ZIO.unit
       }
+      // ── Purge stale skillIndex rows from previous runs ────────────────────────
+      _ <- registry.purgeStaleIndex()
       _ <- registry.allSkills
-        .map(_.map(_.descriptor.name).mkString(",")).flatMap(s => ZIO.logInfo(s"All Registered skills: $s"))
-      // TODO log disabled skills
+        .map(_.map(_.descriptor.name).mkString(", ")).flatMap(s => ZIO.logInfo(s"Registered skills: $s"))
     } yield ()).mapError(JorlanError.apply)
 
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
-      _                <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _ <- ZIO
+        .serviceWithZIO[ZIORepositories] { repos =>
+          repos.memory.purgeExpired
+            .tap(n => ZIO.logDebug(s"Memory purge: removed $n expired record(s)"))
+            .mapError(JorlanError(_))
+            .repeat(Schedule.spaced(1.hour))
+            .forkDaemon
+        }.unit
       _                <- registerBuiltInSkills
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]
@@ -293,8 +403,8 @@ object Jorlan extends ZIOApp {
       )
       randomConnectionId <- ConnectionId.randomZIO
       _                  <- (for {
-        _      <- initService.topUpAdminCapabilities
         _      <- startServices
+        _      <- initService.topUpAdminCapabilities
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
       } yield ())
@@ -315,8 +425,8 @@ object Jorlan extends ZIOApp {
         _      <- initDone.await
         _      <- serverFiber.interrupt
         _      <- ZIO.logInfo("Server initialized — switching to full application routes")
-        _      <- initService.topUpAdminCapabilities
         _      <- startServices
+        _      <- initService.topUpAdminCapabilities
         routes <- zapp(startTime)
         _      <- Server.serve(routes)
       } yield ())

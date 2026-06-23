@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.init
@@ -202,6 +198,7 @@ class InitServiceImpl(
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
     CapabilityName("admin.user.list"),
+    CapabilityName("admin.settings"),
     CapabilityName("user.create"),
     CapabilityName("user.update"),
     CapabilityName("role.create"),
@@ -233,13 +230,9 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
   )
 
-  // email.send, calendar.write, and mcp.call require per-invocation approval per design spec.
-  // mcp.call is per-invocation because MCP servers are external/untrusted (SkillTier.Imported).
-  private val perInvocationCapabilities: Set[CapabilityName] = Set(
-    CapabilityName("email.send"),
-    CapabilityName("calendar.write"),
-    CapabilityName("mcp.call"),
-  )
+  // Admin user gets all capabilities as Persistent grants — no per-invocation approval friction.
+  // Per-invocation mode is reserved for non-admin users who may need scoped approval flows.
+  private val perInvocationCapabilities: Set[CapabilityName] = Set.empty
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
     skillRegistry.allAdminCapabilities.map(skillCaps => (systemCapabilities ++ skillCaps).distinct)
@@ -251,22 +244,27 @@ class InitServiceImpl(
     allAdminCaps.flatMap { caps =>
       ZIO
         .foreachDiscard(caps) { cap =>
-          val mode =
-            if (perInvocationCapabilities.contains(cap)) ApprovalMode.PerInvocation
-            else ApprovalMode.Persistent
-          repo.permission.upsertCapabilityGrant(
-            CapabilityGrant(
-              id = CapabilityGrantId.empty,
-              capability = cap,
-              scopeJson = None,
-              granteeId = userId,
-              grantorId = None,
-              approvalMode = mode,
-              expiresAt = None,
-              resourceConstraints = None,
-              createdAt = now,
-            ),
-          )
+          val mode = ApprovalMode.Persistent
+          repo.permission
+            .getGrantsForCapability(userId, cap)
+            .flatMap { existing =>
+              val grant = existing.headOption match {
+                case Some(g) => g.copy(approvalMode = mode, expiresAt = None)
+                case None    =>
+                  CapabilityGrant(
+                    id = CapabilityGrantId.empty,
+                    capability = cap,
+                    scopeJson = None,
+                    granteeId = userId,
+                    grantorId = None,
+                    approvalMode = mode,
+                    expiresAt = None,
+                    resourceConstraints = None,
+                    createdAt = now,
+                  )
+              }
+              repo.permission.upsertCapabilityGrant(grant)
+            }
         }
         .mapError(JorlanError(_))
     }

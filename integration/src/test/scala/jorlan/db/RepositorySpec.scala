@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.db
@@ -111,7 +107,7 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
     test("upsert and retrieve an agent") {
       for {
         repo <- ZIO.serviceWith[ZIORepositories](_.agent)
-        agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some(ModelId("claude-3")), 1, T0)
+        agent = Agent(AgentId.empty, "TestAgent", Some("desc"), Some(ModelId("claude-3")), 1, createdAt = T0)
         saved   <- repo.upsert(agent)
         fetched <- repo.getById(saved.id)
         all     <- repo.search(AgentSearch(pageSize = 1000))
@@ -128,7 +124,7 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         user      <- userRepo.upsert(User(UserId.empty, "SessionUser", "SessionUser@test.local", T0, T0))
-        agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, T0))
+        agent     <- agentRepo.upsert(Agent(AgentId.empty, "SessionAgent", None, None, 0, createdAt = T0))
         session = AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0)
         saved    <- agentRepo.upsertSession(session)
         fetched  <- agentRepo.getSession(saved.id)
@@ -146,7 +142,7 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         user      <- userRepo.upsert(User(UserId.empty, "ChatRefUser", "ChatRefUser@test.local", T0, T0))
-        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ChatRefAgent", None, None, 0, T0))
+        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ChatRefAgent", None, None, 0, createdAt = T0))
         session = AgentSession(
           AgentSessionId.empty,
           agent.id,
@@ -181,7 +177,7 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)
         userRepo  <- ZIO.serviceWith[ZIORepositories](_.user)
         user      <- userRepo.upsert(User(UserId.empty, "ConvUser", "ConvUser@test.local", T0, T0))
-        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, T0))
+        agent     <- agentRepo.upsert(Agent(AgentId.empty, "ConvAgent", None, None, 0, createdAt = T0))
         session   <- agentRepo.upsertSession(
           AgentSession(AgentSessionId.empty, agent.id, user.id, None, SessionStatus.Active, None, None, T0, T0),
         )

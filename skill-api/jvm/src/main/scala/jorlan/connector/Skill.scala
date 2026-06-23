@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.connector
@@ -149,13 +145,23 @@ trait ConnectorSkill extends Skill {
   * @param tools
   *   the tools this skill exposes; each tool is addressable by its [[ToolDescriptor.name]]
   */
+/** @param configKey
+  *   Key in `server_settings` where this skill's JSON config is stored (e.g. `"skill.weather"`). `None` for
+  *   non-configurable skills.
+  * @param configJsModule
+  *   The SBT artifact name / JS module identifier for this skill's config UI (e.g. `"jorlan-weather"`). The UI file is
+  *   served at `/skills/<configJsModule>-skill.js`. `None` for non-configurable skills.
+  */
 case class SkillDescriptor(
-  name:          String,
-  tier:          SkillTier,
-  tools:         List[ToolDescriptor],
-  skillVersion:  SemVer | String,
-  keywords:      List[String] = List.empty,
-  jorlanVersion: SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+  name:              String,
+  tier:              SkillTier,
+  tools:             List[ToolDescriptor],
+  skillVersion:      SemVer | String,
+  keywords:          List[String] = List.empty,
+  jorlanVersion:     SemVer | String = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+  configKey:         Option[String] = None,
+  configJsModule:    Option[String] = None,
+  dashboardJsModule: Option[String] = None,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

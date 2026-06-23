@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.shell.client
@@ -386,6 +382,13 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       gqlClient.run(JorlanClient.Mutations.enableSkill(name)).unit
     override def disableSkill(name: String): IO[String, Unit] =
       gqlClient.run(JorlanClient.Mutations.disableSkill(name)).unit
+    override def getSkillConfig(name: String): IO[String, Option[String]] =
+      gqlClient.run(JorlanClient.Queries.skillConfig(name))
+    override def updateSkillConfig(
+      name:       String,
+      configJson: String,
+    ): IO[String, Boolean] =
+      gqlClient.run(JorlanClient.Mutations.updateSkillConfig(name, configJson)).map(_.getOrElse(false))
   }
 
   override val eventLog: EventLogRepository[[A] =>> IO[String, A]] = new EventLogRepository[[A] =>> IO[String, A]] {
@@ -473,6 +476,24 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def statusCheck(): IO[String, Json] = gqlClient.execute("{ __typename }")
     }
 
+  // ── Sub-repo: SkillIndex (client-side no-op; filtering is server-side) ────
+
+  override val skillIndex: SkillIndexRepository[[A] =>> IO[String, A]] =
+    new SkillIndexRepository[[A] =>> IO[String, A]] {
+      override def upsert(
+        skillId:    SkillId,
+        keywords:   String,
+        searchText: String,
+      ): IO[String, Unit] = ZIO.unit
+      override def search(
+        query: String,
+        limit: Int,
+      ):                                                  IO[String, List[(SkillId, String)]] = ZIO.succeed(List.empty)
+      override def removeBySkillId(skillId:     SkillId): IO[String, Unit] = ZIO.unit
+      override def removeBySkillName(skillName: String):  IO[String, Unit] = ZIO.unit
+      override def keepOnly(skillNames: Set[String]): IO[String, Unit] = ZIO.unit
+    }
+
   // ── Conversion helpers ─────────────────────────────────────────────────────
 
   private def toAgentSession(v: JorlanClient.AgentSession.AgentSessionView): AgentSession =
@@ -555,6 +576,9 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       tier = SkillTier.valueOf(v.tier),
       tools = v.tools.map(t => SkillToolInfo(t.name, t.description, t.requiredCapabilities, t.examplePrompts)),
       enabled = v.enabled,
+      keywords = v.keywords,
+      configKey = v.configKey,
+      configJsModule = v.configJsModule,
     )
 
   private def toRole(v: JorlanClient.Role.RoleView): Role =

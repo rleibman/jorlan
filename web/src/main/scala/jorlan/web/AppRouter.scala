@@ -1,11 +1,7 @@
 /*
- * Copyright (c) 2026 Roberto Leibman - All Rights Reserved
+ * Copyright 2026 Roberto Leibman
  *
- * This source code is protected under international copyright law.  All rights
- * reserved and protected by the copyright holders.
- * This file is confidential and only available to authorized individuals with the
- * permission of the copyright holders.  If you encounter this file and do not have
- * permission, please contact the copyright holders and delete this file.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package jorlan.web
@@ -14,6 +10,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.User
 import jorlan.web.pages.*
+import jorlan.web.pages.DashboardPage
 import org.scalajs.dom
 
 import scala.language.unsafeNulls
@@ -35,6 +32,7 @@ enum AppPage(
   val icon:  String,
 ) {
 
+  case Dashboard extends AppPage("#/dashboard", "Dashboard", "dashboard")
   case Chat extends AppPage("#/", "Chat", "chat")
   case Sessions extends AppPage("#/sessions", "Sessions", "list")
   case Approvals extends AppPage("#/approvals", "Approvals", "approval")
@@ -88,18 +86,38 @@ object AppRouter {
             currentPage = state.value.page,
             navigate = navigate,
           )(
-            state.value.page match {
-              case AppPage.Chat      => ChatPage(user)
-              case AppPage.Sessions  => SessionsPage(user)
-              case AppPage.Approvals => ApprovalsPage(user)
-              case AppPage.Memory    => MemoryPage(user)
-              case AppPage.Scheduler => SchedulerPage(user)
-              case AppPage.EventLog  => EventLogPage(user)
-              case AppPage.Skills    => SkillsPage(user)
-              case AppPage.Users     => UsersPage(user)
-              case AppPage.Settings  => SettingsPage(user)
-              case AppPage.OAuth     => OAuthManagementPage(user)
-            },
+            // ChatPage stays mounted at all times so its session connection, message history,
+            // and in-progress prompt text survive page navigation. CSS hides it when inactive.
+            <.div(
+              ^.style := js.Dynamic.literal(
+                display = if (state.value.page == AppPage.Chat) "block" else "none",
+              ),
+            )(
+              ChatPage(user),
+            ),
+            // EventLogPage stays mounted to preserve its WebSocket connection and accumulated log entries.
+            <.div(
+              ^.style := js.Dynamic.literal(
+                display = if (state.value.page == AppPage.EventLog) "block" else "none",
+              ),
+            )(
+              EventLogPage(user),
+            ),
+            if (state.value.page != AppPage.Chat && state.value.page != AppPage.EventLog)
+              state.value.page match {
+                case AppPage.Dashboard => DashboardPage(user)
+                case AppPage.Chat      => EmptyVdom
+                case AppPage.Sessions  => SessionsPage(user)
+                case AppPage.Approvals => ApprovalsPage(user)
+                case AppPage.Memory    => MemoryPage(user)
+                case AppPage.Scheduler => SchedulerPage(user)
+                case AppPage.EventLog  => EmptyVdom
+                case AppPage.Skills    => SkillsPage(user)
+                case AppPage.Users     => UsersPage(user)
+                case AppPage.Settings  => SettingsPage(user)
+                case AppPage.OAuth     => OAuthManagementPage(user)
+              }
+            else EmptyVdom,
           )
       }
 
