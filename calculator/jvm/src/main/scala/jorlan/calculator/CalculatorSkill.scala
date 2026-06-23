@@ -16,6 +16,7 @@ import just.semver.SemVer
 import org.mariuszgromada.math.mxparser.{Expression, License}
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Tier 0 calculator skill — evaluates mathematical expressions via mXparser.
   *
@@ -69,14 +70,8 @@ class CalculatorSkill extends Skill {
       ToolDescriptor(
         name = "calculator.evaluate",
         description = "Evaluate a mathematical expression and return the numeric result. Supports arithmetic, algebra, trigonometry, logarithms, and common math functions (e.g. sqrt, sin, cos, log). Returns an error if the expression is invalid or produces an undefined result (NaN or Infinity).",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"expression":{"type":"string","description":"The mathematical expression to evaluate, e.g. \"2 + 2 * sqrt(9)\""}},"required":["expression"]}""",
-          ).getOrElse(Json.Obj()),
-        outputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","oneOf":[{"properties":{"result":{"type":"number"},"expression":{"type":"string"}},"required":["result","expression"]},{"properties":{"error":{"type":"string"},"expression":{"type":"string"}},"required":["error","expression"]}]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"expression":{"type":"string","description":"The mathematical expression to evaluate, e.g. \"2 + 2 * sqrt(9)\""}},"required":["expression"]}""",
+        outputSchema = json"""{"type":"object","oneOf":[{"properties":{"result":{"type":"number"},"expression":{"type":"string"}},"required":["result","expression"]},{"properties":{"error":{"type":"string"},"expression":{"type":"string"}},"required":["error","expression"]}]}""",
         requiredCapabilities = List.empty,
         examplePrompts = List(
           "What is 2 + 2?",

@@ -129,6 +129,7 @@ object EnvironmentBuilder {
         OAuthStateStore.live(),
         SessionHub.live,
         ToolEventHub.live,
+        EventLogHub.live,
         OllamaModelGateway.live,
         AgentSessionManagerImpl.live,
         MemoryServiceImpl.live,

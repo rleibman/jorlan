@@ -17,6 +17,7 @@ import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for reading contacts from Google Contacts (People API).
   *
@@ -51,7 +52,7 @@ class GoogleContactsSkill(
         name = "google_contacts.list_contacts",
         description = "List contacts from the authenticated user's Google Contacts.",
         inputSchema =
-          parseSchema("""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of contacts to return (default 50)"}},"required":[]}"""),
+          json"""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of contacts to return (default 50)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(
@@ -64,7 +65,7 @@ class GoogleContactsSkill(
         name = "google_contacts.search_contacts",
         description = "Search Google Contacts by name, email, or other text.",
         inputSchema =
-          parseSchema("""{"type":"object","properties":{"query":{"type":"string","description":"Search term (name, email, phone, etc.)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 20)"}},"required":["query"]}"""),
+          json"""{"type":"object","properties":{"query":{"type":"string","description":"Search term (name, email, phone, etc.)"},"maxResults":{"type":"integer","description":"Maximum number of results (default 20)"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(
@@ -77,7 +78,7 @@ class GoogleContactsSkill(
         name = "google_contacts.get_contact",
         description = "Retrieve a specific Google Contact by its People API resource name.",
         inputSchema =
-          parseSchema("""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name, e.g. 'people/c1234567890'"}},"required":["resourceName"]}"""),
+          json"""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name, e.g. 'people/c1234567890'"}},"required":["resourceName"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(

@@ -19,6 +19,7 @@ import just.semver.SemVer
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Tier 0 memory skill — explicit agent-directed memory operations.
   *
@@ -51,10 +52,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
       ToolDescriptor(
         name = "memory.remember",
         description = "Store a named fact or piece of information into agent memory for later recall.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"key":{"type":"string","description":"Short unique name for this memory"},"text":{"type":"string","description":"The content to remember"},"scope":{"type":"string","enum":["private","user"],"description":"Scope: private (current session only) or user (persists across sessions)"}},"required":["key","text"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"key":{"type":"string","description":"Short unique name for this memory"},"text":{"type":"string","description":"The content to remember"},"scope":{"type":"string","enum":["private","user"],"description":"Scope: private (current session only) or user (persists across sessions)"}},"required":["key","text"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
         examplePrompts = List(
@@ -66,10 +64,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
       ToolDescriptor(
         name = "memory.search",
         description = "Search stored memories for facts matching the given text.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"text":{"type":"string","description":"Search query"},"scope":{"type":"string","enum":["private","user"],"description":"Scope to search in"}},"required":["text"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"text":{"type":"string","description":"Search query"},"scope":{"type":"string","enum":["private","user"],"description":"Scope to search in"}},"required":["text"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("memory.read")),
         examplePrompts = List(
@@ -81,10 +76,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
       ToolDescriptor(
         name = "memory.forget",
         description = "Delete a specific memory record by its ID.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record to delete"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record to delete"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("boolean")),
         requiredCapabilities = List(CapabilityName("memory.write")),
         examplePrompts = List(
@@ -96,10 +88,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
       ToolDescriptor(
         name = "memory.mark_shared",
         description = "Promote a memory record to shared scope so other agents can read it.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
         examplePrompts = List(
@@ -110,10 +99,7 @@ class MemorySkill(memoryService: MemoryService) extends Skill {
       ToolDescriptor(
         name = "memory.mark_private",
         description = "Demote a memory record back to private scope.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record"}},"required":["id"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory record"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("memory.write")),
         examplePrompts = List(

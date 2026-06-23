@@ -147,7 +147,7 @@ object MemoryServiceFailingRepoSpec extends ZIOSpecDefault {
         val msgs = List(Message(MessageId.empty, ConversationId.empty, MessageRole.User, "hi", None, now))
         for {
           svc    <- ZIO.service[MemoryService]
-          result <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.SessionEnd).either
+          result <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.UserRequest).either
         } yield assertTrue(result.isLeft)
       }.provide(serviceLayer(makeMemoryRepo())),
     )

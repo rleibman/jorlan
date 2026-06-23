@@ -192,7 +192,10 @@ lazy val model =
         "dev.zio"     %% "zio-prelude"         % zioPreludeVersion withSources (),
         "dev.zio"     %% "zio-http"            % zioHttpVersion withSources (),
         "io.kevinlee" %% "just-semver-core"    % justSemverCoreVersion withSources (),
+        "dev.zio"     %% "zio-test"            % zioVersion % Test withSources (),
+        "dev.zio"     %% "zio-test-sbt"        % zioVersion % Test withSources (),
       ),
+      Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
     .jsSettings(
       scalacOptions ++= scala3Opts,
@@ -317,7 +320,7 @@ lazy val skillModule: CrossProject => CrossProject =
         "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-      Test / fork := true,
+      Test / fork := false,
     )
 
 ////////////////////////////////////////////////////////////////////////////////////

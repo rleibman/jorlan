@@ -231,7 +231,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
               Message(MessageId.empty, ConversationId.empty, MessageRole.User, "I use Scala", None, now),
             )
             before <- svc.query(MemoryScope.User, userId, agentId)
-            _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
+            _      <- svc.checkpoint(AgentSessionId(1L), msgs, userId, agentId, CheckpointTrigger.UserRequest)
             after  <- svc.query(MemoryScope.User, userId, agentId)
           } yield assertTrue(after.size > before.size)
         }.provide(
@@ -248,7 +248,7 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
             msgs = List(
               Message(MessageId.empty, ConversationId.empty, MessageRole.User, "my password", None, now),
             )
-            _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.SessionEnd)
+            _      <- svc.checkpoint(AgentSessionId(2L), msgs, userId, agentId, CheckpointTrigger.UserRequest)
             result <- svc.query(MemoryScope.Private, userId, agentId)
           } yield assertTrue(result.exists(_.recordKey.startsWith("chk.")))
         }.provide(

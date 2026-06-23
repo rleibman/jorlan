@@ -97,14 +97,22 @@ object AppRouter {
             )(
               ChatPage(user),
             ),
-            if (state.value.page != AppPage.Chat)
+            // EventLogPage stays mounted to preserve its WebSocket connection and accumulated log entries.
+            <.div(
+              ^.style := js.Dynamic.literal(
+                display = if (state.value.page == AppPage.EventLog) "block" else "none",
+              ),
+            )(
+              EventLogPage(user),
+            ),
+            if (state.value.page != AppPage.Chat && state.value.page != AppPage.EventLog)
               state.value.page match {
                 case AppPage.Chat      => EmptyVdom
                 case AppPage.Sessions  => SessionsPage(user)
                 case AppPage.Approvals => ApprovalsPage(user)
                 case AppPage.Memory    => MemoryPage(user)
                 case AppPage.Scheduler => SchedulerPage(user)
-                case AppPage.EventLog  => EventLogPage(user)
+                case AppPage.EventLog  => EmptyVdom
                 case AppPage.Skills    => SkillsPage(user)
                 case AppPage.Users     => UsersPage(user)
                 case AppPage.Settings  => SettingsPage(user)

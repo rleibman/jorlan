@@ -22,6 +22,7 @@ import squants.thermal.*
 import squants.time.*
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Tier 0 unit conversion skill.
   *
@@ -400,10 +401,7 @@ class UnitConversionSkill extends Skill {
       ToolDescriptor(
         name = "units.convert",
         description = "Convert a numeric value from one unit of measure to another. Supports length, mass, temperature, volume, speed, area, energy, power, time, and digital storage units.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"value":{"type":"number","description":"The numeric value to convert"},"fromUnit":{"type":"string","description":"The source unit (e.g. 'km', 'C', 'kg', 'mph')"},"toUnit":{"type":"string","description":"The target unit (e.g. 'm', 'F', 'lb', 'km/h')"}},"required":["value","fromUnit","toUnit"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"value":{"type":"number","description":"The numeric value to convert"},"fromUnit":{"type":"string","description":"The source unit (e.g. 'km', 'C', 'kg', 'mph')"},"toUnit":{"type":"string","description":"The target unit (e.g. 'm', 'F', 'lb', 'km/h')"}},"required":["value","fromUnit","toUnit"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List.empty,
         examplePrompts = List(

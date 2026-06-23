@@ -5,7 +5,7 @@ lazy val SCALA = "3.8.4"
 val scalajsReactVersion = "4.0.0"
 val reactVersion = "^19.2.0"
 
-version := "1.0.0"
+version := "1.1.0"
 
 enablePlugins(ScalablyTypedConverterGenSourcePlugin)
 
@@ -35,12 +35,14 @@ Compile / npmDependencies ++= Seq(
   "@types/react-dom" -> reactVersion,
   "react"            -> reactVersion,
   "react-dom"        -> reactVersion,
+  "apexcharts"       -> "^4.3.0",
+  "react-apexcharts" -> "^1.7.0",
   "csstype"          -> "^3.2.3",
 //  "react-quill"        -> "^2.0.0",
 //  "react-markdown"     -> "^10.1.0",
-  "@mui/material"      -> "^9.1.0",
-  "@emotion/react"     -> "^11.14.0",
-  "@emotion/styled"    -> "^11.14.1",
+  "@mui/material"   -> "^9.1.0",
+  "@emotion/react"  -> "^11.14.0",
+  "@emotion/styled" -> "^11.14.1",
 )
 
 Test / npmDependencies ++= Seq(
@@ -54,7 +56,9 @@ scalaJSLinkerConfig ~= (_.withSourceMap(false))
 // focus only on these libraries
 stMinimize := Selection.AllExcept(
 //  "react-quill", "react-markdown",
-  "@mui/material")
+  "@mui/material",
+  "react-apexcharts",
+)
 
 stIgnore ++= List(
 )
@@ -65,12 +69,12 @@ doc / sources := Nil
 
 //stReactEnableTreeShaking := true
 publishTo := Some(
-  "GitHub Package Registry" at "https://maven.pkg.github.com/rleibman/jorlan"
+  "GitHub Package Registry" at "https://maven.pkg.github.com/rleibman/jorlan",
 )
 
 credentials += Credentials(
   "GitHub Package Registry",
   "maven.pkg.github.com",
   "rleibman",
-  sys.env.getOrElse("GITHUB_TOKEN", "")
+  sys.env.getOrElse("GITHUB_TOKEN", ""),
 )

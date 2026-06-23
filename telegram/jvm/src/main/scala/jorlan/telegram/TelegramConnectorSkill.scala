@@ -19,6 +19,7 @@ import telegramium.bots.Message as TgMessage
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Normalizes a telegramium [[Update]] into a connector-neutral [[InboundMessage]].
   *
@@ -87,13 +88,13 @@ class TelegramConnectorSkill(
 
   private val sendCapability = CapabilityName("telegram.send")
 
-  private val sendMessageSchema =
-    """{"type":"object","properties":{"chatId":{"type":"string"},"text":{"type":"string"}},"required":["chatId","text"]}"""
-  private val sendPhotoSchema =
-    """{"type":"object","properties":{"chatId":{"type":"string"},"photo":{"type":"string","contentEncoding":"base64"},"caption":{"type":"string"}},"required":["chatId","photo"]}"""
-  private val sendFileSchema =
-    """{"type":"object","properties":{"chatId":{"type":"string"},"file":{"type":"string","contentEncoding":"base64"},"filename":{"type":"string"}},"required":["chatId","file","filename"]}"""
-  private val emptyOutputSchema = """{"type":"object","properties":{}}"""
+  private val sendMessageSchema: Json =
+    json"""{"type":"object","properties":{"chatId":{"type":"string"},"text":{"type":"string"}},"required":["chatId","text"]}"""
+  private val sendPhotoSchema: Json =
+    json"""{"type":"object","properties":{"chatId":{"type":"string"},"photo":{"type":"string","contentEncoding":"base64"},"caption":{"type":"string"}},"required":["chatId","photo"]}"""
+  private val sendFileSchema: Json =
+    json"""{"type":"object","properties":{"chatId":{"type":"string"},"file":{"type":"string","contentEncoding":"base64"},"filename":{"type":"string"}},"required":["chatId","file","filename"]}"""
+  private val emptyOutputSchema: Json = json"""{"type":"object","properties":{}}"""
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "telegram",
@@ -105,8 +106,8 @@ class TelegramConnectorSkill(
       ToolDescriptor(
         name = "telegram.send_message",
         description = "Send a text message to a Telegram chat",
-        inputSchema = Json.decoder.decodeJson(sendMessageSchema).getOrElse(Json.Null),
-        outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
+        inputSchema = sendMessageSchema,
+        outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
         examplePrompts = List(
           "Send a Telegram message to chat 123456 saying hello",
@@ -116,8 +117,8 @@ class TelegramConnectorSkill(
       ToolDescriptor(
         name = "telegram.send_photo",
         description = "Send a photo to a Telegram chat",
-        inputSchema = Json.decoder.decodeJson(sendPhotoSchema).getOrElse(Json.Null),
-        outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
+        inputSchema = sendPhotoSchema,
+        outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
         examplePrompts = List(
           "Send this screenshot to Telegram chat 123456",
@@ -127,8 +128,8 @@ class TelegramConnectorSkill(
       ToolDescriptor(
         name = "telegram.send_file",
         description = "Send a file/document to a Telegram chat",
-        inputSchema = Json.decoder.decodeJson(sendFileSchema).getOrElse(Json.Null),
-        outputSchema = Json.decoder.decodeJson(emptyOutputSchema).getOrElse(Json.Null),
+        inputSchema = sendFileSchema,
+        outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
         examplePrompts = List(
           "Send the report PDF to Telegram chat 123456",

@@ -15,6 +15,7 @@ import japgolly.scalajs.react.vdom.VdomElement
 import org.scalajs.dom
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 import scala.collection.mutable
 import scala.scalajs.js
@@ -25,7 +26,7 @@ object SkillRegistry {
 
   // Host state storing the skill configurations as ZIO JSON AST fragments
   private var currentConfigs = Map[String, Json](
-    "weather-skill" -> """{"city": "Paris"}""".fromJson[Json].getOrElse(Json.Null),
+    "weather-skill" -> json"""{"city": "Paris"}""",
   )
 
 //  @JSExportTopLevel("registerRemoteSkill")

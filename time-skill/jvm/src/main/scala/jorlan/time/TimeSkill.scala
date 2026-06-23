@@ -15,6 +15,7 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 import java.time.{Duration as JDuration, LocalDateTime, Period, ZoneId, ZonedDateTime}
 import java.time.format.DateTimeFormatter
@@ -226,10 +227,7 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
       ToolDescriptor(
         name = "time.now",
         description = "Return the current date and time in a given IANA timezone (e.g. 'America/New_York', 'Europe/London', 'UTC'). Defaults to UTC when timezone is omitted.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"timezone":{"type":"string","description":"IANA timezone name, e.g. 'America/New_York'. Defaults to UTC."}},"required":[]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"timezone":{"type":"string","description":"IANA timezone name, e.g. 'America/New_York'. Defaults to UTC."}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -242,10 +240,7 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
       ToolDescriptor(
         name = "time.convert",
         description = "Convert an ISO 8601 datetime string from one timezone to another. Accepts datetimes with or without a UTC offset.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string, e.g. '2026-06-16T14:30:00' or '2026-06-16T14:30:00Z'"},"fromTimezone":{"type":"string","description":"IANA source timezone, e.g. 'America/New_York'"},"toTimezone":{"type":"string","description":"IANA target timezone, e.g. 'Asia/Tokyo'"}},"required":["datetime","fromTimezone","toTimezone"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string, e.g. '2026-06-16T14:30:00' or '2026-06-16T14:30:00Z'"},"fromTimezone":{"type":"string","description":"IANA source timezone, e.g. 'America/New_York'"},"toTimezone":{"type":"string","description":"IANA target timezone, e.g. 'Asia/Tokyo'"}},"required":["datetime","fromTimezone","toTimezone"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -256,10 +251,7 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
       ToolDescriptor(
         name = "time.add_duration",
         description = "Add an ISO 8601 duration (e.g. 'PT2H30M', 'P1D', 'P1Y2M3DT4H5M6S') to a datetime and return the resulting datetime.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string"},"timezone":{"type":"string","description":"IANA timezone for interpreting the datetime. Defaults to UTC."},"duration":{"type":"string","description":"ISO 8601 duration, e.g. 'PT2H30M' (2h 30m), 'P1D' (1 day)"}},"required":["datetime","duration"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"datetime":{"type":"string","description":"ISO 8601 datetime string"},"timezone":{"type":"string","description":"IANA timezone for interpreting the datetime. Defaults to UTC."},"duration":{"type":"string","description":"ISO 8601 duration, e.g. 'PT2H30M' (2h 30m), 'P1D' (1 day)"}},"required":["datetime","duration"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(
@@ -271,10 +263,7 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill {
       ToolDescriptor(
         name = "time.diff",
         description = "Calculate the duration between two ISO 8601 datetimes and return the result in seconds, broken down into days/hours/minutes/seconds with a human-readable summary.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"from":{"type":"string","description":"ISO 8601 start datetime"},"to":{"type":"string","description":"ISO 8601 end datetime"},"fromTimezone":{"type":"string","description":"IANA timezone for the 'from' datetime. Defaults to UTC."},"toTimezone":{"type":"string","description":"IANA timezone for the 'to' datetime. Defaults to UTC."}},"required":["from","to"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"from":{"type":"string","description":"ISO 8601 start datetime"},"to":{"type":"string","description":"ISO 8601 end datetime"},"fromTimezone":{"type":"string","description":"IANA timezone for the 'from' datetime. Defaults to UTC."},"toTimezone":{"type":"string","description":"IANA timezone for the 'to' datetime. Defaults to UTC."}},"required":["from","to"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("time.read")),
         examplePrompts = List(

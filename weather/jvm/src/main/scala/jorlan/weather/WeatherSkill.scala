@@ -17,6 +17,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for fetching weather data via the OpenWeatherMap API.
   *
@@ -65,10 +66,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.current",
         description = "Fetch current weather conditions for a named location. Returns temperature, feels_like, humidity, description, wind_speed, and visibility.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -80,10 +78,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.forecast",
         description = "Fetch a simplified multi-day weather forecast for a named location. Returns a list of forecast entries with date, temp_min, temp_max, and description.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'"},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'"},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -95,10 +90,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.alerts",
         description = "Fetch active weather alerts for a geographic coordinate (latitude/longitude). Returns a list of alerts with event, start, end, and description.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"lat":{"type":"number","description":"Latitude"},"lon":{"type":"number","description":"Longitude"}},"required":["lat","lon"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"lat":{"type":"number","description":"Latitude"},"lon":{"type":"number","description":"Longitude"}},"required":["lat","lon"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(

@@ -811,9 +811,9 @@ object JorlanAPI {
     actorId:   Option[UserId],
     resource:  Option[Any],
     now:       Instant,
-  ): ZIO[ZIORepositories, JorlanError, Unit] =
-    ZIO
-      .serviceWithZIO[ZIORepositories](
+  ): ZIO[ZIORepositories & EventLogHub, JorlanError, Unit] =
+    for {
+      logEntry <- ZIO.serviceWithZIO[ZIORepositories](
         _.eventLog.append(
           EventLog[Nothing](
             id = EventLogId.empty,
@@ -827,7 +827,8 @@ object JorlanAPI {
           ),
         ),
       )
-      .unit
+      _ <- ZIO.serviceWithZIO[EventLogHub](_.publishTyped(logEntry))
+    } yield ()
 
   // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -1482,7 +1483,21 @@ object JorlanAPI {
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,
-          eventLogTail = ZStream.empty,
+          eventLogTail = ZStream.unwrap(
+            for {
+              hub    <- ZIO.service[EventLogHub]
+              repos  <- ZIO.service[ZIORepositories]
+              recent <- repos.eventLog
+                .search(
+                  EventLogFilter(
+                    pageSize = 50,
+                    sorts = Some(Sort(EventLogOrder.Id, OrderDirection.Desc)),
+                  ),
+                )
+                .mapError(JorlanError(_))
+              live <- hub.subscribe
+            } yield ZStream.fromIterable(recent.reverse) ++ live,
+          ),
           agentResponseStream = sessionId =>
             ZStream.unwrap(
               for {

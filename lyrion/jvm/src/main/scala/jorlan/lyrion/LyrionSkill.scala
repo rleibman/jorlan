@@ -17,6 +17,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Skill that interfaces with a Lyrion Music Server via its JSON-RPC API.
   *
@@ -74,7 +75,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.players",
         description = "List all Lyrion music players known to the server, including their power and playback state.",
-        inputSchema = Json.decoder.decodeJson("""{"type":"object","properties":{}}""").getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{}}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -86,10 +87,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.status",
         description = "Get the current playback status of a player, including track title, artist, album, and volume.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address (e.g. aa:bb:cc:dd:ee:ff)"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address (e.g. aa:bb:cc:dd:ee:ff)"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -101,10 +99,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.play",
         description = "Resume or start playback on a player.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -116,10 +111,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.pause",
         description = "Pause playback on a player.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -130,10 +122,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.stop",
         description = "Stop playback on a player.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -144,10 +133,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.volume",
         description = "Set the volume on a player. Level is an integer from 0 (mute) to 100 (maximum).",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"level":{"type":"integer","description":"Volume level 0-100","minimum":0,"maximum":100}},"required":["playerId","level"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"level":{"type":"integer","description":"Volume level 0-100","minimum":0,"maximum":100}},"required":["playerId","level"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -159,10 +145,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.next",
         description = "Skip to the next track in the playlist.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -174,10 +157,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.previous",
         description = "Go back to the previous track in the playlist.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -189,10 +169,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.playlist",
         description = "List the current playlist for a player.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(

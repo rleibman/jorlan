@@ -17,6 +17,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.json.literal.*
 
 /** Built-in skill for fetching market data via the Alpha Vantage API.
   *
@@ -75,10 +76,7 @@ class MarketDataSkill(
       ToolDescriptor(
         name = "market.quote",
         description = "Fetch a real-time stock quote for a ticker symbol. Returns price, change, change percentage, volume, and the latest trading day.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
@@ -92,10 +90,7 @@ class MarketDataSkill(
       ToolDescriptor(
         name = "market.search",
         description = "Search for ticker symbols matching a keyword query. Returns up to 5 matching securities with symbol, name, type, and region.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"query":{"type":"string","description":"Search keyword, e.g. Apple or Tesla"}},"required":["query"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"Search keyword, e.g. Apple or Tesla"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
@@ -107,10 +102,7 @@ class MarketDataSkill(
       ToolDescriptor(
         name = "market.news",
         description = "Fetch the latest news headlines and sentiment for a ticker symbol. Returns up to 5 recent news items with title, URL, summary, sentiment, and relevance score.",
-        inputSchema = Json.decoder
-          .decodeJson(
-            """{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
-          ).getOrElse(Json.Obj()),
+        inputSchema = json"""{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("market.read")),
         examplePrompts = List(
