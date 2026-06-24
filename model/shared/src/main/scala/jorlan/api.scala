@@ -73,6 +73,12 @@ case class McpServerInfo(
   enabled:   Boolean = true,
 ) derives JsonCodec
 
+/** Result of a skill configuration validation check. */
+case class SkillValidationResult(
+  ok:      Boolean,
+  message: String,
+) derives JsonCodec
+
 /** A registered skill visible via the API. */
 case class SkillInfo(
   name:              String,

@@ -7,7 +7,7 @@
 package jorlan.weather
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -29,7 +29,7 @@ class WeatherSkill(
   config:  WeatherConfig,
   client:  Client,
   baseUrl: String = "https://api.openweathermap.org/data/2.5",
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "weather",
@@ -320,6 +320,18 @@ class WeatherSkill(
           case other => other
         }
         .catchAll(e => ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg))))
+    }
+  }
+
+  override def validate(): IO[JorlanError, SkillValidationResult] = {
+    if (config.apiKey.isBlank)
+      ZIO.succeed(SkillValidationResult(ok = false, message = "API key is not configured"))
+    else {
+      val location = normalizeLocation(config.defaultLocation)
+      val url = s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(config.units)}"
+      fetchJson(url)
+        .as(SkillValidationResult(ok = true, message = s"OK — current weather for '$location' fetched successfully"))
+        .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = e.msg)))
     }
   }
 

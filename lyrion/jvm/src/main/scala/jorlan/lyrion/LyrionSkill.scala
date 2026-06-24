@@ -7,7 +7,7 @@
 package jorlan.lyrion
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -35,7 +35,7 @@ class LyrionSkill(
   settings:   LyrionConfig,
   client:     Client,
   lastPlayer: Ref[Option[String]],
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "lyrion",
@@ -891,6 +891,11 @@ class LyrionSkill(
         case other => ZIO.succeed(Json.Obj("players" -> Json.Arr()))
       }
       .catchAll(e => ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg), "players" -> Json.Arr())))
+
+  override def validate(): IO[JorlanError, SkillValidationResult] =
+    listPlayers()
+      .as(SkillValidationResult(ok = true, message = s"OK — connected to Lyrion server at ${settings.serverUrl}"))
+      .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = s"Cannot reach Lyrion server at ${settings.serverUrl}: ${e.msg}")))
 
 }
 

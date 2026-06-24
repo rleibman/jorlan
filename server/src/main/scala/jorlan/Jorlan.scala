@@ -45,8 +45,8 @@ type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
   JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
-    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub &
-    EmbeddingStore & EmbeddingModel
+    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub & EmbeddingStore &
+    EmbeddingModel
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -150,7 +150,7 @@ object Jorlan extends ZIOApp {
       notifRouter    <- ZIO.service[NotificationRouter]
       httpClient     <- ZIO.service[Client]
       oauthCredSvc   <- ZIO.service[OAuthCredentialService]
-      workRoot     <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
+      workRoot       <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
       pgpService = PgpService.noOp
       emailCfg = config.jorlan.email
       emailProvider <-
@@ -387,9 +387,7 @@ object Jorlan extends ZIOApp {
       _ <- registry.purgeStaleIndex()
       _ <- registry.allSkills
         .map(_.map(_.descriptor.name).mkString(", ")).flatMap(s => ZIO.logInfo(s"Registered skills: $s"))
-      _ <- ZIO.acquireRelease(connectorManager.startAll)(_ =>
-        connectorManager.stopAll.timeout(10.seconds).ignore
-      )
+      _ <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll.timeout(10.seconds).ignore)
     } yield ()
 
   // $COVERAGE-OFF$

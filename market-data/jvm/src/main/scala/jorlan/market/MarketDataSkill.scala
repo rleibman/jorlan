@@ -7,7 +7,7 @@
 package jorlan.market
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -29,7 +29,7 @@ class MarketDataSkill(
   apiKey:  String,
   client:  Client,
   baseUrl: String = "https://www.alphavantage.co/query",
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "market",
@@ -338,6 +338,19 @@ class MarketDataSkill(
             )
         }
         .map(quotes => Json.Obj("quotes" -> Json.Arr(quotes*)))
+  }
+
+  override def validate(): IO[JorlanError, SkillValidationResult] = {
+    if (apiKey.isBlank)
+      ZIO.succeed(SkillValidationResult(ok = false, message = "API key is not configured"))
+    else {
+      val url =
+        s"$baseUrl?function=GLOBAL_QUOTE&symbol=IBM&apikey=$apiKey"
+      fetchJson(url)
+        .flatMap(checkRateLimit)
+        .as(SkillValidationResult(ok = true, message = "OK — Alpha Vantage API key is valid"))
+        .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = e.msg)))
+    }
   }
 
 }

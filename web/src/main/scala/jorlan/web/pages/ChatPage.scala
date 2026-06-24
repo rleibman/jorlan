@@ -40,7 +40,9 @@ object ChatPage {
     error:        Option[String],
     pendingQueue: List[String],
   ) {
+
     def sessionId: Option[AgentSessionId] = session.map(_.id)
+
   }
 
   val component =

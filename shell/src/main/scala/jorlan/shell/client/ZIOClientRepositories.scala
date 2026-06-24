@@ -267,7 +267,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       gqlClient
         .run(JorlanClient.Queries.job(id)(JorlanClient.SchedulerJob.view))
         .map(_.map(toSchedulerJob))
-    override def getPendingJobs:                IO[String, List[SchedulerJob]] = ZIO.succeed(List.empty)
+    override def getPendingJobs:               IO[String, List[SchedulerJob]] = ZIO.succeed(List.empty)
     override def upsertJob(job: SchedulerJob): IO[String, SchedulerJob] = ZIO.fail("not implemented")
     override def updateJobConfig(
       id:              SchedulerJobId,
@@ -277,7 +277,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
       missedRunPolicy: MissedRunPolicy,
-    ): IO[String, Boolean] = ZIO.fail("not implemented")
+    ):                                          IO[String, Boolean] = ZIO.fail("not implemented")
     override def deleteJob(id: SchedulerJobId): IO[String, Boolean] =
       gqlClient.run(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
     override def pauseJob(id: SchedulerJobId): IO[String, Boolean] =

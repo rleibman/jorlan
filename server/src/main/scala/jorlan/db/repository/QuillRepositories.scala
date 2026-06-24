@@ -1319,7 +1319,9 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
       case (Some(uid), _) =>
         val uidVal = uid.value
         val base = quote(
-          qCapabilityGrants.filter(g => g.granteeId == lift(uidVal) && g.granteeType == lift(GranteeType.User: GranteeType)),
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(uidVal) && g.granteeType == lift(GranteeType.User: GranteeType),
+          ),
         )
         val limited = quote(base.drop(lift(offset)).take(lift(ps)))
         val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
@@ -1332,7 +1334,9 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
       case (_, Some(rid)) =>
         val ridVal = rid.value
         val base = quote(
-          qCapabilityGrants.filter(g => g.granteeId == lift(ridVal) && g.granteeType == lift(GranteeType.Role: GranteeType)),
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(ridVal) && g.granteeType == lift(GranteeType.Role: GranteeType),
+          ),
         )
         val limited = quote(base.drop(lift(offset)).take(lift(ps)))
         val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
@@ -1391,7 +1395,7 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
           ),
         ),
       )
-      roleIds   <- exec(qc.ctx.run(qUserRoles.filter(_.userId == lift(userId)).map(_.roleId)))
+      roleIds    <- exec(qc.ctx.run(qUserRoles.filter(_.userId == lift(userId)).map(_.roleId)))
       roleGrants <-
         if (roleIds.isEmpty) ZIO.succeed(List.empty[CapabilityGrant])
         else {

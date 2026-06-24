@@ -32,29 +32,29 @@ object UsersPage {
   )
 
   case class State(
-    users:        List[User],
-    loading:      Boolean,
-    error:        Option[String],
-    page:         Int,
-    rowsPerPage:  Int,
-    editingUser:  Option[User],
-    editState:    Option[EditState],
-    saving:       Boolean,
-    createOpen:   Boolean,
-    createName:   String,
-    createEmail:  String,
+    users:                List[User],
+    loading:              Boolean,
+    error:                Option[String],
+    page:                 Int,
+    rowsPerPage:          Int,
+    editingUser:          Option[User],
+    editState:            Option[EditState],
+    saving:               Boolean,
+    createOpen:           Boolean,
+    createName:           String,
+    createEmail:          String,
     permsUser:            Option[User],
     grants:               List[CapabilityGrant],
     allKnownCapabilities: List[CapabilityName],
     newMode:              String,
     rolesUser:            Option[User],
-    userRoles:    List[Role],
-    allRoles:     List[Role],
-    assignRoleId: String,
-    identsUser:   Option[User],
-    identities:   List[ChannelIdentity],
-    newChType:    String,
-    newChUserId:  String,
+    userRoles:            List[Role],
+    allRoles:             List[Role],
+    assignRoleId:         String,
+    identsUser:           Option[User],
+    identities:           List[ChannelIdentity],
+    newChType:            String,
+    newChUserId:          String,
   )
 
   val component =
@@ -654,11 +654,13 @@ object UsersPage {
                     .value(state.value.newMode)
                     .size("small")
                     .onChange { e =>
-                      state.setState(state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value)).runNow()
+                      state
+                        .setState(
+                          state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                        ).runNow()
                     }(
-                      ApprovalMode.values.map(m =>
-                        MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode,
-                      )*,
+                      ApprovalMode.values
+                        .map(m => MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
                     ),
                 ),
                 Box.withProps(
@@ -752,7 +754,10 @@ object UsersPage {
                       .size("small")
                       .displayEmpty(true)
                       .onChange { e =>
-                        state.setState(state.value.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value)).runNow()
+                        state
+                          .setState(
+                            state.value.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                          ).runNow()
                       }(
                         ((MuiMenuItem.value("")("— Select a role —"): VdomNode) ::
                           state.value.allRoles.map { r =>

@@ -73,9 +73,7 @@ object RolesPage {
           Callback {
             AsyncCallbackRepositories.permission
               .searchRoles(RoleSearch())
-              .flatMap(roles =>
-                state.setState(state.value.copy(roles = roles, loading = false)).asAsyncCallback,
-              )
+              .flatMap(roles => state.setState(state.value.copy(roles = roles, loading = false)).asAsyncCallback)
               .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
               .runNow()
           }
@@ -85,7 +83,6 @@ object RolesPage {
           _,
           state,
         ) =>
-
           def reload(): Callback =
             Callback {
               AsyncCallbackRepositories.permission
@@ -99,11 +96,16 @@ object RolesPage {
             Callback {
               state.setState(state.value.copy(saving = true)).runNow()
               AsyncCallbackRepositories.permission
-                .upsertRole(Role(RoleId.empty, state.value.createName.trim, Some(state.value.createDesc.trim).filter(_.nonEmpty)))
+                .upsertRole(
+                  Role(RoleId.empty, state.value.createName.trim, Some(state.value.createDesc.trim).filter(_.nonEmpty)),
+                )
                 .flatMap(_ => AsyncCallbackRepositories.permission.searchRoles(RoleSearch()))
                 .flatMap(roles =>
                   state
-                    .setState(state.value.copy(saving = false, showCreate = false, createName = "", createDesc = "", roles = roles))
+                    .setState(
+                      state.value
+                        .copy(saving = false, showCreate = false, createName = "", createDesc = "", roles = roles),
+                    )
                     .asAsyncCallback,
                 )
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
@@ -112,19 +114,23 @@ object RolesPage {
 
           def saveEdit(): Callback =
             state.value.editRole match {
-              case None => Callback.empty
+              case None       => Callback.empty
               case Some(role) =>
                 Callback {
                   state.setState(state.value.copy(saving = true)).runNow()
                   AsyncCallbackRepositories.permission
-                    .upsertRole(Role(role.id, state.value.editName.trim, Some(state.value.editDesc.trim).filter(_.nonEmpty)))
+                    .upsertRole(
+                      Role(role.id, state.value.editName.trim, Some(state.value.editDesc.trim).filter(_.nonEmpty)),
+                    )
                     .flatMap(_ =>
                       state
                         .setState(state.value.copy(saving = false, editRole = None))
                         .asAsyncCallback
                         .flatMap(_ => reload().asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
+                    .completeWith(
+                      PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))),
+                    )
                     .runNow()
                 }
             }
@@ -150,7 +156,14 @@ object RolesPage {
                 AsyncCallbackRepositories.allKnownCapabilities())
                 .flatMap { case (grants, caps) =>
                   state
-                    .setState(state.value.copy(capRole = Some(role), roleGrants = grants, allKnownCapabilities = caps, newMode = "Persistent"))
+                    .setState(
+                      state.value.copy(
+                        capRole = Some(role),
+                        roleGrants = grants,
+                        allKnownCapabilities = caps,
+                        newMode = "Persistent",
+                      ),
+                    )
                     .asAsyncCallback
                 }
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
@@ -214,20 +227,27 @@ object RolesPage {
             Box.withProps(
               BoxOwnProps[Theme]()
                 .setSx(
-                  js.Dynamic.literal(display = "flex", justifyContent = "space-between", alignItems = "center", mb = 2)
+                  js.Dynamic
+                    .literal(display = "flex", justifyContent = "space-between", alignItems = "center", mb = 2)
                     .asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
               Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Roles"),
               MuiButton
                 .variant("contained")
-                .onClick(() => state.setState(state.value.copy(showCreate = true, createName = "", createDesc = "", error = None)).runNow())(
+                .onClick(() =>
+                  state
+                    .setState(
+                      state.value.copy(showCreate = true, createName = "", createDesc = "", error = None),
+                    ).runNow(),
+                )(
                   "+ New Role",
                 ),
             ),
             state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             if (state.value.loading) {
-              Typography.withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])("Loading...")
+              Typography
+                .withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])("Loading...")
             } else if (state.value.roles.isEmpty) {
               Typography.withProps(
                 TypographyOwnProps()
@@ -253,7 +273,15 @@ object RolesPage {
                         MuiButton
                           .size("small")
                           .onClick(() =>
-                            state.setState(state.value.copy(editRole = Some(r), editName = r.name, editDesc = r.description.getOrElse(""), error = None)).runNow(),
+                            state
+                              .setState(
+                                state.value.copy(
+                                  editRole = Some(r),
+                                  editName = r.name,
+                                  editDesc = r.description.getOrElse(""),
+                                  error = None,
+                                ),
+                              ).runNow(),
                           )("Edit"),
                         MuiButton
                           .size("small")
@@ -278,16 +306,23 @@ object RolesPage {
                   .fullWidth(true)
                   .variant("outlined")
                   .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e => state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow()),
+                  .onChange(e =>
+                    state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
                 MuiTextField
                   .label("Description")
                   .value(state.value.createDesc)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e => state.setState(state.value.copy(createDesc = e.target.value.asInstanceOf[String])).runNow()),
+                  .onChange(e =>
+                    state.setState(state.value.copy(createDesc = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => state.setState(state.value.copy(showCreate = false)).runNow())("Cancel"),
+                MuiButton
+                  .variant("text").onClick(() => state.setState(state.value.copy(showCreate = false)).runNow())(
+                    "Cancel",
+                  ),
                 MuiButton
                   .variant("contained")
                   .disabled(state.value.saving || state.value.createName.trim.isEmpty)
@@ -304,16 +339,21 @@ object RolesPage {
                   .fullWidth(true)
                   .variant("outlined")
                   .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e => state.setState(state.value.copy(editName = e.target.value.asInstanceOf[String])).runNow()),
+                  .onChange(e =>
+                    state.setState(state.value.copy(editName = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
                 MuiTextField
                   .label("Description")
                   .value(state.value.editDesc)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e => state.setState(state.value.copy(editDesc = e.target.value.asInstanceOf[String])).runNow()),
+                  .onChange(e =>
+                    state.setState(state.value.copy(editDesc = e.target.value.asInstanceOf[String])).runNow(),
+                  ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => state.setState(state.value.copy(editRole = None)).runNow())("Cancel"),
+                MuiButton
+                  .variant("text").onClick(() => state.setState(state.value.copy(editRole = None)).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .disabled(state.value.saving || state.value.editName.trim.isEmpty)
@@ -328,7 +368,10 @@ object RolesPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => state.setState(state.value.copy(deleteTarget = None)).runNow())("Cancel"),
+                MuiButton
+                  .variant("text").onClick(() => state.setState(state.value.copy(deleteTarget = None)).runNow())(
+                    "Cancel",
+                  ),
                 MuiButton
                   .variant("contained")
                   .color("error")
@@ -393,11 +436,13 @@ object RolesPage {
                     .value(state.value.newMode)
                     .size("small")
                     .onChange { e =>
-                      state.setState(state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value)).runNow()
+                      state
+                        .setState(
+                          state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                        ).runNow()
                     }(
-                      ApprovalMode.values.map(m =>
-                        MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode,
-                      )*,
+                      ApprovalMode.values
+                        .map(m => MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
                     ),
                 ),
                 Box.withProps(

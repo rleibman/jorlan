@@ -233,10 +233,10 @@ object InitServiceSpec extends ZIOSpecDefault {
           validToken <- tokenStore.token.map(_.getOrElse(""))
           svc        <- ZIO.service[InitService]
           _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
-          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
-          allRoles  <- permRepo.searchRoles(jorlan.RoleSearch())
-          adminRole  = allRoles.find(_.name == "Admin")
-          grants    <- adminRole match {
+          permRepo   <- ZIO.serviceWith[ZIORepositories](_.permission)
+          allRoles   <- permRepo.searchRoles(jorlan.RoleSearch())
+          adminRole = allRoles.find(_.name == "Admin")
+          grants <- adminRole match {
             case Some(r) => permRepo.searchGrants(jorlan.GrantSearch(roleId = Some(r.id), pageSize = 1000))
             case None    => ZIO.succeed(List.empty)
           }

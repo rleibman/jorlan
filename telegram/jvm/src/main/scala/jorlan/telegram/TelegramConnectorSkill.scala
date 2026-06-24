@@ -113,8 +113,7 @@ class TelegramConnectorSkill(
     tools = List(
       ToolDescriptor(
         name = "telegram.send_message",
-        description =
-          "Send a text message via Telegram to a chat. 'chatId' is the Telegram numeric chat or user ID — obtain it from contacts.find if you only know the person's name.",
+        description = "Send a text message via Telegram to a chat. 'chatId' is the Telegram numeric chat or user ID — obtain it from contacts.find if you only know the person's name.",
         inputSchema = sendMessageSchema,
         outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),

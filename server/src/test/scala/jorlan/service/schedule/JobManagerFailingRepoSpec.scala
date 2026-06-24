@@ -67,8 +67,8 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
     ) => alwaysFail,
   ): ZIOSchedulerRepository =
     new ZIOSchedulerRepository {
-      override def getJob(id:             SchedulerJobId):   RepositoryTask[Option[SchedulerJob]] = getJobFn(id)
-      override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] = upsertJobFn(job)
+      override def getJob(id:     SchedulerJobId): RepositoryTask[Option[SchedulerJob]] = getJobFn(id)
+      override def upsertJob(job: SchedulerJob):   RepositoryTask[SchedulerJob] = upsertJobFn(job)
       override def updateJobConfig(
         id:              SchedulerJobId,
         name:            String,
@@ -77,8 +77,8 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
         backoffSeconds:  Int,
         backoffPolicy:   RetryBackoffPolicy,
         missedRunPolicy: MissedRunPolicy,
-      ): RepositoryTask[Boolean] = alwaysFail
-      override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] = deleteJobFn(id)
+      ):                                                     RepositoryTask[Boolean] = alwaysFail
+      override def deleteJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = deleteJobFn(id)
       override def pauseJob(id:           SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
       override def resumeJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail
       override def cancelJob(id:          SchedulerJobId):   RepositoryTask[Boolean] = alwaysFail

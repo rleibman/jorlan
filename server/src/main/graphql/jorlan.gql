@@ -438,6 +438,7 @@ type Queries {
   skillDashboardData(value: String!): String
   mcpServers: [McpServerView!]
   allKnownCapabilities: [CapabilityName!]
+  skillValidate(value: String!): SkillValidationResult
 }
 
 type ResponseChunk {
@@ -502,6 +503,11 @@ type SkillToolInfo {
   description: String!
   requiredCapabilities: [String!]!
   examplePrompts: [String!]!
+}
+
+type SkillValidationResult {
+  ok: Boolean!
+  message: String!
 }
 
 type Subscriptions {

@@ -7,7 +7,7 @@
 package jorlan.service.skills
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.EmailProvider
 import just.semver.SemVer
 import zio.*
@@ -29,7 +29,7 @@ import zio.json.literal.*
   */
 class EmailSkill(
   emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
@@ -349,6 +349,12 @@ class EmailSkill(
       .catchAll(e =>
         ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg), "unreadCount" -> Json.Num(0), "recentMessages" -> Json.Arr())),
       )
+
+  override def validate(): IO[JorlanError, SkillValidationResult] =
+    emailProvider
+      .listMessages(UserId.empty, 1, None)
+      .as(SkillValidationResult(ok = true, message = "OK — email provider connection successful"))
+      .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = s"Email provider error: ${e.msg}")))
 
 }
 

@@ -35,7 +35,6 @@ object EnvironmentBuilder {
   private val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
     ZLayer.fromZIO(ZIO.serviceWith[QuillRepositories](_.dataSourceLayer)).flatten
 
-
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
     ZLayer
       .fromZIO(

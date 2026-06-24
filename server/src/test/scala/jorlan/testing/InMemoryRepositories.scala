@@ -58,7 +58,6 @@ object InMemoryRepositories {
     override def getChannelIdentities(userId: UserId): RepositoryTask[List[ChannelIdentity]] =
       ciStore.get.map(_.values.filter(_.userId == userId).toList)
 
-
     override def upsertChannelIdentity(ci: ChannelIdentity): RepositoryTask[ChannelIdentity] =
       for {
         id <- if (ci.id == ChannelIdentityId.empty) ciIdGen.updateAndGet(_ + 1) else ZIO.succeed(ci.id.value)
@@ -277,11 +276,11 @@ object InMemoryRepositories {
       for {
         gs      <- grants.get
         roleIds <- getUserRoleIds(userId)
-        ridVals  = roleIds.map(_.value).toSet
-        result   = gs.values.toList.filter { g =>
+        ridVals = roleIds.map(_.value).toSet
+        result = gs.values.toList.filter { g =>
           g.capability == capability &&
-            ((g.granteeId == userId.value && g.granteeType == GranteeType.User) ||
-              (ridVals.contains(g.granteeId) && g.granteeType == GranteeType.Role))
+          ((g.granteeId == userId.value && g.granteeType == GranteeType.User) ||
+            (ridVals.contains(g.granteeId) && g.granteeType == GranteeType.Role))
         }
       } yield result
 
@@ -664,8 +663,8 @@ object InMemoryRepositories {
     override def listJobs(
       agentId: Option[AgentId],
       limit:   Int = 200,
-    ):                                              RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
-    override def getPendingJobs:                    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
+    ):                                         RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
+    override def getPendingJobs:               RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
     override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] = ZIO.succeed(job)
     override def updateJobConfig(
       id:              SchedulerJobId,
@@ -675,8 +674,8 @@ object InMemoryRepositories {
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
       missedRunPolicy: MissedRunPolicy,
-    ): RepositoryTask[Boolean] = ZIO.succeed(true)
-    override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    ):                                              RepositoryTask[Boolean] = ZIO.succeed(true)
+    override def deleteJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def pauseJob(id:      SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def resumeJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def cancelJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)

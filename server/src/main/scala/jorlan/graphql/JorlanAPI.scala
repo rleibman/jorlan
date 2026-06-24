@@ -773,6 +773,8 @@ object JorlanAPI {
     mcpServers: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[McpServerView]],
     /** Returns all known capability names from registered skills. Requires `admin.user.manage`. */
     allKnownCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityName]],
+    /** Validates the current configuration of a skill (API key, connectivity, etc.). Requires `admin.settings`. */
+    skillValidate: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillValidationResult],
   )
 
   case class Mutations(
@@ -815,7 +817,11 @@ object JorlanAPI {
     /** Grants a named capability directly to a user. Requires `permission.grant`. */
     grantCapability: GrantCapabilityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
     /** Grants a named capability to a role. Requires `permission.grant`. */
-    grantCapabilityToRole: GrantCapabilityToRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
+    grantCapabilityToRole: GrantCapabilityToRoleInput => ZIO[
+      JorlanApiEnv & JorlanSession,
+      JorlanError,
+      CapabilityGrant,
+    ],
     /** Revokes a capability grant by ID. Requires `permission.revoke`. */
     revokeCapabilityGrant: CapabilityGrantId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Associates a ch`annel identity with a user. Requires `admin.user.manage`. */
@@ -1218,6 +1224,19 @@ object JorlanAPI {
             _       <- requireCapability("admin.user.manage", actorId)
             caps    <- ZIO.serviceWithZIO[SkillRegistry](_.allAdminCapabilities)
           } yield caps,
+          skillValidate = name =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.settings", actorId)
+              skillOpt <- ZIO.serviceWithZIO[SkillRegistry](_.getSkill[jorlan.connector.Skill](name))
+              result   <- skillOpt match {
+                case Some(s: jorlan.connector.HasValidation) => s.validate()
+                case Some(_)                                 =>
+                  ZIO.succeed(SkillValidationResult(ok = true, message = "Skill has no configurable validation"))
+                case None =>
+                  ZIO.succeed(SkillValidationResult(ok = false, message = s"Skill '$name' not found"))
+              }
+            } yield result,
         ),
         Mutations(
           createUser = input =>
@@ -1660,8 +1679,8 @@ object JorlanAPI {
             } yield true,
           upsertMcpServer = input =>
             for {
-              actorId <- actorIdFromSession
-              _       <- requireCapability("admin.settings", actorId)
+              actorId   <- actorIdFromSession
+              _         <- requireCapability("admin.settings", actorId)
               transport <- ZIO
                 .fromTry(scala.util.Try(McpTransport.valueOf(input.transport)))
                 .orElseFail(JorlanError(s"Unknown MCP transport: ${input.transport}"))
@@ -1674,29 +1693,29 @@ object JorlanAPI {
                 url = input.url,
                 enabled = input.enabled,
               )
-              json <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
+              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
               existing <- json match {
                 case None    => ZIO.succeed(List.empty)
                 case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
               }
               updated = existing.filterNot(_.name == newCfg.name) :+ newCfg
               updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
-              _ <- ZIO
+              _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
-              actorId <- actorIdFromSession
-              _       <- requireCapability("admin.settings", actorId)
-              json    <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.settings", actorId)
+              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
               existing <- json match {
                 case None    => ZIO.succeed(List.empty)
                 case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
               }
               updated = existing.filterNot(_.name == name)
               updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
-              _ <- ZIO
+              _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
             } yield existing.exists(_.name == name),

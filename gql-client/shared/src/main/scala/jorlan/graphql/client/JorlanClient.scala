@@ -521,6 +521,23 @@ def view: ViewSelection = (name ~ description ~ requiredCapabilities ~ examplePr
 }
 
 
+type SkillValidationResult
+object SkillValidationResult {
+  
+final case class SkillValidationResultView(ok: Boolean, message: String)
+
+
+
+
+type ViewSelection = SelectionBuilder[SkillValidationResult, SkillValidationResultView]
+
+def view: ViewSelection = (ok ~ message).map { case (ok, message) => SkillValidationResultView(ok, message) }
+
+  def ok: SelectionBuilder[SkillValidationResult, Boolean] = _root_.caliban.client.SelectionBuilder.Field("ok", Scalar())
+  def message: SelectionBuilder[SkillValidationResult, String] = _root_.caliban.client.SelectionBuilder.Field("message", Scalar())
+}
+
+
 type TimeSeriesPoint
 object TimeSeriesPoint {
   
@@ -615,6 +632,7 @@ object Queries {
   def skillDashboardData(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("skillDashboardData", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def mcpServers[A](innerSelection: SelectionBuilder[McpServerView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("mcpServers", OptionOf(ListOf(Obj(innerSelection))))
   def allKnownCapabilities: SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[jorlan.CapabilityName]]] = _root_.caliban.client.SelectionBuilder.Field("allKnownCapabilities", OptionOf(ListOf(Scalar())))
+  def skillValidate[A](value : String)(innerSelection: SelectionBuilder[SkillValidationResult, A])(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("skillValidate", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "String!")))
 }
 
 

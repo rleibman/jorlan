@@ -78,7 +78,11 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
             ),
           )
           desc <- repo.searchGrants(
-            GrantSearch(userId = Some(grantee.id), pageSize = 20, sorts = Some(Sort(GrantOrder.Id, OrderDirection.Desc))),
+            GrantSearch(
+              userId = Some(grantee.id),
+              pageSize = 20,
+              sorts = Some(Sort(GrantOrder.Id, OrderDirection.Desc)),
+            ),
           )
         } yield assertTrue(desc.map(_.id.value) == desc.map(_.id.value).sorted.reverse)
       },

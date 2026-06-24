@@ -337,9 +337,9 @@ trait SchedulerRepository[F[_]] {
   def listJobs(
     agentId: Option[AgentId],
     limit:   Int = 200,
-  ):                                              F[List[SchedulerJob]]
-  def getPendingJobs:                             F[List[SchedulerJob]]
-  def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
+  ):                                F[List[SchedulerJob]]
+  def getPendingJobs:               F[List[SchedulerJob]]
+  def upsertJob(job: SchedulerJob): F[SchedulerJob]
   def updateJobConfig(
     id:              SchedulerJobId,
     name:            String,
@@ -348,7 +348,7 @@ trait SchedulerRepository[F[_]] {
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
-  ): F[Boolean]
+  ):                                              F[Boolean]
   def deleteJob(id:          SchedulerJobId):     F[Boolean]
   def pauseJob(id:           SchedulerJobId):     F[Boolean]
   def resumeJob(id:          SchedulerJobId):     F[Boolean]
@@ -440,8 +440,8 @@ trait PermissionRepository[F[_]] {
   def getUserRoleIds(userId: UserId): F[List[RoleId]]
 
   /** All [[CapabilityGrant]] rows for a user (and their assigned roles) + capability that are relevant to the
-    * evaluator: `Denied` grants are always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied`
-    * grants are filtered to those that have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
+    * evaluator: `Denied` grants are always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied` grants
+    * are filtered to those that have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
     */
   def getGrantsForCapability(
     userId:     UserId,

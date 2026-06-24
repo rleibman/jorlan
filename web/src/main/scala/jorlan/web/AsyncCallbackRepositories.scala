@@ -886,6 +886,13 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
   def skillDashboardData(skillName: String): AsyncCallback[Option[String]] =
     adapter.asyncCalibanCallWithAuth(JorlanClient.Queries.skillDashboardData(skillName))
 
+  def skillValidate(skillName: String): AsyncCallback[Option[SkillValidationResult]] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Queries.skillValidate(skillName)(JorlanClient.SkillValidationResult.view),
+      )
+      .map(_.map(v => SkillValidationResult(ok = v.ok, message = v.message)))
+
   private def toDashboardStats(
     v: JorlanClient.DashboardStats.DashboardStatsView[
       JorlanClient.TimeSeriesPoint.TimeSeriesPointView,

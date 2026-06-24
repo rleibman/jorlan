@@ -497,9 +497,9 @@ class AgentRunnerImpl(
 
         (importanceFiber <&> semanticFiber)
           .map { case (byImportance, bySemantic) =>
-            val seenIds  = scala.collection.mutable.Set.empty[MemoryRecordId]
+            val seenIds = scala.collection.mutable.Set.empty[MemoryRecordId]
             val semantic = bySemantic.filter(r => r.ttl.forall(_.isAfter(now)) && seenIds.add(r.id))
-            val sorted   = byImportance.sortBy(-_.importance)
+            val sorted = byImportance.sortBy(-_.importance)
             val important = sorted
               .filter(r => r.importance >= alwaysInjectMinImportance && seenIds.add(r.id))
             val filler = sorted

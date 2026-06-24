@@ -34,7 +34,6 @@ trait ChatAssistant {
 type StreamingLangChainEnvironment = ChatMemory & StreamingChatLanguageModel & StreamAssistant & LangChainConfig
 type LangChainEnvironment = ChatMemory & ChatLanguageModel & ChatAssistant & LangChainConfig
 
-
 object LangChainServiceBuilder {
 
   // Use configuration

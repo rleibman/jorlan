@@ -113,10 +113,8 @@ class MemorySkill(
       ),
       ToolDescriptor(
         name = "memory.search_semantic",
-        description =
-          "Search memories by meaning rather than exact keywords. Use when you need to find memories about a topic without knowing the exact wording stored.",
-        inputSchema =
-          json"""{"type":"object","properties":{"query":{"type":"string","description":"Natural language description of what you are looking for"},"limit":{"type":"integer","description":"Maximum number of results to return (default 5)"}},"required":["query"]}""",
+        description = "Search memories by meaning rather than exact keywords. Use when you need to find memories about a topic without knowing the exact wording stored.",
+        inputSchema = json"""{"type":"object","properties":{"query":{"type":"string","description":"Natural language description of what you are looking for"},"limit":{"type":"integer","description":"Maximum number of results to return (default 5)"}},"required":["query"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("memory.read")),
         examplePrompts = List(
@@ -213,7 +211,7 @@ class MemorySkill(
       case "memory.search_semantic" =>
         for {
           query <- field("query")
-          limit  = optField("limit").flatMap(_.toIntOption).getOrElse(5)
+          limit = optField("limit").flatMap(_.toIntOption).getOrElse(5)
           results <- searchSemantic(query, ctx.actorId, limit)
         } yield Json.Arr(results.map(Json.Str(_))*)
 
@@ -282,17 +280,18 @@ class MemorySkill(
     limit:  Int,
   ): IO[JorlanError, List[String]] = {
     import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
-    ZIO.attemptBlocking {
-      val queryEmbedding = embeddingModel.embed(query).content()
-      val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
-      val request = EmbeddingSearchRequest
-        .builder()
-        .queryEmbedding(queryEmbedding)
-        .maxResults(limit)
-        .filter(filter)
-        .build()
-      embeddingStore.search(request).matches().asScala.toList.map(_.embedded().text())
-    }.mapError(e => JorlanError(e.getMessage.nn))
+    ZIO
+      .attemptBlocking {
+        val queryEmbedding = embeddingModel.embed(query).content()
+        val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
+        val request = EmbeddingSearchRequest
+          .builder()
+          .queryEmbedding(queryEmbedding)
+          .maxResults(limit)
+          .filter(filter)
+          .build()
+        embeddingStore.search(request).matches().asScala.toList.map(_.embedded().text())
+      }.mapError(e => JorlanError(e.getMessage.nn))
   }
 
 }

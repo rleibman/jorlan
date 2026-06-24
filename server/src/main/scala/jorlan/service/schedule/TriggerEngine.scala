@@ -209,7 +209,9 @@ class TriggerEngineImpl(
           // incorrectly reported as job failures.
           _ <- agentRunner
             .processMessage(session.id, content, Some(job.userId))
-            .tapError(err => ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} processMessage soft error: ${err.msg}"))
+            .tapError(err =>
+              ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} processMessage soft error: ${err.msg}"),
+            )
             .ignore
           // Collect stream up to and including the sentinel. None means timed out.
           result <- stream
@@ -219,7 +221,7 @@ class TriggerEngineImpl(
             }
             .timeout(jobTimeout)
           now <- Clock.instant
-          _ <- result match {
+          _   <- result match {
             case Some((output, _)) =>
               repo.scheduler
                 .releaseJob(job.id, JobStatus.Succeeded, Some(output), now)

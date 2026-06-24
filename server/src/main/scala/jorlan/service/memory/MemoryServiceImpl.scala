@@ -38,10 +38,11 @@ class MemoryServiceImpl(
       "scope"          -> stored.scope.toString,
     ).asJava
     val segment = TextSegment.from(text, Metadata.from(metaMap))
-    ZIO.attemptBlocking {
-      val embedding = embeddingModel.embed(text).content()
-      embeddingStore.add(embedding, segment)
-    }.forkDaemon.ignore
+    ZIO
+      .attemptBlocking {
+        val embedding = embeddingModel.embed(text).content()
+        embeddingStore.add(embedding, segment)
+      }.forkDaemon.ignore
   }
 
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
@@ -188,22 +189,24 @@ class MemoryServiceImpl(
   ): IO[JorlanError, List[MemoryRecord]] = {
     import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
     import dev.langchain4j.store.embedding.EmbeddingSearchRequest
-    ZIO.attemptBlocking {
-      val queryEmbedding = embeddingModel.embed(queryText).content()
-      val filter         = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
-      val request = EmbeddingSearchRequest
-        .builder()
-        .queryEmbedding(queryEmbedding)
-        .maxResults(limit)
-        .filter(filter)
-        .build()
-      embeddingStore.search(request).matches().asScala.toList.flatMap { m =>
-        val meta = m.embedded().metadata()
-        meta.getString("memoryRecordId").nn.toLongOption.map(MemoryRecordId(_))
-      }
-    }.mapError(e => JorlanError(e.getMessage.nn))
+    ZIO
+      .attemptBlocking {
+        val queryEmbedding = embeddingModel.embed(queryText).content()
+        val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
+        val request = EmbeddingSearchRequest
+          .builder()
+          .queryEmbedding(queryEmbedding)
+          .maxResults(limit)
+          .filter(filter)
+          .build()
+        embeddingStore.search(request).matches().asScala.toList.flatMap { m =>
+          val meta = m.embedded().metadata()
+          meta.getString("memoryRecordId").nn.toLongOption.map(MemoryRecordId(_))
+        }
+      }.mapError(e => JorlanError(e.getMessage.nn))
       .flatMap { ids =>
-        ZIO.foreach(ids)(id => repo.memory.getById(id).mapError(JorlanError(_)))
+        ZIO
+          .foreach(ids)(id => repo.memory.getById(id).mapError(JorlanError(_)))
           .map(_.flatten)
       }
   }

@@ -22,12 +22,12 @@ case class LangChainConfig(
   ollamaBaseUrl:       String = "http://localhost:11434",
   ollamaModel:         String = "qwen3:8b", // TODO this should be required
   embeddingModel:      String = "nomic-embed-text",
-  embeddingDimensions: Int    = 768,
+  embeddingDimensions: Int = 768,
   qdrantHost:          String = "localhost",
-  qdrantRPCPort:       Int    = 6334,
+  qdrantRPCPort:       Int = 6334,
   temperature:         Double = 0.2,
-  topK:                Int    = 20,
+  topK:                Int = 20,
   topP:                Double = 0.8,
-  maxMessages:         Int    = 1000,
+  maxMessages:         Int = 1000,
 )
 // $COVERAGE-ON$
