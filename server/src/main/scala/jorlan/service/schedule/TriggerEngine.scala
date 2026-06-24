@@ -203,18 +203,34 @@ class TriggerEngineImpl(
         (for {
           connId <- ConnectionId.randomZIO
           stream <- agentRunner.subscribeToSession(session.id, connId)
-          _      <- agentRunner.processMessage(session.id, content, Some(job.userId))
+          // processMessage always publishes a finished sentinel via .ensuring(finaliseResponse(...)),
+          // even when it fails (e.g. LLM error after tool calls succeeded). Treat typed failures as
+          // soft so that successful tool invocations (e.g. sending a Telegram message) are not
+          // incorrectly reported as job failures.
+          _ <- agentRunner
+            .processMessage(session.id, content, Some(job.userId))
+            .tapError(err => ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} processMessage soft error: ${err.msg}"))
+            .ignore
+          // Collect stream up to and including the sentinel. None means timed out.
           result <- stream
-            .takeWhile(!_.finished)
-            .runFold("") { case (acc, chunk) => acc + chunk.content }
+            .takeUntil(_.finished)
+            .runFold(("", false)) { case ((acc, _), chunk) =>
+              if (chunk.finished) (acc, chunk.isError) else (acc + chunk.content, false)
+            }
             .timeout(jobTimeout)
-            .map(_.getOrElse(""))
           now <- Clock.instant
-          _   <- repo.scheduler
-            .releaseJob(job.id, JobStatus.Succeeded, Some(result), now)
-            .mapError(JorlanError(_))
-          _ <- logJobEvent(EventType.SchedulerJobCompleted, job)
-          _ <- advanceTriggers(job, cronCache, now)
+          _ <- result match {
+            case Some((output, _)) =>
+              repo.scheduler
+                .releaseJob(job.id, JobStatus.Succeeded, Some(output), now)
+                .mapError(JorlanError(_)) *>
+                logJobEvent(EventType.SchedulerJobCompleted, job) *>
+                advanceTriggers(job, cronCache, now)
+            case None =>
+              ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} timed out after ${jobTimeout.getSeconds}s") *>
+                scheduleRetryOrFail(job, now) *>
+                logJobEvent(EventType.SchedulerJobFailed, job)
+          }
         } yield ()).catchAll { err =>
           for {
             now <- Clock.instant

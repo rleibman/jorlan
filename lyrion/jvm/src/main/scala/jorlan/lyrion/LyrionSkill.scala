@@ -243,7 +243,7 @@ class LyrionSkill(
       ),
       ToolDescriptor(
         name = "lyrion.queue",
-        description = "Load music into a player's queue and start playing. Use 'type' to specify what to play (artist/album/genre/song) and 'id' from a previous search or browse call. Set 'mode' to 'load' (replace queue and play immediately, default) or 'add' (append to queue).",
+        description = "Load music into a player's queue and start playing. Use 'type' to specify what to play (artist/album/genre/song) and 'id' from a previous search or browse result. Set 'mode' to 'load' (replace queue and play immediately, default) or 'add' (append to queue).",
         inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"type":{"type":"string","enum":["artist","album","genre","song"],"description":"Type of music to queue"},"id":{"type":"string","description":"ID of the artist, album, genre, or song (from lyrion.search or lyrion.browse.*)"},"mode":{"type":"string","enum":["load","add"],"description":"'load' replaces the queue and plays immediately; 'add' appends without interrupting"}},"required":["type","id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
