@@ -75,13 +75,13 @@ When a Telegram user sends a message to the bot, Jorlan:
 }
 ```
 
-| Field                | Type     | Default                    | Description                                                                            |
-|----------------------|----------|----------------------------|----------------------------------------------------------------------------------------|
-| `botToken`           | string   | `""`                       | **Required.** Telegram Bot API token from @BotFather                                   |
-| `allowedChatIds`     | string[] | `[]`                       | If non-empty, only these chat IDs are accepted                                         |
-| `allowedUserIds`     | string[] | `[]`                       | If non-empty, only these user IDs are accepted                                         |
-| `unrecognizedPolicy` | string   | `"Reject"`                 | What to do with unrecognised senders: `Reject`, `CreateGuest`, or `IgnoreSilently`     |
-| `useWebhook`         | boolean  | `false`                    | Use webhook instead of long-polling (webhook not yet supported; falls back to polling) |
-| `apiBaseUrl`         | string   | `https://api.telegram.org` | Telegram API URL (do not change)                                                       |
-
+| Field                  | Type     | Default                    | Description                                                                            |
+|------------------------|----------|----------------------------|----------------------------------------------------------------------------------------|
+| `botToken`             | string   | `""`                       | **Required.** Telegram Bot API token from @BotFather                                   |
+| `allowedChatIds`       | string[] | `[]`                       | If non-empty, only these chat IDs are accepted                                         |
+| `allowedUserIds`       | string[] | `[]`                       | If non-empty, only these user IDs are accepted                                         |
+| `unrecognizedPolicy`   | string   | `"Reject"`                 | What to do with unrecognised senders: `Reject`, `CreateGuest`, or `IgnoreSilently`     |
+| `useWebhook`           | boolean  | `false`                    | Use webhook instead of long-polling (webhook not yet supported; falls back to polling) |
+| `apiBaseUrl`           | string   | `https://api.telegram.org` | Telegram API URL (do not change)                                                       |
+| `longPollTimeoutSeconds` | int    | `5`                        | Long-poll timeout passed to `getUpdates` (seconds)                                     |
 See [INSTALL.md](INSTALL.md) for setup instructions.
