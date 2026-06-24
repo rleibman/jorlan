@@ -212,8 +212,8 @@ class GmailProvider private (
   ): IO[JorlanError, Unit] = {
     val addLabels = scala.collection.mutable.ListBuffer.empty[String]
     val removeLabels = scala.collection.mutable.ListBuffer.empty[String]
-    flagged.foreach { f => if (f) addLabels += "STARRED" else removeLabels += "STARRED" }
-    read.foreach { r => if (r) removeLabels += "UNREAD" else addLabels += "UNREAD" }
+    flagged.foreach(f => if (f) addLabels += "STARRED" else removeLabels += "STARRED")
+    read.foreach(r => if (r) removeLabels += "UNREAD" else addLabels += "UNREAD")
     if (addLabels.isEmpty && removeLabels.isEmpty) ZIO.unit
     else
       withGmail(userId) { gmail =>
@@ -243,7 +243,8 @@ class GmailProvider private (
   ): IO[JorlanError, EmailMessageId] =
     for {
       original <- getMessage(userId, messageId)
-      fwdBody = s"${note.map(_ + "\n\n---------- Forwarded message ----------\n").getOrElse("---------- Forwarded message ----------\n")}From: ${original.from}\nDate: ${original.date}\nSubject: ${original.subject}\n\n${original.body}"
+      fwdBody =
+        s"${note.map(_ + "\n\n---------- Forwarded message ----------\n").getOrElse("---------- Forwarded message ----------\n")}From: ${original.from}\nDate: ${original.date}\nSubject: ${original.subject}\n\n${original.body}"
       draft = EmailDraft(
         to = to,
         cc = Nil,

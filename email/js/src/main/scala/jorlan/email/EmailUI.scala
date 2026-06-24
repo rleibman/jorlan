@@ -64,7 +64,7 @@ object EmailUI {
               ^.style := labelStyle,
               <.span("Provider"),
               <.select(
-                ^.value    := cfg.provider,
+                ^.value := cfg.provider,
                 ^.onChange ==> { e => state.setState(cfg.copy(provider = targetValue(e))) },
                 ^.style := fieldStyle,
                 <.option(^.value := "imap", "IMAP / SMTP"),
@@ -136,8 +136,8 @@ object EmailUI {
                     ^.style := labelStyle,
                     <.span("IMAP Port"),
                     <.input(
-                      ^.`type`  := "number",
-                      ^.value   := cfg.imapPort.toString,
+                      ^.`type` := "number",
+                      ^.value  := cfg.imapPort.toString,
                       ^.onChange ==> { e =>
                         targetValue(e).toIntOption
                           .fold(Callback.empty)(p => state.setState(cfg.copy(imapPort = p)))
@@ -151,10 +151,11 @@ object EmailUI {
                     ),
                   ),
                   <.label(
-                    ^.style := js.Dynamic.literal(display = "flex", alignItems = "center", gap = "6px", paddingBottom = "2px"),
+                    ^.style := js.Dynamic
+                      .literal(display = "flex", alignItems = "center", gap = "6px", paddingBottom = "2px"),
                     <.input(
-                      ^.`type`    := "checkbox",
-                      ^.checked   := cfg.imapSsl,
+                      ^.`type`  := "checkbox",
+                      ^.checked := cfg.imapSsl,
                       ^.onChange ==> { e => state.setState(cfg.copy(imapSsl = targetChecked(e))) },
                     ),
                     <.span("Use SSL/TLS"),
@@ -168,7 +169,8 @@ object EmailUI {
                     ^.value       := cfg.inboxFolder,
                     ^.placeholder := "INBOX",
                     ^.onChange ==> { e => state.setState(cfg.copy(inboxFolder = targetValue(e))) },
-                    ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "160px"),
+                    ^.style := js.Dynamic
+                      .literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "160px"),
                   ),
                 ),
                 <.label(
@@ -179,7 +181,8 @@ object EmailUI {
                     ^.value       := cfg.archiveFolder,
                     ^.placeholder := "Archive",
                     ^.onChange ==> { e => state.setState(cfg.copy(archiveFolder = targetValue(e))) },
-                    ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "160px"),
+                    ^.style := js.Dynamic
+                      .literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "160px"),
                   ),
                 ),
               ),
@@ -189,8 +192,8 @@ object EmailUI {
                 <.label(
                   ^.style := js.Dynamic.literal(display = "flex", alignItems = "center", gap = "6px"),
                   <.input(
-                    ^.`type`    := "checkbox",
-                    ^.checked   := cfg.sslTrustAll,
+                    ^.`type`  := "checkbox",
+                    ^.checked := cfg.sslTrustAll,
                     ^.onChange ==> { e => state.setState(cfg.copy(sslTrustAll = targetChecked(e))) },
                   ),
                   <.span("Accept all SSL certificates (insecure — use only for self-signed certs)"),
@@ -212,8 +215,8 @@ object EmailUI {
                     ^.style := labelStyle,
                     <.span("SMTP Port"),
                     <.input(
-                      ^.`type`  := "number",
-                      ^.value   := cfg.smtpPort.toString,
+                      ^.`type` := "number",
+                      ^.value  := cfg.smtpPort.toString,
                       ^.onChange ==> { e =>
                         targetValue(e).toIntOption
                           .fold(Callback.empty)(p => state.setState(cfg.copy(smtpPort = p)))
@@ -227,10 +230,11 @@ object EmailUI {
                     ),
                   ),
                   <.label(
-                    ^.style := js.Dynamic.literal(display = "flex", alignItems = "center", gap = "6px", paddingBottom = "2px"),
+                    ^.style := js.Dynamic
+                      .literal(display = "flex", alignItems = "center", gap = "6px", paddingBottom = "2px"),
                     <.input(
-                      ^.`type`    := "checkbox",
-                      ^.checked   := cfg.smtpTls,
+                      ^.`type`  := "checkbox",
+                      ^.checked := cfg.smtpTls,
                       ^.onChange ==> { e => state.setState(cfg.copy(smtpTls = targetChecked(e))) },
                     ),
                     <.span("Use STARTTLS"),

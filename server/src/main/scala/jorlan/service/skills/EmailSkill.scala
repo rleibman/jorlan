@@ -401,10 +401,10 @@ class EmailSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     for {
-      id      <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.flag: messageId is required"))
+      id <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.flag: messageId is required"))
       flagged = bool(args, "flagged")
-      read    = bool(args, "read")
-      _       <- emailProvider.flagMessage(ctx.actorId, EmailMessageId(id), flagged, read)
+      read = bool(args, "read")
+      _ <- emailProvider.flagMessage(ctx.actorId, EmailMessageId(id), flagged, read)
     } yield Json.Obj("messageId" -> Json.Str(id), "updated" -> Json.Bool(true))
 
   private def emailFolders(
@@ -425,12 +425,12 @@ class EmailSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     for {
-      id  <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.forward: messageId is required"))
+      id <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.forward: messageId is required"))
       to <- ZIO
         .fromOption(
           Some(strList(args, "to")).filter(_.nonEmpty),
         ).orElseFail(JorlanError("email.forward: to is required"))
-      note  = str(args, "note")
+      note = str(args, "note")
       msgId <- emailProvider.forwardMessage(ctx.actorId, EmailMessageId(id), to, note)
     } yield Json.Obj("messageId" -> Json.Str(msgId.value), "forwarded" -> Json.Bool(true))
 

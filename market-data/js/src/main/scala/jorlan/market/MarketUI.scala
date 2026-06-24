@@ -61,8 +61,8 @@ object MarketUI {
             ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
             <.span("Preferred Stocks (one per line, format: SYMBOL or SYMBOL:Display Name)"),
             <.textarea(
-              ^.value := cfg.preferredStocks.mkString("\n"),
-              ^.rows  := 6,
+              ^.value       := cfg.preferredStocks.mkString("\n"),
+              ^.rows        := 6,
               ^.placeholder := "SPY:S&P 500\nAAPL:Apple\nMSFT:Microsoft",
               ^.onChange ==> { e =>
                 // Preserve all lines including trailing newlines so the cursor stays where the user left it.

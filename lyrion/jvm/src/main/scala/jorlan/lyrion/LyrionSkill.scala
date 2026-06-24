@@ -895,7 +895,11 @@ class LyrionSkill(
   override def validate(): IO[JorlanError, SkillValidationResult] =
     listPlayers()
       .as(SkillValidationResult(ok = true, message = s"OK — connected to Lyrion server at ${settings.serverUrl}"))
-      .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = s"Cannot reach Lyrion server at ${settings.serverUrl}: ${e.msg}")))
+      .catchAll(e =>
+        ZIO.succeed(
+          SkillValidationResult(ok = false, message = s"Cannot reach Lyrion server at ${settings.serverUrl}: ${e.msg}"),
+        ),
+      )
 
 }
 

@@ -31,7 +31,7 @@ class MarketDataSkill(
   client: Client,
 ) extends Skill with HasDashboardData with HasValidation {
 
-  private val apiKey  = config.apiKey
+  private val apiKey = config.apiKey
   private val baseUrl = config.baseUrl
 
   override val descriptor: SkillDescriptor = SkillDescriptor(

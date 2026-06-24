@@ -40,11 +40,13 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
   )
 
   private def runImap[A](op: MailOp[F, emilClient.C, A]): IO[JorlanError, A] =
-    emilClient(imapConfig).run(op)
+    emilClient(imapConfig)
+      .run(op)
       .mapError(e => JorlanError(s"IMAP error: ${e.getMessage}"))
 
   private def runSmtp[A](op: MailOp[F, emilClient.C, A]): IO[JorlanError, A] =
-    emilClient(smtpConfig).run(op)
+    emilClient(smtpConfig)
+      .run(op)
       .mapError(e => JorlanError(s"SMTP error: ${e.getMessage}"))
 
   private def mailToEmailMessage(mail: Mail[F]): Task[EmailMessage] = {
@@ -108,7 +110,7 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
     query:      Option[String],
   ): IO[JorlanError, List[EmailMessage]] = {
     val searchQuery = query match {
-      case Some(q) if q.startsWith("from:") => SearchQuery.From(q.stripPrefix("from:").trim)
+      case Some(q) if q.startsWith("from:")    => SearchQuery.From(q.stripPrefix("from:").trim)
       case Some(q) if q.startsWith("subject:") =>
         SearchQuery.Subject(q.stripPrefix("subject:").trim)
       case Some(q) if !q.startsWith("is:") =>
@@ -167,7 +169,7 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
         inbox   <- emilClient.access.getInbox
         archive <- emilClient.access.getOrCreateFolder(None, config.archiveFolder)
         mhOpt   <- findMailHeader(messageId, inbox)
-        _ <- mhOpt match {
+        _       <- mhOpt match {
           case Some(mh) => emilClient.access.moveMail(mh, archive)
           case None     => MailOp.pure[F, emilClient.C, Unit](())
         }
@@ -182,7 +184,7 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
       for {
         inbox <- emilClient.access.getInbox
         mhOpt <- findMailHeader(messageId, inbox)
-        _ <- mhOpt match {
+        _     <- mhOpt match {
           case Some(mh) => emilClient.access.deleteMail(mh)
           case None     => MailOp.pure[F, emilClient.C, Unit](())
         }
@@ -199,7 +201,7 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
         inbox  <- emilClient.access.getInbox
         target <- emilClient.access.getOrCreateFolder(None, toFolder)
         mhOpt  <- findMailHeader(messageId, inbox)
-        _ <- mhOpt match {
+        _      <- mhOpt match {
           case Some(mh) => emilClient.access.moveMail(mh, target)
           case None     => MailOp.pure[F, emilClient.C, Unit](())
         }
@@ -229,9 +231,10 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
   ): IO[JorlanError, EmailMessageId] =
     for {
       original <- getMessage(userId, messageId)
-      prefix = note.map(_ + "\n\n---------- Forwarded message ----------\n").getOrElse(
-        "---------- Forwarded message ----------\n",
-      )
+      prefix = note
+        .map(_ + "\n\n---------- Forwarded message ----------\n").getOrElse(
+          "---------- Forwarded message ----------\n",
+        )
       fwdBody =
         s"${prefix}From: ${original.from}\nDate: ${original.date}\nSubject: ${original.subject}\n\n${original.body}"
       draft = EmailDraft(
