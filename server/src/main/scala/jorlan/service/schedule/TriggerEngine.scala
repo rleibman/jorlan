@@ -215,11 +215,12 @@ class TriggerEngineImpl(
             .ignore
           // Collect stream up to and including the sentinel. None means timed out.
           result <- stream
-            .takeUntil(_.finished)
             .runFold(("", false)) { case ((acc, _), chunk) =>
-              if (chunk.finished) (acc, chunk.isError) else (acc + chunk.content, false)
+              if (chunk.finished) {
+                val out = if (chunk.isError && chunk.content.nonEmpty) acc + chunk.content else acc
+                (out, chunk.isError)
+              } else (acc + chunk.content, false)
             }
-            .timeout(jobTimeout)
           now <- Clock.instant
           _   <- result match {
             case Some((output, _)) =>
