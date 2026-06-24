@@ -19,6 +19,7 @@ Agents can store named facts or notes in their own memory, search them later, pr
 |------|-------------|
 | `memory.remember` | Store a named fact or piece of information |
 | `memory.search` | Search stored memories for facts matching text |
+| `memory.search_semantic` | Search memories by meaning rather than exact keywords |
 | `memory.forget` | Delete a specific memory record by ID |
 | `memory.mark_shared` | Promote a memory to shared scope |
 | `memory.mark_private` | Revert a shared memory back to private scope |
