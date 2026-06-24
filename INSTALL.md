@@ -9,11 +9,11 @@ optional skills.
 
 ## Requirements
 
-| Requirement | Version                        |
-|-------------|--------------------------------|
-| Java (JRE)  | 21+                            |
-| MariaDB     | 10.6+                          |
-| OS          | Linux (Debian/Ubuntu) or macOS |
+| Requirement | Version                                        |
+|-------------|------------------------------------------------|
+| Java (JRE)  | 21+                                            |
+| MariaDB     | Must support VECTOR type + VECTOR INDEX (see `server/src/main/resources/sql/V030__memory_vector_store.sql`) |
+| OS          | Linux (Debian/Ubuntu) or macOS                 |
 
 ---
 
