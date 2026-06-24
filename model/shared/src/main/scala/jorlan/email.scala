@@ -43,3 +43,8 @@ case class EmailDraft(
   replyToMessageId: Option[String],
   signWithPgp:      Boolean,
 ) derives JsonCodec
+
+case class EmailFolderInfo(
+  id:   String,
+  name: String,
+) derives JsonCodec

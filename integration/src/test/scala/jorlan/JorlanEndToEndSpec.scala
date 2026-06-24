@@ -121,6 +121,28 @@ object JorlanEndToEndSpec
         messageId: EmailMessageId,
       ): IO[JorlanError, Unit] =
         ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def moveMessage(
+        userId:    UserId,
+        messageId: EmailMessageId,
+        toFolder:  String,
+      ): IO[JorlanError, Unit] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def flagMessage(
+        userId:    UserId,
+        messageId: EmailMessageId,
+        flagged:   Option[Boolean],
+        read:      Option[Boolean],
+      ): IO[JorlanError, Unit] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def listFolders(userId: UserId): IO[JorlanError, List[EmailFolderInfo]] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
+      override def forwardMessage(
+        userId:    UserId,
+        messageId: EmailMessageId,
+        to:        List[String],
+        note:      Option[String],
+      ): IO[JorlanError, EmailMessageId] =
+        ZIO.fail(JorlanError("No email credentials in test environment"))
     }
 
   private val stubCalendarProvider: CalendarProvider[[A] =>> IO[JorlanError, A]] =

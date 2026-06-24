@@ -210,6 +210,7 @@ object SkillsPage {
                       s.copy(
                         configSaving = s.configSaving - skill.name,
                         configError = s.configError + (skill.name -> err.getOrElse("Unknown error")),
+                        toast = Some(ToastMessage(err.getOrElse("Failed to save configuration"), ToastSeverity.Error)),
                       ),
                     ),
                   ),

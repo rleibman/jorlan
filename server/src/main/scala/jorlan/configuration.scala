@@ -11,6 +11,7 @@ import _root_.auth.{AuthConfig, SecretKey}
 import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
+import zio.json.JsonCodec
 import zio.{Duration, IO, UIO, ZIO, ZLayer}
 
 import java.io.File
@@ -51,23 +52,23 @@ case class SchedulerSettings(
   listJobsLimit:       Int = 200,
 )
 
-/** How workspace paths are scoped per invocation. */
-enum WorkspaceScope {
+/** How workspace paths are scoped per invocation. Stored in the DB under `skill.workspace`. */
+enum WorkspaceScope derives JsonCodec {
 
   case Flat, Session, User
 
 }
 
-/** Workspace filesystem configuration. */
+/** Workspace filesystem configuration. Stored in the DB under `skill.workspace`. */
 case class WorkspaceSettings(
   root:         String = "/var/lib/jorlan/workspaces",
   defaultScope: WorkspaceScope = WorkspaceScope.Session,
-)
+) derives JsonCodec
 
-/** Shell execution configuration.
+/** Shell execution configuration. Stored in the DB under `skill.shell`.
   *
   * @param allowedBinaries
-  *   Comma-separated list of absolute paths or bare binary names permitted for `shell.run`. Empty = all denied.
+  *   Absolute paths or bare binary names permitted for `shell.run`. Empty = all denied.
   * @param timeoutSeconds
   *   Maximum wall-clock time for a shell command before it is killed.
   * @param captureThreshold
@@ -78,11 +79,7 @@ case class ShellSettings(
   timeoutSeconds:   Int = 30,
   captureThreshold: Int = 65536,
   sandboxRoot:      String = ".",
-)
-
-case class WebConfig(
-  root: String = "/opt/jorlan/www",
-)
+) derives JsonCodec
 
 case class GoogleOAuthSettings(
   clientId:     String = "",
@@ -94,29 +91,6 @@ case class GoogleOAuthSettings(
   credentialEncryptionKey: String = "",
 )
 
-case class ImapSettings(
-  host: String = "",
-  port: Int = 993,
-  ssl:  Boolean = true,
-)
-
-case class SmtpSettings(
-  host:     String = "",
-  port:     Int = 587,
-  startTls: Boolean = true,
-)
-
-case class PgpSettings(
-  enabled: Boolean = false,
-)
-
-case class EmailSettings(
-  defaultProvider: String = "gmail",
-  imap:            ImapSettings = ImapSettings(),
-  smtp:            SmtpSettings = SmtpSettings(),
-  pgp:             PgpSettings = PgpSettings(),
-)
-
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
   db:        DatabaseConfig,
@@ -126,11 +100,7 @@ case class JorlanConfig(
   ai:        LangChainConfig = LangChainConfig(),
   agent:     AgentSettings = AgentSettings(),
   scheduler: SchedulerSettings = SchedulerSettings(),
-  workspace: WorkspaceSettings = WorkspaceSettings(),
-  shell:     ShellSettings = ShellSettings(),
-  web:       WebConfig = WebConfig(),
   google:    GoogleOAuthSettings = GoogleOAuthSettings(),
-  email:     EmailSettings = EmailSettings(),
 )
 
 /** Root application configuration. */

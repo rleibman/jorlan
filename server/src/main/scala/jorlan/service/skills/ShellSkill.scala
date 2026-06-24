@@ -50,6 +50,7 @@ class ShellSkill(
     name = "shell",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    configKey = Some("skill.shell"),
     keywords = List(
       "shell",
       "bash",

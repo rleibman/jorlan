@@ -117,7 +117,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       test("returns error JSON immediately when apiKey is empty (no HTTP call made)") {
         for {
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("", client)
+          skill = new MarketDataSkill(AlphaVantageConfig(), client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(
           equalTo(Json.Obj("error" -> Json.Str("Alpha Vantage API key not configured"))),
@@ -127,7 +127,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield {
           val fields = result match {
@@ -146,7 +146,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(rateLimitBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(
           equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
@@ -156,7 +156,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(sampleSearchBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Apple")))
         } yield result match {
           case Json.Arr(items) =>
@@ -178,7 +178,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes("{}"))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.unknown", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -186,7 +186,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(sampleNewsBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield result match {
           case Json.Arr(items) =>
@@ -204,7 +204,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       test("market.news returns empty array when apiKey is blank") {
         for {
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("", client)
+          skill = new MarketDataSkill(AlphaVantageConfig(), client)
           result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(equalTo(Json.Obj("error" -> Json.Str("Alpha Vantage API key not configured"))))
       }.provide(Client.default),
@@ -212,7 +212,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(informationRateLimitBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield assert(result)(
           equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
@@ -222,7 +222,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.dashboardData(dummyCtx)
         } yield result match {
           case Json.Obj(fields) =>
@@ -233,7 +233,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
       test("dashboardData returns error when apiKey is blank") {
         for {
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("", client)
+          skill = new MarketDataSkill(AlphaVantageConfig(), client)
           result <- skill.dashboardData(dummyCtx)
         } yield assert(result)(equalTo(Json.Obj("error" -> Json.Str("No API key configured"))))
       }.provide(Client.default),
@@ -241,7 +241,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes("{}"))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Unknown")))
         } yield assert(result)(equalTo(Json.Arr()))
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -249,7 +249,7 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(fixedBodyRoutes("{}"))
           client <- ZIO.service[Client]
-          skill = new MarketDataSkill("dummy-key", client, s"http://localhost:$port/query")
+          skill = new MarketDataSkill(AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"), client)
           result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL")))
         } yield result match {
           case Json.Obj(fields) =>

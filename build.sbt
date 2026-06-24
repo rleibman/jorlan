@@ -27,6 +27,13 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 scalaVersion                  := SCALA
 Global / scalaVersion         := SCALA
 
+// com.sun.mail:javax.mail:1.6.x is the old monolithic JavaMail JAR pulled in transitively
+// by tika-parser-mail-module (via langchain4j-document-parser-apache-tika). It conflicts with
+// Emil's split jars (mailapi:2.0.x, imap:2.0.x, smtp:2.0.x) because both register
+// Provider implementations via the ServiceLoader, causing the classloader check to fail with
+// "com.sun.mail.imap.IMAPProvider not a subtype". Excluding the legacy jar globally fixes this.
+ThisBuild / excludeDependencies += ExclusionRule("com.sun.mail", "javax.mail")
+
 Global / watchAntiEntropy := 1.second
 
 ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always

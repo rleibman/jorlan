@@ -38,5 +38,23 @@ trait EmailProvider[F[_]] {
     userId:    UserId,
     messageId: EmailMessageId,
   ): F[Unit]
+  def moveMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    toFolder:  String,
+  ): F[Unit]
+  def flagMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    flagged:   Option[Boolean],
+    read:      Option[Boolean],
+  ): F[Unit]
+  def listFolders(userId: UserId): F[List[EmailFolderInfo]]
+  def forwardMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    to:        List[String],
+    note:      Option[String],
+  ): F[EmailMessageId]
 
 }

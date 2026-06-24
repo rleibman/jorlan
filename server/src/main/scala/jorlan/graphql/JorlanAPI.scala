@@ -1248,6 +1248,21 @@ object JorlanAPI {
               user    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.user.upsert(User(UserId.empty, input.displayName, email, now, now)),
               )
+              _ <- ZIO.when(email.nonEmpty) {
+                ZIO.serviceWithZIO[ZIORepositories](
+                  _.user.upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = email,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ),
+                )
+              }
               _ <- logEvent(EventType.UserCreated, Some(actorId), None, now)
             } yield user,
           updateUser = input =>
@@ -1262,6 +1277,21 @@ object JorlanAPI {
               user <- ZIO.serviceWithZIO[ZIORepositories](
                 _.user.upsert(User(input.id, input.displayName, email, existing.createdAt, now, input.active)),
               )
+              _ <- ZIO.when(email.nonEmpty) {
+                ZIO.serviceWithZIO[ZIORepositories](
+                  _.user.upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = email,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ),
+                )
+              }
               _ <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
             } yield user,
           deactivateUser = id =>

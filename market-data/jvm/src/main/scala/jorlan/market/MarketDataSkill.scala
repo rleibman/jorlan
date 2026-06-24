@@ -21,15 +21,18 @@ import zio.json.literal.*
   *   - `market.quote` — real-time quote for a ticker symbol
   *   - `market.search` — symbol search by keyword
   *   - `market.news` — news sentiment for a ticker symbol
+  *   - `market.watchlist` — quotes for all configured preferred stocks
   *
   * All tools require the `market.read` capability. When the API key is absent every call returns an error JSON without
   * making a network request.
   */
 class MarketDataSkill(
-  apiKey:  String,
-  client:  Client,
-  baseUrl: String = "https://www.alphavantage.co/query",
+  config: AlphaVantageConfig,
+  client: Client,
 ) extends Skill with HasDashboardData with HasValidation {
+
+  private val apiKey  = config.apiKey
+  private val baseUrl = config.baseUrl
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "market",
@@ -107,6 +110,20 @@ class MarketDataSkill(
           "Show me recent headlines for AMZN",
         ),
       ),
+      ToolDescriptor(
+        name = "market.watchlist",
+        description = "Get quotes for all preferred/watchlist stocks configured for this skill. Use this to answer general market questions like 'what's the market doing?' or 'how is my watchlist performing?'",
+        inputSchema = json"""{"type":"object","properties":{},"required":[]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("market.read")),
+        examplePrompts = List(
+          "What's the market doing today?",
+          "How is my watchlist performing?",
+          "Show me my preferred stocks",
+          "Give me a market overview",
+          "How are stocks doing?",
+        ),
+      ),
     ),
   )
 
@@ -119,10 +136,11 @@ class MarketDataSkill(
       ZIO.succeed(Json.Obj("error" -> Json.Str("Alpha Vantage API key not configured")))
     } else {
       tool match {
-        case "market.quote"  => quote(args)
-        case "market.search" => search(args)
-        case "market.news"   => news(args)
-        case other           => ZIO.fail(ValidationError(s"MarketDataSkill: unknown tool '$other'"))
+        case "market.quote"     => quote(args)
+        case "market.search"    => search(args)
+        case "market.news"      => news(args)
+        case "market.watchlist" => watchlist()
+        case other              => ZIO.fail(ValidationError(s"MarketDataSkill: unknown tool '$other'"))
       }
     }
   }
@@ -284,58 +302,101 @@ class MarketDataSkill(
       case _ => Json.Arr()
     }
 
-  private val dashboardTickers = List(
+  private def fetchQuote(
+    symbol: String,
+    name:   String,
+  ): IO[JorlanError, Json] = {
+    val url =
+      s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
+    fetchJson(url)
+      .flatMap(checkRateLimit)
+      .map {
+        case Json.Obj(fields) if fields.exists { case ("error", _) => true; case _ => false } =>
+          val msg = fields.collectFirst { case ("error", Json.Str(s)) => s }.getOrElse("API error")
+          Json.Obj(
+            "symbol"        -> Json.Str(symbol),
+            "name"          -> Json.Str(name),
+            "price"         -> Json.Str("N/A"),
+            "change"        -> Json.Str(""),
+            "changePercent" -> Json.Str(""),
+            "error"         -> Json.Str(msg),
+          )
+        case Json.Obj(fields) =>
+          fields
+            .collectFirst { case ("Global Quote", Json.Obj(q)) => q }
+            .map { q =>
+              def qfield(key: String): Json = q.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
+              Json.Obj(
+                "symbol"        -> Json.Str(symbol),
+                "name"          -> Json.Str(name),
+                "price"         -> qfield("05. price"),
+                "change"        -> qfield("09. change"),
+                "changePercent" -> qfield("10. change percent"),
+              )
+            }
+            .getOrElse(
+              Json.Obj(
+                "symbol"        -> Json.Str(symbol),
+                "name"          -> Json.Str(name),
+                "price"         -> Json.Str("N/A"),
+                "change"        -> Json.Str(""),
+                "changePercent" -> Json.Str(""),
+              ),
+            )
+        case other => other
+      }
+      .catchAll(_ =>
+        ZIO.succeed(
+          Json.Obj(
+            "symbol"        -> Json.Str(symbol),
+            "name"          -> Json.Str(name),
+            "price"         -> Json.Str("N/A"),
+            "change"        -> Json.Str(""),
+            "changePercent" -> Json.Str(""),
+          ),
+        ),
+      )
+  }
+
+  private def watchlist(): IO[JorlanError, Json] = {
+    val tickers = activeDashboardTickers
+    if (tickers.isEmpty)
+      ZIO.succeed(Json.Obj("quotes" -> Json.Arr(), "message" -> Json.Str("No preferred stocks configured")))
+    else
+      ZIO
+        .foreach(tickers.zipWithIndex) { case ((symbol, name), idx) =>
+          // Small delay between requests to avoid Alpha Vantage burst rate limits
+          (if (idx == 0) ZIO.unit else ZIO.sleep(250.millis)) *> fetchQuote(symbol, name)
+        }
+        .map(quotes => Json.Obj("quotes" -> Json.Arr(quotes*)))
+  }
+
+  private val defaultDashboardTickers = List(
     ("SPY", "S&P 500"),
     ("DIA", "Dow Jones"),
     ("GLD", "Gold"),
   )
+
+  private def parseTicker(s: String): (String, String) = {
+    val trimmed = s.trim
+    val colonIdx = trimmed.indexOf(':')
+    if (colonIdx > 0) (trimmed.take(colonIdx).trim.toUpperCase, trimmed.drop(colonIdx + 1).trim)
+    else (trimmed.toUpperCase, trimmed.toUpperCase)
+  }
+
+  private def activeDashboardTickers: List[(String, String)] = {
+    val parsed = config.preferredStocks.map(_.trim).filter(_.nonEmpty).map(parseTicker).filter(_._1.nonEmpty)
+    if (parsed.nonEmpty) parsed else defaultDashboardTickers
+  }
 
   override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] = {
     if (apiKey.isBlank)
       ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
     else
       ZIO
-        .foreach(dashboardTickers) { case (symbol, name) =>
-          val url =
-            s"$baseUrl?function=GLOBAL_QUOTE&symbol=${java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)}&apikey=$apiKey"
-          fetchJson(url)
-            .flatMap(checkRateLimit)
-            .map {
-              case Json.Obj(fields) =>
-                fields
-                  .collectFirst { case ("Global Quote", Json.Obj(q)) => q }
-                  .map { q =>
-                    def qfield(key: String): Json = q.collectFirst { case (`key`, v) => v }.getOrElse(Json.Str(""))
-                    Json.Obj(
-                      "symbol"        -> Json.Str(symbol),
-                      "name"          -> Json.Str(name),
-                      "price"         -> qfield("05. price"),
-                      "change"        -> qfield("09. change"),
-                      "changePercent" -> qfield("10. change percent"),
-                    )
-                  }
-                  .getOrElse(
-                    Json.Obj(
-                      "symbol"        -> Json.Str(symbol),
-                      "name"          -> Json.Str(name),
-                      "price"         -> Json.Str("N/A"),
-                      "change"        -> Json.Str(""),
-                      "changePercent" -> Json.Str(""),
-                    ),
-                  )
-              case other => other
-            }
-            .catchAll(_ =>
-              ZIO.succeed(
-                Json.Obj(
-                  "symbol"        -> Json.Str(symbol),
-                  "name"          -> Json.Str(name),
-                  "price"         -> Json.Str("N/A"),
-                  "change"        -> Json.Str(""),
-                  "changePercent" -> Json.Str(""),
-                ),
-              ),
-            )
+        .foreach(activeDashboardTickers.zipWithIndex) { case ((symbol, name), idx) =>
+          // Small delay between requests to avoid Alpha Vantage burst rate limits
+          (if (idx == 0) ZIO.unit else ZIO.sleep(250.millis)) *> fetchQuote(symbol, name)
         }
         .map(quotes => Json.Obj("quotes" -> Json.Arr(quotes*)))
   }

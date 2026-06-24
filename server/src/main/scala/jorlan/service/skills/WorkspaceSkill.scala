@@ -39,6 +39,7 @@ class WorkspaceSkill(
     name = "workspace",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    configKey = Some("skill.workspace"),
     keywords = List(
       "workspace",
       "file",

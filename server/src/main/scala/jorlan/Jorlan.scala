@@ -13,7 +13,7 @@ import jorlan.*
 import jorlan.calculator.CalculatorSkill
 import jorlan.db.FlywayMigration
 import jorlan.db.repository.*
-import jorlan.email.{ImapSmtpProvider, PgpService}
+import jorlan.email.{EmailConfig, ImapSmtpProvider, PgpService}
 import jorlan.google.*
 import jorlan.httpfetch.{HttpFetchConfig, HttpFetchSkill}
 import jorlan.init.{InitServiceImpl, InitTokenStore, SetupModeApp, StatusRoutes}
@@ -150,26 +150,29 @@ object Jorlan extends ZIOApp {
       notifRouter    <- ZIO.service[NotificationRouter]
       httpClient     <- ZIO.service[Client]
       oauthCredSvc   <- ZIO.service[OAuthCredentialService]
-      workRoot       <- ZIO.attempt(Paths.get(config.jorlan.workspace.root).toAbsolutePath.normalize())
       pgpService = PgpService.noOp
-      emailCfg = config.jorlan.email
       emailProvider <-
-        if (emailCfg.defaultProvider.toLowerCase == "gmail") {
-          GmailProvider(oauthCredSvc)
-        } else {
-          ZIO.succeed(
-            ImapSmtpProvider(
-              imapHost = emailCfg.imap.host,
-              imapPort = emailCfg.imap.port,
-              imapSsl = emailCfg.imap.ssl,
-              smtpHost = emailCfg.smtp.host,
-              smtpPort = emailCfg.smtp.port,
-              smtpTls = emailCfg.smtp.startTls,
-              username = "",
-              password = "",
-            ),
-          )
-        }
+        repos.setting
+          .get("skill.email")
+          .mapError(e => new Throwable(e.msg))
+          .flatMap {
+            case Some(json) =>
+              val cfg = json.as[EmailConfig].getOrElse(EmailConfig())
+              if (cfg.provider.toLowerCase == "gmail") GmailProvider(oauthCredSvc)
+              else ZIO.succeed(ImapSmtpProvider(cfg))
+            case None => ZIO.succeed(ImapSmtpProvider(EmailConfig()))
+          }
+      workspaceCfg <-
+        repos.setting
+          .get("skill.workspace")
+          .mapError(e => new Throwable(e.msg))
+          .map(_.flatMap(_.as[WorkspaceSettings].toOption).getOrElse(WorkspaceSettings()))
+      workRoot <- ZIO.attempt(Paths.get(workspaceCfg.root).toAbsolutePath.normalize())
+      shellCfg <-
+        repos.setting
+          .get("skill.shell")
+          .mapError(e => new Throwable(e.msg))
+          .map(_.flatMap(_.as[ShellSettings].toOption).getOrElse(ShellSettings()))
       calProvider     <- GoogleCalendarProvider(oauthCredSvc)
       driveProvider   <- GoogleDriveProvider(oauthCredSvc)
       contactProvider <- GoogleContactsProvider(oauthCredSvc)
@@ -178,8 +181,8 @@ object Jorlan extends ZIOApp {
       _ <- registry.register(MemorySkill(memService, embeddingStore, embeddingModel))
       _ <- registry.register(SchedulerSkill(jobManager))
       _ <- registry.register(ContactsSkill(repos))
-      _ <- registry.register(WorkspaceSkill(workRoot, config.jorlan.workspace))
-      _ <- registry.register(ShellSkill(config.jorlan.shell, repos))
+      _ <- registry.register(WorkspaceSkill(workRoot, workspaceCfg))
+      _ <- registry.register(ShellSkill(shellCfg, repos))
       _ <- registry.register(NotifySkill(notifRouter))
       _ <- ZIO
         .attempt(java.time.ZoneId.systemDefault().getId)
@@ -220,14 +223,14 @@ object Jorlan extends ZIOApp {
         .flatMap {
           case Some(json) =>
             json.as[AlphaVantageConfig] match {
-              case Right(cfg) => registry.register(MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl))
+              case Right(cfg) => registry.register(MarketDataSkill(cfg, httpClient))
               case Left(err)  =>
-                registry.register(MarketDataSkill("", httpClient)) *>
+                registry.register(MarketDataSkill(AlphaVantageConfig(), httpClient)) *>
                   registry.disableSkill("market") *>
                   ZIO.logWarning(s"market skill registered but disabled: invalid config JSON: $err")
             }
           case None =>
-            registry.register(MarketDataSkill("", httpClient)) *>
+            registry.register(MarketDataSkill(AlphaVantageConfig(), httpClient)) *>
               registry.disableSkill("market") *>
               ZIO.logInfo("market skill registered but disabled (set skill.market in server_settings to enable)")
         }
@@ -318,7 +321,7 @@ object Jorlan extends ZIOApp {
           ZIO
             .fromEither(json.fromJson[AlphaVantageConfig])
             .mapError(e => JorlanError(s"Invalid market config: $e"))
-            .map(cfg => MarketDataSkill(cfg.apiKey, httpClient, cfg.baseUrl)),
+            .map(cfg => MarketDataSkill(cfg, httpClient)),
       )
       _ <- registry.registerSkillFactory(
         "skill.httpFetch",
@@ -351,6 +354,40 @@ object Jorlan extends ZIOApp {
             .fromEither(json.fromJson[WeatherConfig])
             .mapError(e => JorlanError(s"Invalid weather config: $e"))
             .map(cfg => WeatherSkill(cfg, httpClient, cfg.baseUrl)),
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.email",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[EmailConfig])
+            .mapError(e => JorlanError(s"Invalid email config: $e"))
+            .flatMap { cfg =>
+              if (cfg.provider.toLowerCase == "gmail")
+                GmailProvider(oauthCredSvc).map(EmailSkill(_))
+              else
+                ZIO.succeed(EmailSkill(ImapSmtpProvider(cfg)))
+            },
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.workspace",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[WorkspaceSettings])
+            .mapError(e => JorlanError(s"Invalid workspace config: $e"))
+            .flatMap { cfg =>
+              ZIO
+                .attempt(Paths.get(cfg.root).toAbsolutePath.normalize())
+                .mapError(e => JorlanError(s"Invalid workspace root: ${e.getMessage}"))
+                .map(root => WorkspaceSkill(root, cfg))
+            },
+      )
+      _ <- registry.registerSkillFactory(
+        "skill.shell",
+        json =>
+          ZIO
+            .fromEither(json.fromJson[ShellSettings])
+            .mapError(e => JorlanError(s"Invalid shell config: $e"))
+            .map(cfg => ShellSkill(cfg, repos)),
       )
       // ── MCP servers ───────────────────────────────────────────────────────────
       _ <- ZIO

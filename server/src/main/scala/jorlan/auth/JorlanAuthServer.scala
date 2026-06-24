@@ -94,6 +94,21 @@ object JorlanAuthServer {
                     ).mapError(AuthError(_)).unit
                 case None => ZIO.unit
               }
+              // Also link the email address as an Email channel identity for email-based lookup
+              _ <- ZIO.when(oauthInfo.email.nonEmpty && oauthInfo.emailVerified) {
+                repo.user
+                  .upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = oauthInfo.email,
+                      verified = true,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ).mapError(AuthError(_)).unit
+              }
             } yield user
           }
 
@@ -120,6 +135,21 @@ object JorlanAuthServer {
                       ),
                     ).mapError(AuthError(_)).unit
                 case None => ZIO.unit
+              }
+              // Also link the user's email address as an Email channel identity for email-based lookup
+              _ <- ZIO.when(user.email.nonEmpty) {
+                repo.user
+                  .upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = user.email,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ).mapError(AuthError(_)).unit
               }
             } yield user
           }
