@@ -204,11 +204,10 @@ class MemoryServiceImpl(
           meta.getString("memoryRecordId").nn.toLongOption.map(MemoryRecordId(_))
         }
       }.mapError(e => JorlanError(e.getMessage.nn))
-      .flatMap { ids =>
-        ZIO
-          .foreach(ids)(id => repo.memory.getById(id).mapError(JorlanError(_)))
-          .map(_.flatten)
-      }
+        .flatMap { ids =>
+          ZIO.foreach(ids)(id => repo.memory.getById(id).mapError(JorlanError(_))).map(_.flatten)
+        }
+        .catchAll(_ => ZIO.succeed(List.empty))
   }
 
   override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = policyRef.get
