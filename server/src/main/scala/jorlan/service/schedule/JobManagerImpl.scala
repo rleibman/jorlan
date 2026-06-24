@@ -131,17 +131,13 @@ class JobManagerImpl(
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
   ): IO[JorlanError, SchedulerJob] =
-    getJob(id).flatMap { existing =>
-      val updated = existing.copy(
-        name = name,
-        prompt = prompt,
-        maxRetries = maxRetries,
-        backoffSeconds = backoffSeconds,
-        backoffPolicy = backoffPolicy,
-        missedRunPolicy = missedRunPolicy,
-      )
-      repo.scheduler.upsertJob(updated).mapError(JorlanError(_))
-    }
+    repo.scheduler
+      .updateJobConfig(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
+      .mapError(JorlanError(_))
+      .flatMap { updated =>
+        if (updated) getJob(id)
+        else ZIO.fail(JorlanError(s"Job ${id.value} not found"))
+      }
 
   override def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit] =
     repo.scheduler.deleteTrigger(id).mapError(JorlanError(_)).unit

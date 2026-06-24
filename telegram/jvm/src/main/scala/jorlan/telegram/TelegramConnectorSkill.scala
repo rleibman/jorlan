@@ -96,39 +96,57 @@ class TelegramConnectorSkill(
     name = "telegram",
     tier = SkillTier.BuiltIn,
     skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
+    keywords = List(
+      "telegram",
+      "message",
+      "send",
+      "chat",
+      "text",
+      "notify",
+      "notification",
+      "messenger",
+      "remind",
+      "alert",
+    ),
     configKey = Some("skill.telegram"),
     configJsModule = Some("jorlan-telegram"),
     tools = List(
       ToolDescriptor(
         name = "telegram.send_message",
-        description = "Send a text message to a Telegram chat",
+        description =
+          "Send a text message via Telegram to a chat. 'chatId' is the Telegram numeric chat or user ID — obtain it from contacts.find if you only know the person's name.",
         inputSchema = sendMessageSchema,
         outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
+        keywords = List("telegram", "message", "send", "text", "chat", "notify", "remind"),
         examplePrompts = List(
-          "Send a Telegram message to chat 123456 saying hello",
-          "Text Roberto on Telegram that the build is done",
+          "Send a Telegram message to Roberto saying hello",
+          "Text Dominique on Telegram reminding her to call me",
+          "Notify the team on Telegram that the build is done",
+          "Send a Telegram reminder to user Roberto",
         ),
       ),
       ToolDescriptor(
         name = "telegram.send_photo",
-        description = "Send a photo to a Telegram chat",
+        description = "Send a photo image via Telegram to a chat.",
         inputSchema = sendPhotoSchema,
         outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
+        keywords = List("telegram", "photo", "image", "picture", "send"),
         examplePrompts = List(
-          "Send this screenshot to Telegram chat 123456",
+          "Send this screenshot to Roberto on Telegram",
           "Share the graph image with the team on Telegram",
         ),
       ),
       ToolDescriptor(
         name = "telegram.send_file",
-        description = "Send a file/document to a Telegram chat",
+        description = "Send a file or document via Telegram to a chat.",
         inputSchema = sendFileSchema,
         outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),
+        keywords = List("telegram", "file", "document", "send", "upload"),
         examplePrompts = List(
-          "Send the report PDF to Telegram chat 123456",
+          "Send the report PDF to Roberto on Telegram",
           "Upload the log file to the Telegram group",
         ),
       ),
@@ -197,7 +215,7 @@ class TelegramConnectorSkill(
           ZIO.logInfo("[telegram] deleting any active webhook before starting long-poll loop") *>
           apiClient.deleteWebhook
             .tapError(e => ZIO.logWarning(s"[telegram] deleteWebhook failed (continuing): ${e.msg}")).ignore *>
-          pollLoop(offset = 0L).forkDaemon
+          pollLoop(offset = 0L).fork
             .flatMap(f => pollingFiber.set(Some(f)))
     }
   // ZIO 2 fiber scheduling trampolines recursive flatMap chains — this is stack-safe.
@@ -214,7 +232,7 @@ class TelegramConnectorSkill(
 
   private def pollStep(offset: Long): IO[JorlanError, Long] =
     apiClient
-      .getUpdates(offset, timeoutSeconds = 30).flatMap { updates =>
+      .getUpdates(offset, timeoutSeconds = config.longPollTimeoutSeconds).flatMap { updates =>
         val filtered = filterUpdates(updates)
         ZIO
           .foreachParDiscard(filtered) { update =>

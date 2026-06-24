@@ -42,15 +42,16 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
           user         <- userRepo.upsert(User(UserId.empty, "ASUser1", "ASUser1@test.local", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("memory.write"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Persistent,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("memory.write"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- svc.authorize(capReq(user.id, "memory.write"))
@@ -69,15 +70,16 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
           user         <- userRepo.upsert(User(UserId.empty, "ASUser2", "ASUser2@test.local", T0, T0))
           _            <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("shell.execute"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Denied,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("shell.execute"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Denied,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- svc.authorize(capReq(user.id, "shell.execute"))
@@ -95,15 +97,16 @@ object ApprovalServiceSpec extends ZIOSpec[ZIORepositories] {
           user     <- userRepo.upsert(User(UserId.empty, "ASUser3", "ASUser3@test.local", T0, T0))
           _        <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("filesystem.write"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.PerInvocation,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("filesystem.write"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.PerInvocation,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- svc.authorize(capReq(user.id, "filesystem.write"))

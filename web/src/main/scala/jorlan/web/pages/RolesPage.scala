@@ -24,18 +24,22 @@ import scala.scalajs.js
 object RolesPage {
 
   case class State(
-    roles:       List[Role],
-    loading:     Boolean,
-    error:       Option[String],
-    showCreate:  Boolean,
-    createName:  String,
-    createDesc:  String,
-    editRole:    Option[Role],
-    editName:    String,
-    editDesc:    String,
-    saving:      Boolean,
-    deleteTarget: Option[Role],
-    deleting:    Boolean,
+    roles:                List[Role],
+    loading:              Boolean,
+    error:                Option[String],
+    showCreate:           Boolean,
+    createName:           String,
+    createDesc:           String,
+    editRole:             Option[Role],
+    editName:             String,
+    editDesc:             String,
+    saving:               Boolean,
+    deleteTarget:         Option[Role],
+    deleting:             Boolean,
+    capRole:              Option[Role],
+    roleGrants:           List[CapabilityGrant],
+    allKnownCapabilities: List[CapabilityName],
+    newMode:              String,
   )
 
   val component =
@@ -55,6 +59,10 @@ object RolesPage {
           saving = false,
           deleteTarget = None,
           deleting = false,
+          capRole = None,
+          roleGrants = List.empty,
+          allKnownCapabilities = List.empty,
+          newMode = "Persistent",
         ),
       )
       .useEffectOnMountBy {
@@ -92,11 +100,11 @@ object RolesPage {
               state.setState(state.value.copy(saving = true)).runNow()
               AsyncCallbackRepositories.permission
                 .upsertRole(Role(RoleId.empty, state.value.createName.trim, Some(state.value.createDesc.trim).filter(_.nonEmpty)))
-                .flatMap(_ =>
+                .flatMap(_ => AsyncCallbackRepositories.permission.searchRoles(RoleSearch()))
+                .flatMap(roles =>
                   state
-                    .setState(state.value.copy(saving = false, showCreate = false, createName = "", createDesc = ""))
-                    .asAsyncCallback
-                    .flatMap(_ => reload().asAsyncCallback),
+                    .setState(state.value.copy(saving = false, showCreate = false, createName = "", createDesc = "", roles = roles))
+                    .asAsyncCallback,
                 )
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
                 .runNow()
@@ -134,6 +142,72 @@ object RolesPage {
                 )
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(deleting = false, error = err))))
                 .runNow()
+            }
+
+          def openCaps(role: Role): Callback =
+            Callback {
+              (AsyncCallbackRepositories.permission.searchGrants(GrantSearch(roleId = Some(role.id))) zip
+                AsyncCallbackRepositories.allKnownCapabilities())
+                .flatMap { case (grants, caps) =>
+                  state
+                    .setState(state.value.copy(capRole = Some(role), roleGrants = grants, allKnownCapabilities = caps, newMode = "Persistent"))
+                    .asAsyncCallback
+                }
+                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .runNow()
+            }
+
+          def closeCaps(): Callback =
+            state.setState(state.value.copy(capRole = None, roleGrants = List.empty))
+
+          def grantCapability(capName: CapabilityName): Callback =
+            state.value.capRole match {
+              case None       => Callback.empty
+              case Some(role) =>
+                Callback {
+                  import java.time.Instant
+                  AsyncCallbackRepositories.permission
+                    .upsertCapabilityGrant(
+                      CapabilityGrant(
+                        id = CapabilityGrantId.empty,
+                        capability = capName,
+                        scopeJson = None,
+                        granteeId = role.id.value,
+                        granteeType = GranteeType.Role,
+                        grantorId = None,
+                        approvalMode = ApprovalMode.values
+                          .find(_.toString.equalsIgnoreCase(state.value.newMode))
+                          .getOrElse(ApprovalMode.Persistent),
+                        expiresAt = None,
+                        resourceConstraints = None,
+                        createdAt = Instant.now(),
+                      ),
+                    )
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchGrants(GrantSearch(roleId = Some(role.id)))
+                        .flatMap(grants => state.setState(state.value.copy(roleGrants = grants)).asAsyncCallback),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
+            }
+
+          def revokeRoleGrant(grantId: CapabilityGrantId): Callback =
+            state.value.capRole match {
+              case None       => Callback.empty
+              case Some(role) =>
+                Callback {
+                  AsyncCallbackRepositories.permission
+                    .revokeGrant(grantId)
+                    .flatMap(_ =>
+                      AsyncCallbackRepositories.permission
+                        .searchGrants(GrantSearch(roleId = Some(role.id)))
+                        .flatMap(grants => state.setState(state.value.copy(roleGrants = grants)).asAsyncCallback),
+                    )
+                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .runNow()
+                }
             }
 
           <.div(
@@ -181,6 +255,9 @@ object RolesPage {
                           .onClick(() =>
                             state.setState(state.value.copy(editRole = Some(r), editName = r.name, editDesc = r.description.getOrElse(""), error = None)).runNow(),
                           )("Edit"),
+                        MuiButton
+                          .size("small")
+                          .onClick(() => openCaps(r).runNow())("Capabilities"),
                         MuiButton
                           .size("small")
                           .color("error")
@@ -257,6 +334,102 @@ object RolesPage {
                   .color("error")
                   .disabled(state.value.deleting)
                   .onClick(() => state.value.deleteTarget.fold(Callback.empty)(deleteRole).runNow())("Delete"),
+              ),
+            ),
+            Dialog(state.value.capRole.isDefined)(
+              DialogTitle()(s"Capabilities — ${state.value.capRole.map(_.name).getOrElse("")}"),
+              DialogContent()(
+                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Existing grants:"),
+                if (state.value.roleGrants.isEmpty)
+                  Typography.withProps(
+                    TypographyOwnProps()
+                      .setVariant("body2").setSx(
+                        js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Typography.Props],
+                  )("No capability grants.")
+                else
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                    TableHead()(
+                      TableRow()(
+                        TableCell()("Capability"),
+                        TableCell()("Mode"),
+                        TableCell()("Actions"),
+                      ),
+                    ),
+                    TableBody()(
+                      state.value.roleGrants.map { g =>
+                        TableRow.withKey(g.id.value.toString)(
+                          TableCell()(g.capability.value),
+                          TableCell()(g.approvalMode.toString),
+                          TableCell()(
+                            MuiButton
+                              .size("small")
+                              .color("error")
+                              .onClick(() => revokeRoleGrant(g.id).runNow())("Revoke"),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mt = 2, mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Grant capability:"),
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic.literal(display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Box.Props],
+                )(
+                  MuiSelect
+                    .value(state.value.newMode)
+                    .size("small")
+                    .onChange { e =>
+                      state.setState(state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value)).runNow()
+                    }(
+                      ApprovalMode.values.map(m =>
+                        MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode,
+                      )*,
+                    ),
+                ),
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic.literal(mt = 1, maxHeight = 300, overflowY = "auto").asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Box.Props],
+                )(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                    TableBody()(
+                      state.value.allKnownCapabilities.map { cap =>
+                        val alreadyGranted = state.value.roleGrants.exists(_.capability == cap)
+                        TableRow.withKey(cap.value)(
+                          TableCell()(cap.value),
+                          TableCell()(
+                            MuiButton
+                              .size("small")
+                              .variant(if (alreadyGranted) "outlined" else "contained")
+                              .color(if (alreadyGranted) "error" else "primary")
+                              .disabled(alreadyGranted)
+                              .onClick(() => grantCapability(cap).runNow())(
+                                if (alreadyGranted) "Granted" else "Grant",
+                              ),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ),
+                ),
+              ),
+              DialogActions()(
+                MuiButton.variant("text").onClick(() => closeCaps().runNow())("Close"),
               ),
             ),
           )

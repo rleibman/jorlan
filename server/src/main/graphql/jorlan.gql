@@ -159,6 +159,11 @@ enum Formality {
   Custom
 }
 
+enum GranteeType {
+  User
+  Role
+}
+
 enum JobStatus {
   Pending
   Running
@@ -230,7 +235,8 @@ type CapabilityGrant {
   id: CapabilityGrantId!
   capability: CapabilityName!
   scopeJson: String
-  granteeId: UserId!
+  granteeId: Long!
+  granteeType: GranteeType!
   grantorId: UserId
   approvalMode: ApprovalMode!
   expiresAt: Instant
@@ -358,6 +364,7 @@ type Mutations {
   revokeOAuth(value: String!): Boolean
   invokeTool(toolName: String!, argsJson: String!): String
   grantCapability(userId: UserId!, capability: CapabilityName!, approvalMode: ApprovalMode!): CapabilityGrant
+  grantCapabilityToRole(roleId: RoleId!, capability: CapabilityName!, approvalMode: ApprovalMode!): CapabilityGrant
   revokeCapabilityGrant(value: CapabilityGrantId!): Boolean
   linkChannelIdentity(userId: UserId!, channelType: String!, channelUserId: String!): ChannelIdentity
   unlinkChannelIdentity(value: ChannelIdentityId!): Boolean
@@ -423,6 +430,7 @@ type Queries {
   oauthStatus(value: String!): OAuthStatus
   listOAuthProviders: [String!]
   userCapabilityGrants(value: UserId!): [CapabilityGrant!]
+  roleCapabilityGrants(value: RoleId!): [CapabilityGrant!]
   userChannelIdentities(value: UserId!): [ChannelIdentity!]
   allRoles(page: Int, pageSize: Int): [Role!]
   checkpointPolicy: CheckpointPolicyConfig

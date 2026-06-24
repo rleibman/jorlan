@@ -1,0 +1,24 @@
+{
+  "name": "jorlan-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@mui/material": "^9.1.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "apexcharts": "^4.3.0",
+    "react-apexcharts": "^1.7.0",
+    "csstype": "^3.2.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "parse5": "8.0.1",
+    "jsdom": "29.1.1",
+    "lodash": "4.18.1"
+  }
+}

@@ -364,28 +364,32 @@ object Jorlan extends ZIOApp {
           ZIO.foreachDiscard(names)(name => registry.disableSkill(name))
         case _ => ZIO.unit
       }
-      // ── Purge stale skillIndex rows from previous runs ────────────────────────
-      _ <- registry.purgeStaleIndex()
       _ <- registry.allSkills
-        .map(_.map(_.descriptor.name).mkString(", ")).flatMap(s => ZIO.logInfo(s"Registered skills: $s"))
+        .map(_.map(_.descriptor.name).mkString(", ")).flatMap(s => ZIO.logInfo(s"Registered built-in skills: $s"))
     } yield ()).mapError(JorlanError.apply)
 
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
-      _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkDaemon)
+      _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkScoped)
       _ <- ZIO
         .serviceWithZIO[ZIORepositories] { repos =>
           repos.memory.purgeExpired
             .tap(n => ZIO.logDebug(s"Memory purge: removed $n expired record(s)"))
             .mapError(JorlanError(_))
             .repeat(Schedule.spaced(1.hour))
-            .forkDaemon
+            .forkScoped
         }.unit
       _                <- registerBuiltInSkills
       connectorManager <- ZIO.service[ConnectorManager]
       registry         <- ZIO.service[SkillRegistry]
       _                <- ZIO.foreachDiscard(connectorManager.connectors)(registry.register)
-      _                <- ZIO.acquireRelease(connectorManager.startAll)(_ => connectorManager.stopAll)
+      // Purge AFTER connectors are registered so their skillIndex entries are preserved
+      _ <- registry.purgeStaleIndex()
+      _ <- registry.allSkills
+        .map(_.map(_.descriptor.name).mkString(", ")).flatMap(s => ZIO.logInfo(s"Registered skills: $s"))
+      _ <- ZIO.acquireRelease(connectorManager.startAll)(_ =>
+        connectorManager.stopAll.timeout(10.seconds).ignore
+      )
     } yield ()
 
   // $COVERAGE-OFF$

@@ -209,7 +209,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
     field: String,
   ): Long = {
     import scala.language.unsafeNulls
-    val pat = s""""$field":([0-9]+)""".r
+    // Matches both numeric ("id":1) and string-encoded ("id":"1") ID forms
+    val pat = s""""$field":"?([0-9]+)"?""".r
     pat
       .findFirstMatchIn(data).map(_.group(1).toLong).getOrElse(
         throw AssertionError(s"field '$field' not found in: $data"),

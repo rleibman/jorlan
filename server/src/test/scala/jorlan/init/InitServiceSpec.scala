@@ -198,6 +198,7 @@ object InitServiceSpec extends ZIOSpecDefault {
           CapabilityName("admin.personality.read"),
           CapabilityName("admin.personality.update"),
           CapabilityName("admin.user.list"),
+          CapabilityName("admin.user.manage"),
           CapabilityName("admin.settings"),
           CapabilityName("user.create"),
           CapabilityName("user.update"),
@@ -222,23 +223,26 @@ object InitServiceSpec extends ZIOSpecDefault {
           CapabilityName("admin.mcp.reload"),
           // Search
           CapabilityName("search.read"),
-          // Shell read-only sandbox tools
+          // Shell
           CapabilityName("shell.read"),
           // Weather
           CapabilityName("weather.read"),
-          // Shell read-only sandbox tools
-          CapabilityName("shell.read"),
         ).map(_.value)
         for {
           tokenStore <- ZIO.service[InitTokenStore]
           validToken <- tokenStore.token.map(_.getOrElse(""))
           svc        <- ZIO.service[InitService]
           _          <- svc.complete(validToken, "MyServer", "admin@example.com", "Admin", "password123!")
-          permRepo   <- ZIO.serviceWith[ZIORepositories](_.permission)
-          // Find the user that was created (id=1 from InMemoryUserRepo)
-          grants <- permRepo.searchGrants(jorlan.GrantSearch(userId = jorlan.UserId(1L)))
+          permRepo  <- ZIO.serviceWith[ZIORepositories](_.permission)
+          allRoles  <- permRepo.searchRoles(jorlan.RoleSearch())
+          adminRole  = allRoles.find(_.name == "Admin")
+          grants    <- adminRole match {
+            case Some(r) => permRepo.searchGrants(jorlan.GrantSearch(roleId = Some(r.id), pageSize = 1000))
+            case None    => ZIO.succeed(List.empty)
+          }
           grantedCaps = grants.map(_.capability.value).toSet
         } yield assertTrue(
+          adminRole.isDefined,
           grantedCaps == expectedCapabilities,
           grants.size == expectedCapabilities.size,
         )

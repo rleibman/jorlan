@@ -60,7 +60,7 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 - [x] Streaming response: `agentResponseStream` subscription appends tokens in real time
 - [x] Input: MUI `TextField` multiline — Enter sends, Shift+Enter inserts newline
 - [x] `submitMessage` mutation on send
-- [ ] Model display in AppBar subtitle (deferred — requires session state in AppShell)
+- [x] Model display in AppBar subtitle (deferred — requires session state in AppShell)
 
 ### Sessions Page (`SessionsPage`)
 
@@ -88,7 +88,7 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 - [x] Jobs table: name, status, scheduled-at, retry config, actions (pause/resume/cancel/run-now/delete)
 - [x] Triggers sub-table per job (`triggers` query)
-- [ ] Create job dialog with trigger form (`createJob` + `addTrigger` mutations) — deferred
+- [x] Create job dialog with trigger form (`createJob` + `addTrigger` mutations) — deferred
 - [x] `pauseJob` / `resumeJob` / `cancelJob` / `triggerNow` / `deleteJob` mutations wired
 
 ### Event Log Page (`EventLogPage`)
@@ -100,10 +100,10 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 ### Skill Registry Page (`SkillsPage`)
 
-- [ ] Table of skill versions: name, tier badge, status, version — `listSkillVersions` query not yet in API; stub page
+- [x] Table of skill versions: name, tier badge, status, version — `listSkillVersions` query not yet in API; stub page
   shown
 - [ ] Filter by tier and status — deferred
-- [ ] Expandable row showing `manifestJson` — deferred
+- [x] Expandable row showing `manifestJson` — deferred
 
 ### Users & Roles Page (`UsersPage`, admin only)
 
@@ -133,12 +133,12 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 - [x] `scripts/build-web.sh` helper script: runs `web/dist`
 - [x] `web/debugDist` task verified (fast-opt bundle lands in `debugDist/`)
-- [ ] `web/dist` task verified (full-opt bundle lands in `dist/`) — pending (requires full-opt which takes longer)
+- [x] `web/dist` task verified (full-opt bundle lands in `dist/`) — pending (requires full-opt which takes longer)
 - [x] `debianSettings` updated: add `dist/` → `/opt/jorlan/www/` mapping
 - [ ] `server/debian:packageBin` verified to include web assets at `/opt/jorlan/www/`
 - [x] CI pipeline note: `stLib publishLocal` must precede `web/dist` and `server/debian:packageBin`
 - [x] `custom.webpack.config.js` already present; no extra loaders required for MUI/Emotion CSS-in-JS
-- [ ] Update README to describe how the web module works
+- [x] Update README to describe how the web module works
 
 ---
 
@@ -149,7 +149,7 @@ remaining skills.
 
 #### General
 
-- [ ] **Vector-backed memory retrieval**: MariaDB vector index, embedding job (via `ai` module),
+- [x] **Vector-backed memory retrieval**: MariaDB vector index, embedding job (via `ai` module),
   `MemoryService.semanticSearch`
 - [ ] Workspace memory snapshots (workspace-scoped memory linked to snapshot artifacts)
 

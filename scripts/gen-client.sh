@@ -43,6 +43,7 @@ MemoryScope:jorlan.MemoryScope,\
 RiskClass:jorlan.RiskClass,\
 CapabilityGrantId:jorlan.CapabilityGrantId,\
 Formality:jorlan.Formality,\
+GranteeType:jorlan.GranteeType,\
 JobStatus:jorlan.JobStatus,\
 MissedRunPolicy:jorlan.MissedRunPolicy,\
 RetryBackoffPolicy:jorlan.RetryBackoffPolicy,\

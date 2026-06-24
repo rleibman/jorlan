@@ -196,8 +196,15 @@ object InMemoryRepositories {
         if (m.contains(id.value)) (1L, m.removed(id.value)) else (0L, m)
       }
 
+    override def getUserRoleIds(userId: UserId): RepositoryTask[List[RoleId]] =
+      userRoles.get.map(_.keys.filter(_._1 == userId.value).map(k => RoleId(k._2)).toList)
+
     override def searchGrants(s: GrantSearch): RepositoryTask[List[CapabilityGrant]] =
-      grants.get.map(_.values.toList.filter(_.granteeId == s.userId))
+      grants.get.map { gs =>
+        gs.values.toList
+          .filter(g => s.userId.forall(uid => g.granteeId == uid.value && g.granteeType == GranteeType.User))
+          .filter(g => s.roleId.forall(rid => g.granteeId == rid.value && g.granteeType == GranteeType.Role))
+      }
 
     override def createApprovalRequest(req: ApprovalRequest): RepositoryTask[ApprovalRequest] =
       for {
@@ -267,7 +274,16 @@ object InMemoryRepositories {
       userId:     UserId,
       capability: CapabilityName,
     ): RepositoryTask[List[CapabilityGrant]] =
-      grants.get.map(_.values.toList.filter(g => g.granteeId == userId && g.capability == capability))
+      for {
+        gs      <- grants.get
+        roleIds <- getUserRoleIds(userId)
+        ridVals  = roleIds.map(_.value).toSet
+        result   = gs.values.toList.filter { g =>
+          g.capability == capability &&
+            ((g.granteeId == userId.value && g.granteeType == GranteeType.User) ||
+              (ridVals.contains(g.granteeId) && g.granteeType == GranteeType.Role))
+        }
+      } yield result
 
     override def hasDirectPermission(
       userId:   UserId,
@@ -650,8 +666,17 @@ object InMemoryRepositories {
       limit:   Int = 200,
     ):                                              RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
     override def getPendingJobs:                    RepositoryTask[List[SchedulerJob]] = ZIO.succeed(List.empty)
-    override def upsertJob(job:    SchedulerJob):   RepositoryTask[SchedulerJob] = ZIO.succeed(job)
-    override def deleteJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
+    override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] = ZIO.succeed(job)
+    override def updateJobConfig(
+      id:              SchedulerJobId,
+      name:            String,
+      prompt:          String,
+      maxRetries:      Int,
+      backoffSeconds:  Int,
+      backoffPolicy:   RetryBackoffPolicy,
+      missedRunPolicy: MissedRunPolicy,
+    ): RepositoryTask[Boolean] = ZIO.succeed(true)
+    override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def pauseJob(id:      SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def resumeJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
     override def cancelJob(id:     SchedulerJobId): RepositoryTask[Boolean] = ZIO.succeed(false)
@@ -720,6 +745,35 @@ object InMemoryRepositories {
         }
       } else {
         jobs.update(_.updated(job.id, job)).as(job)
+      }
+
+    override def updateJobConfig(
+      id:              SchedulerJobId,
+      name:            String,
+      prompt:          String,
+      maxRetries:      Int,
+      backoffSeconds:  Int,
+      backoffPolicy:   RetryBackoffPolicy,
+      missedRunPolicy: MissedRunPolicy,
+    ): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id).fold((false, m)) { j =>
+          (
+            true,
+            m.updated(
+              id,
+              j.copy(
+                name = name,
+                prompt = prompt,
+                inputJson = None,
+                maxRetries = maxRetries,
+                backoffSeconds = backoffSeconds,
+                backoffPolicy = backoffPolicy,
+                missedRunPolicy = missedRunPolicy,
+              ),
+            ),
+          )
+        }
       }
 
     override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] =

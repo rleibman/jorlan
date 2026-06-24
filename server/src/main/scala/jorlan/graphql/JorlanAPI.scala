@@ -145,6 +145,22 @@ object JorlanAPI {
   private given Schema[Any, CapabilityGrantId] =
     Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
 
+  private given Schema[Any, GranteeType] =
+    Schema.enumSchema[GranteeType](
+      name = "GranteeType",
+      values = GranteeType.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
   private given Schema[Any, CapabilityGrant] = Schema.gen[Any, CapabilityGrant]
 
   private given Schema[Any, SchedulerJobId] =
@@ -372,6 +388,11 @@ object JorlanAPI {
       ChannelType.values
         .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid ChannelType '$s'"))
     }
+  private given ArgBuilder[GranteeType] =
+    ArgBuilder.enumString[GranteeType] { s =>
+      GranteeType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid GranteeType '$s'"))
+    }
   private given ArgBuilder[ApprovalStatus] =
     ArgBuilder.enumString[ApprovalStatus] { s =>
       ApprovalStatus.values
@@ -476,6 +497,13 @@ object JorlanAPI {
   /** Input for `grantCapability` — grants a named capability directly to a user. */
   case class GrantCapabilityInput(
     userId:       UserId,
+    capability:   CapabilityName,
+    approvalMode: ApprovalMode,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `grantCapabilityToRole` — grants a named capability to a role. */
+  case class GrantCapabilityToRoleInput(
+    roleId:       RoleId,
     capability:   CapabilityName,
     approvalMode: ApprovalMode,
   ) derives Schema.SemiAuto, ArgBuilder
@@ -729,6 +757,8 @@ object JorlanAPI {
     listOAuthProviders: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[String]],
     /** Returns capability grants for a specific user. Requires `admin.user.manage`. */
     userCapabilityGrants: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
+    /** Returns capability grants for a specific role. Requires `admin.user.manage`. */
+    roleCapabilityGrants: RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
     /** Returns channel identities for a specific user. Requires `admin.user.manage`. */
     userChannelIdentities: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ChannelIdentity]],
     /** Returns all roles in the system. Requires `admin.user.manage`. */
@@ -784,6 +814,8 @@ object JorlanAPI {
     invokeTool: InvokeToolInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, String],
     /** Grants a named capability directly to a user. Requires `permission.grant`. */
     grantCapability: GrantCapabilityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
+    /** Grants a named capability to a role. Requires `permission.grant`. */
+    grantCapabilityToRole: GrantCapabilityToRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
     /** Revokes a capability grant by ID. Requires `permission.revoke`. */
     revokeCapabilityGrant: CapabilityGrantId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Associates a ch`annel identity with a user. Requires `admin.user.manage`. */
@@ -993,7 +1025,7 @@ object JorlanAPI {
           listCapabilities = for {
             actorId <- actorIdFromSession
             grants  <- ZIO.serviceWithZIO[ZIORepositories](
-              _.permission.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
+              _.permission.searchGrants(GrantSearch(userId = Some(actorId), pageSize = 100)),
             )
           } yield grants,
           jobs = input =>
@@ -1096,7 +1128,15 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.user.manage", actorId)
               grants  <- ZIO.serviceWithZIO[ZIORepositories](
-                _.permission.searchGrants(GrantSearch(userId = userId, pageSize = 200)),
+                _.permission.searchGrants(GrantSearch(userId = Some(userId), pageSize = 200)),
+              )
+            } yield grants,
+          roleCapabilityGrants = roleId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              grants  <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.searchGrants(GrantSearch(roleId = Some(roleId), pageSize = 200)),
               )
             } yield grants,
           userChannelIdentities = userId =>
@@ -1516,7 +1556,31 @@ object JorlanAPI {
                     id = CapabilityGrantId.empty,
                     capability = input.capability,
                     scopeJson = None,
-                    granteeId = input.userId,
+                    granteeId = input.userId.value,
+                    granteeType = GranteeType.User,
+                    grantorId = Some(actorId),
+                    approvalMode = input.approvalMode,
+                    expiresAt = None,
+                    resourceConstraints = None,
+                    createdAt = now,
+                  ),
+                ),
+              )
+              _ <- logEvent(EventType.PermissionGranted, Some(actorId), None, now)
+            } yield grant,
+          grantCapabilityToRole = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("permission.grant", actorId)
+              now     <- Clock.instant
+              grant   <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertCapabilityGrant(
+                  CapabilityGrant(
+                    id = CapabilityGrantId.empty,
+                    capability = input.capability,
+                    scopeJson = None,
+                    granteeId = input.roleId.value,
+                    granteeType = GranteeType.Role,
                     grantorId = Some(actorId),
                     approvalMode = input.approvalMode,
                     expiresAt = None,

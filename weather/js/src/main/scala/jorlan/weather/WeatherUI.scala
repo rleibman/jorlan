@@ -68,6 +68,17 @@ object WeatherUI {
                 .literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px", width = "140px"),
             ),
           ),
+          <.label(
+            ^.style := js.Dynamic.literal(display = "flex", flexDirection = "column", gap = "4px"),
+            <.span("Default Location"),
+            <.input(
+              ^.`type`      := "text",
+              ^.value       := cfg.defaultLocation,
+              ^.placeholder := "e.g. New York or London,UK or Las Vegas,NV,US",
+              ^.onChange ==> { e => state.setState(cfg.copy(defaultLocation = targetValue(e))) },
+              ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
+            ),
+          ),
           <.div(
             ^.style := js.Dynamic.literal(display = "flex", gap = "8px"),
             <.button(

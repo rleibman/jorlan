@@ -215,7 +215,7 @@ object UsersPage {
 
           def openPerms(user: User): Callback =
             Callback {
-              (AsyncCallbackRepositories.permission.searchGrants(GrantSearch(userId = user.id)) zip
+              (AsyncCallbackRepositories.permission.searchGrants(GrantSearch(userId = Some(user.id))) zip
                 AsyncCallbackRepositories.allKnownCapabilities())
                 .flatMap { case (grants, caps) =>
                   state
@@ -247,7 +247,8 @@ object UsersPage {
                         id = CapabilityGrantId.empty,
                         capability = capName,
                         scopeJson = None,
-                        granteeId = user.id,
+                        granteeId = user.id.value,
+                        granteeType = GranteeType.User,
                         grantorId = None,
                         approvalMode = ApprovalMode.values
                           .find(_.toString.equalsIgnoreCase(state.value.newMode))
@@ -259,7 +260,7 @@ object UsersPage {
                     )
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
-                        .searchGrants(GrantSearch(userId = user.id))
+                        .searchGrants(GrantSearch(userId = Some(user.id)))
                         .flatMap(grants =>
                           state
                             .setState(
@@ -281,7 +282,7 @@ object UsersPage {
                     .revokeGrant(grantId)
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
-                        .searchGrants(GrantSearch(userId = user.id))
+                        .searchGrants(GrantSearch(userId = Some(user.id)))
                         .flatMap(grants => state.setState(state.value.copy(grants = grants)).asAsyncCallback),
                     )
                     .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))

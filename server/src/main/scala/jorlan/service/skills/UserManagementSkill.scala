@@ -328,7 +328,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def listGrants(args: Json): IO[JorlanError, Json] = {
     requireLong(args, "list_grants", "userId").flatMap { id =>
       repos.permission
-        .searchGrants(GrantSearch(userId = UserId(id)))
+        .searchGrants(GrantSearch(userId = Some(UserId(id))))
         .mapError(JorlanError(_))
         .map(grants => Json.Arr(grants.map(grantJson)*))
     }
@@ -346,7 +346,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
             id = CapabilityGrantId.empty,
             capability = CapabilityName(capability),
             scopeJson = None,
-            granteeId = UserId(userId),
+            granteeId = userId,
+            granteeType = GranteeType.User,
             grantorId = None,
             approvalMode = approvalMode,
             expiresAt = None,
@@ -431,7 +432,8 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     Json.Obj(
       "id"           -> Json.Str(g.id.value.toString),
       "capability"   -> Json.Str(g.capability.value),
-      "granteeId"    -> Json.Str(g.granteeId.value.toString),
+      "granteeId"    -> Json.Str(g.granteeId.toString),
+      "granteeType"  -> Json.Str(g.granteeType.toString),
       "approvalMode" -> Json.Str(g.approvalMode.toString),
       "createdAt"    -> Json.Str(g.createdAt.toString),
     )

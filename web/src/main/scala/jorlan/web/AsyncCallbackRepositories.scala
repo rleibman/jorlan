@@ -121,12 +121,24 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         .asyncCalibanCallWithAuth(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
         .map(_.getOrElse(List.empty).map(toApprovalRequest))
 
+    override def getUserRoleIds(userId: UserId): AsyncCallback[List[RoleId]] = AsyncCallback.pure(List.empty)
+
     override def searchGrants(s: GrantSearch): AsyncCallback[List[CapabilityGrant]] =
-      adapter
-        .asyncCalibanCallWithAuth(
-          JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view),
-        )
-        .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+      (s.userId, s.roleId) match {
+        case (Some(uid), _) =>
+          adapter
+            .asyncCalibanCallWithAuth(
+              JorlanClient.Queries.userCapabilityGrants(uid)(JorlanClient.CapabilityGrant.view),
+            )
+            .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+        case (_, Some(rid)) =>
+          adapter
+            .asyncCalibanCallWithAuth(
+              JorlanClient.Queries.roleCapabilityGrants(rid)(JorlanClient.CapabilityGrant.view),
+            )
+            .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+        case _ => AsyncCallback.pure(List.empty)
+      }
 
     override def getRole(id: RoleId):        AsyncCallback[Option[Role]] = AsyncCallback.pure(None)
     override def searchRoles(s: RoleSearch): AsyncCallback[List[Role]] =
@@ -186,13 +198,23 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       AsyncCallback.pure(List.empty)
     override def upsertPermission(perm: Permission):            AsyncCallback[Permission] = ???
     override def deletePermission(id:   PermissionId):          AsyncCallback[Long] = AsyncCallback.pure(0L)
-    override def upsertCapabilityGrant(grant: CapabilityGrant): AsyncCallback[CapabilityGrant] =
+    override def upsertCapabilityGrant(grant: CapabilityGrant): AsyncCallback[CapabilityGrant] = {
+      val mutation = grant.granteeType match {
+        case GranteeType.Role =>
+          JorlanClient.Mutations.grantCapabilityToRole(
+            RoleId(grant.granteeId),
+            grant.capability,
+            grant.approvalMode,
+          )(JorlanClient.CapabilityGrant.view)
+        case GranteeType.User =>
+          JorlanClient.Mutations.grantCapability(
+            UserId(grant.granteeId),
+            grant.capability,
+            grant.approvalMode,
+          )(JorlanClient.CapabilityGrant.view)
+      }
       adapter
-        .asyncCalibanCallWithAuth(
-          JorlanClient.Mutations.grantCapability(grant.granteeId, grant.capability, grant.approvalMode)(
-            JorlanClient.CapabilityGrant.view,
-          ),
-        )
+        .asyncCalibanCallWithAuth(mutation)
         .flatMap(r =>
           r.fold(
             AsyncCallback.throwException[JorlanClient.CapabilityGrant.CapabilityGrantView](
@@ -201,6 +223,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
           )(AsyncCallback.pure),
         )
         .map(toCapabilityGrant)
+    }
     override def revokeGrant(id: CapabilityGrantId): AsyncCallback[Long] =
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Mutations.revokeCapabilityGrant(id))
@@ -282,6 +305,17 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def getPendingJobs:               AsyncCallback[List[SchedulerJob]] = AsyncCallback.pure(List.empty)
     override def upsertJob(job: SchedulerJob): AsyncCallback[SchedulerJob] =
       AsyncCallback.throwException(new UnsupportedOperationException("upsertJob not available on web client"))
+
+    override def updateJobConfig(
+      id:              SchedulerJobId,
+      name:            String,
+      prompt:          String,
+      maxRetries:      Int,
+      backoffSeconds:  Int,
+      backoffPolicy:   RetryBackoffPolicy,
+      missedRunPolicy: MissedRunPolicy,
+    ): AsyncCallback[Boolean] =
+      AsyncCallback.throwException(new UnsupportedOperationException("updateJobConfig not available on web client"))
 
     override def deleteJob(id: SchedulerJobId): AsyncCallback[Boolean] =
       adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
@@ -804,6 +838,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       capability = v.capability,
       scopeJson = v.scopeJson,
       granteeId = v.granteeId,
+      granteeType = v.granteeType,
       grantorId = v.grantorId,
       approvalMode = v.approvalMode,
       expiresAt = v.expiresAt,

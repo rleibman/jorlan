@@ -661,7 +661,7 @@ object CommandHandler {
   }
 
   private def listUserCapabilities(userId: UserId): ZIO[Env, Nothing, Unit] =
-    repo(_.permission.searchGrants(GrantSearch(userId = userId))).foldZIO(
+    repo(_.permission.searchGrants(GrantSearch(userId = Some(userId)))).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not list capabilities: $err")),
       {
         case Nil    => screen(_.addMessage(MessageKind.System, s"No capability grants for user ${userId.value}."))
@@ -696,7 +696,8 @@ object CommandHandler {
               id = CapabilityGrantId.empty,
               capability = CapabilityName(capability),
               scopeJson = None,
-              granteeId = userId,
+              granteeId = userId.value,
+              granteeType = GranteeType.User,
               grantorId = None,
               approvalMode = mode,
               expiresAt = None,
