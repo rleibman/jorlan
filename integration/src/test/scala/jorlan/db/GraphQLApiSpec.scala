@@ -89,6 +89,8 @@ object GraphQLApiSpec
       EventLogHub.live,
       FakeModelGateway.layer(List("test")),
       AgentSessionManagerImpl.live,
+      jorlan.NoOpEmbeddingLayers.embeddingStoreLayer,
+      jorlan.NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
       SkillRegistry.live,
       JorlanContainer.configLayer,

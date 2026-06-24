@@ -317,6 +317,7 @@ object SchedulerPage {
             Dialog(state.value.showCreate)(
               DialogTitle()("New Scheduler Job"),
               DialogContent()(
+                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
                 Box.withProps(
                   BoxOwnProps[Theme]()
                     .setSx(
@@ -449,6 +450,7 @@ object SchedulerPage {
               Dialog(true)(
                 DialogTitle()("Edit Scheduler Job"),
                 DialogContent()(
+                  state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
                   Box.withProps(
                     BoxOwnProps[Theme]()
                       .setSx(
@@ -611,7 +613,7 @@ object SchedulerPage {
               MuiButton
                 .variant("contained")
                 .size("small")
-                .onClick(() => state.setState(state.value.copy(showCreate = true)).runNow())("+ New Job"),
+                .onClick(() => state.setState(state.value.copy(showCreate = true, error = None)).runNow())("+ New Job"),
               MuiButton
                 .variant("outlined")
                 .size("small")
@@ -748,8 +750,9 @@ object SchedulerPage {
                                     .onClick(() =>
                                       state
                                         .setState(
-                                          state.value.copy(editForm =
-                                            Some(
+                                          state.value.copy(
+                                            error = None,
+                                            editForm = Some(
                                               EditJobForm(
                                                 id = job.id,
                                                 name = job.name,

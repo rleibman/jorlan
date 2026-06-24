@@ -8,20 +8,14 @@ package jorlan
 
 import _root_.auth.oauth.{OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, key}
+import ai.{EmbeddingModel, EmbeddingStore, LangChainServiceBuilder}
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.telegram.*
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
-import jorlan.google.{
-  GmailProvider,
-  GoogleCalendarProvider,
-  GoogleDriveProvider,
-  MappedExternalCredentialRepository,
-  OAuthCredentialEncryptor,
-  OAuthCredentialServiceImpl,
-}
+import jorlan.google.*
 import jorlan.*
 import jorlan.service.*
 import jorlan.service.DashboardService
@@ -33,8 +27,13 @@ import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnector
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
 
+import javax.sql.DataSource
+
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
+
+  private val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
+    ZLayer.fromZIO(ZIO.serviceWith[QuillRepositories](_.dataSourceLayer)).flatten
 
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
     ZLayer
@@ -117,8 +116,10 @@ object EnvironmentBuilder {
     ZLayer
       .make[JorlanEnvironment](
         ConfigurationServiceImpl.live,
+        ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.ai)),
         ZLayer.fromZIO(ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map(_.jorlan.auth)),
         QuillRepositories.live,
+        dataSourceLayer,
         CapabilityEvaluatorImpl.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
@@ -128,6 +129,8 @@ object EnvironmentBuilder {
         ToolEventHub.live,
         EventLogHub.live,
         OllamaModelGateway.live,
+        LangChainServiceBuilder.ollamaEmbeddingModelLayer,
+        EmbeddingStore.mariadb("jorlan_memory"),
         AgentSessionManagerImpl.live,
         MemoryServiceImpl.live,
         NotificationRouter.live,

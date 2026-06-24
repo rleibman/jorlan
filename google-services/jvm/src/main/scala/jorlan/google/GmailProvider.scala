@@ -197,6 +197,66 @@ class GmailProvider private (
       gmail.users().messages().modify("me", messageId.value, req).nn.execute()
     }.unit
 
+  override def moveMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    toFolder:  String,
+  ): IO[JorlanError, Unit] =
+    ZIO.fail(JorlanError("moveMessage not supported for Gmail provider — use archiveMessage or deleteMessage"))
+
+  override def flagMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    flagged:   Option[Boolean],
+    read:      Option[Boolean],
+  ): IO[JorlanError, Unit] = {
+    val addLabels = scala.collection.mutable.ListBuffer.empty[String]
+    val removeLabels = scala.collection.mutable.ListBuffer.empty[String]
+    flagged.foreach(f => if (f) addLabels += "STARRED" else removeLabels += "STARRED")
+    read.foreach(r => if (r) removeLabels += "UNREAD" else addLabels += "UNREAD")
+    if (addLabels.isEmpty && removeLabels.isEmpty) ZIO.unit
+    else
+      withGmail(userId) { gmail =>
+        val req = new com.google.api.services.gmail.model.ModifyMessageRequest()
+          .setAddLabelIds(addLabels.toList.asJava)
+          .setRemoveLabelIds(removeLabels.toList.asJava)
+        gmail.users().messages().modify("me", messageId.value, req).nn.execute()
+      }.unit
+  }
+
+  override def listFolders(userId: UserId): IO[JorlanError, List[EmailFolderInfo]] =
+    withGmail(userId) { gmail =>
+      val labels = gmail.users().labels().list("me").nn.execute().nn.getLabels.nn
+      labels.asScala.toList.map(l =>
+        EmailFolderInfo(
+          id = Option(l.getId).getOrElse(""),
+          name = Option(l.getName).getOrElse(""),
+        ),
+      )
+    }
+
+  override def forwardMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    to:        List[String],
+    note:      Option[String],
+  ): IO[JorlanError, EmailMessageId] =
+    for {
+      original <- getMessage(userId, messageId)
+      fwdBody =
+        s"${note.map(_ + "\n\n---------- Forwarded message ----------\n").getOrElse("---------- Forwarded message ----------\n")}From: ${original.from}\nDate: ${original.date}\nSubject: ${original.subject}\n\n${original.body}"
+      draft = EmailDraft(
+        to = to,
+        cc = Nil,
+        bcc = Nil,
+        subject = s"Fwd: ${original.subject}",
+        body = fwdBody,
+        replyToMessageId = None,
+        signWithPgp = false,
+      )
+      msgId <- sendDraft(userId, draft)
+    } yield msgId
+
   private def buildRfc822(
     draft:     EmailDraft,
     fromEmail: String,

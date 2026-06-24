@@ -24,10 +24,11 @@ import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
   *   publicly reachable HTTPS endpoint wired into the server's route table, which is not yet implemented.
   */
 case class TelegramConfig(
-  botToken:           String = "",
-  allowedChatIds:     Set[String] = Set.empty,
-  allowedUserIds:     Set[String] = Set.empty,
-  unrecognizedPolicy: UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
-  useWebhook:         Boolean = false,
-  apiBaseUrl:         String = "https://api.telegram.org",
+  botToken:               String = "",
+  allowedChatIds:         Set[String] = Set.empty,
+  allowedUserIds:         Set[String] = Set.empty,
+  unrecognizedPolicy:     UnrecognizedIdentityPolicy = UnrecognizedIdentityPolicy.Reject,
+  useWebhook:             Boolean = false,
+  apiBaseUrl:             String = "https://api.telegram.org",
+  longPollTimeoutSeconds: Int = 5,
 ) derives JsonCodec

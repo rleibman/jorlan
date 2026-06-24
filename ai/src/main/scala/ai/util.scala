@@ -8,10 +8,10 @@ package ai
 // $COVERAGE-OFF$
 
 import dev.langchain4j.data.message.UserMessage
-import dev.langchain4j.data.segment.TextSegment
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
 import dev.langchain4j.model.chat.request.{ChatRequest, ChatRequestParameters, ResponseFormat}
-import dev.langchain4j.model.ollama.{OllamaChatModel, OllamaStreamingChatModel}
+import dev.langchain4j.model.embedding.EmbeddingModel
+import dev.langchain4j.model.ollama.{OllamaChatModel, OllamaEmbeddingModel, OllamaStreamingChatModel}
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever
 import dev.langchain4j.service.{AiServices, TokenStream}
 import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
@@ -131,6 +131,18 @@ object LangChainServiceBuilder {
         ret
       },
     )
+
+  def ollamaEmbeddingModelLayer: URLayer[LangChainConfig, EmbeddingModel] = {
+    ZLayer.fromZIO {
+      for {
+        config <- ZIO.service[LangChainConfig]
+      } yield OllamaEmbeddingModel
+        .builder()
+        .baseUrl(config.ollamaBaseUrl)
+        .modelName(config.embeddingModel)
+        .build().nn: EmbeddingModel
+    }
+  }
 
   def chatAssistantLayer(storeOpt: Option[EmbeddingStore] = None)
     : URLayer[ChatLanguageModel & ChatMemory & LangChainConfig, ChatAssistant] = ZLayer.fromZIO(chatAssistant(storeOpt))

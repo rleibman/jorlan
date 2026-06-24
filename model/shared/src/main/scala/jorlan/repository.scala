@@ -167,7 +167,8 @@ case class PermissionSearch(
 
 enum GrantOrder { case Id, GrantedAt }
 case class GrantSearch(
-  userId:   UserId,
+  userId:   Option[UserId] = None,
+  roleId:   Option[RoleId] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[GrantOrder]] = None,
@@ -336,9 +337,18 @@ trait SchedulerRepository[F[_]] {
   def listJobs(
     agentId: Option[AgentId],
     limit:   Int = 200,
-  ):                                              F[List[SchedulerJob]]
-  def getPendingJobs:                             F[List[SchedulerJob]]
-  def upsertJob(job:         SchedulerJob):       F[SchedulerJob]
+  ):                                F[List[SchedulerJob]]
+  def getPendingJobs:               F[List[SchedulerJob]]
+  def upsertJob(job: SchedulerJob): F[SchedulerJob]
+  def updateJobConfig(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ):                                              F[Boolean]
   def deleteJob(id:          SchedulerJobId):     F[Boolean]
   def pauseJob(id:           SchedulerJobId):     F[Boolean]
   def resumeJob(id:          SchedulerJobId):     F[Boolean]
@@ -426,9 +436,12 @@ trait PermissionRepository[F[_]] {
   def listPendingApprovals(userId:     UserId):            F[List[ApprovalRequest]]
   def getExpiredApprovalRequests:                          F[List[ApprovalRequest]]
 
-  /** All [[CapabilityGrant]] rows for a user + capability that are relevant to the evaluator: `Denied` grants are
-    * always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied` grants are filtered to those that
-    * have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
+  /** Returns the role IDs currently assigned to the given user. */
+  def getUserRoleIds(userId: UserId): F[List[RoleId]]
+
+  /** All [[CapabilityGrant]] rows for a user (and their assigned roles) + capability that are relevant to the
+    * evaluator: `Denied` grants are always included (they drive [[EvaluationResult.ExplicitDeny]]); non-`Denied` grants
+    * are filtered to those that have not yet expired (`expiresAt IS NULL OR expiresAt > now`).
     */
   def getGrantsForCapability(
     userId:     UserId,

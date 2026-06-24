@@ -30,7 +30,7 @@ enum CheckpointTrigger {
   *   fire before every tool invocation; generates a safety snapshot; off by default (expensive)
   */
 case class CheckpointPolicyConfig(
-  onSessionEnd:         Boolean = false,
+  onSessionEnd:         Boolean = true,
   onUserRequest:        Boolean = true,
   timedIntervalTurns:   Option[Int] = Some(10),
   beforeExternalEffect: Boolean = false,
@@ -216,6 +216,19 @@ trait MemoryService {
 
   /** Persist and apply a new [[CheckpointPolicyConfig]]. */
   def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit]
+
+  /** Find memories semantically similar to `queryText` using vector similarity.
+    *
+    * Returns an empty list if the embedding service is unavailable rather than failing. Results are not filtered by
+    * [[MemoryAccessPolicy]] — caller is responsible for only querying scopes the user is permitted to read.
+    */
+  def semanticQuery(
+    scope:     MemoryScope,
+    userId:    UserId,
+    agentId:   AgentId,
+    queryText: String,
+    limit:     Int = 5,
+  ): IO[JorlanError, List[MemoryRecord]]
 
 }
 

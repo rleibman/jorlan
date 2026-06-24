@@ -159,6 +159,11 @@ enum Formality {
   Custom
 }
 
+enum GranteeType {
+  User
+  Role
+}
+
 enum JobStatus {
   Pending
   Running
@@ -196,6 +201,11 @@ enum SessionStatus {
   Cancelled
 }
 
+input McpEnvVarInput {
+  key: String!
+  value: String!
+}
+
 type AgentSession {
   id: AgentSessionId!
   agentId: AgentId!
@@ -225,7 +235,8 @@ type CapabilityGrant {
   id: CapabilityGrantId!
   capability: CapabilityName!
   scopeJson: String
-  granteeId: UserId!
+  granteeId: Long!
+  granteeType: GranteeType!
   grantorId: UserId
   approvalMode: ApprovalMode!
   expiresAt: Instant
@@ -283,6 +294,21 @@ type EventLogJson {
   occurredAt: Instant!
 }
 
+type McpEnvVar {
+  key: String!
+  value: String!
+}
+
+type McpServerView {
+  name: String!
+  transport: String!
+  command: String
+  args: [String!]!
+  env: [McpEnvVar!]!
+  url: String
+  enabled: Boolean!
+}
+
 type MemoryRecord {
   id: MemoryRecordId!
   scope: MemoryScope!
@@ -309,6 +335,8 @@ type Mutations {
   updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
   deactivateUser(value: UserId!): Boolean
   createRole(name: String!, description: String): Role
+  updateRole(id: RoleId!, name: String!, description: String): Role
+  deleteRole(value: RoleId!): Boolean
   assignRole(userId: UserId!, roleId: RoleId!): Unit
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
@@ -336,12 +364,15 @@ type Mutations {
   revokeOAuth(value: String!): Boolean
   invokeTool(toolName: String!, argsJson: String!): String
   grantCapability(userId: UserId!, capability: CapabilityName!, approvalMode: ApprovalMode!): CapabilityGrant
+  grantCapabilityToRole(roleId: RoleId!, capability: CapabilityName!, approvalMode: ApprovalMode!): CapabilityGrant
   revokeCapabilityGrant(value: CapabilityGrantId!): Boolean
   linkChannelIdentity(userId: UserId!, channelType: String!, channelUserId: String!): ChannelIdentity
   unlinkChannelIdentity(value: ChannelIdentityId!): Boolean
   requestCheckpoint(value: AgentSessionId!): Boolean
   updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
   reloadMcpServers(value: Unit!): Boolean
+  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!): McpServerView
+  deleteMcpServer(value: String!): Boolean
   enableSkill(value: String!): Boolean
   disableSkill(value: String!): Boolean
   updateSkillConfig(name: String!, configJson: String!): Boolean
@@ -399,11 +430,15 @@ type Queries {
   oauthStatus(value: String!): OAuthStatus
   listOAuthProviders: [String!]
   userCapabilityGrants(value: UserId!): [CapabilityGrant!]
+  roleCapabilityGrants(value: RoleId!): [CapabilityGrant!]
   userChannelIdentities(value: UserId!): [ChannelIdentity!]
   allRoles(page: Int, pageSize: Int): [Role!]
   checkpointPolicy: CheckpointPolicyConfig
   dashboardStats: DashboardStats
   skillDashboardData(value: String!): String
+  mcpServers: [McpServerView!]
+  allKnownCapabilities: [CapabilityName!]
+  skillValidate(value: String!): SkillValidationResult
 }
 
 type ResponseChunk {
@@ -468,6 +503,11 @@ type SkillToolInfo {
   description: String!
   requiredCapabilities: [String!]!
   examplePrompts: [String!]!
+}
+
+type SkillValidationResult {
+  ok: Boolean!
+  message: String!
 }
 
 type Subscriptions {

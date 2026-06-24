@@ -2,10 +2,10 @@
 // Common Stuff
 
 import org.apache.commons.io.FileUtils
+import scalajs.esbuild.ScalaJSEsbuildPlugin.autoImport.*
+import scalajs.esbuild.web.ScalaJSEsbuildWebPlugin
 import sbtcrossproject.CrossProject
 
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import scala.concurrent.duration.*
 
 lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time of build").withRank(KeyRanks.Invisible)
@@ -27,6 +27,13 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 scalaVersion                  := SCALA
 Global / scalaVersion         := SCALA
 
+// com.sun.mail:javax.mail:1.6.x is the old monolithic JavaMail JAR pulled in transitively
+// by tika-parser-mail-module (via langchain4j-document-parser-apache-tika). It conflicts with
+// Emil's split jars (mailapi:2.0.x, imap:2.0.x, smtp:2.0.x) because both register
+// Provider implementations via the ServiceLoader, causing the classloader check to fail with
+// "com.sun.mail.imap.IMAPProvider not a subtype". Excluding the legacy jar globally fixes this.
+ThisBuild / excludeDependencies += ExclusionRule("com.sun.mail", "javax.mail")
+
 Global / watchAntiEntropy := 1.second
 
 ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always
@@ -39,23 +46,25 @@ lazy val dist = TaskKey[File]("dist")
 lazy val debugDist = TaskKey[File]("debugDist")
 
 def webDistImpl(
-  assets:            File,
-  webpackArtifacts:  Seq[Attributed[File]],
-  artifactFolder:    File,
-  outputFolder:      File,
-  includeSourceMaps: Boolean,
+  assets:       File,
+  bundleOutput: File,
+  outputFolder: File,
 ): File = {
   outputFolder.mkdirs()
-  FileUtils.copyDirectory(assets, outputFolder, true)
-  if (artifactFolder.exists()) {
-    println(s"Copying webpack output from: $artifactFolder")
-    val bundles = (artifactFolder * "*.js").get ++
-      (if (includeSourceMaps) (artifactFolder * "*.js.map").get else Seq.empty)
-    bundles.foreach { bundleFile =>
-      Files.copy(bundleFile.toPath, (outputFolder / bundleFile.name).toPath, REPLACE_EXISTING)
+  // Copy static assets, skipping index.html (that comes from esbuild output)
+  if (assets.exists()) {
+    assets.listFiles().foreach { f =>
+      if (f.getName != "index.html") {
+        if (f.isDirectory) FileUtils.copyDirectory(f, outputFolder / f.getName, true)
+        else FileUtils.copyFile(f, outputFolder / f.getName)
+      }
     }
+  }
+  if (bundleOutput.exists()) {
+    println(s"Copying esbuild output from: $bundleOutput")
+    FileUtils.copyDirectory(bundleOutput, outputFolder, true)
   } else {
-    println(s"Webpack output directory does not exist: $artifactFolder")
+    println(s"esbuild output directory does not exist: $bundleOutput")
   }
   outputFolder
 }
@@ -124,7 +133,7 @@ val scalaJavaTimeVersion = "2.7.0"
 val scalajsDomVersion = "2.8.1"
 val scalajsReactVersion = "4.0.0"
 val scalatagsVersion = "0.13.1"
-val stlibVersion = "1.1.0"
+val stlibVersion = "1.3.0"
 val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.6"
@@ -709,15 +718,23 @@ lazy val debianSettings =
         (src / "main" / "scripts" / "init-db.sh") -> "/usr/lib/jorlan-server/scripts/init-db.sh",
       ).withUser("root").withGroup("root").withPerms("0755")
     },
-    // Install web frontend assets so the server can serve them directly
-    Debian / linuxPackageMappings += {
-      val distDir = (ThisBuild / baseDirectory).value / "dist"
+    // Install web frontend assets so the server can serve them directly.
+    // Depends on web/dist so packaging always uses a fresh build.
+    Debian / linuxPackageMappings += Def.task {
+      val distDir = (web / dist).value
       packageMapping(
         (distDir.allPaths --- distDir).get.map { f =>
           f -> s"/usr/lib/jorlan-server/www/${Path.relativeTo(distDir)(f).get}"
         }: _*,
       ).withUser("jorlan").withGroup("jorlan")
-    },
+    }.value,
+    // Include web frontend in the universal (macOS) tarball under www/
+    Universal / mappings ++= Def.task {
+      val distDir = (web / dist).value
+      (distDir.allPaths --- distDir).get.map { f =>
+        f -> s"www/${Path.relativeTo(distDir)(f).get}"
+      }
+    }.value,
     // postinst: create log directory and set permissions
     Debian / maintainerScripts := {
       val scripts:  Map[String, Seq[String]] = (Debian / maintainerScripts).value
@@ -789,35 +806,6 @@ lazy val ai = project
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Web
-lazy val bundlerSettings: Project => Project =
-  _.enablePlugins(ScalaJSBundlerPlugin)
-    .settings(
-      webpack / version                  := "5.96.1",
-      Compile / fastOptJS / artifactPath := ((Compile / fastOptJS / crossTarget).value /
-        ((fastOptJS / moduleName).value + "-opt.js")),
-      Compile / fullOptJS / artifactPath := ((Compile / fullOptJS / crossTarget).value /
-        ((fullOptJS / moduleName).value + "-opt.js")),
-      useYarn                                   := true,
-      run / fork                                := true,
-      Global / scalaJSStage                     := FastOptStage,
-      Compile / scalaJSUseMainModuleInitializer := true,
-      Test / scalaJSUseMainModuleInitializer    := false,
-      Compile / npmDependencies ++= Seq(
-      ),
-    )
-
-lazy val withCssLoading: Project => Project =
-  _.settings(
-    /* custom webpack file to include css */
-    webpackConfigFile := Some((ThisBuild / baseDirectory).value / "custom.webpack.config.js"),
-    Compile / npmDevDependencies ++= Seq(
-      "webpack-merge" -> "^6.0.1",
-      "css-loader"    -> "^7.1.4",
-      "style-loader"  -> "^4.0.0",
-      "file-loader"   -> "^6.2.0",
-      "url-loader"    -> "^4.1.1",
-    ),
-  )
 
 lazy val commonWeb: Project => Project =
   _.settings(
@@ -850,19 +838,17 @@ lazy val commonWeb: Project => Project =
     startYear                            := Some(2026),
     Compile / unmanagedSourceDirectories := Seq((Compile / scalaSource).value),
     Test / unmanagedSourceDirectories    := Seq((Test / scalaSource).value),
-    //    webpackDevServerPort                 := 8009
   )
 
 lazy val web: Project = project
   .dependsOn(modelJS, gqlClient.js)
-  .configure(bundlerSettings)
-  .configure(withCssLoading)
   .configure(commonWeb)
   .settings(commonSettings)
   .enablePlugins(
     // AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
     ScalaJSPlugin,
+    ScalaJSEsbuildWebPlugin,
   )
   .settings(
     scalacOptions ++= scala3Opts,
@@ -871,24 +857,30 @@ lazy val web: Project = project
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
     // doesn't instrument Scala.js bytecode or report 0% coverage.
     coverageEnabled := false,
+    run / fork                                := true,
+    Global / scalaJSStage                     := FastOptStage,
+    Compile / scalaJSUseMainModuleInitializer := true,
+    Test / scalaJSUseMainModuleInitializer    := false,
     libraryDependencies ++= Seq(
       "dev.zio" %%% "zio"      % zioVersion withSources (),
       "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),
     ),
-    debugDist := webDistImpl(
-      assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
-      webpackArtifacts = (Compile / fastOptJS / webpack).value,
-      artifactFolder = (Compile / fastOptJS / crossTarget).value,
-      outputFolder = (ThisBuild / baseDirectory).value / "debugDist",
-      includeSourceMaps = true,
-    ),
-    dist := webDistImpl(
-      assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
-      webpackArtifacts = (Compile / fullOptJS / webpack).value,
-      artifactFolder = (Compile / fullOptJS / crossTarget).value,
-      outputFolder = (ThisBuild / baseDirectory).value / "dist",
-      includeSourceMaps = false,
-    ),
+    debugDist := {
+      val _ = (Compile / fastLinkJS / esbuildBundle).value
+      webDistImpl(
+        assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
+        bundleOutput = (Compile / esbuildBundle / crossTarget).value,
+        outputFolder = (ThisBuild / baseDirectory).value / "debugDist",
+      )
+    },
+    dist := {
+      val _ = (Compile / fullLinkJS / esbuildBundle).value
+      webDistImpl(
+        assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
+        bundleOutput = (Compile / esbuildBundle / crossTarget).value,
+        outputFolder = (ThisBuild / baseDirectory).value / "dist",
+      )
+    },
   )
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

@@ -7,7 +7,7 @@
 package jorlan.search
 
 import jorlan.*
-import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -28,7 +28,7 @@ import zio.json.literal.*
 class SearchSkill(
   config: SearchConfig,
   client: Client,
-) extends Skill {
+) extends Skill with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "search",
@@ -262,5 +262,22 @@ class SearchSkill(
           .getOrElse(Json.Arr())
       case _ => Json.Arr()
     }
+
+  override def validate(): IO[JorlanError, SkillValidationResult] = {
+    if (config.apiKey.isBlank)
+      ZIO.succeed(SkillValidationResult(ok = false, message = "API key is not configured"))
+    else
+      postJson(
+        "/search",
+        Json.Obj(
+          "api_key"      -> Json.Str(config.apiKey),
+          "query"        -> Json.Str("test"),
+          "search_depth" -> Json.Str("basic"),
+          "max_results"  -> Json.Num(1),
+        ),
+      )
+        .as(SkillValidationResult(ok = true, message = "OK — Tavily API key is valid"))
+        .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = e.msg)))
+  }
 
 }

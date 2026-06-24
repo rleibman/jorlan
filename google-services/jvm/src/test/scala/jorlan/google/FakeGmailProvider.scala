@@ -61,6 +61,32 @@ class FakeGmailProvider(
   ): IO[JorlanError, Unit] =
     archivedRef.update(_ :+ messageId)
 
+  override def moveMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    toFolder:  String,
+  ): IO[JorlanError, Unit] =
+    archivedRef.update(_ :+ messageId)
+
+  override def flagMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    flagged:   Option[Boolean],
+    read:      Option[Boolean],
+  ): IO[JorlanError, Unit] = ZIO.unit
+
+  override def listFolders(userId: UserId): IO[JorlanError, List[EmailFolderInfo]] =
+    ZIO.succeed(List(EmailFolderInfo("INBOX", "INBOX"), EmailFolderInfo("Sent", "Sent")))
+
+  override def forwardMessage(
+    userId:    UserId,
+    messageId: EmailMessageId,
+    to:        List[String],
+    note:      Option[String],
+  ): IO[JorlanError, EmailMessageId] =
+    sentRef.update(_ :+ EmailDraft(to, Nil, Nil, "Fwd:", "", None, false)) *>
+      ZIO.succeed(EmailMessageId("fake-gmail-forward-id"))
+
   def sentMessages:  UIO[List[EmailDraft]] = sentRef.get
   def draftMessages: UIO[List[EmailDraft]] = draftsRef.get
   def archivedIds:   UIO[List[EmailMessageId]] = archivedRef.get

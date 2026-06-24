@@ -47,6 +47,13 @@ case class Permission(
   scope:    Option[Json],
 ) derives JsonCodec
 
+/** Discriminates whether a [[CapabilityGrant]] targets a user or a role. */
+enum GranteeType derives JsonCodec {
+
+  case User, Role
+
+}
+
 /** Controls how strictly an agent must seek user approval before using a capability.
   *
   *   - `Denied` — permanently disallowed; no approval path.
@@ -77,7 +84,8 @@ case class CapabilityGrant(
   id:                  CapabilityGrantId,
   capability:          CapabilityName,
   scopeJson:           Option[String],
-  granteeId:           UserId,
+  granteeId:           Long,
+  granteeType:         GranteeType,
   grantorId:           Option[UserId],
   approvalMode:        ApprovalMode,
   expiresAt:           Option[Instant],

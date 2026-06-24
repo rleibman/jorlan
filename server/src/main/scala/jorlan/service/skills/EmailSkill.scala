@@ -7,7 +7,7 @@
 package jorlan.service.skills
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.EmailProvider
 import just.semver.SemVer
 import zio.*
@@ -26,10 +26,14 @@ import zio.json.literal.*
   *   - `email.delete` — delete a message
   *   - `email.reply` — reply to a message
   *   - `email.search` — search for messages
+  *   - `email.move` — move message to a folder
+  *   - `email.flag` — flag or mark a message as read/unread
+  *   - `email.folders` — list available folders
+  *   - `email.forward` — forward a message
   */
 class EmailSkill(
   emailProvider: EmailProvider[[A] =>> IO[JorlanError, A]],
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "email",
@@ -56,6 +60,8 @@ class EmailSkill(
       "delete",
       "draft",
     ),
+    configKey = Some("skill.email"),
+    configJsModule = Some("jorlan-email"),
     tools = List(
       ToolDescriptor(
         name = "email.list",
@@ -148,6 +154,53 @@ class EmailSkill(
           "Look for emails with attachments from last week",
         ),
       ),
+      ToolDescriptor(
+        name = "email.move",
+        description = "Move an email message to a specified folder.",
+        inputSchema = json"""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to move"},"folder":{"type":"string","description":"The target folder name (e.g. Archive, Sent, Trash)"}},"required":["messageId","folder"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("email.write")),
+        examplePrompts = List(
+          "Move the email from Bob to the Archive folder",
+          "Put this newsletter in the Newsletters folder",
+        ),
+      ),
+      ToolDescriptor(
+        name = "email.flag",
+        description = "Flag or unflag an email, or mark it as read or unread.",
+        inputSchema = json"""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID"},"flagged":{"type":"boolean","description":"true to flag/star the message, false to unflag"},"read":{"type":"boolean","description":"true to mark as read, false to mark as unread"}},"required":["messageId"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("email.write")),
+        examplePrompts = List(
+          "Flag the email from Alice as important",
+          "Mark the newsletter as unread",
+          "Star the meeting invite email",
+        ),
+      ),
+      ToolDescriptor(
+        name = "email.folders",
+        description = "List all available mailbox folders.",
+        inputSchema = json"""{"type":"object","properties":{},"required":[]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("email.read")),
+        examplePrompts = List(
+          "What email folders do I have?",
+          "List my mailbox folders",
+          "Show me all my email labels",
+        ),
+      ),
+      ToolDescriptor(
+        name = "email.forward",
+        description = "Forward an email message to one or more recipients.",
+        inputSchema = json"""{"type":"object","properties":{"messageId":{"type":"string","description":"The email message ID to forward"},"to":{"type":"array","items":{"type":"string"},"description":"Recipient email addresses"},"note":{"type":"string","description":"Optional note to prepend before the forwarded content"}},"required":["messageId","to"]}""",
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("email.send")),
+        examplePrompts = List(
+          "Forward Bob's email to Alice",
+          "Send this meeting invite to the whole team",
+          "Forward the report email to my manager with a note",
+        ),
+      ),
     ),
   )
 
@@ -165,6 +218,10 @@ class EmailSkill(
       case "email.delete"  => emailDelete(ctx, args)
       case "email.reply"   => emailReply(ctx, args)
       case "email.search"  => emailSearch(ctx, args)
+      case "email.move"    => emailMove(ctx, args)
+      case "email.flag"    => emailFlag(ctx, args)
+      case "email.folders" => emailFolders(ctx, args)
+      case "email.forward" => emailForward(ctx, args)
       case other           => ZIO.fail(JorlanError(s"EmailSkill: unknown tool '$other'"))
     }
 
@@ -329,6 +386,54 @@ class EmailSkill(
         )
     }
 
+  private def emailMove(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
+    for {
+      id     <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.move: messageId is required"))
+      folder <- ZIO.fromOption(str(args, "folder")).orElseFail(JorlanError("email.move: folder is required"))
+      _      <- emailProvider.moveMessage(ctx.actorId, EmailMessageId(id), folder)
+    } yield Json.Obj("messageId" -> Json.Str(id), "movedTo" -> Json.Str(folder))
+
+  private def emailFlag(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
+    for {
+      id <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.flag: messageId is required"))
+      flagged = bool(args, "flagged")
+      read = bool(args, "read")
+      _ <- emailProvider.flagMessage(ctx.actorId, EmailMessageId(id), flagged, read)
+    } yield Json.Obj("messageId" -> Json.Str(id), "updated" -> Json.Bool(true))
+
+  private def emailFolders(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
+    for {
+      folders <- emailProvider.listFolders(ctx.actorId)
+    } yield Json.Obj(
+      "folders" -> Json.Arr(
+        folders.map(f => Json.Obj("id" -> Json.Str(f.id), "name" -> Json.Str(f.name)))*,
+      ),
+      "count" -> Json.Num(folders.size),
+    )
+
+  private def emailForward(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] =
+    for {
+      id <- ZIO.fromOption(str(args, "messageId")).orElseFail(JorlanError("email.forward: messageId is required"))
+      to <- ZIO
+        .fromOption(
+          Some(strList(args, "to")).filter(_.nonEmpty),
+        ).orElseFail(JorlanError("email.forward: to is required"))
+      note = str(args, "note")
+      msgId <- emailProvider.forwardMessage(ctx.actorId, EmailMessageId(id), to, note)
+    } yield Json.Obj("messageId" -> Json.Str(msgId.value), "forwarded" -> Json.Bool(true))
+
   override def dashboardData(ctx: InvocationContext): IO[JorlanError, Json] =
     emailProvider
       .listMessages(ctx.actorId, 5, Some("is:unread"))
@@ -349,6 +454,12 @@ class EmailSkill(
       .catchAll(e =>
         ZIO.succeed(Json.Obj("error" -> Json.Str(e.msg), "unreadCount" -> Json.Num(0), "recentMessages" -> Json.Arr())),
       )
+
+  override def validate(): IO[JorlanError, SkillValidationResult] =
+    emailProvider
+      .listMessages(UserId.empty, 1, None)
+      .as(SkillValidationResult(ok = true, message = "OK — email provider connection successful"))
+      .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = s"Email provider error: ${e.msg}")))
 
 }
 

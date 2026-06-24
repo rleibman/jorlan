@@ -178,6 +178,8 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
 
   override def skillIndex: ZIOSkillIndexRepository = QuillSkillIndexRepository(qc)
 
+  val dataSourceLayer: ULayer[DataSource] = qc.dataSourceLayer
+
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────
@@ -920,6 +922,31 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
       )
     }
 
+  override def updateJobConfig(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): RepositoryTask[Boolean] =
+    exec(
+      qc.ctx.run(
+        qSchedulerJobs
+          .filter(_.id == lift(id))
+          .update(
+            _.name            -> lift(name),
+            _.prompt          -> lift(prompt),
+            _.inputJson       -> lift(Option.empty[String]),
+            _.maxRetries      -> lift(maxRetries),
+            _.backoffSeconds  -> lift(backoffSeconds),
+            _.backoffPolicy   -> lift(backoffPolicy),
+            _.missedRunPolicy -> lift(missedRunPolicy),
+          ),
+      ),
+    ).map(_ > 0L)
+
   override def deleteJob(id: SchedulerJobId): RepositoryTask[Boolean] =
     exec(qc.ctx.run(qSchedulerJobs.filter(_.id == lift(id)).delete)).map(_ > 0L)
 
@@ -1282,18 +1309,46 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def revokeGrant(id: CapabilityGrantId): RepositoryTask[Long] =
     exec(qc.ctx.run(qCapabilityGrants.filter(_.id == lift(id)).delete))
 
+  override def getUserRoleIds(userId: UserId): RepositoryTask[List[RoleId]] =
+    exec(qc.ctx.run(qUserRoles.filter(_.userId == lift(userId)).map(_.roleId)))
+
   override def searchGrants(s: GrantSearch): RepositoryTask[List[CapabilityGrant]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qCapabilityGrants.filter(_.granteeId == lift(s.userId)))
-    val limited = quote(base.drop(lift(offset)).take(lift(ps)))
-    val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
-      case Some(Sort(GrantOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
-      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
-      case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
-      case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
+    (s.userId, s.roleId) match {
+      case (Some(uid), _) =>
+        val uidVal = uid.value
+        val base = quote(
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(uidVal) && g.granteeType == lift(GranteeType.User: GranteeType),
+          ),
+        )
+        val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+        val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
+          case Some(Sort(GrantOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+          case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+          case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+          case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
+        }
+        exec(qc.ctx.run(sorted))
+      case (_, Some(rid)) =>
+        val ridVal = rid.value
+        val base = quote(
+          qCapabilityGrants.filter(g =>
+            g.granteeId == lift(ridVal) && g.granteeType == lift(GranteeType.Role: GranteeType),
+          ),
+        )
+        val limited = quote(base.drop(lift(offset)).take(lift(ps)))
+        val sorted: Quoted[Query[CapabilityGrant]] = s.sorts match {
+          case Some(Sort(GrantOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
+          case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc))  => quote(limited.sortBy(_.createdAt)(Ord.asc))
+          case Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)) => quote(limited.sortBy(_.createdAt)(Ord.desc))
+          case _                                                     => quote(limited.sortBy(_.id)(Ord.asc))
+        }
+        exec(qc.ctx.run(sorted))
+      case _ =>
+        exec(qc.ctx.run(quote(qCapabilityGrants.drop(lift(offset)).take(lift(ps)))))
     }
-    exec(qc.ctx.run(sorted))
   }
 
   override def createApprovalRequest(req: ApprovalRequest): RepositoryTask[ApprovalRequest] =
@@ -1324,13 +1379,15 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def getGrantsForCapability(
     userId:     UserId,
     capability: CapabilityName,
-  ): RepositoryTask[List[CapabilityGrant]] =
+  ): RepositoryTask[List[CapabilityGrant]] = {
+    val uidVal = userId.value
     for {
-      now    <- Clock.instant
-      grants <- exec(
+      now        <- Clock.instant
+      userGrants <- exec(
         qc.ctx.run(
           qCapabilityGrants.filter(g =>
-            g.granteeId == lift(userId) &&
+            g.granteeId == lift(uidVal) &&
+              g.granteeType == lift(GranteeType.User: GranteeType) &&
               g.capability == lift(capability) &&
               (g.approvalMode == lift(ApprovalMode.Denied) ||
                 g.expiresAt.isEmpty ||
@@ -1338,7 +1395,26 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
           ),
         ),
       )
-    } yield grants
+      roleIds    <- exec(qc.ctx.run(qUserRoles.filter(_.userId == lift(userId)).map(_.roleId)))
+      roleGrants <-
+        if (roleIds.isEmpty) ZIO.succeed(List.empty[CapabilityGrant])
+        else {
+          val ridVals = roleIds.map(_.value)
+          exec(
+            qc.ctx.run(
+              qCapabilityGrants.filter(g =>
+                liftQuery(ridVals).contains(g.granteeId) &&
+                  g.granteeType == lift(GranteeType.Role: GranteeType) &&
+                  g.capability == lift(capability) &&
+                  (g.approvalMode == lift(ApprovalMode.Denied) ||
+                    g.expiresAt.isEmpty ||
+                    g.expiresAt.exists(_ > lift(now))),
+              ),
+            ),
+          )
+        }
+    } yield userGrants ++ roleGrants
+  }
 
   override def hasDirectPermission(
     userId:   UserId,

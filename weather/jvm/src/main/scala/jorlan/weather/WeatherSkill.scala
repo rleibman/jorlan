@@ -7,7 +7,7 @@
 package jorlan.weather
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.http.*
@@ -29,7 +29,7 @@ class WeatherSkill(
   config:  WeatherConfig,
   client:  Client,
   baseUrl: String = "https://api.openweathermap.org/data/2.5",
-) extends Skill with HasDashboardData {
+) extends Skill with HasDashboardData with HasValidation {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "weather",
@@ -62,7 +62,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.current",
         description = "Fetch current weather conditions for a named location. Returns temperature, feels_like, humidity, description, wind_speed, and visibility.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'. Omit to use the configured default location."},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -74,7 +74,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.forecast",
         description = "Fetch a simplified multi-day weather forecast for a named location. Returns a list of forecast entries with date, temp_min, temp_max, and description.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'"},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":["location"]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'. Omit to use the configured default location."},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -184,7 +184,8 @@ class WeatherSkill(
 
   private def current(args: Json): IO[JorlanError, Json] =
     for {
-      location <- fieldStr(args, "location")
+      locationOpt <- fieldStrOpt(args, "location")
+      location = normalizeLocation(locationOpt.getOrElse(config.defaultLocation))
       unitsOpt <- fieldStrOpt(args, "units")
       units = unitsOpt.getOrElse(config.units)
       url =
@@ -222,7 +223,8 @@ class WeatherSkill(
 
   private def forecast(args: Json): IO[JorlanError, Json] =
     for {
-      location <- fieldStr(args, "location")
+      locationOpt <- fieldStrOpt(args, "location")
+      location = normalizeLocation(locationOpt.getOrElse(config.defaultLocation))
       daysOpt  <- fieldIntOpt(args, "days")
       unitsOpt <- fieldStrOpt(args, "units")
       days = daysOpt.getOrElse(5).max(1).min(5)
@@ -289,7 +291,7 @@ class WeatherSkill(
     if (config.apiKey.isBlank)
       ZIO.succeed(Json.Obj("error" -> Json.Str("No API key configured")))
     else {
-      val location = config.defaultLocation
+      val location = normalizeLocation(config.defaultLocation)
       val url = s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(config.units)}"
       fetchJson(url)
         .map {
@@ -321,8 +323,23 @@ class WeatherSkill(
     }
   }
 
+  override def validate(): IO[JorlanError, SkillValidationResult] = {
+    if (config.apiKey.isBlank)
+      ZIO.succeed(SkillValidationResult(ok = false, message = "API key is not configured"))
+    else {
+      val location = normalizeLocation(config.defaultLocation)
+      val url = s"$baseUrl/weather?q=${encode(location)}&appid=${config.apiKey}&units=${encode(config.units)}"
+      fetchJson(url)
+        .as(SkillValidationResult(ok = true, message = s"OK — current weather for '$location' fetched successfully"))
+        .catchAll(e => ZIO.succeed(SkillValidationResult(ok = false, message = e.msg)))
+    }
+  }
+
   private def encode(s: String): String =
     java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8)
+
+  private def normalizeLocation(loc: String): String =
+    loc.split(",").map(_.trim).filter(_.nonEmpty).mkString(",")
 
 }
 

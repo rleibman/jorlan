@@ -83,7 +83,15 @@ jobs:
     - name: Setup sbt
       uses: sbt/setup-sbt@v1
 
-    - name: Build Debian packages
+    - name: Cache npm dependencies (esbuild)
+      uses: actions/cache@v4
+      with:
+        path: web/target/scala-3.8.4/esbuild/main/node_modules
+        key: ${{ runner.os }}-npm-esbuild-${{ hashFiles('web/esbuild/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-esbuild-
+
+    - name: Build Debian packages (includes web frontend via web/dist)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}

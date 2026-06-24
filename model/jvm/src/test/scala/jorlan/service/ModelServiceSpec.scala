@@ -161,7 +161,8 @@ object ModelServiceSpec extends ZIOSpecDefault {
       id = CapabilityGrantId(1L),
       capability = CapabilityName("shell.execute"),
       scopeJson = None,
-      granteeId = UserId(1L),
+      granteeId = 1L,
+      granteeType = GranteeType.User,
       grantorId = None,
       approvalMode = approvalMode,
       expiresAt = expiresAt,
@@ -485,6 +486,7 @@ object ModelServiceSpec extends ZIOSpecDefault {
   // ─── MemoryService companion accessors ───────────────────────────────────
 
   private class StubMemoryService extends MemoryService {
+
     private val nowInst = java.time.Instant.now()
     private val stubRecord = MemoryRecord(
       id = MemoryRecordId(1L),
@@ -499,74 +501,111 @@ object ModelServiceSpec extends ZIOSpecDefault {
       updatedAt = nowInst,
     )
     override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
-    override def query(scope: MemoryScope, userId: UserId, agentId: AgentId, text: Option[String]): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List(stubRecord))
-    override def forget(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, Boolean] = ZIO.succeed(true)
-    override def markShared(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
-    override def markPrivate(id: MemoryRecordId, requestingUserId: UserId): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
-    override def checkpoint(sessionId: AgentSessionId, messages: List[Message], userId: UserId, agentId: AgentId, trigger: CheckpointTrigger): IO[JorlanError, Unit] = ZIO.unit
-    override def requestCheckpoint(sessionId: AgentSessionId, userId: UserId, agentId: AgentId): IO[JorlanError, Unit] = ZIO.unit
+    override def query(
+      scope:   MemoryScope,
+      userId:  UserId,
+      agentId: AgentId,
+      text:    Option[String],
+    ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List(stubRecord))
+    override def forget(
+      id:               MemoryRecordId,
+      requestingUserId: UserId,
+    ): IO[JorlanError, Boolean] = ZIO.succeed(true)
+    override def markShared(
+      id:               MemoryRecordId,
+      requestingUserId: UserId,
+    ): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
+    override def markPrivate(
+      id:               MemoryRecordId,
+      requestingUserId: UserId,
+    ): IO[JorlanError, MemoryRecord] = ZIO.succeed(stubRecord)
+    override def checkpoint(
+      sessionId: AgentSessionId,
+      messages:  List[Message],
+      userId:    UserId,
+      agentId:   AgentId,
+      trigger:   CheckpointTrigger,
+    ): IO[JorlanError, Unit] = ZIO.unit
+    override def requestCheckpoint(
+      sessionId: AgentSessionId,
+      userId:    UserId,
+      agentId:   AgentId,
+    ):                                IO[JorlanError, Unit] = ZIO.unit
     override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = ZIO.succeed(CheckpointPolicyConfig.default)
     override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] = ZIO.unit
+    override def semanticQuery(
+      scope:     MemoryScope,
+      userId:    UserId,
+      agentId:   AgentId,
+      queryText: String,
+      limit:     Int,
+    ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List.empty)
+
   }
 
   private val stubMemoryLayer: ULayer[MemoryService] = ZLayer.succeed(new StubMemoryService())
 
   private def nowInst = java.time.Instant.now()
-  private def stubRecord = MemoryRecord(
-    id = MemoryRecordId(1L),
-    scope = MemoryScope.User,
-    userId = Some(UserId(1L)),
-    workspaceId = None,
-    agentId = None,
-    recordKey = "test.key",
-    value = zio.json.ast.Json.Str("value"),
-    ttl = None,
-    createdAt = nowInst,
-    updatedAt = nowInst,
-  )
+  private def stubRecord =
+    MemoryRecord(
+      id = MemoryRecordId(1L),
+      scope = MemoryScope.User,
+      userId = Some(UserId(1L)),
+      workspaceId = None,
+      agentId = None,
+      recordKey = "test.key",
+      value = zio.json.ast.Json.Str("value"),
+      ttl = None,
+      createdAt = nowInst,
+      updatedAt = nowInst,
+    )
 
   private val memoryServiceCompanionSuite = suite("MemoryService companion accessors")(
     test("store accessor delegates to service") {
-      MemoryService.store(stubRecord).map(r => assertTrue(r.recordKey == "test.key"))
+      MemoryService
+        .store(stubRecord).map(r => assertTrue(r.recordKey == "test.key"))
         .provide(stubMemoryLayer)
     },
     test("query accessor delegates to service") {
-      MemoryService.query(MemoryScope.User, UserId(1L), AgentId(1L)).map(list =>
-        assertTrue(list.nonEmpty)
-      ).provide(stubMemoryLayer)
+      MemoryService
+        .query(MemoryScope.User, UserId(1L), AgentId(1L)).map(list => assertTrue(list.nonEmpty)).provide(
+          stubMemoryLayer,
+        )
     },
     test("forget accessor delegates to service") {
-      MemoryService.forget(MemoryRecordId(1L), UserId(1L)).map(result =>
-        assertTrue(result)
-      ).provide(stubMemoryLayer)
+      MemoryService.forget(MemoryRecordId(1L), UserId(1L)).map(result => assertTrue(result)).provide(stubMemoryLayer)
     },
     test("markShared accessor delegates to service") {
-      MemoryService.markShared(MemoryRecordId(1L), UserId(1L)).map(r =>
-        assertTrue(r.recordKey == "test.key")
-      ).provide(stubMemoryLayer)
+      MemoryService
+        .markShared(MemoryRecordId(1L), UserId(1L)).map(r => assertTrue(r.recordKey == "test.key")).provide(
+          stubMemoryLayer,
+        )
     },
     test("markPrivate accessor delegates to service") {
-      MemoryService.markPrivate(MemoryRecordId(1L), UserId(1L)).map(r =>
-        assertTrue(r.recordKey == "test.key")
-      ).provide(stubMemoryLayer)
+      MemoryService
+        .markPrivate(MemoryRecordId(1L), UserId(1L)).map(r => assertTrue(r.recordKey == "test.key")).provide(
+          stubMemoryLayer,
+        )
     },
     test("checkpoint accessor delegates to service") {
-      MemoryService.checkpoint(AgentSessionId(1L), List.empty, UserId(1L), AgentId(1L), CheckpointTrigger.SessionEnd)
+      MemoryService
+        .checkpoint(AgentSessionId(1L), List.empty, UserId(1L), AgentId(1L), CheckpointTrigger.SessionEnd)
         .as(assertCompletes)
         .provide(stubMemoryLayer)
     },
     test("requestCheckpoint accessor delegates to service") {
-      MemoryService.requestCheckpoint(AgentSessionId(1L), UserId(1L), AgentId(1L))
+      MemoryService
+        .requestCheckpoint(AgentSessionId(1L), UserId(1L), AgentId(1L))
         .as(assertCompletes)
         .provide(stubMemoryLayer)
     },
     test("getCheckpointPolicy accessor delegates to service") {
-      MemoryService.getCheckpointPolicy.map(cfg =>
-        assertTrue(cfg == CheckpointPolicyConfig.default)
-      ).provide(stubMemoryLayer)
+      MemoryService.getCheckpointPolicy
+        .map(cfg => assertTrue(cfg == CheckpointPolicyConfig.default)).provide(stubMemoryLayer)
     },
     test("updateCheckpointPolicy accessor delegates to service") {
-      MemoryService.updateCheckpointPolicy(CheckpointPolicyConfig.default)
+      MemoryService
+        .updateCheckpointPolicy(CheckpointPolicyConfig.default)
         .as(assertCompletes)
         .provide(stubMemoryLayer)
     },

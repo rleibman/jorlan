@@ -7,7 +7,7 @@
 package jorlan.time
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
@@ -23,7 +23,7 @@ import scala.language.unsafeNulls
   * No external dependencies, no API key, no server_settings entry. Registers unconditionally. All four tools require
   * the `time.read` capability.
   */
-class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboardData {
+class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboardData with HasValidation {
 
   private val formatter: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
@@ -305,6 +305,16 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboa
       "time"     -> Json.Str(zdt.format(timeFormatter)),
     )
   }
+
+  override def validate(): IO[JorlanError, SkillValidationResult] =
+    ZIO
+      .attempt(java.time.ZoneId.of(config.defaultTimezone))
+      .as(SkillValidationResult(ok = true, message = s"Timezone '${config.defaultTimezone}' is valid"))
+      .catchAll(e =>
+        ZIO.succeed(
+          SkillValidationResult(ok = false, message = s"Invalid timezone '${config.defaultTimezone}': ${e.getMessage}"),
+        ),
+      )
 
 }
 

@@ -31,17 +31,19 @@ import scala.scalajs.js
 object SkillsPage {
 
   case class State(
-    skills:        List[SkillInfo],
-    loading:       Boolean,
-    error:         Option[String],
-    expanded:      Set[String],
-    toggling:      Set[String],
-    configuring:   Set[String],
-    loadedModules: Set[String],
-    configJson:    Map[String, Option[String]],
-    configSaving:  Set[String],
-    configError:   Map[String, String],
-    toast:         Option[ToastMessage],
+    skills:           List[SkillInfo],
+    loading:          Boolean,
+    error:            Option[String],
+    expanded:         Set[String],
+    toggling:         Set[String],
+    configuring:      Set[String],
+    loadedModules:    Set[String],
+    configJson:       Map[String, Option[String]],
+    configSaving:     Set[String],
+    configError:      Map[String, String],
+    validating:       Set[String],
+    validationResult: Map[String, SkillValidationResult],
+    toast:            Option[ToastMessage],
   )
 
   val component =
@@ -59,6 +61,8 @@ object SkillsPage {
           configJson = Map.empty,
           configSaving = Set.empty,
           configError = Map.empty,
+          validating = Set.empty,
+          validationResult = Map.empty,
           toast = None,
         ),
       )
@@ -147,6 +151,38 @@ object SkillsPage {
               }
             }
 
+          def validateSkill(skill: SkillInfo): Callback =
+            Callback {
+              state.modState(s => s.copy(validating = s.validating + skill.name)).runNow()
+              AsyncCallbackRepositories
+                .skillValidate(skill.name)
+                .flatMap { resultOpt =>
+                  val result = resultOpt.getOrElse(
+                    SkillValidationResult(ok = false, message = "No response from server"),
+                  )
+                  state
+                    .modState(s =>
+                      s.copy(
+                        validating = s.validating - skill.name,
+                        validationResult = s.validationResult + (skill.name -> result),
+                      ),
+                    )
+                    .asAsyncCallback
+                }
+                .completeWith(
+                  PageUtils.onError(err =>
+                    state.modState(s =>
+                      s.copy(
+                        validating = s.validating - skill.name,
+                        validationResult = s.validationResult +
+                          (skill.name -> SkillValidationResult(ok = false, message = err.getOrElse("Unknown error"))),
+                      ),
+                    ),
+                  ),
+                )
+                .runNow()
+            }
+
           def saveConfig(
             skill: SkillInfo,
             json:  String,
@@ -166,6 +202,7 @@ object SkillsPage {
                       ),
                     )
                     .asAsyncCallback
+                    .flatMap(_ => validateSkill(skill).asAsyncCallback)
                 }
                 .completeWith(
                   PageUtils.onError(err =>
@@ -173,6 +210,7 @@ object SkillsPage {
                       s.copy(
                         configSaving = s.configSaving - skill.name,
                         configError = s.configError + (skill.name -> err.getOrElse("Unknown error")),
+                        toast = Some(ToastMessage(err.getOrElse("Failed to save configuration"), ToastSeverity.Error)),
                       ),
                     ),
                   ),
@@ -261,6 +299,35 @@ object SkillsPage {
                             Alert.severity("error").sx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])(err),
                           ),
                         element,
+                        Box.withProps(
+                          BoxOwnProps[Theme]()
+                            .setSx(
+                              js.Dynamic
+                                .literal(display = "flex", alignItems = "center", gap = 1, mt = 1.5)
+                                .asInstanceOf[SxProps[Theme]],
+                            ).asInstanceOf[Box.Props],
+                        )(
+                          if (state.value.validating.contains(skill.name))
+                            CircularProgress.size(18)()
+                          else
+                            MuiButton
+                              .size("small")
+                              .variant("outlined")
+                              .onClick(() => validateSkill(skill).runNow())("Validate"),
+                          state.value.validationResult
+                            .get(skill.name)
+                            .fold(EmptyVdom) { r =>
+                              Chip.withProps(
+                                js.Dynamic
+                                  .literal(
+                                    label = r.message,
+                                    color = if (r.ok) "success" else "error",
+                                    size = "small",
+                                    variant = "outlined",
+                                  ).asInstanceOf[Chip.Props],
+                              )()
+                            },
+                        ),
                       )
                   }
                 }

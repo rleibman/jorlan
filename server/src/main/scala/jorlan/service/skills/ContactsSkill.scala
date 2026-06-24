@@ -58,6 +58,8 @@ class ContactsSkill(repo: ZIORepositories) extends Skill {
           "Who is Alice?",
           "Find a user named Roberto",
           "Show me all users in the system",
+          "Look up Roberto's Telegram chat ID so I can send him a message",
+          "What is Dominique's Telegram user ID?",
         ),
       ),
       ToolDescriptor(

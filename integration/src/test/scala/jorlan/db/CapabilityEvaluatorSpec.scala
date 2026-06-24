@@ -77,15 +77,16 @@ object CapabilityEvaluatorSpec extends ZIOSpec[ZIORepositories] {
           )
           _ <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("shell.execute"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Denied,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("shell.execute"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Denied,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- evaluator.evaluate(capReq(user.id, "shell.execute"))
@@ -99,15 +100,16 @@ object CapabilityEvaluatorSpec extends ZIOSpec[ZIORepositories] {
           user      <- userRepo.upsert(User(UserId.empty, "CEUser5", "CEUser5@test.local", T0, T0))
           grant     <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("memory.write"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Persistent,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("memory.write"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- evaluator.evaluate(capReq(user.id, "memory.write"))
@@ -124,28 +126,30 @@ object CapabilityEvaluatorSpec extends ZIOSpec[ZIORepositories] {
           user      <- userRepo.upsert(User(UserId.empty, "CEUser6", "CEUser6@test.local", T0, T0))
           _         <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("skill.invoke"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Persistent,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("skill.invoke"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           _ <- permRepo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("skill.invoke"),
-              None,
-              user.id,
-              None,
-              ApprovalMode.Denied,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("skill.invoke"),
+              scopeJson = None,
+              granteeId = user.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Denied,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           result <- evaluator.evaluate(capReq(user.id, "skill.invoke"))

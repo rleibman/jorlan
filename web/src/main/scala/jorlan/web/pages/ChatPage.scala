@@ -31,7 +31,7 @@ object ChatPage {
   )
 
   case class State(
-    sessionId:    Option[AgentSessionId],
+    session:      Option[AgentSession],
     input:        String,
     messages:     List[ChatMessage],
     streaming:    Boolean,
@@ -39,13 +39,17 @@ object ChatPage {
     wsHandler:    Option[WebSocketHandler],
     error:        Option[String],
     pendingQueue: List[String],
-  )
+  ) {
+
+    def sessionId: Option[AgentSessionId] = session.map(_.id)
+
+  }
 
   val component =
     ScalaFnComponent
       .withHooks[User]
       .useState(
-        State(None, "", List.empty, streaming = false, "", None, error = None, pendingQueue = List.empty),
+        State(session = None, "", List.empty, streaming = false, "", None, error = None, pendingQueue = List.empty),
       )
       .useRef(Option.empty[WebSocketHandler])
       .useRef(List.empty[String]) // queueRef: FIFO queue readable from stale onData closures
@@ -71,7 +75,7 @@ object ChatPage {
                     state
                       .modState(
                         _.copy(
-                          sessionId = Some(session.id),
+                          session = Some(session),
                           messages = scala.List(ChatMessage("system", label, new js.Date().toISOString())),
                         ),
                       )
@@ -206,6 +210,13 @@ object ChatPage {
                 ).asInstanceOf[Box.Props],
             )(
               Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Chat"),
+              state.value.session.flatMap(_.modelId).fold[VdomNode](EmptyVdom) { m =>
+                Chip.withProps(
+                  js.Dynamic
+                    .literal(label = m.value, size = "small", variant = "outlined")
+                    .asInstanceOf[Chip.Props],
+                )()
+              },
               state.value.sessionId.fold[VdomNode](
                 <.span("Connecting…"),
               )(id => <.span(s"Session: ${id.value}")),

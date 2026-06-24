@@ -6,6 +6,9 @@
 
 package jorlan.service.memory
 
+import ai.{EmbeddingModel, EmbeddingStore}
+import dev.langchain4j.data.document.Metadata
+import dev.langchain4j.data.segment.TextSegment
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
 import jorlan.*
@@ -14,16 +17,36 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
+import scala.jdk.CollectionConverters.*
+
 class MemoryServiceImpl(
-  repo:         ZIORepositories,
-  accessPolicy: MemoryAccessPolicy,
-  summarizer:   CheckpointSummarizer,
-  classifier:   MemoryClassifier,
-  policyRef:    Ref[CheckpointPolicyConfig],
+  repo:           ZIORepositories,
+  accessPolicy:   MemoryAccessPolicy,
+  summarizer:     CheckpointSummarizer,
+  classifier:     MemoryClassifier,
+  policyRef:      Ref[CheckpointPolicyConfig],
+  embeddingStore: EmbeddingStore,
+  embeddingModel: EmbeddingModel,
 ) extends MemoryService {
 
+  private def embedAndStore(stored: MemoryRecord): UIO[Unit] = {
+    val text = s"${stored.recordKey}: ${stored.value}"
+    val metaMap = Map[String, AnyRef](
+      "memoryRecordId" -> stored.id.value.toString,
+      "userId"         -> stored.userId.map(_.value.toString).getOrElse(""),
+      "agentId"        -> stored.agentId.map(_.value.toString).getOrElse(""),
+      "scope"          -> stored.scope.toString,
+    ).asJava
+    val segment = TextSegment.from(text, Metadata.from(metaMap))
+    ZIO
+      .attemptBlocking {
+        val embedding = embeddingModel.embed(text).content()
+        embeddingStore.add(embedding, segment)
+      }.forkDaemon.ignore
+  }
+
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
-    repo.memory.upsert(record).mapError(JorlanError(_))
+    repo.memory.upsert(record).mapError(JorlanError(_)).tap(embedAndStore)
 
   override def query(
     scope:   MemoryScope,
@@ -102,7 +125,7 @@ class MemoryServiceImpl(
           .flatMap(_.asString)
           .getOrElse(record.value.toString)
         classifier.classify(contentText).flatMap { scope =>
-          repo.memory.upsert(record.copy(scope = scope)).mapError(JorlanError(_)).unit
+          repo.memory.upsert(record.copy(scope = scope)).mapError(JorlanError(_)).tap(embedAndStore)
         }
       }
       _ <- ZIO.when(should) {
@@ -157,6 +180,36 @@ class MemoryServiceImpl(
       _ <- checkpoint(sessionId, messages, userId, agentId, CheckpointTrigger.UserRequest)
     } yield ()
 
+  override def semanticQuery(
+    scope:     MemoryScope,
+    userId:    UserId,
+    agentId:   AgentId,
+    queryText: String,
+    limit:     Int,
+  ): IO[JorlanError, List[MemoryRecord]] = {
+    import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
+    import dev.langchain4j.store.embedding.EmbeddingSearchRequest
+    ZIO
+      .attemptBlocking {
+        val queryEmbedding = embeddingModel.embed(queryText).content()
+        val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
+        val request = EmbeddingSearchRequest
+          .builder()
+          .queryEmbedding(queryEmbedding)
+          .maxResults(limit)
+          .filter(filter)
+          .build()
+        embeddingStore.search(request).matches().asScala.toList.flatMap { m =>
+          val meta = m.embedded().metadata()
+          meta.getString("memoryRecordId").nn.toLongOption.map(MemoryRecordId(_))
+        }
+      }.mapError(e => JorlanError(e.getMessage.nn))
+        .flatMap { ids =>
+          ZIO.foreach(ids)(id => repo.memory.getById(id).mapError(JorlanError(_))).map(_.flatten)
+        }
+        .catchAll(_ => ZIO.succeed(List.empty))
+  }
+
   override def getCheckpointPolicy: UIO[CheckpointPolicyConfig] = policyRef.get
 
   override def updateCheckpointPolicy(config: CheckpointPolicyConfig): IO[JorlanError, Unit] =
@@ -170,12 +223,14 @@ class MemoryServiceImpl(
 
 object MemoryServiceImpl {
 
-  val live: URLayer[ZIORepositories & ModelGateway, MemoryService] =
+  val live: URLayer[ZIORepositories & ModelGateway & EmbeddingStore & EmbeddingModel, MemoryService] =
     ZLayer.fromZIO(
       for {
-        repo        <- ZIO.service[ZIORepositories]
-        gateway     <- ZIO.service[ModelGateway]
-        savedConfig <- repo.setting
+        repo           <- ZIO.service[ZIORepositories]
+        gateway        <- ZIO.service[ModelGateway]
+        embeddingStore <- ZIO.service[EmbeddingStore]
+        embeddingModel <- ZIO.service[EmbeddingModel]
+        savedConfig    <- repo.setting
           .get(CheckpointPolicyConfig.serverSettingsKey)
           .mapError(JorlanError(_))
           .map {
@@ -189,6 +244,8 @@ object MemoryServiceImpl {
         CheckpointSummarizerImpl(gateway),
         MemoryClassifierImpl(),
         policyRef,
+        embeddingStore,
+        embeddingModel,
       ),
     )
 

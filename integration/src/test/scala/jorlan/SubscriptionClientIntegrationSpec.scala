@@ -100,6 +100,8 @@ object SubscriptionClientIntegrationSpec
       EventLogHub.live,
       FakeModelGateway.layer(List("hello ", "world")),
       AgentSessionManagerImpl.live,
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
       SkillRegistry.live,
       AgentRunnerImpl.live,

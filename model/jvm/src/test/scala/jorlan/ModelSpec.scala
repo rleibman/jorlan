@@ -651,7 +651,7 @@ object ModelSpec extends ZIOSpecDefault {
       assertTrue(s.page == 0)
     },
     test("GrantSearch can be constructed") {
-      val s = GrantSearch(userId = UserId(1L), page = 0, pageSize = 10, sorts = None)
+      val s = GrantSearch(userId = Some(UserId(1L)), page = 0, pageSize = 10, sorts = None)
       assertTrue(s.page == 0)
     },
     test("TriggerSearch can be constructed") {
@@ -774,7 +774,8 @@ object ModelSpec extends ZIOSpecDefault {
         id = CapabilityGrantId(1L),
         capability = CapabilityName("shell.execute"),
         scopeJson = None,
-        granteeId = UserId(1L),
+        granteeId = 1L,
+        granteeType = GranteeType.User,
         grantorId = None,
         approvalMode = ApprovalMode.Persistent,
         expiresAt = None,

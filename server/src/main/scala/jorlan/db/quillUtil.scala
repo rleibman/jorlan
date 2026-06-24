@@ -8,50 +8,7 @@ package jorlan.db
 
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
-import jorlan.{
-  AgentId,
-  AgentSessionId,
-  ApprovalDecisionId,
-  ApprovalMode,
-  ApprovalRequestId,
-  ApprovalStatus,
-  ArtifactId,
-  CapabilityGrantId,
-  CapabilityName,
-  ChannelIdentityId,
-  ChannelType,
-  ConnectorInstanceId,
-  ConnectorType,
-  ConversationId,
-  DataSourceConfig,
-  DatabaseConfig,
-  EmbeddingModelId,
-  EventLogId,
-  EventType,
-  JobStatus,
-  MemoryEmbeddingId,
-  MemoryRecordId,
-  MemoryScope,
-  MessageId,
-  MessageRole,
-  MissedRunPolicy,
-  ModelId,
-  OrchestratorId,
-  PermissionId,
-  RetryBackoffPolicy,
-  RiskClass,
-  RoleId,
-  SchedulerJobId,
-  SchedulerTriggerId,
-  SessionStatus,
-  SkillId,
-  SkillStatus,
-  SkillTier,
-  SkillVersionId,
-  TriggerType,
-  UserId,
-  WorkspaceId,
-}
+import jorlan.*
 import jorlan.*
 import just.semver.{ParseError, SemVer}
 import zio.http.MediaType
@@ -245,6 +202,8 @@ given MappedEncoding[String, PublicKey] =
 /** Quill `MappedEncoding`s for the 12 domain enums stored as `VARCHAR` in MariaDB. Encoding uses `toString` (stored
   * name); decoding uses `valueOf` (case-sensitive).
   */
+given MappedEncoding[String, GranteeType] = MappedEncoding(GranteeType.valueOf)
+given MappedEncoding[GranteeType, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, ChannelType] = MappedEncoding(ChannelType.valueOf)
 given MappedEncoding[ChannelType, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, SessionStatus] = MappedEncoding(SessionStatus.valueOf)

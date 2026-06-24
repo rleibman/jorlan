@@ -134,6 +134,8 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       EventLogHub.live,
       FakeModelGateway.stepsLayer(steps),
       AgentSessionManagerImpl.live,
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
       SkillRegistry.liveWith(echoSkill),
       AgentRunnerImpl.live,

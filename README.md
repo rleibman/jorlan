@@ -372,16 +372,25 @@ Each cross-project skill exports a React component (`*UI.scala`) that the Skills
 bash scripts/build-web.sh
 
 # Build a fast (development) bundle (outputs to debugDist/)
-sbtn "web/debugDist"
+sbtn --error "web/debugDist"
 ```
 
-The `stLib` ScalablyTyped sub-project must be published once before the web module can compile. Run this manually from the repo root when `stLib/` sources change:
+For local development, set `jorlan.http.staticContentDir = "debugDist"` (or export `JORLAN_STATIC_CONTENT_DIR=debugDist`) in `server/src/main/resources/application.conf` so the server serves the fast bundle without needing a full production build.
+
+The `stLib` sub-project generates Scala.js bindings for React 19, MUI v9, and related npm packages using ScalablyTyped. It must be built and published to your local Ivy cache before the `web` module can compile. Do this once, and again whenever `stLib/` sources or npm deps change.
 
 ```bash
+# 1. Install npm dependencies (required before sbt can run ScalablyTyped)
+cd stLib && npm install   # or: yarn install
+
+# 2. Generate bindings and publish to local Ivy cache
 cd stLib && sbt publishLocal
+
+# 3. Return to repo root for normal development
+cd ..
 ```
 
-For local development, set `jorlan.web.root = "debugDist"` in `server/src/main/resources/application.conf` so the server serves the fast-opt bundle without needing a full production build.
+npm packages for stLib are declared in `stLib/package.json`. ScalablyTyped reads them from `stLib/node_modules/` (populated by step 1) to generate the Scala façades. The generated artifact is published as `net.leibman:jorlan-stlib` to your local Ivy cache and referenced by the `web` module as a normal library dependency.
 
 ---
 
@@ -403,7 +412,7 @@ sbt scalafmtAll
 # Build the web frontend
 bash scripts/build-web.sh
 
-************# Regenerate GraphQL schema (after API changes in JorlanAPI.scala)
+# Regenerate GraphQL schema (after API changes in JorlanAPI.scala)
 bash scripts/capture-schema.sh
 
 # Regenerate Caliban shell/web client (after schema changes)

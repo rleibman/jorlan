@@ -129,10 +129,20 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
           .run(JorlanClient.Queries.listApprovals(JorlanClient.ApprovalRequest.view))
           .map(_.getOrElse(List.empty).map(toApprovalRequest))
 
+      override def getUserRoleIds(userId: UserId): IO[String, List[RoleId]] = ZIO.succeed(List.empty)
+
       override def searchGrants(s: GrantSearch): IO[String, List[CapabilityGrant]] =
-        gqlClient
-          .run(JorlanClient.Queries.userCapabilityGrants(s.userId)(JorlanClient.CapabilityGrant.view))
-          .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+        (s.userId, s.roleId) match {
+          case (Some(uid), _) =>
+            gqlClient
+              .run(JorlanClient.Queries.userCapabilityGrants(uid)(JorlanClient.CapabilityGrant.view))
+              .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+          case (_, Some(rid)) =>
+            gqlClient
+              .run(JorlanClient.Queries.roleCapabilityGrants(rid)(JorlanClient.CapabilityGrant.view))
+              .map(_.getOrElse(List.empty).map(toCapabilityGrant))
+          case _ => ZIO.succeed(List.empty)
+        }
 
       override def listCapabilities(): IO[String, List[CapabilityGrant]] =
         gqlClient
@@ -179,15 +189,26 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def searchPermissions(s:   PermissionSearch):      IO[String, List[Permission]] = ZIO.succeed(List.empty)
       override def upsertPermission(perm: Permission):            IO[String, Permission] = ZIO.fail("not implemented")
       override def deletePermission(id:   PermissionId):          IO[String, Long] = ZIO.succeed(0L)
-      override def upsertCapabilityGrant(grant: CapabilityGrant): IO[String, CapabilityGrant] =
+      override def upsertCapabilityGrant(grant: CapabilityGrant): IO[String, CapabilityGrant] = {
+        val mutation = grant.granteeType match {
+          case GranteeType.Role =>
+            JorlanClient.Mutations.grantCapabilityToRole(
+              RoleId(grant.granteeId),
+              grant.capability,
+              grant.approvalMode,
+            )(JorlanClient.CapabilityGrant.view)
+          case GranteeType.User =>
+            JorlanClient.Mutations.grantCapability(
+              UserId(grant.granteeId),
+              grant.capability,
+              grant.approvalMode,
+            )(JorlanClient.CapabilityGrant.view)
+        }
         gqlClient
-          .run(
-            JorlanClient.Mutations.grantCapability(grant.granteeId, grant.capability, grant.approvalMode)(
-              JorlanClient.CapabilityGrant.view,
-            ),
-          )
+          .run(mutation)
           .flatMap(r => ZIO.fromOption(r).orElseFail("grantCapability returned nothing"))
           .map(toCapabilityGrant)
+      }
       override def revokeGrant(id: CapabilityGrantId): IO[String, Long] =
         gqlClient
           .run(JorlanClient.Mutations.revokeCapabilityGrant(id))
@@ -246,8 +267,17 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       gqlClient
         .run(JorlanClient.Queries.job(id)(JorlanClient.SchedulerJob.view))
         .map(_.map(toSchedulerJob))
-    override def getPendingJobs:                IO[String, List[SchedulerJob]] = ZIO.succeed(List.empty)
-    override def upsertJob(job: SchedulerJob):  IO[String, SchedulerJob] = ZIO.fail("not implemented")
+    override def getPendingJobs:               IO[String, List[SchedulerJob]] = ZIO.succeed(List.empty)
+    override def upsertJob(job: SchedulerJob): IO[String, SchedulerJob] = ZIO.fail("not implemented")
+    override def updateJobConfig(
+      id:              SchedulerJobId,
+      name:            String,
+      prompt:          String,
+      maxRetries:      Int,
+      backoffSeconds:  Int,
+      backoffPolicy:   RetryBackoffPolicy,
+      missedRunPolicy: MissedRunPolicy,
+    ):                                          IO[String, Boolean] = ZIO.fail("not implemented")
     override def deleteJob(id: SchedulerJobId): IO[String, Boolean] =
       gqlClient.run(JorlanClient.Mutations.deleteJob(id)).map(_.getOrElse(false))
     override def pauseJob(id: SchedulerJobId): IO[String, Boolean] =
@@ -538,6 +568,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       capability = v.capability,
       scopeJson = v.scopeJson,
       granteeId = v.granteeId,
+      granteeType = v.granteeType,
       grantorId = v.grantorId,
       approvalMode = v.approvalMode,
       expiresAt = v.expiresAt,

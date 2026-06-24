@@ -1,5 +1,6 @@
 import { Hero } from './components/Hero';
 import { Features } from './components/Features';
+import { Skills } from './components/Skills';
 import { UseCases } from './components/UseCases';
 import { Screenshots } from './components/Screenshots';
 import { Trust } from './components/Trust';
@@ -15,6 +16,7 @@ export default function App() {
       <Hero />
       <Screenshots />
       <Features />
+      <Skills />
       <UseCases />
       <Trust />
       <Architecture />

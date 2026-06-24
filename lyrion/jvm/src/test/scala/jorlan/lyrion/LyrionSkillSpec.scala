@@ -27,8 +27,8 @@ object LyrionSkillSpec extends ZIOSpecDefault {
   )
 
   /** Build a [[LyrionSkill]] pointing at an in-process test server on the given port. */
-  private def makeSkill(port: Int)(client: Client): LyrionSkill =
-    LyrionSkill(
+  private def makeSkill(port: Int)(client: Client): UIO[LyrionSkill] =
+    LyrionSkill.make(
       LyrionConfig(serverUrl = s"http://localhost:$port"),
       client,
     )
@@ -156,7 +156,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(playersResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.players", Json.Obj())
         } yield result match {
           case Json.Arr(players) =>
@@ -182,7 +182,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(volumeResponse(0))))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId), "level" -> Json.Num(-5))
           result <- skill.invoke(ctx, "lyrion.volume", args)
         } yield result match {
@@ -198,7 +198,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(volumeResponse(100))))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId), "level" -> Json.Num(150))
           result <- skill.invoke(ctx, "lyrion.volume", args)
         } yield result match {
@@ -214,7 +214,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId))
           result <- skill.invoke(ctx, "lyrion.play", args)
         } yield result match {
@@ -227,7 +227,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.unknown", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       }.provide(Server.defaultWith(_.port(0)), Client.default),
@@ -235,7 +235,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(genresResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.browse.genres", Json.Obj())
         } yield result match {
           case Json.Arr(genres) =>
@@ -251,7 +251,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(artistsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.browse.artists", Json.Obj())
         } yield result match {
           case Json.Arr(artists) =>
@@ -267,7 +267,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(albumsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.browse.albums", Json.Obj())
         } yield result match {
           case Json.Arr(albums) =>
@@ -283,7 +283,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(songsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("albumId" -> Json.Str("10"))
           result <- skill.invoke(ctx, "lyrion.browse.songs", args)
         } yield result match {
@@ -300,7 +300,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(searchResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("query" -> Json.Str("Prince"))
           result <- skill.invoke(ctx, "lyrion.search", args)
         } yield result match {
@@ -316,7 +316,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "type"     -> Json.Str("artist"),
@@ -334,7 +334,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId))
           result <- skill.invoke(ctx, "lyrion.alarm.list", args)
         } yield result match {
@@ -353,7 +353,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmCreateResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "time"     -> Json.Str("07:30"),
@@ -373,7 +373,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmCreateResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "time"     -> Json.Str("08:00"),
@@ -390,7 +390,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmCreateResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "time"     -> Json.Str("7am"),
@@ -403,7 +403,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "id"       -> Json.Str("alarm2"),
@@ -421,7 +421,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId), "id" -> Json.Str("alarm1"))
           result <- skill.invoke(ctx, "lyrion.alarm.update", args).either
         } yield assertTrue(result.isLeft)
@@ -430,7 +430,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("playerId" -> Json.Str(testPlayerId), "id" -> Json.Str("alarm1"))
           result <- skill.invoke(ctx, "lyrion.alarm.delete", args)
         } yield result match {
@@ -443,7 +443,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "type"     -> Json.Str("mood"),
@@ -456,7 +456,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.pause", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Obj(fields) =>
@@ -468,7 +468,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.stop", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Obj(fields) =>
@@ -480,7 +480,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.next", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Obj(fields) =>
@@ -492,7 +492,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.previous", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Obj(fields) =>
@@ -504,7 +504,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(statusResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.status", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Obj(fields) =>
@@ -518,7 +518,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(playlistResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.invoke(ctx, "lyrion.playlist", Json.Obj("playerId" -> Json.Str(testPlayerId)))
         } yield result match {
           case Json.Arr(tracks) =>
@@ -534,7 +534,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmCreateResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "time"     -> Json.Str("10:00"),
@@ -553,7 +553,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(alarmCreateResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "time"     -> Json.Str("06:00"),
@@ -570,7 +570,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "type"     -> Json.Str("album"),
@@ -587,7 +587,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "type"     -> Json.Str("genre"),
@@ -604,7 +604,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "type"     -> Json.Str("song"),
@@ -621,7 +621,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(artistsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("genreId" -> Json.Str("1"))
           result <- skill.invoke(ctx, "lyrion.browse.artists", args)
         } yield result match {
@@ -633,7 +633,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(albumsResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj("artistId" -> Json.Str("42"))
           result <- skill.invoke(ctx, "lyrion.browse.albums", args)
         } yield result match {
@@ -645,7 +645,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
         for {
           port   <- Server.install(Routes(Method.ANY / trailing -> handler(okResponse)))
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           args = Json.Obj(
             "playerId" -> Json.Str(testPlayerId),
             "id"       -> Json.Str("alarm1"),
@@ -672,7 +672,7 @@ object LyrionSkillSpec extends ZIOSpecDefault {
             ),
           )
           client <- ZIO.service[Client]
-          skill = makeSkill(port)(client)
+          skill  <- makeSkill(port)(client)
           result <- skill.dashboardData(ctx)
         } yield result match {
           case Json.Obj(fields) =>

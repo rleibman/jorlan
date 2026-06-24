@@ -118,6 +118,8 @@ object JorlanClientDecoders {
   given ArgEncoder[Formality] = enumEncoder(_.toString)
   given ArgEncoder[ChannelType] = enumEncoder(_.toString)
   given ArgEncoder[RiskClass] = enumEncoder(_.toString)
+  given ScalarDecoder[GranteeType] = enumDecoder(GranteeType.valueOf, "GranteeType")
+  given ArgEncoder[GranteeType] = enumEncoder(_.toString)
   given ScalarDecoder[JobStatus] = enumDecoder(JobStatus.valueOf, "JobStatus")
   given ScalarDecoder[TriggerType] = enumDecoder(TriggerType.valueOf, "TriggerType")
   given ScalarDecoder[RetryBackoffPolicy] = enumDecoder(RetryBackoffPolicy.valueOf, "RetryBackoffPolicy")

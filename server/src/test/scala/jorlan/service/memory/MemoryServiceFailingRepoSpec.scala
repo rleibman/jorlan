@@ -12,7 +12,7 @@ import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.{CheckpointTrigger, MemoryService}
-import jorlan.testing.InMemoryRepositories
+import jorlan.testing.{InMemoryRepositories, NoOpEmbeddingLayers}
 import zio.*
 import zio.json.ast.Json
 import zio.test.*
@@ -80,6 +80,8 @@ object MemoryServiceFailingRepoSpec extends ZIOSpecDefault {
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(memoryRepoOpt = Some(memRepo)),
       FakeModelGateway.layer(List("- checkpoint key\n")),
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
     )
 

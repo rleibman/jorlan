@@ -16,7 +16,7 @@ import jorlan.*
 import jorlan.db.repository.*
 import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
 import jorlan.service.*
-import jorlan.service.mcp.McpManagerImpl
+import jorlan.service.mcp.{McpManagerImpl, McpServerConfig, McpTransport}
 import jorlan.service.skills.SkillRegistry
 import zio.*
 import zio.json.ast.Json
@@ -145,6 +145,22 @@ object JorlanAPI {
   private given Schema[Any, CapabilityGrantId] =
     Schema.scalarSchema("CapabilityGrantId", None, None, None, id => Value.IntValue(id.value))
 
+  private given Schema[Any, GranteeType] =
+    Schema.enumSchema[GranteeType](
+      name = "GranteeType",
+      values = GranteeType.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
   private given Schema[Any, CapabilityGrant] = Schema.gen[Any, CapabilityGrant]
 
   private given Schema[Any, SchedulerJobId] =
@@ -154,10 +170,17 @@ object JorlanAPI {
     Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
 
   private given Schema[Any, ChannelIdentityId] =
-    Schema.scalarSchema("ChannelIdentityId", None, None, None, id => Value.IntValue(id.value))
+    Schema.scalarSchema("ChannelIdentityId", None, None, None, id => Value.StringValue(id.value.toString))
 
   private given Schema[Any, ChannelIdentity] = Schema.gen[Any, ChannelIdentity]
-  private given ArgBuilder[ChannelIdentityId] = ArgBuilder.long.map(ChannelIdentityId(_))
+  private given ArgBuilder[ChannelIdentityId] =
+    ArgBuilder.string
+      .flatMap(s =>
+        s.toLongOption.fold(Left(CalibanError.ExecutionError(s"Invalid ChannelIdentityId: '$s'")))(l =>
+          Right(ChannelIdentityId(l)),
+        ),
+      )
+      .orElse(ArgBuilder.long.map(ChannelIdentityId(_)))
 
   private given ArgBuilder[CapabilityGrantId] = ArgBuilder.long.map(CapabilityGrantId(_))
 
@@ -365,6 +388,11 @@ object JorlanAPI {
       ChannelType.values
         .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid ChannelType '$s'"))
     }
+  private given ArgBuilder[GranteeType] =
+    ArgBuilder.enumString[GranteeType] { s =>
+      GranteeType.values
+        .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid GranteeType '$s'"))
+    }
   private given ArgBuilder[ApprovalStatus] =
     ArgBuilder.enumString[ApprovalStatus] { s =>
       ApprovalStatus.values
@@ -473,6 +501,13 @@ object JorlanAPI {
     approvalMode: ApprovalMode,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `grantCapabilityToRole` — grants a named capability to a role. */
+  case class GrantCapabilityToRoleInput(
+    roleId:       RoleId,
+    capability:   CapabilityName,
+    approvalMode: ApprovalMode,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `linkChannelIdentity` — associates an external channel identity with a user. */
   case class LinkChannelIdentityInput(
     userId:        UserId,
@@ -541,6 +576,13 @@ object JorlanAPI {
 
   /** Input for `createRole`. */
   case class CreateRoleInput(
+    name:        String,
+    description: Option[String],
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `updateRole`. */
+  case class UpdateRoleInput(
+    id:          RoleId,
     name:        String,
     description: Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
@@ -639,6 +681,34 @@ object JorlanAPI {
     configJson: String,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** A single key/value pair in an MCP server's environment map. */
+  case class McpEnvVar(
+    key:   String,
+    value: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** GQL-safe view of a configured MCP server. */
+  case class McpServerView(
+    name:      String,
+    transport: String,
+    command:   Option[String],
+    args:      List[String],
+    env:       List[McpEnvVar],
+    url:       Option[String],
+    enabled:   Boolean,
+  ) derives Schema.SemiAuto
+
+  /** Input for `upsertMcpServer` — add or replace a server config entry. */
+  case class UpsertMcpServerInput(
+    name:      String,
+    transport: String,
+    command:   Option[String] = None,
+    args:      List[String] = List.empty,
+    env:       List[McpEnvVar] = List.empty,
+    url:       Option[String] = None,
+    enabled:   Boolean = true,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Result type for `oauthStatus` — whether the user has connected credentials for a provider. */
   case class OAuthStatus(
     connected: Boolean,
@@ -687,6 +757,8 @@ object JorlanAPI {
     listOAuthProviders: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[String]],
     /** Returns capability grants for a specific user. Requires `admin.user.manage`. */
     userCapabilityGrants: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
+    /** Returns capability grants for a specific role. Requires `admin.user.manage`. */
+    roleCapabilityGrants: RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
     /** Returns channel identities for a specific user. Requires `admin.user.manage`. */
     userChannelIdentities: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ChannelIdentity]],
     /** Returns all roles in the system. Requires `admin.user.manage`. */
@@ -697,6 +769,12 @@ object JorlanAPI {
     dashboardStats: ZIO[JorlanApiEnv & JorlanSession, JorlanError, DashboardStats],
     /** Returns per-skill dashboard JSON data for a skill that implements HasDashboardData. */
     skillDashboardData: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
+    /** Returns the configured MCP servers. Requires `admin.settings`. */
+    mcpServers: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[McpServerView]],
+    /** Returns all known capability names from registered skills. Requires `admin.user.manage`. */
+    allKnownCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityName]],
+    /** Validates the current configuration of a skill (API key, connectivity, etc.). Requires `admin.settings`. */
+    skillValidate: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillValidationResult],
   )
 
   case class Mutations(
@@ -704,6 +782,8 @@ object JorlanAPI {
     updateUser:        UpdateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
     deactivateUser:    UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     createRole:        CreateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
+    updateRole:        UpdateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
+    deleteRole:        RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     assignRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     revokeRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     grantPermission:   GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
@@ -736,6 +816,12 @@ object JorlanAPI {
     invokeTool: InvokeToolInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, String],
     /** Grants a named capability directly to a user. Requires `permission.grant`. */
     grantCapability: GrantCapabilityInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, CapabilityGrant],
+    /** Grants a named capability to a role. Requires `permission.grant`. */
+    grantCapabilityToRole: GrantCapabilityToRoleInput => ZIO[
+      JorlanApiEnv & JorlanSession,
+      JorlanError,
+      CapabilityGrant,
+    ],
     /** Revokes a capability grant by ID. Requires `permission.revoke`. */
     revokeCapabilityGrant: CapabilityGrantId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Associates a ch`annel identity with a user. Requires `admin.user.manage`. */
@@ -752,6 +838,10 @@ object JorlanAPI {
     ],
     /** Reloads MCP servers from server_settings and re-registers adapters. Requires `admin.mcp.reload`. */
     reloadMcpServers: Unit => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Adds or replaces an MCP server configuration entry. Requires `admin.settings`. */
+    upsertMcpServer: UpsertMcpServerInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, McpServerView],
+    /** Removes an MCP server configuration entry by name. Requires `admin.settings`. Returns true if deleted. */
+    deleteMcpServer: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Enables a previously disabled skill by name. Requires `admin.settings`. */
     enableSkill: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Disables a skill by name (including built-in skills). Requires `admin.settings`. */
@@ -857,6 +947,17 @@ object JorlanAPI {
       _ <- ZIO.serviceWithZIO[EventLogHub](_.publishTyped(logEntry))
     } yield ()
 
+  private def mcpServerToView(cfg: McpServerConfig): McpServerView =
+    McpServerView(
+      name = cfg.name,
+      transport = cfg.transport.toString,
+      command = cfg.command,
+      args = cfg.args,
+      env = cfg.env.map { case (k, v) => McpEnvVar(k, v) }.toList,
+      url = cfg.url,
+      enabled = cfg.enabled,
+    )
+
   // ─── API ─────────────────────────────────────────────────────────────────────
 
   val api: GraphQL[JorlanApiEnv & JorlanSession] =
@@ -930,7 +1031,7 @@ object JorlanAPI {
           listCapabilities = for {
             actorId <- actorIdFromSession
             grants  <- ZIO.serviceWithZIO[ZIORepositories](
-              _.permission.searchGrants(GrantSearch(userId = actorId, pageSize = 100)),
+              _.permission.searchGrants(GrantSearch(userId = Some(actorId), pageSize = 100)),
             )
           } yield grants,
           jobs = input =>
@@ -1033,7 +1134,15 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.user.manage", actorId)
               grants  <- ZIO.serviceWithZIO[ZIORepositories](
-                _.permission.searchGrants(GrantSearch(userId = userId, pageSize = 200)),
+                _.permission.searchGrants(GrantSearch(userId = Some(userId), pageSize = 200)),
+              )
+            } yield grants,
+          roleCapabilityGrants = roleId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.user.manage", actorId)
+              grants  <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.searchGrants(GrantSearch(roleId = Some(roleId), pageSize = 200)),
               )
             } yield grants,
           userChannelIdentities = userId =>
@@ -1101,6 +1210,33 @@ object JorlanAPI {
                 .orElseFail(JorlanError(s"Skill '$name' has no configurable settings"))
               json <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get(key)).mapError(JorlanError(_))
             } yield json.map(_.toJson),
+          mcpServers = for {
+            actorId <- actorIdFromSession
+            _       <- requireCapability("admin.settings", actorId)
+            json    <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
+            configs <- json match {
+              case None    => ZIO.succeed(List.empty)
+              case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
+            }
+          } yield configs.map(mcpServerToView),
+          allKnownCapabilities = for {
+            actorId <- actorIdFromSession
+            _       <- requireCapability("admin.user.manage", actorId)
+            caps    <- ZIO.serviceWithZIO[SkillRegistry](_.allAdminCapabilities)
+          } yield caps,
+          skillValidate = name =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.settings", actorId)
+              skillOpt <- ZIO.serviceWithZIO[SkillRegistry](_.getSkill[jorlan.connector.Skill](name))
+              result   <- skillOpt match {
+                case Some(s: jorlan.connector.HasValidation) => s.validate()
+                case Some(_)                                 =>
+                  ZIO.succeed(SkillValidationResult(ok = true, message = "Skill has no configurable validation"))
+                case None =>
+                  ZIO.succeed(SkillValidationResult(ok = false, message = s"Skill '$name' not found"))
+              }
+            } yield result,
         ),
         Mutations(
           createUser = input =>
@@ -1112,6 +1248,21 @@ object JorlanAPI {
               user    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.user.upsert(User(UserId.empty, input.displayName, email, now, now)),
               )
+              _ <- ZIO.when(email.nonEmpty) {
+                ZIO.serviceWithZIO[ZIORepositories](
+                  _.user.upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = email,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ),
+                )
+              }
               _ <- logEvent(EventType.UserCreated, Some(actorId), None, now)
             } yield user,
           updateUser = input =>
@@ -1126,6 +1277,21 @@ object JorlanAPI {
               user <- ZIO.serviceWithZIO[ZIORepositories](
                 _.user.upsert(User(input.id, input.displayName, email, existing.createdAt, now, input.active)),
               )
+              _ <- ZIO.when(email.nonEmpty) {
+                ZIO.serviceWithZIO[ZIORepositories](
+                  _.user.upsertChannelIdentity(
+                    ChannelIdentity(
+                      id = ChannelIdentityId.empty,
+                      userId = user.id,
+                      channelType = ChannelType.Email,
+                      channelUserId = email,
+                      verified = false,
+                      providerData = None,
+                      createdAt = now,
+                    ),
+                  ),
+                )
+              }
               _ <- logEvent(EventType.UserUpdated, Some(actorId), None, now)
             } yield user,
           deactivateUser = id =>
@@ -1144,6 +1310,20 @@ object JorlanAPI {
                 _.permission.upsertRole(Role(RoleId.empty, input.name, input.description)),
               )
             } yield role,
+          updateRole = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("role.create", actorId)
+              role    <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertRole(Role(input.id, input.name, input.description)),
+              )
+            } yield role,
+          deleteRole = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("role.create", actorId)
+              count   <- ZIO.serviceWithZIO[ZIORepositories](_.permission.deleteRole(id))
+            } yield count > 0,
           assignRole = input =>
             for {
               actorId <- actorIdFromSession
@@ -1425,7 +1605,31 @@ object JorlanAPI {
                     id = CapabilityGrantId.empty,
                     capability = input.capability,
                     scopeJson = None,
-                    granteeId = input.userId,
+                    granteeId = input.userId.value,
+                    granteeType = GranteeType.User,
+                    grantorId = Some(actorId),
+                    approvalMode = input.approvalMode,
+                    expiresAt = None,
+                    resourceConstraints = None,
+                    createdAt = now,
+                  ),
+                ),
+              )
+              _ <- logEvent(EventType.PermissionGranted, Some(actorId), None, now)
+            } yield grant,
+          grantCapabilityToRole = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("permission.grant", actorId)
+              now     <- Clock.instant
+              grant   <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertCapabilityGrant(
+                  CapabilityGrant(
+                    id = CapabilityGrantId.empty,
+                    capability = input.capability,
+                    scopeJson = None,
+                    granteeId = input.roleId.value,
+                    granteeType = GranteeType.Role,
                     grantorId = Some(actorId),
                     approvalMode = input.approvalMode,
                     expiresAt = None,
@@ -1503,6 +1707,48 @@ object JorlanAPI {
                 McpManagerImpl(registry, client, repos.setting).loadAndRegister
               }
             } yield true,
+          upsertMcpServer = input =>
+            for {
+              actorId   <- actorIdFromSession
+              _         <- requireCapability("admin.settings", actorId)
+              transport <- ZIO
+                .fromTry(scala.util.Try(McpTransport.valueOf(input.transport)))
+                .orElseFail(JorlanError(s"Unknown MCP transport: ${input.transport}"))
+              newCfg = McpServerConfig(
+                name = input.name,
+                transport = transport,
+                command = input.command,
+                args = input.args,
+                env = input.env.map(e => e.key -> e.value).toMap,
+                url = input.url,
+                enabled = input.enabled,
+              )
+              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
+              existing <- json match {
+                case None    => ZIO.succeed(List.empty)
+                case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
+              }
+              updated = existing.filterNot(_.name == newCfg.name) :+ newCfg
+              updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
+              _           <- ZIO
+                .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
+                .mapError(JorlanError(_))
+            } yield mcpServerToView(newCfg),
+          deleteMcpServer = name =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.settings", actorId)
+              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
+              existing <- json match {
+                case None    => ZIO.succeed(List.empty)
+                case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
+              }
+              updated = existing.filterNot(_.name == name)
+              updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
+              _           <- ZIO
+                .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
+                .mapError(JorlanError(_))
+            } yield existing.exists(_.name == name),
           enableSkill = name =>
             for {
               actorId <- actorIdFromSession

@@ -10,7 +10,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTablePagination, MuiTextField}
+import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTablePagination, MuiTextField}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
@@ -32,29 +32,29 @@ object UsersPage {
   )
 
   case class State(
-    users:        List[User],
-    loading:      Boolean,
-    error:        Option[String],
-    page:         Int,
-    rowsPerPage:  Int,
-    editingUser:  Option[User],
-    editState:    Option[EditState],
-    saving:       Boolean,
-    createOpen:   Boolean,
-    createName:   String,
-    createEmail:  String,
-    permsUser:    Option[User],
-    grants:       List[CapabilityGrant],
-    newCap:       String,
-    newMode:      String,
-    rolesUser:    Option[User],
-    userRoles:    List[Role],
-    allRoles:     List[Role],
-    assignRoleId: String,
-    identsUser:   Option[User],
-    identities:   List[ChannelIdentity],
-    newChType:    String,
-    newChUserId:  String,
+    users:                List[User],
+    loading:              Boolean,
+    error:                Option[String],
+    page:                 Int,
+    rowsPerPage:          Int,
+    editingUser:          Option[User],
+    editState:            Option[EditState],
+    saving:               Boolean,
+    createOpen:           Boolean,
+    createName:           String,
+    createEmail:          String,
+    permsUser:            Option[User],
+    grants:               List[CapabilityGrant],
+    allKnownCapabilities: List[CapabilityName],
+    newMode:              String,
+    rolesUser:            Option[User],
+    userRoles:            List[Role],
+    allRoles:             List[Role],
+    assignRoleId:         String,
+    identsUser:           Option[User],
+    identities:           List[ChannelIdentity],
+    newChType:            String,
+    newChUserId:          String,
   )
 
   val component =
@@ -75,8 +75,8 @@ object UsersPage {
           createEmail = "",
           permsUser = None,
           grants = List.empty,
-          newCap = "",
-          newMode = "AutoApprove",
+          allKnownCapabilities = List.empty,
+          newMode = "Persistent",
           rolesUser = None,
           userRoles = List.empty,
           allRoles = List.empty,
@@ -215,14 +215,19 @@ object UsersPage {
 
           def openPerms(user: User): Callback =
             Callback {
-              AsyncCallbackRepositories.permission
-                .searchGrants(GrantSearch(userId = user.id))
-                .flatMap(grants =>
+              (AsyncCallbackRepositories.permission.searchGrants(GrantSearch(userId = Some(user.id))) zip
+                AsyncCallbackRepositories.allKnownCapabilities())
+                .flatMap { case (grants, caps) =>
                   state
                     .setState(
-                      state.value.copy(permsUser = Some(user), grants = grants, newCap = "", newMode = "AutoApprove"),
-                    ).asAsyncCallback,
-                )
+                      state.value.copy(
+                        permsUser = Some(user),
+                        grants = grants,
+                        allKnownCapabilities = caps,
+                        newMode = "Persistent",
+                      ),
+                    ).asAsyncCallback
+                }
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
                 .runNow()
             }
@@ -230,7 +235,7 @@ object UsersPage {
           def closePerms(): Callback =
             state.setState(state.value.copy(permsUser = None, grants = List.empty))
 
-          def grantCapability(): Callback =
+          def grantCapability(capName: CapabilityName): Callback =
             state.value.permsUser match {
               case None       => Callback.empty
               case Some(user) =>
@@ -240,9 +245,10 @@ object UsersPage {
                     .upsertCapabilityGrant(
                       CapabilityGrant(
                         id = CapabilityGrantId.empty,
-                        capability = CapabilityName(state.value.newCap),
+                        capability = capName,
                         scopeJson = None,
-                        granteeId = user.id,
+                        granteeId = user.id.value,
+                        granteeType = GranteeType.User,
                         grantorId = None,
                         approvalMode = ApprovalMode.values
                           .find(_.toString.equalsIgnoreCase(state.value.newMode))
@@ -254,11 +260,11 @@ object UsersPage {
                     )
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
-                        .searchGrants(GrantSearch(userId = user.id))
+                        .searchGrants(GrantSearch(userId = Some(user.id)))
                         .flatMap(grants =>
                           state
                             .setState(
-                              state.value.copy(grants = grants, newCap = "", newMode = "AutoApprove"),
+                              state.value.copy(grants = grants, newMode = "Persistent"),
                             ).asAsyncCallback,
                         ),
                     )
@@ -276,7 +282,7 @@ object UsersPage {
                     .revokeGrant(grantId)
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
-                        .searchGrants(GrantSearch(userId = user.id))
+                        .searchGrants(GrantSearch(userId = Some(user.id)))
                         .flatMap(grants => state.setState(state.value.copy(grants = grants)).asAsyncCallback),
                     )
                     .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
@@ -351,6 +357,7 @@ object UsersPage {
                         identities = identities,
                         newChType = "Telegram",
                         newChUserId = "",
+                        error = None,
                       ),
                     ).asAsyncCallback,
                 )
@@ -631,31 +638,57 @@ object UsersPage {
                       }*,
                     ),
                   ),
+                Typography.withProps(
+                  TypographyOwnProps()
+                    .setVariant("subtitle2").setSx(
+                      js.Dynamic.literal(mt = 2, mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Typography.Props],
+                )("Grant capability:"),
                 Box.withProps(
                   BoxOwnProps[Theme]()
                     .setSx(
-                      js.Dynamic.literal(mt = 2, display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
+                      js.Dynamic.literal(display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Box.Props],
                 )(
-                  MuiTextField
-                    .label("Capability")
-                    .value(state.value.newCap)
-                    .size("small")
-                    .onChange(e =>
-                      state.setState(state.value.copy(newCap = e.target.value.asInstanceOf[String])).runNow(),
-                    ),
-                  MuiTextField
-                    .label("Mode")
+                  MuiSelect
                     .value(state.value.newMode)
                     .size("small")
-                    .onChange(e =>
-                      state.setState(state.value.copy(newMode = e.target.value.asInstanceOf[String])).runNow(),
+                    .onChange { e =>
+                      state
+                        .setState(
+                          state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                        ).runNow()
+                    }(
+                      ApprovalMode.values
+                        .map(m => MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
                     ),
-                  MuiButton
-                    .variant("contained")
-                    .size("small")
-                    .disabled(state.value.newCap.trim.isEmpty)
-                    .onClick(() => grantCapability().runNow())("Grant"),
+                ),
+                Box.withProps(
+                  BoxOwnProps[Theme]()
+                    .setSx(
+                      js.Dynamic.literal(mt = 1, maxHeight = 300, overflowY = "auto").asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[Box.Props],
+                )(
+                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                    TableBody()(
+                      state.value.allKnownCapabilities.map { cap =>
+                        val alreadyGranted = state.value.grants.exists(_.capability == cap)
+                        TableRow.withKey(cap.value)(
+                          TableCell()(cap.value),
+                          TableCell()(
+                            MuiButton
+                              .size("small")
+                              .variant(if (alreadyGranted) "outlined" else "contained")
+                              .color(if (alreadyGranted) "error" else "primary")
+                              .disabled(alreadyGranted)
+                              .onClick(() => grantCapability(cap).runNow())(
+                                if (alreadyGranted) "Granted" else "Grant",
+                              ),
+                          ),
+                        )
+                      }*,
+                    ),
+                  ),
                 ),
               ),
               DialogActions()(
@@ -704,12 +737,6 @@ object UsersPage {
                       }*,
                     ),
                   ), {
-                  val roleOpts: VdomElement =
-                    <.span(
-                      state.value.allRoles.map { r =>
-                        <.option(^.key := r.id.value.toString, ^.value := r.id.value.toString)(r.name)
-                      }*,
-                    )
                   Box.withProps(
                     BoxOwnProps[Theme]()
                       .setSx(
@@ -722,13 +749,21 @@ object UsersPage {
                     Typography.withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])(
                       "Assign role:",
                     ),
-                    <.select(
-                      ^.value := state.value.assignRoleId,
-                      ^.onChange ==> { (e: ReactEventFromInput) =>
-                        state.setState(state.value.copy(assignRoleId = e.target.value))
-                      },
-                      roleOpts,
-                    ),
+                    MuiSelect
+                      .value(state.value.assignRoleId)
+                      .size("small")
+                      .displayEmpty(true)
+                      .onChange { e =>
+                        state
+                          .setState(
+                            state.value.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                          ).runNow()
+                      }(
+                        ((MuiMenuItem.value("")("— Select a role —"): VdomNode) ::
+                          state.value.allRoles.map { r =>
+                            MuiMenuItem.withKey(r.id.value.toString).value(r.id.value.toString)(r.name): VdomNode
+                          })*,
+                      ),
                     MuiButton
                       .variant("contained")
                       .size("small")
@@ -746,6 +781,7 @@ object UsersPage {
                 s"Channel Identities — ${state.value.identsUser.map(_.displayName).getOrElse("")}",
               ),
               DialogContent()(
+                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
                 Typography.withProps(
                   TypographyOwnProps()
                     .setVariant("subtitle2").setSx(

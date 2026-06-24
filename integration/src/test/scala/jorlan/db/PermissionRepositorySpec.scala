@@ -25,18 +25,19 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           repo     <- ZIO.serviceWith[ZIORepositories](_.permission)
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee1", "Grantee1@test.local", T0, T0))
           grant = CapabilityGrant(
-            CapabilityGrantId.empty,
-            CapabilityName("shell.execute"),
-            None,
-            grantee.id,
-            None,
-            ApprovalMode.Once,
-            None,
-            None,
-            T0,
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("shell.execute"),
+            scopeJson = None,
+            granteeId = grantee.id.value,
+            granteeType = GranteeType.User,
+            grantorId = None,
+            approvalMode = ApprovalMode.Once,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
           )
           saved  <- repo.upsertCapabilityGrant(grant)
-          grants <- repo.searchGrants(GrantSearch(userId = grantee.id, pageSize = 20))
+          grants <- repo.searchGrants(GrantSearch(userId = Some(grantee.id), pageSize = 20))
         } yield assertTrue(
           saved.id.value > 0L,
           grants.exists(_.id == saved.id),
@@ -50,32 +51,38 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee2", "Grantee2@test.local", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("memory.read"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.Persistent,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("memory.read"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           _ <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("memory.write"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.Persistent,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("memory.write"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Persistent,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           desc <- repo.searchGrants(
-            GrantSearch(userId = grantee.id, pageSize = 20, sorts = Some(Sort(GrantOrder.Id, OrderDirection.Desc))),
+            GrantSearch(
+              userId = Some(grantee.id),
+              pageSize = 20,
+              sorts = Some(Sort(GrantOrder.Id, OrderDirection.Desc)),
+            ),
           )
         } yield assertTrue(desc.map(_.id.value) == desc.map(_.id.value).sorted.reverse)
       },
@@ -86,40 +93,42 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee3", "Grantee3@test.local", T0, T0))
           _        <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("skill.invoke"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.Session,
-              None,
-              None,
-              T0.minusSeconds(10),
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("skill.invoke"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Session,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0.minusSeconds(10),
             ),
           )
           _ <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("skill.read"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.Session,
-              None,
-              None,
-              T0.plusSeconds(10),
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("skill.read"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Session,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0.plusSeconds(10),
             ),
           )
           asc <- repo.searchGrants(
             GrantSearch(
-              userId = grantee.id,
+              userId = Some(grantee.id),
               pageSize = 20,
               sorts = Some(Sort(GrantOrder.GrantedAt, OrderDirection.Asc)),
             ),
           )
           desc <- repo.searchGrants(
             GrantSearch(
-              userId = grantee.id,
+              userId = Some(grantee.id),
               pageSize = 20,
               sorts = Some(Sort(GrantOrder.GrantedAt, OrderDirection.Desc)),
             ),
@@ -136,19 +145,20 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee4", "Grantee4@test.local", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("revoke.me"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.Once,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("revoke.me"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.Once,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           count <- repo.revokeGrant(grant.id)
-          after <- repo.searchGrants(GrantSearch(userId = grantee.id, pageSize = 20))
+          after <- repo.searchGrants(GrantSearch(userId = Some(grantee.id), pageSize = 20))
         } yield assertTrue(count == 1L, !after.exists(_.id == grant.id))
       },
       test("upsertCapabilityGrant updates mutable fields") {
@@ -158,21 +168,22 @@ object PermissionRepositorySpec extends ZIOSpec[ZIORepositories] {
           grantee  <- userRepo.upsert(User(UserId.empty, "Grantee5", "Grantee5@test.local", T0, T0))
           grant    <- repo.upsertCapabilityGrant(
             CapabilityGrant(
-              CapabilityGrantId.empty,
-              CapabilityName("upd.cap"),
-              None,
-              grantee.id,
-              None,
-              ApprovalMode.PerInvocation,
-              None,
-              None,
-              T0,
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName("upd.cap"),
+              scopeJson = None,
+              granteeId = grantee.id.value,
+              granteeType = GranteeType.User,
+              grantorId = None,
+              approvalMode = ApprovalMode.PerInvocation,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = T0,
             ),
           )
           _ <- repo.upsertCapabilityGrant(
             grant.copy(approvalMode = ApprovalMode.Persistent, expiresAt = Some(T0.plusSeconds(3600))),
           )
-          grants <- repo.searchGrants(GrantSearch(userId = grantee.id, pageSize = 20))
+          grants <- repo.searchGrants(GrantSearch(userId = Some(grantee.id), pageSize = 20))
         } yield assertTrue(grants.exists(g => g.id == grant.id && g.approvalMode == ApprovalMode.Persistent))
       },
       test("createApprovalRequest and getApprovalRequest") {

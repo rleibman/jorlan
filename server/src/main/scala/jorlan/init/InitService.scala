@@ -169,7 +169,8 @@ class InitServiceImpl(
       now         <- Clock.instant
       createdUser <- repo.user.upsert(User(UserId.empty, adminName, adminEmail, now, now))
       _           <- repo.user.changePassword(createdUser.id, adminPassword).mapError(JorlanError(_))
-      _           <- seedAdminGrants(createdUser.id, now)
+      adminRole   <- ensureAdminRole(now)
+      _           <- repo.permission.assignRole(createdUser.id, adminRole.id).mapError(JorlanError(_))
       _           <- repo.setting.set(ZIOServerSettingsRepository.InitializedKey, Json.Bool(true))
       _           <- repo.setting.set(ZIOServerSettingsRepository.ServerNameKey, Json.Str(serverName))
       _           <- tokenStore.invalidate
@@ -198,6 +199,7 @@ class InitServiceImpl(
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
     CapabilityName("admin.user.list"),
+    CapabilityName("admin.user.manage"),
     CapabilityName("admin.settings"),
     CapabilityName("user.create"),
     CapabilityName("user.update"),
@@ -222,70 +224,84 @@ class InitServiceImpl(
     CapabilityName("admin.mcp.reload"),
     // Search
     CapabilityName("search.read"),
-    // Shell read-only sandbox tools
+    // Shell
     CapabilityName("shell.read"),
     // Weather
     CapabilityName("weather.read"),
-    // Shell read-only sandbox tools
-    CapabilityName("shell.read"),
   )
 
-  // Admin user gets all capabilities as Persistent grants — no per-invocation approval friction.
-  // Per-invocation mode is reserved for non-admin users who may need scoped approval flows.
-  private val perInvocationCapabilities: Set[CapabilityName] = Set.empty
+  val AdminRoleName = "Admin"
 
   private def allAdminCaps: UIO[List[CapabilityName]] =
     skillRegistry.allAdminCapabilities.map(skillCaps => (systemCapabilities ++ skillCaps).distinct)
 
-  private def seedAdminGrants(
-    userId: UserId,
-    now:    java.time.Instant,
-  ): IO[JorlanError, Unit] =
-    allAdminCaps.flatMap { caps =>
-      ZIO
-        .foreachDiscard(caps) { cap =>
-          val mode = ApprovalMode.Persistent
+  /** Idempotently ensures the Admin role exists and has all admin capabilities granted to it as Persistent. */
+  private def ensureAdminRole(now: java.time.Instant): IO[JorlanError, Role] =
+    for {
+      existing <- repo.permission.searchRoles(RoleSearch()).mapError(JorlanError(_))
+      role     <- existing.find(_.name == AdminRoleName) match {
+        case Some(r) => ZIO.succeed(r)
+        case None    =>
           repo.permission
-            .getGrantsForCapability(userId, cap)
-            .flatMap { existing =>
-              val grant = existing.headOption match {
-                case Some(g) => g.copy(approvalMode = mode, expiresAt = None)
-                case None    =>
-                  CapabilityGrant(
-                    id = CapabilityGrantId.empty,
-                    capability = cap,
-                    scopeJson = None,
-                    granteeId = userId,
-                    grantorId = None,
-                    approvalMode = mode,
-                    expiresAt = None,
-                    resourceConstraints = None,
-                    createdAt = now,
-                  )
-              }
-              repo.permission.upsertCapabilityGrant(grant)
-            }
-        }
+            .upsertRole(Role(RoleId.empty, AdminRoleName, Some("Full system administrator with all capabilities")))
+            .mapError(JorlanError(_))
+      }
+      existingGrants <- repo.permission
+        .searchGrants(GrantSearch(roleId = Some(role.id), pageSize = 1000))
         .mapError(JorlanError(_))
-    }
+      caps <- allAdminCaps
+      _    <- ZIO
+        .foreachDiscard(caps) { cap =>
+          ZIO.unless(existingGrants.exists(_.capability == cap)) {
+            repo.permission
+              .upsertCapabilityGrant(
+                CapabilityGrant(
+                  id = CapabilityGrantId.empty,
+                  capability = cap,
+                  scopeJson = None,
+                  granteeId = role.id.value,
+                  granteeType = GranteeType.Role,
+                  grantorId = None,
+                  approvalMode = ApprovalMode.Persistent,
+                  expiresAt = None,
+                  resourceConstraints = None,
+                  createdAt = now,
+                ),
+              )
+              .mapError(JorlanError(_))
+          }
+        }
+    } yield role
 
   override def topUpAdminCapabilities: IO[JorlanError, Unit] =
     for {
-      now   <- Clock.instant
-      users <- repo.user.search(UserSearch()).mapError(JorlanError(_))
-      adminMarker = CapabilityName("admin.personality.update")
-      _ <- ZIO.foreachDiscard(users) { user =>
-        repo.permission
-          .getGrantsForCapability(user.id, adminMarker)
-          .mapError(JorlanError(_))
-          .flatMap { grants =>
-            val isAdmin = grants.exists(g =>
-              g.approvalMode != ApprovalMode.Denied &&
-                g.expiresAt.forall(_.isAfter(now)),
-            )
-            ZIO.when(isAdmin)(seedAdminGrants(user.id, now))
+      now            <- Clock.instant
+      role           <- ensureAdminRole(now)
+      existingGrants <- repo.permission
+        .searchGrants(GrantSearch(roleId = Some(role.id), pageSize = 1000))
+        .mapError(JorlanError(_))
+      caps <- allAdminCaps
+      _    <- ZIO
+        .foreachDiscard(caps) { cap =>
+          ZIO.unless(existingGrants.exists(_.capability == cap)) {
+            repo.permission
+              .upsertCapabilityGrant(
+                CapabilityGrant(
+                  id = CapabilityGrantId.empty,
+                  capability = cap,
+                  scopeJson = None,
+                  granteeId = role.id.value,
+                  granteeType = GranteeType.Role,
+                  grantorId = None,
+                  approvalMode = ApprovalMode.Persistent,
+                  expiresAt = None,
+                  resourceConstraints = None,
+                  createdAt = now,
+                ),
+              )
+              .mapError(JorlanError(_))
           }
-      }
+        }
     } yield ()
 
   private def validateInputs(

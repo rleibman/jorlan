@@ -15,7 +15,8 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
-import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpMemoryService}
+import ai.{EmbeddingModel, EmbeddingStore}
+import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
 import zio.http.Client
 import zio.test.*
@@ -57,6 +58,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
     ZLayer.make[MemoryService](
       InMemoryRepositories.live(),
       FakeModelGateway.layer(List()),
+      NoOpEmbeddingLayers.embeddingStoreLayer,
+      NoOpEmbeddingLayers.embeddingModelLayer,
       MemoryServiceImpl.live,
     )
 
@@ -176,9 +179,15 @@ object JorlanAPISpec extends ZIOSpecDefault {
         session,
         FakeModelGateway.layer(List("ok")),
         AgentSessionManagerImpl.live,
-        memSvcLayer, {
+        memSvcLayer,
+        NoOpEmbeddingLayers.embeddingStoreLayer,
+        NoOpEmbeddingLayers.embeddingModelLayer, {
           ZLayer.fromZIO {
-            ZIO.serviceWith[MemoryService](svc => SkillRegistry.liveWith(new MemorySkill(svc)))
+            for {
+              svc   <- ZIO.service[MemoryService]
+              store <- ZIO.service[EmbeddingStore]
+              model <- ZIO.service[EmbeddingModel]
+            } yield SkillRegistry.liveWith(new MemorySkill(svc, store, model))
           }.flatten
         },
         FakeConfigurationService.layer,
@@ -200,7 +209,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
     field: String,
   ): Long = {
     import scala.language.unsafeNulls
-    val pat = s""""$field":([0-9]+)""".r
+    // Matches both numeric ("id":1) and string-encoded ("id":"1") ID forms
+    val pat = s""""$field":"?([0-9]+)"?""".r
     pat
       .findFirstMatchIn(data).map(_.group(1).toLong).getOrElse(
         throw AssertionError(s"field '$field' not found in: $data"),
