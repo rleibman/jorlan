@@ -375,13 +375,7 @@ bash scripts/build-web.sh
 sbtn --error "web/debugDist"
 ```
 
-The build uses **esbuild** (via `sbt-scalajs-esbuild-web`) to bundle the Scala.js output and all npm dependencies. npm packages are declared in `web/esbuild/package.json`; esbuild installs them automatically on first run (via npm).
-
-The HTML entry point is `web/esbuild/index.html`. The bundler transforms it to inject hashed asset paths (e.g. `assets/main-A1B2C3D4.js` for production, `assets/main.js` for debug). Static assets (CSS, images, webfonts) live in `web/src/main/web/` and are copied alongside the bundle into `dist/` or `debugDist/`.
-
-For local development, set `jorlan.web.root = "debugDist"` in `server/src/main/resources/application.conf` so the server serves the fast-opt bundle without needing a full production build.
-
-#### stLib — ScalablyTyped bindings
+For local development, set `jorlan.http.staticContentDir = "debugDist"` (or export `JORLAN_STATIC_CONTENT_DIR=debugDist`) in `server/src/main/resources/application.conf` so the server serves the fast bundle without needing a full production build.
 
 The `stLib` sub-project generates Scala.js bindings for React 19, MUI v9, and related npm packages using ScalablyTyped. It must be built and published to your local Ivy cache before the `web` module can compile. Do this once, and again whenever `stLib/` sources or npm deps change.
 
