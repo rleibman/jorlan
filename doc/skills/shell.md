@@ -58,14 +58,16 @@ Standard filesystem operations, all restricted to the sandbox root. No allowlist
 
 ## Configuration
 
-Shell configuration is managed via `server_settings` or `application.conf`:
+Shell settings are stored in `server_settings` under key `skill.shell` (editable via **Skills → Shell → Configure**).
 
-```hocon
-jorlan.shell {
-  sandboxRoot = "/var/lib/jorlan/shell"
-  allowedCommands = ["git", "python3", "node", "bash"]
+Example config JSON:
+
+{
+  "allowedBinaries": ["echo", "ls", "cat", "grep", "find", "pwd"],
+  "timeoutSeconds": 30,
+  "captureThreshold": 65536,
+  "sandboxRoot": "."
 }
-```
 
 | Field | Description |
 |-------|-------------|
