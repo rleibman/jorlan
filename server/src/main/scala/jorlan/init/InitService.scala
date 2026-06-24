@@ -198,6 +198,7 @@ class InitServiceImpl(
     CapabilityName("admin.personality.read"),
     CapabilityName("admin.personality.update"),
     CapabilityName("admin.user.list"),
+    CapabilityName("admin.user.manage"),
     CapabilityName("admin.settings"),
     CapabilityName("user.create"),
     CapabilityName("user.update"),
@@ -222,12 +223,10 @@ class InitServiceImpl(
     CapabilityName("admin.mcp.reload"),
     // Search
     CapabilityName("search.read"),
-    // Shell read-only sandbox tools
+    // Shell
     CapabilityName("shell.read"),
     // Weather
     CapabilityName("weather.read"),
-    // Shell read-only sandbox tools
-    CapabilityName("shell.read"),
   )
 
   // Admin user gets all capabilities as Persistent grants — no per-invocation approval friction.

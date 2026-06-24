@@ -28,10 +28,13 @@ import zio.json.literal.*
   *   connection parameters for the Lyrion server
   * @param client
   *   the zio-http [[Client]] used for all outbound requests
+  * @param lastPlayer
+  *   tracks the MAC address of the most recently used player so subsequent calls can omit it
   */
 class LyrionSkill(
-  settings: LyrionConfig,
-  client:   Client,
+  settings:   LyrionConfig,
+  client:     Client,
+  lastPlayer: Ref[Option[String]],
 ) extends Skill with HasDashboardData {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
@@ -86,7 +89,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.status",
         description = "Get the current playback status of a player, including track title, artist, album, and volume.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address (e.g. aa:bb:cc:dd:ee:ff)"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address (e.g. aa:bb:cc:dd:ee:ff) or player name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -98,7 +101,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.play",
         description = "Resume or start playback on a player.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -110,7 +113,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.pause",
         description = "Pause playback on a player.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -121,7 +124,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.stop",
         description = "Stop playback on a player.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -132,7 +135,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.volume",
         description = "Set the volume on a player. Level is an integer from 0 (mute) to 100 (maximum).",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"level":{"type":"integer","description":"Volume level 0-100","minimum":0,"maximum":100}},"required":["playerId","level"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"level":{"type":"integer","description":"Volume level 0-100","minimum":0,"maximum":100}},"required":["level"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -144,7 +147,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.next",
         description = "Skip to the next track in the playlist.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -156,7 +159,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.previous",
         description = "Go back to the previous track in the playlist.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -168,7 +171,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.playlist",
         description = "List the current playlist for a player.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -241,7 +244,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.queue",
         description = "Load music into a player's queue and start playing. Use 'type' to specify what to play (artist/album/genre/song) and 'id' from a previous search or browse call. Set 'mode' to 'load' (replace queue and play immediately, default) or 'add' (append to queue).",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"type":{"type":"string","enum":["artist","album","genre","song"],"description":"Type of music to queue"},"id":{"type":"string","description":"ID of the artist, album, genre, or song (from lyrion.search or lyrion.browse.*)"},"mode":{"type":"string","enum":["load","add"],"description":"'load' replaces the queue and plays immediately; 'add' appends without interrupting"}},"required":["playerId","type","id"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"type":{"type":"string","enum":["artist","album","genre","song"],"description":"Type of music to queue"},"id":{"type":"string","description":"ID of the artist, album, genre, or song (from lyrion.search or lyrion.browse.*)"},"mode":{"type":"string","enum":["load","add"],"description":"'load' replaces the queue and plays immediately; 'add' appends without interrupting"}},"required":["type","id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -256,7 +259,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.alarm.list",
         description = "List all alarms configured for a player.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"}},"required":["playerId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -268,7 +271,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.alarm.create",
         description = "Create a new alarm on a player. 'time' is HH:MM (24-hour). 'days' is an array of day names (Mon Tue Wed Thu Fri Sat Sun) or the shortcut strings 'daily', 'weekdays', or 'weekends'. 'repeat' defaults to true.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"time":{"type":"string","description":"Alarm time in HH:MM 24-hour format, e.g. '07:30'"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"Days to trigger the alarm"},"enabled":{"type":"boolean","description":"Whether the alarm is active (default true)"},"repeat":{"type":"boolean","description":"Whether the alarm repeats (default true)"},"volume":{"type":"integer","description":"Override volume 0-100, or -1 to use current volume (default -1)"}},"required":["playerId","time","days"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"time":{"type":"string","description":"Alarm time in HH:MM 24-hour format, e.g. '07:30'"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"Days to trigger the alarm"},"enabled":{"type":"boolean","description":"Whether the alarm is active (default true)"},"repeat":{"type":"boolean","description":"Whether the alarm repeats (default true)"},"volume":{"type":"integer","description":"Override volume 0-100, or -1 to use current volume (default -1)"}},"required":["time","days"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -281,7 +284,7 @@ class LyrionSkill(
         name = "lyrion.alarm.update",
         description =
           "Update an existing alarm. Only the fields you provide are changed. Use lyrion.alarm.list to get alarm IDs.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"},"time":{"type":"string","description":"New alarm time in HH:MM 24-hour format"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"New days setting"},"enabled":{"type":"boolean","description":"Enable or disable the alarm"},"repeat":{"type":"boolean","description":"Whether the alarm repeats"},"volume":{"type":"integer","description":"Volume override 0-100 or -1"}},"required":["playerId","id"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"},"time":{"type":"string","description":"New alarm time in HH:MM 24-hour format"},"days":{"oneOf":[{"type":"array","items":{"type":"string","enum":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]}},{"type":"string","enum":["daily","weekdays","weekends"]}],"description":"New days setting"},"enabled":{"type":"boolean","description":"Enable or disable the alarm"},"repeat":{"type":"boolean","description":"Whether the alarm repeats"},"volume":{"type":"integer","description":"Volume override 0-100 or -1"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -293,7 +296,7 @@ class LyrionSkill(
       ToolDescriptor(
         name = "lyrion.alarm.delete",
         description = "Delete an alarm from a player. Use lyrion.alarm.list to get alarm IDs.",
-        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address"},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"}},"required":["playerId","id"]}""",
+        inputSchema = json"""{"type":"object","properties":{"playerId":{"type":"string","description":"Player MAC address or name. Omit to use the last player."},"id":{"type":"string","description":"Alarm ID (from lyrion.alarm.list)"}},"required":["id"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("lyrion.control")),
         examplePrompts = List(
@@ -320,8 +323,8 @@ class LyrionSkill(
       .post(url, Body.fromString(body.toJson))
       .addHeader(Header.ContentType(MediaType.application.json))
 
-    val effect: ZIO[Client, JorlanError, Json] = Client
-      .batched(request)
+    val effect: ZIO[Client & Scope, JorlanError, Json] = Client
+      .streaming(request)
       .mapError(e => JorlanError(s"Lyrion HTTP request failed: $e"))
       .flatMap { resp =>
         resp.body.asString
@@ -345,7 +348,7 @@ class LyrionSkill(
           }
       }
 
-    effect.provideEnvironment(ZEnvironment(client))
+    ZIO.scoped(effect).provideEnvironment(ZEnvironment(client))
   }
 
   /** Extract a named string field from a JSON object, returning empty string if absent. */
@@ -424,30 +427,76 @@ class LyrionSkill(
   ): IO[JorlanError, Json] =
     tool match {
       case "lyrion.players"        => listPlayers()
-      case "lyrion.status"         => requireStr(args, "playerId").flatMap(playerStatus)
-      case "lyrion.play"           => requireStr(args, "playerId").flatMap(play)
-      case "lyrion.pause"          => requireStr(args, "playerId").flatMap(pause)
-      case "lyrion.stop"           => requireStr(args, "playerId").flatMap(stop)
+      case "lyrion.status"         => requirePlayerId(args).flatMap(playerStatus)
+      case "lyrion.play"           => requirePlayerId(args).flatMap(play)
+      case "lyrion.pause"          => requirePlayerId(args).flatMap(pause)
+      case "lyrion.stop"           => requirePlayerId(args).flatMap(stop)
       case "lyrion.volume"         => invokeVolume(args)
-      case "lyrion.next"           => requireStr(args, "playerId").flatMap(next)
-      case "lyrion.previous"       => requireStr(args, "playerId").flatMap(previous)
-      case "lyrion.playlist"       => requireStr(args, "playerId").flatMap(playlist)
+      case "lyrion.next"           => requirePlayerId(args).flatMap(next)
+      case "lyrion.previous"       => requirePlayerId(args).flatMap(previous)
+      case "lyrion.playlist"       => requirePlayerId(args).flatMap(playlist)
       case "lyrion.search"         => search(args)
       case "lyrion.browse.genres"  => browseGenres()
       case "lyrion.browse.artists" => browseArtists(args)
       case "lyrion.browse.albums"  => browseAlbums(args)
       case "lyrion.browse.songs"   => browseSongs(args)
       case "lyrion.queue"          => queue(args)
-      case "lyrion.alarm.list"     => requireStr(args, "playerId").flatMap(alarmList)
+      case "lyrion.alarm.list"     => requirePlayerId(args).flatMap(alarmList)
       case "lyrion.alarm.create"   => alarmCreate(args)
       case "lyrion.alarm.update"   => alarmUpdate(args)
       case "lyrion.alarm.delete"   => alarmDelete(args)
       case other                   => ZIO.fail(ValidationError(s"lyrion: unknown tool '$other'"))
     }
 
+  private val macPattern = "^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$".r.pattern
+
+  private def listPlayersRaw(): IO[JorlanError, List[Json]] =
+    rpc("", List(Json.Str("players"), Json.Num(0), Json.Num(100))).map(arrField(_, "players_loop"))
+
+  /** Resolve a player reference (MAC address or display name) to a MAC address.
+    *
+    * If the input is already a valid MAC, it is returned as-is. Otherwise, `listPlayers` is called and the first player
+    * whose name contains the query (case-insensitive) is used.
+    */
+  private def resolvePlayer(playerIdOrName: String): IO[JorlanError, String] =
+    if (macPattern.matcher(playerIdOrName).matches()) {
+      ZIO.succeed(playerIdOrName)
+    } else {
+      listPlayersRaw().flatMap { players =>
+        val lower = playerIdOrName.toLowerCase
+        players
+          .find(p => strField(p, "name").toLowerCase.contains(lower))
+          .map(p => ZIO.succeed(strField(p, "playerid")))
+          .getOrElse(ZIO.fail(JorlanError(s"No player found matching '$playerIdOrName'")))
+      }
+    }
+
+  /** Extract and resolve `playerId` from args, falling back to the last used player. Updates `lastPlayer` on success.
+    */
+  private def requirePlayerId(args: Json): IO[JorlanError, String] = {
+    val fromArgs = args match {
+      case Json.Obj(fields) =>
+        fields.collectFirst { case ("playerId", Json.Str(v)) if v.nonEmpty => v }
+      case _ => None
+    }
+    val raw = fromArgs match {
+      case Some(v) => ZIO.succeed(v)
+      case None    =>
+        lastPlayer.get.flatMap {
+          case Some(id) => ZIO.succeed(id)
+          case None     =>
+            ZIO.fail(
+              JorlanError(
+                "No player specified and no player has been used yet. Please specify a player by name or MAC address.",
+              ),
+            )
+        }
+    }
+    raw.flatMap(resolvePlayer).tap(mac => lastPlayer.set(Some(mac)))
+  }
+
   private def listPlayers(): IO[JorlanError, Json] =
-    rpc("", List(Json.Str("players"), Json.Num(0), Json.Num(100))).map { result =>
-      val players = arrField(result, "players_loop")
+    listPlayersRaw().map { players =>
       Json.Arr(players.map { p =>
         Json.Obj(
           "id"        -> Json.Str(strField(p, "playerid")),
@@ -486,7 +535,7 @@ class LyrionSkill(
       case _                => None
     }
     for {
-      playerId <- requireStr(args, "playerId")
+      playerId <- requirePlayerId(args)
       rawLevel <- ZIO
         .fromOption(levelOpt)
         .orElseFail(ValidationError("lyrion.volume: 'level' (integer) is required"))
@@ -627,7 +676,7 @@ class LyrionSkill(
 
   private def queue(args: Json): IO[JorlanError, Json] =
     for {
-      playerId <- requireStr(args, "playerId")
+      playerId <- requirePlayerId(args)
       itemType <- requireStr(args, "type")
       id       <- requireStr(args, "id")
       mode = optStr(args, "mode").getOrElse("load")
@@ -733,7 +782,7 @@ class LyrionSkill(
 
   private def alarmCreate(args: Json): IO[JorlanError, Json] =
     for {
-      playerId <- requireStr(args, "playerId")
+      playerId <- requirePlayerId(args)
       timeStr  <- requireStr(args, "time")
       timeSecs <- parseTimeHHMM(timeStr)
       dow      <- parseDays(args)
@@ -812,7 +861,7 @@ class LyrionSkill(
 
   private def alarmDelete(args: Json): IO[JorlanError, Json] =
     for {
-      playerId <- requireStr(args, "playerId")
+      playerId <- requirePlayerId(args)
       id       <- requireStr(args, "id")
       _        <- rpc(playerId, List(Json.Str("alarm"), Json.Str("delete"), Json.Str(s"id:$id")))
     } yield Json.Obj("ok" -> Json.Bool(true), "id" -> Json.Str(id))
@@ -845,4 +894,12 @@ class LyrionSkill(
 
 }
 
-object LyrionSkill
+object LyrionSkill {
+
+  def make(
+    settings: LyrionConfig,
+    client:   Client,
+  ): UIO[LyrionSkill] =
+    Ref.make(Option.empty[String]).map(ref => new LyrionSkill(settings, client, ref))
+
+}

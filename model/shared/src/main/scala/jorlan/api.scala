@@ -56,6 +56,23 @@ case class DashboardStats(
   jobOutcomeCounts:       List[DashboardNamedCount],
 ) derives JsonCodec
 
+/** A single environment variable for an MCP server. */
+case class McpEnvVarInfo(
+  key:   String,
+  value: String,
+) derives JsonCodec
+
+/** An MCP server configuration entry visible via the API. */
+case class McpServerInfo(
+  name:      String,
+  transport: String,
+  command:   Option[String] = None,
+  args:      List[String] = List.empty,
+  env:       List[McpEnvVarInfo] = List.empty,
+  url:       Option[String] = None,
+  enabled:   Boolean = true,
+) derives JsonCodec
+
 /** A registered skill visible via the API. */
 case class SkillInfo(
   name:              String,

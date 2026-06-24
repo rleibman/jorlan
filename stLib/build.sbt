@@ -5,7 +5,7 @@ lazy val SCALA = "3.8.4"
 val scalajsReactVersion = "4.0.0"
 val reactVersion = "^19.2.0"
 
-version := "1.1.0"
+version := "1.2.0"
 
 enablePlugins(ScalablyTypedConverterGenSourcePlugin)
 
@@ -35,8 +35,8 @@ Compile / npmDependencies ++= Seq(
   "@types/react-dom" -> reactVersion,
   "react"            -> reactVersion,
   "react-dom"        -> reactVersion,
-  "apexcharts"       -> "^4.3.0",
-  "react-apexcharts" -> "^1.7.0",
+  "apexcharts"       -> "^3.51.0",
+  "react-apexcharts" -> "^1.8.0",
   "csstype"          -> "^3.2.3",
 //  "react-quill"        -> "^2.0.0",
 //  "react-markdown"     -> "^10.1.0",

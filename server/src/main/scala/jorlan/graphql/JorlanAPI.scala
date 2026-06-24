@@ -154,10 +154,17 @@ object JorlanAPI {
     Schema.scalarSchema("SchedulerTriggerId", None, None, None, id => Value.IntValue(id.value))
 
   private given Schema[Any, ChannelIdentityId] =
-    Schema.scalarSchema("ChannelIdentityId", None, None, None, id => Value.IntValue(id.value))
+    Schema.scalarSchema("ChannelIdentityId", None, None, None, id => Value.StringValue(id.value.toString))
 
   private given Schema[Any, ChannelIdentity] = Schema.gen[Any, ChannelIdentity]
-  private given ArgBuilder[ChannelIdentityId] = ArgBuilder.long.map(ChannelIdentityId(_))
+  private given ArgBuilder[ChannelIdentityId] =
+    ArgBuilder.string
+      .flatMap(s =>
+        s.toLongOption.fold(Left(CalibanError.ExecutionError(s"Invalid ChannelIdentityId: '$s'")))(l =>
+          Right(ChannelIdentityId(l)),
+        ),
+      )
+      .orElse(ArgBuilder.long.map(ChannelIdentityId(_)))
 
   private given ArgBuilder[CapabilityGrantId] = ArgBuilder.long.map(CapabilityGrantId(_))
 
@@ -545,6 +552,13 @@ object JorlanAPI {
     description: Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `updateRole`. */
+  case class UpdateRoleInput(
+    id:          RoleId,
+    name:        String,
+    description: Option[String],
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `assignRole` / `revokeRole`. */
   case class AssignRoleInput(
     userId: UserId,
@@ -727,6 +741,8 @@ object JorlanAPI {
     skillDashboardData: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
     /** Returns the configured MCP servers. Requires `admin.settings`. */
     mcpServers: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[McpServerView]],
+    /** Returns all known capability names from registered skills. Requires `admin.user.manage`. */
+    allKnownCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityName]],
   )
 
   case class Mutations(
@@ -734,6 +750,8 @@ object JorlanAPI {
     updateUser:        UpdateUserInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, User],
     deactivateUser:    UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     createRole:        CreateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
+    updateRole:        UpdateRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Role],
+    deleteRole:        RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     assignRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     revokeRole:        AssignRoleInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Unit],
     grantPermission:   GrantPermissionInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Permission],
@@ -1155,6 +1173,11 @@ object JorlanAPI {
               case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
             }
           } yield configs.map(mcpServerToView),
+          allKnownCapabilities = for {
+            actorId <- actorIdFromSession
+            _       <- requireCapability("admin.user.manage", actorId)
+            caps    <- ZIO.serviceWithZIO[SkillRegistry](_.allAdminCapabilities)
+          } yield caps,
         ),
         Mutations(
           createUser = input =>
@@ -1198,6 +1221,20 @@ object JorlanAPI {
                 _.permission.upsertRole(Role(RoleId.empty, input.name, input.description)),
               )
             } yield role,
+          updateRole = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("role.create", actorId)
+              role    <- ZIO.serviceWithZIO[ZIORepositories](
+                _.permission.upsertRole(Role(input.id, input.name, input.description)),
+              )
+            } yield role,
+          deleteRole = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("role.create", actorId)
+              count   <- ZIO.serviceWithZIO[ZIORepositories](_.permission.deleteRole(id))
+            } yield count > 0,
           assignRole = input =>
             for {
               actorId <- actorIdFromSession

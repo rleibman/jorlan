@@ -40,7 +40,9 @@ enum AppPage(
   case Scheduler extends AppPage("#/scheduler", "Scheduler", "schedule")
   case EventLog extends AppPage("#/events", "Event Log", "event_note")
   case Skills extends AppPage("#/skills", "Skills", "extension")
+  case McpServers extends AppPage("#/mcp", "MCP Servers", "hub")
   case Users extends AppPage("#/users", "Users", "group")
+  case Roles extends AppPage("#/roles", "Roles", "badge")
   case Settings extends AppPage("#/settings", "Settings", "settings")
   case OAuth extends AppPage("#/oauth", "Connected Accounts", "link")
 
@@ -112,8 +114,10 @@ object AppRouter {
                 case AppPage.Memory    => MemoryPage(user)
                 case AppPage.Scheduler => SchedulerPage(user)
                 case AppPage.EventLog  => EmptyVdom
-                case AppPage.Skills    => SkillsPage(user)
-                case AppPage.Users     => UsersPage(user)
+                case AppPage.Skills      => SkillsPage(user)
+                case AppPage.McpServers  => McpServersPage(user)
+                case AppPage.Users       => UsersPage(user)
+                case AppPage.Roles       => RolesPage(user)
                 case AppPage.Settings  => SettingsPage(user)
                 case AppPage.OAuth     => OAuthManagementPage(user)
               }

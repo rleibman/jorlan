@@ -254,16 +254,20 @@ object Jorlan extends ZIOApp {
         .flatMap {
           case Some(json) =>
             json.as[LyrionConfig] match {
-              case Right(cfg) => registry.register(LyrionSkill(cfg, httpClient))
+              case Right(cfg) => LyrionSkill.make(cfg, httpClient).flatMap(registry.register)
               case Left(err)  =>
-                registry.register(LyrionSkill(LyrionConfig(), httpClient)) *>
-                  registry.disableSkill("lyrion") *>
-                  ZIO.logWarning(s"lyrion skill registered but disabled: invalid config JSON: $err")
+                LyrionSkill.make(LyrionConfig(), httpClient).flatMap { skill =>
+                  registry.register(skill) *>
+                    registry.disableSkill("lyrion") *>
+                    ZIO.logWarning(s"lyrion skill registered but disabled: invalid config JSON: $err")
+                }
             }
           case None =>
-            registry.register(LyrionSkill(LyrionConfig(), httpClient)) *>
-              registry.disableSkill("lyrion") *>
-              ZIO.logInfo("lyrion skill registered but disabled (set skill.lyrion in server_settings to enable)")
+            LyrionSkill.make(LyrionConfig(), httpClient).flatMap { skill =>
+              registry.register(skill) *>
+                registry.disableSkill("lyrion") *>
+                ZIO.logInfo("lyrion skill registered but disabled (set skill.lyrion in server_settings to enable)")
+            }
         }
       _ <- repos.setting
         .get("skill.search")
@@ -330,7 +334,7 @@ object Jorlan extends ZIOApp {
           ZIO
             .fromEither(json.fromJson[LyrionConfig])
             .mapError(e => JorlanError(s"Invalid lyrion config: $e"))
-            .map(cfg => LyrionSkill(cfg, httpClient)),
+            .flatMap(cfg => LyrionSkill.make(cfg, httpClient)),
       )
       _ <- registry.registerSkillFactory(
         "skill.search",

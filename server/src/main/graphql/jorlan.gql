@@ -329,6 +329,8 @@ type Mutations {
   updateUser(id: UserId!, displayName: String!, email: String, active: Boolean!): User
   deactivateUser(value: UserId!): Boolean
   createRole(name: String!, description: String): Role
+  updateRole(id: RoleId!, name: String!, description: String): Role
+  deleteRole(value: RoleId!): Boolean
   assignRole(userId: UserId!, roleId: RoleId!): Unit
   revokeRole(userId: UserId!, roleId: RoleId!): Unit
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
@@ -427,6 +429,7 @@ type Queries {
   dashboardStats: DashboardStats
   skillDashboardData(value: String!): String
   mcpServers: [McpServerView!]
+  allKnownCapabilities: [CapabilityName!]
 }
 
 type ResponseChunk {

@@ -141,17 +141,33 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
             .map(_.getOrElse(List.empty).map(toRole))
       }
     override def upsertRole(role: Role): AsyncCallback[Role] =
+      if (role.id == RoleId.empty) {
+        adapter
+          .asyncCalibanCallWithAuth(
+            JorlanClient.Mutations.createRole(role.name, role.description)(JorlanClient.Role.view),
+          )
+          .flatMap(r =>
+            r.fold(
+              AsyncCallback.throwException[JorlanClient.Role.RoleView](RuntimeException("createRole returned no role")),
+            )(AsyncCallback.pure),
+          )
+          .map(toRole)
+      } else {
+        adapter
+          .asyncCalibanCallWithAuth(
+            JorlanClient.Mutations.updateRole(role.id, role.name, role.description)(JorlanClient.Role.view),
+          )
+          .flatMap(r =>
+            r.fold(
+              AsyncCallback.throwException[JorlanClient.Role.RoleView](RuntimeException("updateRole returned no role")),
+            )(AsyncCallback.pure),
+          )
+          .map(toRole)
+      }
+    override def deleteRole(id: RoleId): AsyncCallback[Long] =
       adapter
-        .asyncCalibanCallWithAuth(
-          JorlanClient.Mutations.createRole(role.name, role.description)(JorlanClient.Role.view),
-        )
-        .flatMap(r =>
-          r.fold(
-            AsyncCallback.throwException[JorlanClient.Role.RoleView](RuntimeException("createRole returned no role")),
-          )(AsyncCallback.pure),
-        )
-        .map(toRole)
-    override def deleteRole(id: RoleId): AsyncCallback[Long] = AsyncCallback.pure(0L)
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.deleteRole(id))
+        .map(r => if (r.getOrElse(false)) 1L else 0L)
     override def assignRole(
       userId: UserId,
       roleId: RoleId,
@@ -236,6 +252,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         .map(_.getOrElse(false))
 
   }
+
+  def allKnownCapabilities(): AsyncCallback[List[CapabilityName]] =
+    adapter
+      .asyncCalibanCallWithAuth(JorlanClient.Queries.allKnownCapabilities)
+      .map(_.getOrElse(List.empty))
 
   // ── Sub-repo: Scheduler ────────────────────────────────────────────────────
 
@@ -493,6 +514,54 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Mutations.updateSkillConfig(name, configJson))
         .map(_.getOrElse(false))
+  }
+
+  // ── MCP servers ────────────────────────────────────────────────────────────
+
+  object mcp {
+
+    def listMcpServers(): AsyncCallback[List[McpServerInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.mcpServers(
+            JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view),
+          ),
+        )
+        .map(_.getOrElse(List.empty).map(toMcpServerInfo))
+
+    def upsertMcpServer(
+      name:      String,
+      transport: String,
+      command:   Option[String],
+      args:      List[String],
+      env:       List[McpEnvVarInfo],
+      url:       Option[String],
+      enabled:   Boolean,
+    ): AsyncCallback[Option[McpServerInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.upsertMcpServer(
+            name = name,
+            transport = transport,
+            command = command,
+            args = args,
+            env = env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value)),
+            url = url,
+            enabled = enabled,
+          )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)),
+        )
+        .map(_.map(toMcpServerInfo))
+
+    def deleteMcpServer(name: String): AsyncCallback[Boolean] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.deleteMcpServer(name))
+        .map(_.getOrElse(false))
+
+    def reloadMcpServers(): AsyncCallback[Boolean] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.reloadMcpServers(()))
+        .map(_.getOrElse(false))
+
   }
 
   override val eventLog: EventLogRepository[AsyncCallback] = new EventLogRepository[AsyncCallback] {
@@ -799,6 +868,19 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       skillInvocationsByName = v.skillInvocationsByName.map(c => DashboardNamedCount(c.name, c.count)),
       sessionStatusCounts = v.sessionStatusCounts.map(c => DashboardNamedCount(c.name, c.count)),
       jobOutcomeCounts = v.jobOutcomeCounts.map(c => DashboardNamedCount(c.name, c.count)),
+    )
+
+  private def toMcpServerInfo(
+    v: JorlanClient.McpServerView.McpServerViewView[JorlanClient.McpEnvVar.McpEnvVarView],
+  ): McpServerInfo =
+    McpServerInfo(
+      name = v.name,
+      transport = v.transport,
+      command = v.command,
+      args = v.args,
+      env = v.env.map(e => McpEnvVarInfo(e.key, e.value)),
+      url = v.url,
+      enabled = v.enabled,
     )
 
   private def toSkillInfo(

@@ -2,6 +2,7 @@ package jorlan.graphql.client
 
 import caliban.client.FieldBuilder._
 import caliban.client._
+import caliban.client.__Value._
 
 
 import jorlan._
@@ -205,6 +206,45 @@ def view: ViewSelection = (id ~ eventType ~ actorId ~ agentId ~ sessionId ~ reso
   def resource: SelectionBuilder[EventLogJson, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("resource", OptionOf(Scalar()))
   def payloadJson: SelectionBuilder[EventLogJson, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("payloadJson", OptionOf(Scalar()))
   def occurredAt: SelectionBuilder[EventLogJson, java.time.Instant] = _root_.caliban.client.SelectionBuilder.Field("occurredAt", Scalar())
+}
+
+
+type McpEnvVar
+object McpEnvVar {
+  
+final case class McpEnvVarView(key: String, value: String)
+
+
+
+
+type ViewSelection = SelectionBuilder[McpEnvVar, McpEnvVarView]
+
+def view: ViewSelection = (key ~ value).map { case (key, value) => McpEnvVarView(key, value) }
+
+  def key: SelectionBuilder[McpEnvVar, String] = _root_.caliban.client.SelectionBuilder.Field("key", Scalar())
+  def value: SelectionBuilder[McpEnvVar, String] = _root_.caliban.client.SelectionBuilder.Field("value", Scalar())
+}
+
+
+type McpServerView
+object McpServerView {
+  
+final case class McpServerViewView[EnvSelection](name: String, transport: String, command: scala.Option[String], args: List[String], env: List[EnvSelection], url: scala.Option[String], enabled: Boolean)
+
+
+
+
+type ViewSelection[EnvSelection] = SelectionBuilder[McpServerView, McpServerViewView[EnvSelection]]
+
+def view[EnvSelection](envSelection: SelectionBuilder[McpEnvVar, EnvSelection]): ViewSelection[EnvSelection] = (name ~ transport ~ command ~ args ~ env(envSelection) ~ url ~ enabled).map { case (name, transport, command, args, env, url, enabled) => McpServerViewView(name, transport, command, args, env, url, enabled) }
+
+  def name: SelectionBuilder[McpServerView, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+  def transport: SelectionBuilder[McpServerView, String] = _root_.caliban.client.SelectionBuilder.Field("transport", Scalar())
+  def command: SelectionBuilder[McpServerView, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("command", OptionOf(Scalar()))
+  def args: SelectionBuilder[McpServerView, List[String]] = _root_.caliban.client.SelectionBuilder.Field("args", ListOf(Scalar()))
+  def env[A](innerSelection: SelectionBuilder[McpEnvVar, A]): SelectionBuilder[McpServerView, List[A]] = _root_.caliban.client.SelectionBuilder.Field("env", ListOf(Obj(innerSelection)))
+  def url: SelectionBuilder[McpServerView, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("url", OptionOf(Scalar()))
+  def enabled: SelectionBuilder[McpServerView, Boolean] = _root_.caliban.client.SelectionBuilder.Field("enabled", Scalar())
 }
 
 
@@ -537,7 +577,13 @@ def view: ViewSelection = (id ~ displayName ~ email ~ createdAt ~ updatedAt ~ ac
 }
 
 
-  
+  final case class McpEnvVarInput(key : String, value : String)
+object McpEnvVarInput {
+  implicit val encoder: ArgEncoder[McpEnvVarInput] = new ArgEncoder[McpEnvVarInput] {
+    override def encode(value: McpEnvVarInput): __Value =
+      __ObjectValue(List("key" -> implicitly[ArgEncoder[String]].encode(value.key), "value" -> implicitly[ArgEncoder[String]].encode(value.value)))
+  }
+}
   type Queries = _root_.caliban.client.Operations.RootQuery
 object Queries {
   def user[A](value : jorlan.UserId)(innerSelection: SelectionBuilder[User, A])(implicit encoder0: ArgEncoder[jorlan.UserId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("user", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "UserId!")))
@@ -565,6 +611,8 @@ object Queries {
   def checkpointPolicy[A](innerSelection: SelectionBuilder[CheckpointPolicyConfig, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("checkpointPolicy", OptionOf(Obj(innerSelection)))
   def dashboardStats[A](innerSelection: SelectionBuilder[DashboardStats, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("dashboardStats", OptionOf(Obj(innerSelection)))
   def skillDashboardData(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("skillDashboardData", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
+  def mcpServers[A](innerSelection: SelectionBuilder[McpServerView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("mcpServers", OptionOf(ListOf(Obj(innerSelection))))
+  def allKnownCapabilities: SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[jorlan.CapabilityName]]] = _root_.caliban.client.SelectionBuilder.Field("allKnownCapabilities", OptionOf(ListOf(Scalar())))
 }
 
 
@@ -574,6 +622,8 @@ object Mutations {
   def updateUser[A](id : jorlan.UserId, displayName : String, email : scala.Option[String] = None, active : Boolean)(innerSelection: SelectionBuilder[User, A])(implicit encoder0: ArgEncoder[jorlan.UserId], encoder1: ArgEncoder[String], encoder2: ArgEncoder[scala.Option[String]], encoder3: ArgEncoder[Boolean]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateUser", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "UserId!"), Argument("displayName", displayName, "String!"), Argument("email", email, "String"), Argument("active", active, "Boolean!")))
   def deactivateUser(value : jorlan.UserId)(implicit encoder0: ArgEncoder[jorlan.UserId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("deactivateUser", OptionOf(Scalar()), arguments = List(Argument("value", value, "UserId!")))
   def createRole[A](name : String, description : scala.Option[String] = None)(innerSelection: SelectionBuilder[Role, A])(implicit encoder0: ArgEncoder[String], encoder1: ArgEncoder[scala.Option[String]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("createRole", OptionOf(Obj(innerSelection)), arguments = List(Argument("name", name, "String!"), Argument("description", description, "String")))
+  def updateRole[A](id : jorlan.RoleId, name : String, description : scala.Option[String] = None)(innerSelection: SelectionBuilder[Role, A])(implicit encoder0: ArgEncoder[jorlan.RoleId], encoder1: ArgEncoder[String], encoder2: ArgEncoder[scala.Option[String]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateRole", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "RoleId!"), Argument("name", name, "String!"), Argument("description", description, "String")))
+  def deleteRole(value : jorlan.RoleId)(implicit encoder0: ArgEncoder[jorlan.RoleId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("deleteRole", OptionOf(Scalar()), arguments = List(Argument("value", value, "RoleId!")))
   def assignRole(userId : jorlan.UserId, roleId : jorlan.RoleId)(implicit encoder0: ArgEncoder[jorlan.UserId], encoder1: ArgEncoder[jorlan.RoleId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Unit]] = _root_.caliban.client.SelectionBuilder.Field("assignRole", OptionOf(Scalar()), arguments = List(Argument("userId", userId, "UserId!"), Argument("roleId", roleId, "RoleId!")))
   def revokeRole(userId : jorlan.UserId, roleId : jorlan.RoleId)(implicit encoder0: ArgEncoder[jorlan.UserId], encoder1: ArgEncoder[jorlan.RoleId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Unit]] = _root_.caliban.client.SelectionBuilder.Field("revokeRole", OptionOf(Scalar()), arguments = List(Argument("userId", userId, "UserId!"), Argument("roleId", roleId, "RoleId!")))
   def grantPermission[A](resource : String, action : String, userId : scala.Option[jorlan.UserId] = None, roleId : scala.Option[jorlan.RoleId] = None)(innerSelection: SelectionBuilder[Permission, A])(implicit encoder0: ArgEncoder[String], encoder1: ArgEncoder[scala.Option[jorlan.UserId]], encoder2: ArgEncoder[scala.Option[jorlan.RoleId]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("grantPermission", OptionOf(Obj(innerSelection)), arguments = List(Argument("resource", resource, "String!"), Argument("action", action, "String!"), Argument("userId", userId, "UserId"), Argument("roleId", roleId, "RoleId")))
@@ -607,6 +657,8 @@ object Mutations {
   def requestCheckpoint(value : jorlan.AgentSessionId)(implicit encoder0: ArgEncoder[jorlan.AgentSessionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("requestCheckpoint", OptionOf(Scalar()), arguments = List(Argument("value", value, "AgentSessionId!")))
   def updateCheckpointPolicy[A](onSessionEnd : Boolean, onUserRequest : Boolean, timedIntervalTurns : scala.Option[Int] = None, beforeExternalEffect : Boolean)(innerSelection: SelectionBuilder[CheckpointPolicyConfig, A])(implicit encoder0: ArgEncoder[Boolean], encoder1: ArgEncoder[scala.Option[Int]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateCheckpointPolicy", OptionOf(Obj(innerSelection)), arguments = List(Argument("onSessionEnd", onSessionEnd, "Boolean!"), Argument("onUserRequest", onUserRequest, "Boolean!"), Argument("timedIntervalTurns", timedIntervalTurns, "Int"), Argument("beforeExternalEffect", beforeExternalEffect, "Boolean!")))
   def reloadMcpServers(value : Unit)(implicit encoder0: ArgEncoder[Unit]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("reloadMcpServers", OptionOf(Scalar()), arguments = List(Argument("value", value, "Unit!")))
+  def upsertMcpServer[A](name : String, transport : String, command : scala.Option[String] = None, args : List[String] = Nil, env : List[McpEnvVarInput] = Nil, url : scala.Option[String] = None, enabled : Boolean)(innerSelection: SelectionBuilder[McpServerView, A])(implicit encoder0: ArgEncoder[String], encoder1: ArgEncoder[scala.Option[String]], encoder2: ArgEncoder[List[String]], encoder3: ArgEncoder[List[McpEnvVarInput]], encoder4: ArgEncoder[Boolean]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("upsertMcpServer", OptionOf(Obj(innerSelection)), arguments = List(Argument("name", name, "String!"), Argument("transport", transport, "String!"), Argument("command", command, "String"), Argument("args", args, "[String!]!"), Argument("env", env, "[McpEnvVarInput!]!"), Argument("url", url, "String"), Argument("enabled", enabled, "Boolean!")))
+  def deleteMcpServer(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("deleteMcpServer", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def enableSkill(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("enableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def disableSkill(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("disableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def updateSkillConfig(name : String, configJson : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("updateSkillConfig", OptionOf(Scalar()), arguments = List(Argument("name", name, "String!"), Argument("configJson", configJson, "String!")))
