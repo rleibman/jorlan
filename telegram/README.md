@@ -70,7 +70,8 @@ When a Telegram user sends a message to the bot, Jorlan:
   "allowedUserIds": [],
   "unrecognizedPolicy": "Reject",
   "useWebhook": false,
-  "apiBaseUrl": "https://api.telegram.org"
+  "apiBaseUrl": "https://api.telegram.org",
+  "longPollTimeoutSeconds": 5
 }
 ```
 
