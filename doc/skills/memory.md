@@ -34,6 +34,12 @@ Agents can store named facts or notes in their own memory, search them later, pr
 
 **Output:** list of `{ id, key, value, scope, createdAt }`
 
+### `memory.search_semantic`
+
+**Input:** `{ "query": "<natural language description>", "limit": <number> }`
+
+**Output:** list of memory IDs (strings)
+
 ### `memory.forget`
 
 **Input:** `{ "id": "<memory-id>" }`
