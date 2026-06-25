@@ -633,9 +633,9 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
         ).map(_.headOption),
     )
 
-override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
-  if (tiers.isEmpty) exec(qc.ctx.run(qSkills))
-  else exec(qc.ctx.run(qSkills.filter(s => liftQuery(tiers).contains(s.tier))))
+  override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
+    if (tiers.isEmpty) exec(qc.ctx.run(qSkills))
+    else exec(qc.ctx.run(qSkills.filter(s => liftQuery(tiers).contains(s.tier))))
 
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))
@@ -1332,23 +1332,39 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
             qCapabilityGrants
               .insertValue(lift(grant))
               .onConflictUpdate(
-                (t, e) => t.approvalMode -> e.approvalMode,
-                (t, e) => t.expiresAt -> e.expiresAt,
-                (t, e) => t.resourceConstraints -> e.resourceConstraints,
-                (t, e) => t.scopeJson -> e.scopeJson,
-                (t, e) => t.grantorId -> e.grantorId,
+                (
+                  t,
+                  e,
+                ) => t.approvalMode -> e.approvalMode,
+                (
+                  t,
+                  e,
+                ) => t.expiresAt -> e.expiresAt,
+                (
+                  t,
+                  e,
+                ) => t.resourceConstraints -> e.resourceConstraints,
+                (
+                  t,
+                  e,
+                ) => t.scopeJson -> e.scopeJson,
+                (
+                  t,
+                  e,
+                ) => t.grantorId -> e.grantorId,
               ),
           )
           .flatMap(_ =>
-            qc.ctx.run(
-              qCapabilityGrants
-                .filter(g =>
-                  g.capability == lift(grant.capability) &&
-                    g.granteeId == lift(grant.granteeId) &&
-                    g.granteeType == lift(grant.granteeType),
-                )
-                .take(1),
-            ).map(_.headOption.getOrElse(grant)),
+            qc.ctx
+              .run(
+                qCapabilityGrants
+                  .filter(g =>
+                    g.capability == lift(grant.capability) &&
+                      g.granteeId == lift(grant.granteeId) &&
+                      g.granteeType == lift(grant.granteeType),
+                  )
+                  .take(1),
+              ).map(_.headOption.getOrElse(grant)),
           ),
       )
     } else {

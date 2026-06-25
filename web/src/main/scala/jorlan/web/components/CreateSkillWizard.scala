@@ -80,7 +80,9 @@ object CreateSkillWizard {
         }
         .toMap
 
-      s"""|{"HttpApi":{"config":{"method":${s.httpMethod.toJson},"url":${s.httpUrl.toJson},"headers":${headersMap.toJson},"bodyTemplate":${if (s.httpBody.nonEmpty) s.httpBody.toJson + "" else "null"},"responseJsonPath":null}}}"""
+      s"""|{"HttpApi":{"config":{"method":${s.httpMethod.toJson},"url":${s.httpUrl.toJson},"headers":${headersMap.toJson},"bodyTemplate":${
+          if (s.httpBody.nonEmpty) s.httpBody.toJson + "" else "null"
+        },"responseJsonPath":null}}}"""
     } else {
       s"""|{"PromptTemplate":{"config":{"systemPrompt":${s.systemPrompt.toJson},"userPromptTemplate":${s.userPrompt.toJson}}}}"""
     }
@@ -114,7 +116,6 @@ object CreateSkillWizard {
           props,
           state,
         ) =>
-
           def setField(f: WizardState => WizardState): Callback =
             state.modState(f)
 
@@ -191,238 +192,246 @@ object CreateSkillWizard {
 
           val sv = state.value
 
-          def stepContent: VdomElement = sv.step match {
-            case 0 =>
-              <.div(
-                Typography.withProps(TypographyOwnProps().setVariant("body1").asInstanceOf[Typography.Props])(
-                  "Choose how the skill executes its tools:",
-                ),
+          def stepContent: VdomElement =
+            sv.step match {
+              case 0 =>
                 <.div(
-                  ^.style := js.Dynamic.literal(marginTop = "16px"),
-                  <.label(
-                    <.input(
-                      ^.`type` := "radio",
-                      ^.name := "executorType",
-                      ^.value := "http_api",
-                      ^.checked := sv.executorType == "http_api",
-                      ^.onChange --> setField(_.copy(executorType = "http_api")),
-                    ),
-                    " HTTP / API call — call an external REST endpoint",
+                  Typography.withProps(TypographyOwnProps().setVariant("body1").asInstanceOf[Typography.Props])(
+                    "Choose how the skill executes its tools:",
                   ),
-                  <.br(),
-                  <.label(
-                    <.input(
-                      ^.`type` := "radio",
-                      ^.name := "executorType",
-                      ^.value := "prompt_template",
-                      ^.checked := sv.executorType == "prompt_template",
-                      ^.onChange --> setField(_.copy(executorType = "prompt_template")),
-                    ),
-                    " LLM Prompt Template — ask the model with a structured prompt",
-                  ),
-                ),
-              )
-
-            case 1 =>
-              <.div(
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                        .asInstanceOf[SxProps[Theme]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  MuiTextField
-                    .label("Skill Name (lowercase, e.g. weather)")
-                    .value(sv.skillName)
-                    .fullWidth(true)
-                    .onChange(e => setField(_.copy(skillName = e.target.value.toString)).runNow()),
-                  MuiTextField
-                    .label("Version")
-                    .value(sv.skillVersion)
-                    .fullWidth(true)
-                    .onChange(e => setField(_.copy(skillVersion = e.target.value.toString)).runNow()),
-                  MuiTextField
-                    .label("Description")
-                    .value(sv.description)
-                    .fullWidth(true)
-                    .multiline(true)
-                    .rows(2)
-                    .onChange(e => setField(_.copy(description = e.target.value.toString)).runNow()),
-                  MuiTextField
-                    .label("Keywords (comma-separated)")
-                    .value(sv.keywords)
-                    .fullWidth(true)
-                    .onChange(e => setField(_.copy(keywords = e.target.value.toString)).runNow()),
-                ),
-              )
-
-            case 2 =>
-              <.div(
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                        .asInstanceOf[SxProps[Theme]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  MuiTextField
-                    .label(s"Tool Name (auto-prefixed with ${sv.skillName}.)")
-                    .value(sv.toolName)
-                    .fullWidth(true)
-                    .onChange(e => setField(_.copy(toolName = e.target.value.toString)).runNow()),
-                  MuiTextField
-                    .label("Tool Description")
-                    .value(sv.toolDescription)
-                    .fullWidth(true)
-                    .multiline(true)
-                    .rows(2)
-                    .onChange(e => setField(_.copy(toolDescription = e.target.value.toString)).runNow()),
-                  if (sv.executorType == "http_api") {
-                    <.div(
-                      Box.withProps(
-                        BoxOwnProps[Theme]()
-                          .setSx(
-                            js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                              .asInstanceOf[SxProps[Theme]],
-                          ).asInstanceOf[Box.Props],
-                      )(
-                        MuiTextField
-                          .label("HTTP Method (GET, POST, PUT, DELETE)")
-                          .value(sv.httpMethod)
-                          .fullWidth(true)
-                          .onChange(e => setField(_.copy(httpMethod = e.target.value.toString)).runNow()),
-                        MuiTextField
-                          .label("URL (use {{param}} for substitution)")
-                          .value(sv.httpUrl)
-                          .fullWidth(true)
-                          .onChange(e => setField(_.copy(httpUrl = e.target.value.toString)).runNow()),
-                        MuiTextField
-                          .label("Headers (one per line: Key: Value)")
-                          .value(sv.httpHeaders)
-                          .fullWidth(true)
-                          .multiline(true)
-                          .rows(3)
-                          .onChange(e => setField(_.copy(httpHeaders = e.target.value.toString)).runNow()),
-                        MuiTextField
-                          .label("Body Template (optional, use {{param}})")
-                          .value(sv.httpBody)
-                          .fullWidth(true)
-                          .multiline(true)
-                          .rows(3)
-                          .onChange(e => setField(_.copy(httpBody = e.target.value.toString)).runNow()),
+                  <.div(
+                    ^.style := js.Dynamic.literal(marginTop = "16px"),
+                    <.label(
+                      <.input(
+                        ^.`type`  := "radio",
+                        ^.name    := "executorType",
+                        ^.value   := "http_api",
+                        ^.checked := sv.executorType == "http_api",
+                        ^.onChange --> setField(_.copy(executorType = "http_api")),
                       ),
-                    )
-                  } else {
-                    <.div(
-                      Box.withProps(
-                        BoxOwnProps[Theme]()
-                          .setSx(
-                            js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                              .asInstanceOf[SxProps[Theme]],
-                          ).asInstanceOf[Box.Props],
-                      )(
-                        MuiTextField
-                          .label("System Prompt")
-                          .value(sv.systemPrompt)
-                          .fullWidth(true)
-                          .multiline(true)
-                          .rows(3)
-                          .onChange(e => setField(_.copy(systemPrompt = e.target.value.toString)).runNow()),
-                        MuiTextField
-                          .label("User Prompt Template (use {{param}})")
-                          .value(sv.userPrompt)
-                          .fullWidth(true)
-                          .multiline(true)
-                          .rows(3)
-                          .onChange(e => setField(_.copy(userPrompt = e.target.value.toString)).runNow()),
-                      ),
-                    )
-                  },
-                ),
-              )
-
-            case 3 =>
-              <.div(
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                        .asInstanceOf[SxProps[Theme]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  MuiTextField
-                    .label("Required Capabilities (comma-separated)")
-                    .value(sv.capabilities)
-                    .fullWidth(true)
-                    .onChange(e => setField(_.copy(capabilities = e.target.value.toString)).runNow()),
-                  MuiTextField
-                    .label("Example Prompts (one per line)")
-                    .value(sv.examplePrompts)
-                    .fullWidth(true)
-                    .multiline(true)
-                    .rows(4)
-                    .onChange(e => setField(_.copy(examplePrompts = e.target.value.toString)).runNow()),
-                ),
-              )
-
-            case 4 =>
-              val manifest = buildManifestJson(sv)
-              <.div(
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic.literal(display = "flex", flexDirection = "column", gap = 2)
-                        .asInstanceOf[SxProps[Theme]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  Typography.withProps(TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props])(
-                    "Manifest Preview:",
-                  ),
-                  <.pre(
-                    ^.style := js.Dynamic.literal(
-                      background = "#f5f5f5",
-                      padding = "8px",
-                      overflow = "auto",
-                      maxHeight = "200px",
-                      fontSize = "0.8em",
+                      " HTTP / API call — call an external REST endpoint",
                     ),
-                    manifest,
+                    <.br(),
+                    <.label(
+                      <.input(
+                        ^.`type`  := "radio",
+                        ^.name    := "executorType",
+                        ^.value   := "prompt_template",
+                        ^.checked := sv.executorType == "prompt_template",
+                        ^.onChange --> setField(_.copy(executorType = "prompt_template")),
+                      ),
+                      " LLM Prompt Template — ask the model with a structured prompt",
+                    ),
                   ),
-                  sv.error.fold(EmptyVdom)(e => Alert.severity("error")(e)),
-                  sv.lifecycleErrors.toTagMod(e => Alert.severity("error")(e)),
-                  sv.lifecycleInfo.toTagMod(i => Alert.severity("info")(i)),
-                  sv.lifecycleStatus.fold(EmptyVdom) { status =>
-                    Alert.severity("success")(s"Status: $status")
-                  },
+                )
+
+              case 1 =>
+                <.div(
                   Box.withProps(
                     BoxOwnProps[Theme]()
                       .setSx(
-                        js.Dynamic.literal(display = "flex", gap = 1)
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2)
                           .asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    if (sv.createdVersionId.isEmpty) {
-                      MuiButton
-                        .variant("contained")
-                        .disabled(sv.saving)
-                        .onClick(() => createDraft().runNow())("Create Draft")
-                    } else {
-                      val canAdvance = sv.lifecycleStatus.exists(s =>
-                        s == SkillStatus.Draft || s == SkillStatus.Validated ||
-                          s == SkillStatus.PermissionReviewed || s == SkillStatus.SandboxTested,
+                    MuiTextField
+                      .label("Skill Name (lowercase, e.g. weather)")
+                      .value(sv.skillName)
+                      .fullWidth(true)
+                      .onChange(e => setField(_.copy(skillName = e.target.value.toString)).runNow()),
+                    MuiTextField
+                      .label("Version")
+                      .value(sv.skillVersion)
+                      .fullWidth(true)
+                      .onChange(e => setField(_.copy(skillVersion = e.target.value.toString)).runNow()),
+                    MuiTextField
+                      .label("Description")
+                      .value(sv.description)
+                      .fullWidth(true)
+                      .multiline(true)
+                      .rows(2)
+                      .onChange(e => setField(_.copy(description = e.target.value.toString)).runNow()),
+                    MuiTextField
+                      .label("Keywords (comma-separated)")
+                      .value(sv.keywords)
+                      .fullWidth(true)
+                      .onChange(e => setField(_.copy(keywords = e.target.value.toString)).runNow()),
+                  ),
+                )
+
+              case 2 =>
+                <.div(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2)
+                          .asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    MuiTextField
+                      .label(s"Tool Name (auto-prefixed with ${sv.skillName}.)")
+                      .value(sv.toolName)
+                      .fullWidth(true)
+                      .onChange(e => setField(_.copy(toolName = e.target.value.toString)).runNow()),
+                    MuiTextField
+                      .label("Tool Description")
+                      .value(sv.toolDescription)
+                      .fullWidth(true)
+                      .multiline(true)
+                      .rows(2)
+                      .onChange(e => setField(_.copy(toolDescription = e.target.value.toString)).runNow()),
+                    if (sv.executorType == "http_api") {
+                      <.div(
+                        Box.withProps(
+                          BoxOwnProps[Theme]()
+                            .setSx(
+                              js.Dynamic
+                                .literal(display = "flex", flexDirection = "column", gap = 2)
+                                .asInstanceOf[SxProps[Theme]],
+                            ).asInstanceOf[Box.Props],
+                        )(
+                          MuiTextField
+                            .label("HTTP Method (GET, POST, PUT, DELETE)")
+                            .value(sv.httpMethod)
+                            .fullWidth(true)
+                            .onChange(e => setField(_.copy(httpMethod = e.target.value.toString)).runNow()),
+                          MuiTextField
+                            .label("URL (use {{param}} for substitution)")
+                            .value(sv.httpUrl)
+                            .fullWidth(true)
+                            .onChange(e => setField(_.copy(httpUrl = e.target.value.toString)).runNow()),
+                          MuiTextField
+                            .label("Headers (one per line: Key: Value)")
+                            .value(sv.httpHeaders)
+                            .fullWidth(true)
+                            .multiline(true)
+                            .rows(3)
+                            .onChange(e => setField(_.copy(httpHeaders = e.target.value.toString)).runNow()),
+                          MuiTextField
+                            .label("Body Template (optional, use {{param}})")
+                            .value(sv.httpBody)
+                            .fullWidth(true)
+                            .multiline(true)
+                            .rows(3)
+                            .onChange(e => setField(_.copy(httpBody = e.target.value.toString)).runNow()),
+                        ),
                       )
-                      MuiButton
-                        .variant("contained")
-                        .disabled(sv.advancing || !canAdvance)
-                        .onClick(() => advance().runNow())("Advance")
+                    } else {
+                      <.div(
+                        Box.withProps(
+                          BoxOwnProps[Theme]()
+                            .setSx(
+                              js.Dynamic
+                                .literal(display = "flex", flexDirection = "column", gap = 2)
+                                .asInstanceOf[SxProps[Theme]],
+                            ).asInstanceOf[Box.Props],
+                        )(
+                          MuiTextField
+                            .label("System Prompt")
+                            .value(sv.systemPrompt)
+                            .fullWidth(true)
+                            .multiline(true)
+                            .rows(3)
+                            .onChange(e => setField(_.copy(systemPrompt = e.target.value.toString)).runNow()),
+                          MuiTextField
+                            .label("User Prompt Template (use {{param}})")
+                            .value(sv.userPrompt)
+                            .fullWidth(true)
+                            .multiline(true)
+                            .rows(3)
+                            .onChange(e => setField(_.copy(userPrompt = e.target.value.toString)).runNow()),
+                        ),
+                      )
                     },
                   ),
-                ),
-              )
+                )
 
-            case _ => <.span()
-          }
+              case 3 =>
+                <.div(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2)
+                          .asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    MuiTextField
+                      .label("Required Capabilities (comma-separated)")
+                      .value(sv.capabilities)
+                      .fullWidth(true)
+                      .onChange(e => setField(_.copy(capabilities = e.target.value.toString)).runNow()),
+                    MuiTextField
+                      .label("Example Prompts (one per line)")
+                      .value(sv.examplePrompts)
+                      .fullWidth(true)
+                      .multiline(true)
+                      .rows(4)
+                      .onChange(e => setField(_.copy(examplePrompts = e.target.value.toString)).runNow()),
+                  ),
+                )
+
+              case 4 =>
+                val manifest = buildManifestJson(sv)
+                <.div(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2)
+                          .asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    Typography.withProps(TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props])(
+                      "Manifest Preview:",
+                    ),
+                    <.pre(
+                      ^.style := js.Dynamic.literal(
+                        background = "#f5f5f5",
+                        padding = "8px",
+                        overflow = "auto",
+                        maxHeight = "200px",
+                        fontSize = "0.8em",
+                      ),
+                      manifest,
+                    ),
+                    sv.error.fold(EmptyVdom)(e => Alert.severity("error")(e)),
+                    sv.lifecycleErrors.toTagMod(e => Alert.severity("error")(e)),
+                    sv.lifecycleInfo.toTagMod(i => Alert.severity("info")(i)),
+                    sv.lifecycleStatus.fold(EmptyVdom) { status =>
+                      Alert.severity("success")(s"Status: $status")
+                    },
+                    Box.withProps(
+                      BoxOwnProps[Theme]()
+                        .setSx(
+                          js.Dynamic
+                            .literal(display = "flex", gap = 1)
+                            .asInstanceOf[SxProps[Theme]],
+                        ).asInstanceOf[Box.Props],
+                    )(
+                      if (sv.createdVersionId.isEmpty) {
+                        MuiButton
+                          .variant("contained")
+                          .disabled(sv.saving)
+                          .onClick(() => createDraft().runNow())("Create Draft")
+                      } else {
+                        val canAdvance = sv.lifecycleStatus.exists(s =>
+                          s == SkillStatus.Draft || s == SkillStatus.Validated ||
+                            s == SkillStatus.PermissionReviewed || s == SkillStatus.SandboxTested,
+                        )
+                        MuiButton
+                          .variant("contained")
+                          .disabled(sv.advancing || !canAdvance)
+                          .onClick(() => advance().runNow())("Advance")
+                      },
+                    ),
+                  ),
+                )
+
+              case _ => <.span()
+            }
 
           Dialog(true)(
             DialogTitle()(s"Create Custom Skill — ${stepLabels(sv.step.min(stepLabels.length - 1))}"),

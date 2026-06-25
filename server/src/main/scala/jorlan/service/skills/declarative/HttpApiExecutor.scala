@@ -44,10 +44,10 @@ object HttpApiExecutor {
 
     ZIO.fromEither(URL.decode(url).left.map(e => JorlanError(s"Invalid URL '$url': $e"))).flatMap { parsedUrl =>
       val req = Request(
-        url     = parsedUrl,
-        method  = method,
+        url = parsedUrl,
+        method = method,
         headers = baseHeaders,
-        body    = bodyContent,
+        body = bodyContent,
       )
       client
         .batched(req)

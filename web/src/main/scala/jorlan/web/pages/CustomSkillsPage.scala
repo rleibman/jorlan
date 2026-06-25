@@ -61,7 +61,12 @@ object CustomSkillsPage {
           Callback {
             AsyncCallbackRepositories.skillLifecycle
               .pendingSkillVersions()
-              .zipWith(AsyncCallbackRepositories.skillLifecycle.allCustomSkills()) { (p, a) => (p, a) }
+              .zipWith(AsyncCallbackRepositories.skillLifecycle.allCustomSkills()) {
+                (
+                  p,
+                  a,
+                ) => (p, a)
+              }
               .flatMap { case (p, a) =>
                 state.setState(state.value.copy(pending = p, allCustom = a, loading = false)).asAsyncCallback
               }
@@ -78,12 +83,16 @@ object CustomSkillsPage {
           user,
           state,
         ) =>
-
           def reload(): Callback =
             Callback {
               AsyncCallbackRepositories.skillLifecycle
                 .pendingSkillVersions()
-                .zipWith(AsyncCallbackRepositories.skillLifecycle.allCustomSkills()) { (p, a) => (p, a) }
+                .zipWith(AsyncCallbackRepositories.skillLifecycle.allCustomSkills()) {
+                  (
+                    p,
+                    a,
+                  ) => (p, a)
+                }
                 .flatMap { case (p, a) =>
                   state.setState(state.value.copy(pending = p, allCustom = a)).asAsyncCallback
                 }
@@ -141,14 +150,15 @@ object CustomSkillsPage {
               }
             }
 
-          def statusChipColor(status: SkillStatus): String = status match {
-            case SkillStatus.Draft | SkillStatus.Validated | SkillStatus.PermissionReviewed |
-                SkillStatus.SandboxTested =>
-              "default"
-            case SkillStatus.AwaitingApproval                 => "warning"
-            case SkillStatus.Active                           => "success"
-            case SkillStatus.Deprecated | SkillStatus.Revoked => "error"
-          }
+          def statusChipColor(status: SkillStatus): String =
+            status match {
+              case SkillStatus.Draft | SkillStatus.Validated | SkillStatus.PermissionReviewed |
+                  SkillStatus.SandboxTested =>
+                "default"
+              case SkillStatus.AwaitingApproval                 => "warning"
+              case SkillStatus.Active                           => "success"
+              case SkillStatus.Deprecated | SkillStatus.Revoked => "error"
+            }
 
           <.div(
             Toast(message = state.value.toast, onClose = state.modState(_.copy(toast = None))),
@@ -216,13 +226,12 @@ object CustomSkillsPage {
                                     .variant("outlined")
                                     .color("error")
                                     .size("small")
-                                    .onClick(
-                                      () =>
-                                        state
-                                          .setState(
-                                            state.value.copy(rejectTarget = Some(sv.id), rejectReason = ""),
-                                          )
-                                          .runNow(),
+                                    .onClick(() =>
+                                      state
+                                        .setState(
+                                          state.value.copy(rejectTarget = Some(sv.id), rejectReason = ""),
+                                        )
+                                        .runNow(),
                                     )("Reject"),
                                 ),
                               ),
@@ -283,13 +292,11 @@ object CustomSkillsPage {
                   .fullWidth(true)
                   .multiline(true)
                   .rows(3)
-                  .onChange(
-                    e => state.setState(state.value.copy(rejectReason = e.target.value.toString)).runNow(),
-                  ),
+                  .onChange(e => state.setState(state.value.copy(rejectReason = e.target.value.toString)).runNow()),
               ),
               DialogActions()(
-                MuiButton.onClick(
-                  () => state.setState(state.value.copy(rejectTarget = None, rejectReason = "")).runNow(),
+                MuiButton.onClick(() =>
+                  state.setState(state.value.copy(rejectTarget = None, rejectReason = "")).runNow(),
                 )("Cancel"),
                 MuiButton
                   .variant("contained")

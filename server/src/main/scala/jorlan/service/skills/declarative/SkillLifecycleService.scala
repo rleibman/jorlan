@@ -173,7 +173,7 @@ private class LiveSkillLifecycleService(
       _          <- ZIO
         .fail(JorlanError(s"Cannot reject version in status '${version.status}'; must be AwaitingApproval"))
         .when(version.status != SkillStatus.AwaitingApproval)
-      _          <- repos.skill
+      _ <- repos.skill
         .upsertVersionStatus(versionId, SkillStatus.Draft, Some(reason))
         .mapError(repoErr)
     } yield LifecycleResult(versionId, SkillStatus.Draft, Nil, List(s"Skill rejected: $reason"))

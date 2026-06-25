@@ -13,10 +13,10 @@ import zio.test.*
 object ManifestValidatorSpec extends ZIOSpecDefault {
 
   private def makeManifest(
-    name:       String = "weather",
-    version:    String = "1.0.0",
-    desc:       String = "A weather skill",
-    tools:      String = """[{
+    name:    String = "weather",
+    version: String = "1.0.0",
+    desc:    String = "A weather skill",
+    tools:   String = """[{
       "name": "weather.get_forecast",
       "description": "Get a weather forecast",
       "requiredCapabilities": [],
@@ -65,7 +65,9 @@ object ManifestValidatorSpec extends ZIOSpecDefault {
         assertTrue(result.isLeft)
       },
       test("skill name with underscore and digits passes") {
-        val manifest = makeManifest(name = "weather_v2", tools = """[{
+        val manifest = makeManifest(
+          name = "weather_v2",
+          tools = """[{
             "name": "weather_v2.get",
             "description": "Get weather",
             "requiredCapabilities": [],
@@ -73,7 +75,8 @@ object ManifestValidatorSpec extends ZIOSpecDefault {
             "inputSchema": {"type": "object"},
             "outputSchema": {"type": "string"},
             "executor": {"HttpApi": {"config": {"method": "GET", "url": "https://api.example.com", "headers": {}, "bodyTemplate": null, "responseJsonPath": null}}}
-          }]""")
+          }]""",
+        )
         assertTrue(ManifestValidator.validate(manifest).isRight)
       },
       test("empty version fails") {

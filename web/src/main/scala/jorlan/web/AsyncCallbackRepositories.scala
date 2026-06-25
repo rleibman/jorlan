@@ -512,12 +512,12 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
   }
 
   override val skill: SkillRepository[AsyncCallback] = new SkillRepository[AsyncCallback] {
-    override def getById(id:    SkillId):        AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
-    override def search(s:      SkillSearch):    AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(List.empty)
+    override def getById(id: SkillId):                 AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
+    override def search(s:   SkillSearch):             AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(List.empty)
     override def searchByTier(tiers: List[SkillTier]): AsyncCallback[List[SkillRecord]] =
       AsyncCallback.pure(List.empty)
-    override def upsert(skill:  SkillRecord):    AsyncCallback[SkillRecord] = ???
-    override def getVersion(id: SkillVersionId): AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
+    override def upsert(skill:  SkillRecord):           AsyncCallback[SkillRecord] = ???
+    override def getVersion(id: SkillVersionId):        AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
     override def searchVersions(s: SkillVersionSearch): AsyncCallback[List[SkillVersion]] =
       AsyncCallback.pure(List.empty)
     override def upsertVersion(v: SkillVersion): AsyncCallback[SkillVersion] = ???
@@ -525,7 +525,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       id:         SkillVersionId,
       status:     SkillStatus,
       reviewNote: Option[String],
-    ): AsyncCallback[Unit] = AsyncCallback.unit
+    ):                                                        AsyncCallback[Unit] = AsyncCallback.unit
     override def getVersionWithSkillName(id: SkillVersionId): AsyncCallback[Option[(SkillVersion, String)]] =
       AsyncCallback.pure(None)
     override def getConnector(id: ConnectorInstanceId): AsyncCallback[Option[ConnectorInstance]] =
@@ -657,7 +657,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         )
         .map(_.map(toLifecycleResultInfo))
 
-    def rejectSkillVersion(versionId: Long, reason: String): AsyncCallback[Option[LifecycleResultInfo]] =
+    def rejectSkillVersion(
+      versionId: Long,
+      reason:    String,
+    ): AsyncCallback[Option[LifecycleResultInfo]] =
       adapter
         .asyncCalibanCallWithAuth(
           JorlanClient.Mutations.rejectSkillVersion(versionId.toString, reason)(
