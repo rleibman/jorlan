@@ -34,9 +34,14 @@
 ## 3. Create OAuth Credentials
 
 1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-2. Application type: **Web application**
-3. Authorised redirect URI: `https://<your-jorlan-host>/oauth/google/callback`
-    - For local development: `http://localhost:8080/oauth/google/callback`
+2. Application type: **Desktop app**
+    - Use **Desktop app**, not "Web application". Jorlan does not need to be publicly reachable —
+      Google allows `http://localhost` redirect URIs for Desktop app credentials, so the OAuth flow
+      works on any machine where Jorlan is running. Once a user completes the initial authorisation,
+      the stored refresh token is used automatically for scheduled tasks and background agents.
+3. Authorised redirect URI: `http://localhost:8080/oauth/google/callback`
+    - If you run Jorlan on a different port, adjust accordingly.
+    - Google permits plain `http://` for `localhost` loopback redirects on Desktop app credentials.
 4. Download the JSON credentials file
 
 ---
@@ -48,7 +53,7 @@ Add the OAuth client details to `/etc/jorlan/server.env` (or the server configur
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=https://your-jorlan-host/oauth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:8080/oauth/google/callback
 ```
 
 Or set via `server_settings`:
@@ -57,7 +62,7 @@ Or set via `server_settings`:
 INSERT INTO server_settings (`key`, `value`)
 VALUES ('oauth.google.clientId', '"your-client-id"'),
        ('oauth.google.clientSecret', '"your-client-secret"'),
-       ('oauth.google.redirectUri', '"https://your-jorlan-host/oauth/google/callback"')
+       ('oauth.google.redirectUri', '"http://localhost:8080/oauth/google/callback"')
 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`);
 ```
 
@@ -92,7 +97,7 @@ Grant via **Admin → Agents → \<agent\> → Capabilities**.
 
 | Symptom                            | Check                                                                     |
 |------------------------------------|---------------------------------------------------------------------------|
-| "Redirect URI mismatch"            | The redirect URI in Google Cloud must exactly match `GOOGLE_REDIRECT_URI` |
+| "Redirect URI mismatch"            | The redirect URI in Google Cloud must exactly match `GOOGLE_REDIRECT_URI`; ensure you used **Desktop app** type, not "Web application" |
 | "Access blocked: app not verified" | Add yourself as a test user in the OAuth consent screen                   |
 | Token refresh failures             | The user must re-authorise via Settings → Integrations                    |
 | Scope errors                       | Ensure all 4 APIs are enabled in the Google Cloud project                 |

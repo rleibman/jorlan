@@ -938,6 +938,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       configJsModule = v.configJsModule,
       dashboardJsModule = v.dashboardJsModule,
       hasDashboardData = v.hasDashboardData,
+      oauthProvider = v.oauthProvider.flatMap(p => OAuthProvider.values.find(_.toString == p.value)),
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =

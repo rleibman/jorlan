@@ -1,5 +1,6 @@
 package jorlan.graphql.client
 
+import caliban.client.CalibanClientError.DecodingError
 import caliban.client.FieldBuilder._
 import caliban.client._
 import caliban.client.__Value._
@@ -12,7 +13,27 @@ object JorlanClient {
 
   type ChannelIdentityId = String
         
-  
+  sealed trait OAuthProvider extends scala.Product with scala.Serializable { def value: String }
+          object OAuthProvider {
+            case object Google extends OAuthProvider { val value: String = "Google" }
+case object Discord extends OAuthProvider { val value: String = "Discord" }
+case object Telegram extends OAuthProvider { val value: String = "Telegram" }
+
+            implicit val decoder: ScalarDecoder[OAuthProvider] = {
+              case __StringValue ("Google") => Right(OAuthProvider.Google)
+case __StringValue ("Discord") => Right(OAuthProvider.Discord)
+case __StringValue ("Telegram") => Right(OAuthProvider.Telegram)
+              case other => Left(DecodingError(s"Can't build OAuthProvider from input $other"))
+            }
+            implicit val encoder: ArgEncoder[OAuthProvider] = {
+              case OAuthProvider.Google => __EnumValue("Google")
+case OAuthProvider.Discord => __EnumValue("Discord")
+case OAuthProvider.Telegram => __EnumValue("Telegram")
+            }
+
+            val values: scala.collection.immutable.Vector[OAuthProvider] = scala.collection.immutable.Vector(Google, Discord, Telegram)
+          }
+       
   
   type AgentSession
 object AgentSession {
@@ -481,14 +502,14 @@ def view: ViewSelection = (id ~ jobId ~ triggerType ~ expression ~ enabled ~ cre
 type SkillInfo
 object SkillInfo {
   
-final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String], dashboardJsModule: scala.Option[String], hasDashboardData: Boolean)
+final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String], dashboardJsModule: scala.Option[String], hasDashboardData: Boolean, oauthProvider: scala.Option[OAuthProvider])
 
 
 
 
 type ViewSelection[ToolsSelection] = SelectionBuilder[SkillInfo, SkillInfoView[ToolsSelection]]
 
-def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule ~ dashboardJsModule ~ hasDashboardData).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) }
+def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule ~ dashboardJsModule ~ hasDashboardData ~ oauthProvider).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData, oauthProvider) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData, oauthProvider) }
 
   def name: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
   def tier: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
@@ -499,6 +520,7 @@ def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSe
   def configJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("configJsModule", OptionOf(Scalar()))
   def dashboardJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("dashboardJsModule", OptionOf(Scalar()))
   def hasDashboardData: SelectionBuilder[SkillInfo, Boolean] = _root_.caliban.client.SelectionBuilder.Field("hasDashboardData", Scalar())
+  def oauthProvider: SelectionBuilder[SkillInfo, scala.Option[OAuthProvider]] = _root_.caliban.client.SelectionBuilder.Field("oauthProvider", OptionOf(Scalar()))
 }
 
 

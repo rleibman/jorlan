@@ -83,6 +83,7 @@ class GoogleDriveSkill(
         ),
       ),
     ),
+    oauthProvider = Some(OAuthProvider.Google),
   )
 
   override def invoke(

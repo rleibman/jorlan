@@ -159,6 +159,10 @@ remaining skills.
   schema validation on install
 - [ ] **Agent-authored skill lifecycle** (Tier 5 → Active): draft → schema validated → permission reviewed → sandbox
   tested → awaiting approval → active (full state machine per design doc)
+- [ ] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
+  module. Tools: `rss.fetch` (URL → list of entries), `rss.list_saved` / `rss.save_feed` / `rss.remove_feed` (
+  persist watched feeds in `server_settings`).
+- [ ] **Discord connector**
 - [ ] **Slack connector**: Slack Bot API, message normalization, identity resolution
 - [ ] **Workspace write skill**: extend the existing `WorkspaceSkill` (or add a new `workspace.write_file`,
   `workspace.append_file`, `workspace.delete_file` tools) so agents can produce persistent file artifacts, not just
@@ -168,10 +172,6 @@ remaining skills.
   GitHub REST API v3 with a personal access token stored in `server_settings` key `"skill.github"`. New sbt module.
   Tools: `github.list_issues`, `github.get_issue`, `github.comment_issue`, `github.list_prs`, `github.get_file`,
   `github.search_code`.
-- [ ] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
-  module. Tools: `rss.fetch` (URL → list of entries), `rss.list_saved` / `rss.save_feed` / `rss.remove_feed` (
-  persist
-  watched feeds in `server_settings`).
 - [ ] **Notes/scratchpad skill**: lightweight session-scoped or persistent key/value store for within-session agent
   state. Distinct from the memory system (no embeddings, no summarisation — just fast keyed access). Lives in the
   server

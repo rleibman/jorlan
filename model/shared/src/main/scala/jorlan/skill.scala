@@ -97,3 +97,9 @@ case class ConnectorInstance(
   override def toString: String = s"ConnectorInstance($id, $connectorType, $name, [redacted], $status, $createdAt)"
 
 }
+
+enum OAuthProvider derives JsonCodec {
+
+  case Google, Discord, Telegram // Microsoft, Slack, Telegram, Discord, GitHub
+
+}

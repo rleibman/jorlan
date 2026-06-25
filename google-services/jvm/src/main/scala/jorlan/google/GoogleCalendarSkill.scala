@@ -122,6 +122,7 @@ class GoogleCalendarSkill(
         ),
       ),
     ),
+    oauthProvider = Some(OAuthProvider.Google),
   )
 
   override def invoke(

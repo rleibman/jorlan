@@ -200,6 +200,29 @@ object JorlanAPI {
       repr = _.toString,
     )
 
+  private given Schema[Any, OAuthProvider] =
+    Schema.enumSchema[OAuthProvider](
+      name = "OAuthProvider",
+      values = OAuthProvider.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given ArgBuilder[OAuthProvider] =
+    ArgBuilder.string.flatMap(s =>
+      OAuthProvider.values
+        .find(_.toString == s)
+        .fold(Left(CalibanError.ExecutionError(s"Unknown OAuthProvider: '$s'")))(Right(_)),
+    )
+
   private given Schema[Any, RetryBackoffPolicy] =
     Schema.enumSchema[RetryBackoffPolicy](
       name = "RetryBackoffPolicy",
@@ -462,6 +485,7 @@ object JorlanAPI {
     configJsModule:    Option[String],
     dashboardJsModule: Option[String],
     hasDashboardData:  Boolean,
+    oauthProvider:     Option[OAuthProvider],
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** A timestamped count bucket for time-series charts. */
@@ -1079,6 +1103,7 @@ object JorlanAPI {
               configJsModule = skill.descriptor.configJsModule,
               dashboardJsModule = skill.descriptor.dashboardJsModule,
               hasDashboardData = skill.isInstanceOf[HasDashboardData],
+              oauthProvider = skill.descriptor.oauthProvider,
             )
           },
           contacts = name =>

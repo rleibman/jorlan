@@ -90,4 +90,5 @@ case class SkillInfo(
   configJsModule:    Option[String] = None,
   dashboardJsModule: Option[String] = None,
   hasDashboardData:  Boolean = false,
+  oauthProvider:     Option[OAuthProvider] = None,
 ) derives JsonCodec

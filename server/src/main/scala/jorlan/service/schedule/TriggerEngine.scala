@@ -221,6 +221,7 @@ class TriggerEngineImpl(
                 (out, chunk.isError)
               } else (acc + chunk.content, false)
             }
+            .timeout(zio.Duration.fromJava(jobTimeout))
           now <- Clock.instant
           _   <- result match {
             case Some((output, _)) =>

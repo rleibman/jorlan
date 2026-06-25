@@ -186,6 +186,12 @@ enum MissedRunPolicy {
   RunAllMissed
 }
 
+enum OAuthProvider {
+  Google
+  Discord
+  Telegram
+}
+
 enum RetryBackoffPolicy {
   Fixed
   Exponential
@@ -496,6 +502,7 @@ type SkillInfo {
   configJsModule: String
   dashboardJsModule: String
   hasDashboardData: Boolean!
+  oauthProvider: OAuthProvider
 }
 
 type SkillToolInfo {
