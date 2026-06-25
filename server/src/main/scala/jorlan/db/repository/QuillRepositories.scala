@@ -1327,7 +1327,29 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def upsertCapabilityGrant(grant: CapabilityGrant): RepositoryTask[CapabilityGrant] =
     if (grant.id.value == 0L) {
       exec(
-        qc.ctx.run(qCapabilityGrants.insertValue(lift(grant)).returningGenerated(_.id)).map(id => grant.copy(id = id)),
+        qc.ctx
+          .run(
+            qCapabilityGrants
+              .insertValue(lift(grant))
+              .onConflictUpdate(
+                (t, e) => t.approvalMode -> e.approvalMode,
+                (t, e) => t.expiresAt -> e.expiresAt,
+                (t, e) => t.resourceConstraints -> e.resourceConstraints,
+                (t, e) => t.scopeJson -> e.scopeJson,
+                (t, e) => t.grantorId -> e.grantorId,
+              ),
+          )
+          .flatMap(_ =>
+            qc.ctx.run(
+              qCapabilityGrants
+                .filter(g =>
+                  g.capability == lift(grant.capability) &&
+                    g.granteeId == lift(grant.granteeId) &&
+                    g.granteeType == lift(grant.granteeType),
+                )
+                .take(1),
+            ).map(_.headOption.getOrElse(grant)),
+          ),
       )
     } else {
       exec(
