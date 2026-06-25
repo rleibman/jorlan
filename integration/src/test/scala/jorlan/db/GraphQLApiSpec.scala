@@ -15,6 +15,7 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SkillRegistry
+import jorlan.service.skills.declarative.SkillLifecycleService
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json
@@ -101,6 +102,7 @@ object GraphQLApiSpec
       stubOAuthCredentialService,
       Client.default.orDie,
       DashboardService.live,
+      SkillLifecycleService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 

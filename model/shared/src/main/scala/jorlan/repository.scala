@@ -88,7 +88,8 @@ case class SkillSearch(
 
 enum SkillVersionOrder { case Id, Version, CreatedAt }
 case class SkillVersionSearch(
-  skillId:  SkillId,
+  skillId:  Option[SkillId] = None,
+  status:   Option[SkillStatus] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[SkillVersionOrder]] = None,
@@ -263,19 +264,26 @@ trait ConversationRepository[F[_]] {
   */
 trait SkillRepository[F[_]] {
 
-  def getById(id:          SkillId):             F[Option[SkillRecord]]
-  def search(s:            SkillSearch):         F[List[SkillRecord]]
-  def upsert(skill:        SkillRecord):         F[SkillRecord]
-  def getVersion(id:       SkillVersionId):      F[Option[SkillVersion]]
-  def searchVersions(s:    SkillVersionSearch):  F[List[SkillVersion]]
-  def upsertVersion(v:     SkillVersion):        F[SkillVersion]
-  def getConnector(id:     ConnectorInstanceId): F[Option[ConnectorInstance]]
-  def searchConnectors(s:  ConnectorSearch):     F[List[ConnectorInstance]]
-  def upsertConnector(ci:  ConnectorInstance):   F[ConnectorInstance]
-  def listSkills():                              F[List[SkillInfo]]
-  def enableSkill(name:    String):              F[Unit]
-  def disableSkill(name:   String):              F[Unit]
-  def getSkillConfig(name: String):              F[Option[String]]
+  def getById(id:         SkillId):            F[Option[SkillRecord]]
+  def search(s:           SkillSearch):        F[List[SkillRecord]]
+  def searchByTier(tiers: List[SkillTier]):    F[List[SkillRecord]]
+  def upsert(skill:       SkillRecord):        F[SkillRecord]
+  def getVersion(id:      SkillVersionId):     F[Option[SkillVersion]]
+  def searchVersions(s:   SkillVersionSearch): F[List[SkillVersion]]
+  def upsertVersion(v:    SkillVersion):       F[SkillVersion]
+  def upsertVersionStatus(
+    id:         SkillVersionId,
+    status:     SkillStatus,
+    reviewNote: Option[String],
+  ):                                                    F[Unit]
+  def getVersionWithSkillName(id: SkillVersionId):      F[Option[(SkillVersion, String)]]
+  def getConnector(id:            ConnectorInstanceId): F[Option[ConnectorInstance]]
+  def searchConnectors(s:         ConnectorSearch):     F[List[ConnectorInstance]]
+  def upsertConnector(ci:         ConnectorInstance):   F[ConnectorInstance]
+  def listSkills():                                     F[List[SkillInfo]]
+  def enableSkill(name:           String):              F[Unit]
+  def disableSkill(name:          String):              F[Unit]
+  def getSkillConfig(name:        String):              F[Option[String]]
   def updateSkillConfig(
     name:       String,
     configJson: String,

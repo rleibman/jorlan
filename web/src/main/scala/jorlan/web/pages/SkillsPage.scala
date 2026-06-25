@@ -321,7 +321,9 @@ object SkillsPage {
                                 .asInstanceOf[SxProps[Theme]],
                             ).asInstanceOf[Box.Props],
                         )(
-                          if (state.value.validating.contains(skill.name) || state.value.configSaving.contains(skill.name))
+                          if (
+                            state.value.validating.contains(skill.name) || state.value.configSaving.contains(skill.name)
+                          )
                             CircularProgress.size(18)()
                           else
                             MuiButton

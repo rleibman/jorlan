@@ -40,7 +40,8 @@ import java.util.concurrent.TimeUnit
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService
+  ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
+  jorlan.service.skills.declarative.SkillLifecycleService
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -389,6 +390,9 @@ object Jorlan extends ZIOApp {
             .mapError(e => JorlanError(s"Invalid shell config: $e"))
             .map(cfg => ShellSkill(cfg, repos)),
       )
+      // ── Declarative skill authoring ───────────────────────────────────────────
+      lifecycleSvc <- ZIO.service[jorlan.service.skills.declarative.SkillLifecycleService]
+      _            <- registry.register(SkillAuthoringSkill(lifecycleSvc))
       // ── MCP servers ───────────────────────────────────────────────────────────
       _ <- ZIO
         .scoped {

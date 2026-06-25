@@ -92,3 +92,23 @@ case class SkillInfo(
   hasDashboardData:  Boolean = false,
   oauthProvider:     Option[OAuthProvider] = None,
 ) derives JsonCodec
+
+case class SkillVersionInfo(
+  id:           Long,
+  skillId:      Long,
+  skillName:    String,
+  version:      String,
+  tier:         String,
+  manifestJson: String,
+  status:       SkillStatus,
+  reviewNote:   Option[String],
+  createdAt:    java.time.Instant,
+  createdBy:    Option[Long],
+) derives JsonCodec
+
+case class LifecycleResultInfo(
+  versionId: Long,
+  newStatus: SkillStatus,
+  errors:    List[String],
+  info:      List[String],
+) derives JsonCodec

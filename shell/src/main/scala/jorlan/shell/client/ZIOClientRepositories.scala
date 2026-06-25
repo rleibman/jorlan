@@ -392,10 +392,18 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   override val skill: SkillRepository[[A] =>> IO[String, A]] = new SkillRepository[[A] =>> IO[String, A]] {
     override def getById(id:         SkillId):             IO[String, Option[SkillRecord]] = ZIO.succeed(None)
     override def search(s:           SkillSearch):         IO[String, List[SkillRecord]] = ZIO.succeed(List.empty)
+    override def searchByTier(tiers: List[SkillTier]):     IO[String, List[SkillRecord]] = ZIO.succeed(List.empty)
     override def upsert(skill:       SkillRecord):         IO[String, SkillRecord] = ZIO.fail("not implemented")
     override def getVersion(id:      SkillVersionId):      IO[String, Option[SkillVersion]] = ZIO.succeed(None)
     override def searchVersions(s:   SkillVersionSearch):  IO[String, List[SkillVersion]] = ZIO.succeed(List.empty)
     override def upsertVersion(v:    SkillVersion):        IO[String, SkillVersion] = ZIO.fail("not implemented")
+    override def upsertVersionStatus(
+      id:         SkillVersionId,
+      status:     SkillStatus,
+      reviewNote: Option[String],
+    ): IO[String, Unit] = ZIO.unit
+    override def getVersionWithSkillName(id: SkillVersionId): IO[String, Option[(SkillVersion, String)]] =
+      ZIO.succeed(None)
     override def getConnector(id:    ConnectorInstanceId): IO[String, Option[ConnectorInstance]] = ZIO.succeed(None)
     override def searchConnectors(s: ConnectorSearch):     IO[String, List[ConnectorInstance]] = ZIO.succeed(List.empty)
     override def upsertConnector(ci: ConnectorInstance):   IO[String, ConnectorInstance] = ZIO.fail("not implemented")

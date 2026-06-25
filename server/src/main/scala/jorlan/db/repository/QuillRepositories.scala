@@ -566,7 +566,11 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qSkillVersions.filter(_.skillId == lift(s.skillId)))
+    val base = quote(
+      qSkillVersions
+        .filter(v => lift(s.skillId).forall(sid => v.skillId == sid))
+        .filter(v => lift(s.status).forall(st => v.status == st)),
+    )
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[SkillVersion]] = s.sorts match {
       case Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
@@ -594,10 +598,44 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
                 t,
                 e,
               ) => t.status -> e.status,
+              (
+                t,
+                e,
+              ) => t.reviewNote -> e.reviewNote,
             )
             .returningGenerated(_.id),
         ).map(id => v.copy(id = id)),
     )
+
+  override def upsertVersionStatus(
+    id:         SkillVersionId,
+    status:     SkillStatus,
+    reviewNote: Option[String],
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qSkillVersions
+            .filter(_.id == lift(id))
+            .update(_.status -> lift(status), _.reviewNote -> lift(reviewNote)),
+        ).unit,
+    )
+
+  override def getVersionWithSkillName(id: SkillVersionId): RepositoryTask[Option[(SkillVersion, String)]] =
+    exec(
+      qc.ctx
+        .run(
+          qSkillVersions
+            .filter(_.id == lift(id))
+            .join(qSkills)
+            .on(_.skillId == _.id)
+            .map { case (v, s) => (v, s.name) },
+        ).map(_.headOption),
+    )
+
+  override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
+    if (tiers.isEmpty) ZIO.succeed(List.empty)
+    else exec(qc.ctx.run(qSkills)).map(_.filter(r => tiers.contains(r.tier)))
 
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))

@@ -228,6 +228,10 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
     // Weather
     CapabilityName("weather.read"),
+    // Declarative skill lifecycle
+    CapabilityName("skill.create"),
+    CapabilityName("skill.propose"),
+    CapabilityName("admin.skills.approve"),
   )
 
   val AdminRoleName = "Admin"

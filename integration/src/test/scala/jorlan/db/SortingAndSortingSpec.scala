@@ -440,35 +440,35 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         )
         byIdDesc <- repo.searchVersions(
           SkillVersionSearch(
-            skillId = skill.id,
+            skillId = Some(skill.id),
             pageSize = 20,
             sorts = Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc)),
           ),
         )
         byVersionAsc <- repo.searchVersions(
           SkillVersionSearch(
-            skillId = skill.id,
+            skillId = Some(skill.id),
             pageSize = 20,
             sorts = Some(Sort(SkillVersionOrder.Version, OrderDirection.Asc)),
           ),
         )
         byVersionDesc <- repo.searchVersions(
           SkillVersionSearch(
-            skillId = skill.id,
+            skillId = Some(skill.id),
             pageSize = 20,
             sorts = Some(Sort(SkillVersionOrder.Version, OrderDirection.Desc)),
           ),
         )
         byCreatedAsc <- repo.searchVersions(
           SkillVersionSearch(
-            skillId = skill.id,
+            skillId = Some(skill.id),
             pageSize = 20,
             sorts = Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Asc)),
           ),
         )
         byCreatedDesc <- repo.searchVersions(
           SkillVersionSearch(
-            skillId = skill.id,
+            skillId = Some(skill.id),
             pageSize = 20,
             sorts = Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Desc)),
           ),
