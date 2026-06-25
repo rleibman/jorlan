@@ -165,7 +165,10 @@ private class LiveSkillLifecycleService(
   ): IO[JorlanError, LifecycleResult] =
     for {
       versionOpt <- repos.skill.getVersion(versionId).mapError(repoErr)
-      _          <- ZIO.fromOption(versionOpt).orElseFail(JorlanError(s"SkillVersion $versionId not found"))
+      version    <- ZIO.fromOption(versionOpt).orElseFail(JorlanError(s"SkillVersion $versionId not found"))
+      _          <- ZIO
+        .fail(JorlanError(s"Cannot reject version in status '${version.status}'; must be AwaitingApproval"))
+        .when(version.status != SkillStatus.AwaitingApproval)
       _          <- repos.skill
         .upsertVersionStatus(versionId, SkillStatus.Draft, Some(reason))
         .mapError(repoErr)
