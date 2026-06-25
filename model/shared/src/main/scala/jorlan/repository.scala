@@ -81,6 +81,7 @@ case class MessageSearch(
 
 enum SkillOrder { case Id, Name, Tier, CreatedAt }
 case class SkillSearch(
+  name:     Option[String] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[SkillOrder]] = None,

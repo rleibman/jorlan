@@ -77,18 +77,22 @@ private class LiveSkillLifecycleService(
       case Left(errors) => ZIO.fail(JorlanError(s"Invalid manifest: ${errors.mkString("; ")}"))
       case Right(m)     =>
         for {
-          existingSkill <- repos.skill.getById(SkillId(0L)).mapError(repoErr)
-          skillRecord   <- repos.skill
-            .upsert(
-              SkillRecord(
-                id = SkillId.empty,
-                name = m.name,
-                currentVersion = None,
-                tier = tier,
-                createdAt = Instant.now(),
-              ),
-            )
-            .mapError(repoErr)
+          existing    <- repos.skill.search(SkillSearch(name = Some(m.name))).mapError(repoErr)
+          skillRecord <- existing.headOption match {
+            case Some(existing) => ZIO.succeed(existing)
+            case None           =>
+              repos.skill
+                .upsert(
+                  SkillRecord(
+                    id = SkillId.empty,
+                    name = m.name,
+                    currentVersion = None,
+                    tier = tier,
+                    createdAt = Instant.now(),
+                  ),
+                )
+                .mapError(repoErr)
+          }
           version <- repos.skill
             .upsertVersion(
               SkillVersion(

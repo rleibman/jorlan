@@ -901,7 +901,7 @@ object InMemoryRepositories {
         versionStore <- Ref.make(Map.empty[Long, SkillVersion])
       } yield new ZIOSkillRepository {
         override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] =
-          store.get.map(_.values.toList)
+          store.get.map(_.values.filter(r => s.name.forall(_ == r.name)).toList)
 
         override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
           store.get.map(_.values.filter(r => tiers.isEmpty || tiers.contains(r.tier)).toList)

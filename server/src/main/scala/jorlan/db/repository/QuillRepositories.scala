@@ -521,7 +521,7 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qSkills)
+    val base = quote(qSkills.filter(r => lift(s.name).forall(n => r.name == n)))
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[SkillRecord]] = s.sorts match {
       case Some(Sort(SkillOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
@@ -635,10 +635,7 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
 
 override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
   if (tiers.isEmpty) exec(qc.ctx.run(qSkills))
-  else {
-    val tq = liftQuery(tiers)
-    exec(qc.ctx.run(qSkills.filter(s => tq.contains(s.tier))))
-  }
+  else exec(qc.ctx.run(qSkills.filter(s => liftQuery(tiers).contains(s.tier))))
 
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))
