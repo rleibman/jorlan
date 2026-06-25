@@ -633,9 +633,12 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
         ).map(_.headOption),
     )
 
-  override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
-    if (tiers.isEmpty) ZIO.succeed(List.empty)
-    else exec(qc.ctx.run(qSkills)).map(_.filter(r => tiers.contains(r.tier)))
+override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
+  if (tiers.isEmpty) exec(qc.ctx.run(qSkills))
+  else {
+    val tq = liftQuery(tiers)
+    exec(qc.ctx.run(qSkills.filter(s => tq.contains(s.tier))))
+  }
 
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))
