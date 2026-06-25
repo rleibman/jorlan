@@ -1953,11 +1953,12 @@ object JorlanAPI {
               case Some((v, name)) => toSkillVersionView(v, name, SkillTier.Declarative)
               case None            => toSkillVersionView(version, "", SkillTier.Declarative)
             },
-          advanceSkillLifecycle = versionId =>
-            for {
-              _      <- actorIdFromSession
-              result <- ZIO.serviceWithZIO[SkillLifecycleService](_.advance(versionId))
-            } yield toLifecycleResultView(result),
+advanceSkillLifecycle = versionId =>
+  for {
+    actorId <- actorIdFromSession
+    _       <- requireCapability("skill.create", actorId)
+    result  <- ZIO.serviceWithZIO[SkillLifecycleService](_.advance(versionId))
+  } yield toLifecycleResultView(result),
           approveSkillVersion = versionId =>
             for {
               actorId <- actorIdFromSession
