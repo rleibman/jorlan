@@ -58,7 +58,7 @@ object SkillPluginLoader {
           val parent = Thread.currentThread().getContextClassLoader.nn
           new URLClassLoader(Array(jar.toURI.toURL), parent)
         }.mapError(e => JorlanError(s"Failed to open plugin JAR '${jar.getName}'", Some(e))),
-    )(cl => ZIO.attempt(cl.close()).ignoreLogged) { cl =>
+    )(_ => ZIO.unit) { cl =>
       ZIO
         .attempt {
           ServiceLoader
