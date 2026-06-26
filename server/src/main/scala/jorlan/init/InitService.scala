@@ -228,6 +228,8 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
     // Weather
     CapabilityName("weather.read"),
+    // RSS
+    CapabilityName("rss.read"),
     // Discord
     CapabilityName("discord.send"),
     CapabilityName("discord.read"),

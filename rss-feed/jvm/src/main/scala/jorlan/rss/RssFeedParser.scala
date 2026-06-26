@@ -22,6 +22,12 @@ object RssFeedParser {
     scala.util.Try {
       val factory = DocumentBuilderFactory.newInstance()
       factory.setNamespaceAware(true)
+      factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
+      factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+      factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
+      factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+      factory.setXIncludeAware(false)
+      factory.setExpandEntityReferences(false)
       val builder = factory.newDocumentBuilder()
       val source = new InputSource(new java.io.StringReader(xml))
       val doc = builder.parse(source)

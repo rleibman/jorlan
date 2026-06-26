@@ -131,7 +131,10 @@ class RssFeedSkill(
       entries <- ZIO
         .fromEither(RssFeedParser.parse(xml, url, limit))
         .mapError(msg => JorlanError(s"Failed to parse feed '$url': $msg"))
-    } yield entries.toJson.fromJson[Json].getOrElse(Json.Arr())
+      json <- ZIO
+        .fromEither(entries.toJsonAST)
+        .mapError(e => JorlanError(s"Failed to encode feed entries for '$url': $e"))
+    } yield json
 
   private def listSaved(): IO[JorlanError, Json] =
     getFeeds.map { feeds =>
