@@ -14,8 +14,8 @@ import zio.json.ast.Json
 /** Factory interface for dynamically loaded skill plugins.
   *
   * Implementations are discovered at runtime via Java's [[java.util.ServiceLoader]] from JARs placed in the server's
-  * configured plugins directory. Each JAR must contain a
-  * `META-INF/services/jorlan.connector.SkillPlugin` file listing the implementing class.
+  * configured plugins directory. Each JAR must contain a `META-INF/services/jorlan.connector.SkillPlugin` file listing
+  * the implementing class.
   *
   * The server classloader is used as parent so all Jorlan/ZIO/zio-http types are shared — no dependency hell.
   */

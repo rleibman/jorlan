@@ -17,11 +17,11 @@ import java.net.URLClassLoader
 import java.util.ServiceLoader
 import scala.jdk.CollectionConverters.*
 
-/** Scans a directory for plugin JARs, discovers [[SkillPlugin]] implementations via [[ServiceLoader]], and
-  * instantiates each [[Skill]].
+/** Scans a directory for plugin JARs, discovers [[SkillPlugin]] implementations via [[ServiceLoader]], and instantiates
+  * each [[Skill]].
   *
-  * Uses the current thread's context classloader as parent so all Jorlan / ZIO / zio-http types are shared between
-  * the server and the plugin — no duplicate class issues.
+  * Uses the current thread's context classloader as parent so all Jorlan / ZIO / zio-http types are shared between the
+  * server and the plugin — no duplicate class issues.
   */
 object SkillPluginLoader {
 
@@ -53,10 +53,11 @@ object SkillPluginLoader {
     setSetting: (String, Json) => UIO[Unit],
   ): IO[JorlanError, List[Skill]] = {
     ZIO.acquireReleaseWith(
-      ZIO.attempt {
-        val parent = Thread.currentThread().getContextClassLoader.nn
-        new URLClassLoader(Array(jar.toURI.toURL), parent)
-      }.mapError(e => JorlanError(s"Failed to open plugin JAR '${jar.getName}'", Some(e))),
+      ZIO
+        .attempt {
+          val parent = Thread.currentThread().getContextClassLoader.nn
+          new URLClassLoader(Array(jar.toURI.toURL), parent)
+        }.mapError(e => JorlanError(s"Failed to open plugin JAR '${jar.getName}'", Some(e))),
     )(cl => ZIO.attempt(cl.close()).ignoreLogged) { cl =>
       ZIO
         .attempt {
