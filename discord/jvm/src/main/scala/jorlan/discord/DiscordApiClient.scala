@@ -100,7 +100,10 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
                   isMention = isMention,
                   receivedAt = java.time.Instant.now(),
                 )
-                val _ = queue.offer(Right(raw))
+                if (!queue.offer(Right(raw))) {
+                  val _ = queue.poll()
+                  val _ = queue.offer(Right(raw))
+                }
               }
             }
             JDABuilder
