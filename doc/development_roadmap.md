@@ -160,10 +160,10 @@ remaining skills.
   schema validation on install
 - [x] **Agent-authored skill lifecycle** (Tier 5 → Active): draft → schema validated → permission reviewed → sandbox
   tested → awaiting approval → active (full state machine per design doc)
-- [ ] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
+- [x] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
   module. Tools: `rss.fetch` (URL → list of entries), `rss.list_saved` / `rss.save_feed` / `rss.remove_feed` (
   persist watched feeds in `server_settings`).
-- [ ] **Discord connector**
+- [x] **Discord connector**
 - [ ] **Discord oauth**
 - [ ] **Telegram Oauth**
 - [ ] **Slack connector**: Slack Bot API, message normalization, identity resolution

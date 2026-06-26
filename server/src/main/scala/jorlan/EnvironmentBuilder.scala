@@ -12,6 +12,7 @@ import ai.{EmbeddingModel, EmbeddingStore, LangChainServiceBuilder}
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
 import jorlan.telegram.*
+import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkill}
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.*
 import jorlan.email.{ImapSmtpProvider, PgpService}
@@ -76,7 +77,27 @@ object EnvironmentBuilder {
           ZIO.logInfo(s"[connector:${ci.id}] creating Telegram connector") *>
             TelegramConnectorSkill.make(cfg, ci.id, TelegramApiClientLive(cfg, httpClient), ingress)
         }
-      } yield ConnectorManager.fromSkills(telegramSkills)
+        discordInstances = connectors.filter(_.connectorType == ConnectorType.Discord)
+        _ <- ZIO.logInfo(s"[connector] found ${discordInstances.length} Discord connector instance(s) in DB")
+        parsedDiscord <- ZIO.foreach(discordInstances) { ci =>
+          ZIO
+            .fromEither(ci.configJson.as[DiscordConfig])
+            .foldZIO(
+              err => ZIO.logWarning(s"[connector:${ci.id}] Failed to parse DiscordConfig: $err").as(None),
+              cfg => ZIO.some((ci, cfg)),
+            )
+        }
+        dedupedDiscord = parsedDiscord.flatten.distinctBy(_._2.botToken)
+        _ <- ZIO.when(dedupedDiscord.length < parsedDiscord.flatten.length)(
+          ZIO.logWarning(
+            s"[connector] Skipping ${parsedDiscord.flatten.length - dedupedDiscord.length} duplicate Discord instance(s) with the same bot token",
+          ),
+        )
+        discordSkills <- ZIO.foreach(dedupedDiscord) { case (ci, cfg) =>
+          ZIO.logInfo(s"[connector:${ci.id}] creating Discord connector") *>
+            DiscordConnectorSkill.make(cfg, ci.id, DiscordApiClientLive(cfg), ingress)
+        }
+      } yield ConnectorManager.fromSkills(telegramSkills ++ discordSkills)
     }
 
   /** ZLayer that provides [[OAuthCredentialService]] from config + repositories + HTTP client. */

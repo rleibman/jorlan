@@ -350,6 +350,20 @@ lazy val telegramConnector =
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 5)
+
+lazy val discordConnector =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("discord"))
+    .configureCross(skillModule)
+    .settings(name := "jorlan-discord")
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "net.dv8tion" % "JDA" % "5.6.1" exclude("club.minnced", "opus-java"),
+      ),
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Calculator Skill — mXparser-based math expression evaluator
 
 lazy val calculatorSkill =
@@ -451,15 +465,6 @@ lazy val searchSkill =
     .settings(name := "jorlan-search")
 
 ////////////////////////////////////////////////////////////////////////////////////
-// RSS Feed Skill — fetch and manage RSS/Atom news feeds (no auth required)
-
-lazy val rssFeedSkill =
-  crossProject(JSPlatform, JVMPlatform)
-    .in(file("rss-feed"))
-    .configureCross(skillModule)
-    .settings(name := "jorlan-rss-feed")
-
-////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
 
 lazy val googleServices =
@@ -503,6 +508,7 @@ lazy val server = project
     skillApi.jvm,
     calculatorSkill.jvm,
     telegramConnector.jvm,
+    discordConnector.jvm,
     emailConnector.jvm,
     googleServices.jvm,
     unitConversionSkill.jvm,
@@ -903,6 +909,7 @@ lazy val root = project
     skillApi.jvm,
     calculatorSkill.jvm,
     telegramConnector.jvm,
+    discordConnector.jvm,
     emailConnector.jvm,
     googleServices.jvm,
     marketDataSkill.jvm,
@@ -912,11 +919,11 @@ lazy val root = project
     unitConversionSkill.jvm,
     timeSkill.jvm,
     httpFetchSkill.jvm,
-    rssFeedSkill.jvm,
 
     skillApi.js,
     calculatorSkill.js,
     telegramConnector.js,
+    discordConnector.js,
     emailConnector.js,
     googleServices.js,
     marketDataSkill.js,
@@ -926,7 +933,6 @@ lazy val root = project
     unitConversionSkill.js,
     timeSkill.js,
     httpFetchSkill.js,
-    rssFeedSkill.js,
 
     ai,
     server,

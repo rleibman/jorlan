@@ -227,8 +227,9 @@ object InitServiceSpec extends ZIOSpecDefault {
           CapabilityName("shell.read"),
           // Weather
           CapabilityName("weather.read"),
-          // RSS / News Feeds
-          CapabilityName("rss.read"),
+          // Discord
+          CapabilityName("discord.send"),
+          CapabilityName("discord.read"),
           // Custom Skills
           CapabilityName("skill.create"),
           CapabilityName("skill.propose"),
