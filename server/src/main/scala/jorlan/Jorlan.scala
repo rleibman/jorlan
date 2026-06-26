@@ -197,7 +197,10 @@ object Jorlan extends ZIOApp {
               .get(key)
               .tapError(e => ZIO.logWarning(s"Plugin getSetting('$key') failed: ${e.msg}"))
               .orElseSucceed(None),
-          setSetting = (key, value) =>
+          setSetting = (
+            key,
+            value,
+          ) =>
             repos.setting
               .set(key, value)
               .tapError(e => ZIO.logWarning(s"Plugin setSetting('$key') failed: ${e.msg}"))

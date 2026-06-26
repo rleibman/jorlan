@@ -157,7 +157,8 @@ class DiscordConnectorSkill(
 
       case "discord.get_history" =>
         val channelId = obj.get("channelId").flatMap(_.asString)
-        val limit = obj.get("limit").flatMap(_.asNumber).map(n => BigDecimal(n.value).toInt).getOrElse(50).max(1).min(100)
+        val limit =
+          obj.get("limit").flatMap(_.asNumber).map(n => BigDecimal(n.value).toInt).getOrElse(50).max(1).min(100)
         channelId match {
           case Some(cid) =>
             apiClient.getChannelHistory(cid, limit).map(msgs => Json.Arr(msgs*))
