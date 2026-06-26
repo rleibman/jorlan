@@ -118,6 +118,7 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
       }
 
   override def disconnect(): UIO[Unit] = {
+    queue.clear()
     val _ = queue.offer(Left(()))
     val jda = jdaRef.getAndSet(null)
     if (jda == null) ZIO.unit
