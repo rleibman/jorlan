@@ -93,16 +93,14 @@ object DiscordUI {
               ^.value := cfg.unrecognizedPolicy.toString,
               ^.onChange ==> { e =>
                 val policy = targetValue(e) match {
-                  case "CreateGuest" => UnrecognizedIdentityPolicy.CreateGuest
-                  case "AllowAll"    => UnrecognizedIdentityPolicy.AllowAll
-                  case _             => UnrecognizedIdentityPolicy.Reject
+                  case "Quarantine" => UnrecognizedIdentityPolicy.Quarantine
+                  case _            => UnrecognizedIdentityPolicy.Reject
                 }
                 state.setState(cfg.copy(unrecognizedPolicy = policy))
               },
               ^.style := js.Dynamic.literal(padding = "6px", border = "1px solid #ccc", borderRadius = "4px"),
               <.option(^.value := "Reject", "Reject"),
-              <.option(^.value := "CreateGuest", "Create Guest"),
-              <.option(^.value := "AllowAll", "Allow All"),
+              <.option(^.value := "Quarantine", "Quarantine (hold for review)"),
             ),
           ),
           <.div(
