@@ -451,6 +451,15 @@ lazy val searchSkill =
     .settings(name := "jorlan-search")
 
 ////////////////////////////////////////////////////////////////////////////////////
+// RSS Feed Skill — fetch and manage RSS/Atom news feeds (no auth required)
+
+lazy val rssFeedSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("rss-feed"))
+    .configureCross(skillModule)
+    .settings(name := "jorlan-rss-feed")
+
+////////////////////////////////////////////////////////////////////////////////////
 // Google Services — Gmail/Calendar/Drive REST API providers + OAuth credential service
 
 lazy val googleServices =
@@ -903,6 +912,7 @@ lazy val root = project
     unitConversionSkill.jvm,
     timeSkill.jvm,
     httpFetchSkill.jvm,
+    rssFeedSkill.jvm,
 
     skillApi.js,
     calculatorSkill.js,
@@ -916,6 +926,7 @@ lazy val root = project
     unitConversionSkill.js,
     timeSkill.js,
     httpFetchSkill.js,
+    rssFeedSkill.js,
 
     ai,
     server,

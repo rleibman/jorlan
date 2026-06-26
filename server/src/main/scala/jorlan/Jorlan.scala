@@ -21,6 +21,7 @@ import jorlan.lyrion.*
 import jorlan.market.*
 import jorlan.routes.*
 import jorlan.search.{SearchConfig, SearchSkill}
+import jorlan.service.skills.SkillPluginLoader
 import jorlan.service.*
 import jorlan.service.mcp.McpManagerImpl
 import jorlan.service.schedule.TriggerEngine
@@ -185,6 +186,15 @@ object Jorlan extends ZIOApp {
       _ <- registry.register(WorkspaceSkill(workRoot, workspaceCfg))
       _ <- registry.register(ShellSkill(shellCfg, repos))
       _ <- registry.register(NotifySkill(notifRouter))
+      // ── Plugin JARs: skills loaded dynamically from pluginsDir ───────────────
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      pluginSkills <- SkillPluginLoader.loadAll(
+        pluginsDir = new java.io.File(config.jorlan.pluginsDir),
+        client = httpClient,
+        getSetting = key => repos.setting.get(key).orDie,
+        setSetting = (key, value) => repos.setting.set(key, value).orDie,
+      ).catchAll(e => ZIO.logError(s"Plugin loading failed: ${e.msg}").as(List.empty))
+      _ <- ZIO.foreach(pluginSkills)(registry.register)
       _ <- ZIO
         .attempt(java.time.ZoneId.systemDefault().getId)
         .orElseSucceed("UTC")

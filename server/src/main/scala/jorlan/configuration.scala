@@ -93,14 +93,15 @@ case class GoogleOAuthSettings(
 
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:        DatabaseConfig,
-  auth:      AuthConfig,
-  flyway:    FlywayConfig = FlywayConfig(),
-  http:      HttpConfig = HttpConfig(),
-  ai:        LangChainConfig = LangChainConfig(),
-  agent:     AgentSettings = AgentSettings(),
-  scheduler: SchedulerSettings = SchedulerSettings(),
-  google:    GoogleOAuthSettings = GoogleOAuthSettings(),
+  db:         DatabaseConfig,
+  auth:       AuthConfig,
+  flyway:     FlywayConfig = FlywayConfig(),
+  http:       HttpConfig = HttpConfig(),
+  ai:         LangChainConfig = LangChainConfig(),
+  agent:      AgentSettings = AgentSettings(),
+  scheduler:  SchedulerSettings = SchedulerSettings(),
+  google:     GoogleOAuthSettings = GoogleOAuthSettings(),
+  pluginsDir: String = "/opt/jorlan/plugins",
 )
 
 /** Root application configuration. */

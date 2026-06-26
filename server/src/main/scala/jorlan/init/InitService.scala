@@ -228,6 +228,8 @@ class InitServiceImpl(
     CapabilityName("shell.read"),
     // Weather
     CapabilityName("weather.read"),
+    // RSS / News Feeds
+    CapabilityName("rss.read"),
     // Declarative skill lifecycle
     CapabilityName("skill.create"),
     CapabilityName("skill.propose"),
