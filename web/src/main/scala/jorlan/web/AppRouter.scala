@@ -40,6 +40,7 @@ enum AppPage(
   case Scheduler extends AppPage("#/scheduler", "Scheduler", "schedule")
   case EventLog extends AppPage("#/events", "Event Log", "event_note")
   case Skills extends AppPage("#/skills", "Skills", "extension")
+  case CustomSkills extends AppPage("#/custom-skills", "Custom Skills", "build")
   case McpServers extends AppPage("#/mcp", "MCP Servers", "hub")
   case Users extends AppPage("#/users", "Users", "group")
   case Roles extends AppPage("#/roles", "Roles", "badge")
@@ -107,19 +108,20 @@ object AppRouter {
             ),
             if (state.value.page != AppPage.Chat && state.value.page != AppPage.EventLog)
               state.value.page match {
-                case AppPage.Dashboard  => DashboardPage(user)
-                case AppPage.Chat       => EmptyVdom
-                case AppPage.Sessions   => SessionsPage(user)
-                case AppPage.Approvals  => ApprovalsPage(user)
-                case AppPage.Memory     => MemoryPage(user)
-                case AppPage.Scheduler  => SchedulerPage(user)
-                case AppPage.EventLog   => EmptyVdom
-                case AppPage.Skills     => SkillsPage(user)
-                case AppPage.McpServers => McpServersPage(user)
-                case AppPage.Users      => UsersPage(user)
-                case AppPage.Roles      => RolesPage(user)
-                case AppPage.Settings   => SettingsPage(user)
-                case AppPage.OAuth      => OAuthManagementPage(user)
+                case AppPage.Dashboard    => DashboardPage(user)
+                case AppPage.Chat         => EmptyVdom
+                case AppPage.Sessions     => SessionsPage(user)
+                case AppPage.Approvals    => ApprovalsPage(user)
+                case AppPage.Memory       => MemoryPage(user)
+                case AppPage.Scheduler    => SchedulerPage(user)
+                case AppPage.EventLog     => EmptyVdom
+                case AppPage.Skills       => SkillsPage(user)
+                case AppPage.CustomSkills => CustomSkillsPage(user)
+                case AppPage.McpServers   => McpServersPage(user)
+                case AppPage.Users        => UsersPage(user)
+                case AppPage.Roles        => RolesPage(user)
+                case AppPage.Settings     => SettingsPage(user)
+                case AppPage.OAuth        => OAuthManagementPage(user)
               }
             else EmptyVdom,
           )

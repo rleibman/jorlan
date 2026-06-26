@@ -895,16 +895,54 @@ object InMemoryRepositories {
 
     def make: UIO[ZIOSkillRepository] =
       for {
-        idGen <- Ref.make(0L)
-        store <- Ref.make(Map.empty[Long, SkillRecord])
+        idGen        <- Ref.make(0L)
+        store        <- Ref.make(Map.empty[Long, SkillRecord])
+        versionIdGen <- Ref.make(0L)
+        versionStore <- Ref.make(Map.empty[Long, SkillVersion])
       } yield new ZIOSkillRepository {
-        override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] = ???
+        override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] =
+          store.get.map(_.values.filter(r => s.name.forall(_ == r.name)).toList)
 
-        override def getVersion(id: SkillVersionId): RepositoryTask[Option[SkillVersion]] = ???
+        override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
+          store.get.map(_.values.filter(r => tiers.isEmpty || tiers.contains(r.tier)).toList)
 
-        override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = ???
+        override def getVersion(id: SkillVersionId): RepositoryTask[Option[SkillVersion]] =
+          versionStore.get.map(_.get(id.value))
 
-        override def upsertVersion(v: SkillVersion): RepositoryTask[SkillVersion] = ???
+        override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] =
+          versionStore.get.map { m =>
+            m.values.toList
+              .filter(v => s.skillId.forall(_ == v.skillId))
+              .filter(v => s.status.forall(_ == v.status))
+          }
+
+        override def upsertVersion(v: SkillVersion): RepositoryTask[SkillVersion] =
+          for {
+            id <-
+              if (v.id == SkillVersionId.empty) versionIdGen.updateAndGet(_ + 1)
+              else ZIO.succeed(v.id.value)
+            saved = v.copy(id = SkillVersionId(id))
+            _ <- versionStore.update(_.updated(id, saved))
+          } yield saved
+
+        override def upsertVersionStatus(
+          id:         SkillVersionId,
+          status:     SkillStatus,
+          reviewNote: Option[String],
+        ): RepositoryTask[Unit] =
+          versionStore.update(m =>
+            m.get(id.value).fold(m)(v => m.updated(id.value, v.copy(status = status, reviewNote = reviewNote))),
+          )
+
+        override def getVersionWithSkillName(id: SkillVersionId): RepositoryTask[Option[(SkillVersion, String)]] =
+          for {
+            versions <- versionStore.get
+            skills   <- store.get
+          } yield
+            for {
+              v    <- versions.get(id.value)
+              name <- skills.get(v.skillId.value).map(_.name)
+            } yield (v, name)
 
         override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] = ???
 

@@ -207,7 +207,7 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
         sv    <- repo.upsertVersion(
           SkillVersion(SkillVersionId.empty, saved.id, "1.0.0", Json.Obj(), SkillStatus.Active, T0),
         )
-        versions <- repo.searchVersions(SkillVersionSearch(skillId = saved.id))
+        versions <- repo.searchVersions(SkillVersionSearch(skillId = Some(saved.id)))
         fetched  <- repo.getById(saved.id)
       } yield {
         assertTrue(

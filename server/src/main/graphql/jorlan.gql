@@ -39,6 +39,8 @@ scalar SchedulerTriggerId
 
 scalar SkillId
 
+scalar SkillVersionId
+
 scalar TriggerType
 
 scalar Unit
@@ -186,6 +188,12 @@ enum MissedRunPolicy {
   RunAllMissed
 }
 
+enum OAuthProvider {
+  Google
+  Discord
+  Telegram
+}
+
 enum RetryBackoffPolicy {
   Fixed
   Exponential
@@ -199,6 +207,17 @@ enum SessionStatus {
   Completed
   Failed
   Cancelled
+}
+
+enum SkillStatus {
+  Draft
+  Validated
+  PermissionReviewed
+  SandboxTested
+  AwaitingApproval
+  Active
+  Deprecated
+  Revoked
 }
 
 input McpEnvVarInput {
@@ -376,6 +395,10 @@ type Mutations {
   enableSkill(value: String!): Boolean
   disableSkill(value: String!): Boolean
   updateSkillConfig(name: String!, configJson: String!): Boolean
+  createSkillDraft(value: String!): SkillVersionView
+  advanceSkillLifecycle(value: SkillVersionId!): SkillLifecycleResultView
+  approveSkillVersion(value: SkillVersionId!): SkillLifecycleResultView
+  rejectSkillVersion(versionId: SkillVersionId!, reason: String!): SkillLifecycleResultView
 }
 
 type NamedCount {
@@ -439,6 +462,9 @@ type Queries {
   mcpServers: [McpServerView!]
   allKnownCapabilities: [CapabilityName!]
   skillValidate(value: String!): SkillValidationResult
+  skillVersions(value: SkillId!): [SkillVersionView!]
+  pendingSkillVersions: [SkillVersionView!]
+  allCustomSkills: [SkillVersionView!]
 }
 
 type ResponseChunk {
@@ -496,6 +522,14 @@ type SkillInfo {
   configJsModule: String
   dashboardJsModule: String
   hasDashboardData: Boolean!
+  oauthProvider: OAuthProvider
+}
+
+type SkillLifecycleResultView {
+  versionId: SkillVersionId!
+  newStatus: SkillStatus!
+  errors: [String!]!
+  info: [String!]!
 }
 
 type SkillToolInfo {
@@ -508,6 +542,19 @@ type SkillToolInfo {
 type SkillValidationResult {
   ok: Boolean!
   message: String!
+}
+
+type SkillVersionView {
+  id: SkillVersionId!
+  skillId: SkillId!
+  skillName: String!
+  version: String!
+  tier: String!
+  manifestJson: String!
+  status: SkillStatus!
+  reviewNote: String
+  createdAt: Instant!
+  createdBy: UserId
 }
 
 type Subscriptions {

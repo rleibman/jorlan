@@ -19,6 +19,7 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
+import jorlan.service.skills.declarative.SkillLifecycleService
 import just.semver.SemVer
 import zio.*
 import zio.http.Client
@@ -146,6 +147,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       stubOAuthCredentialService,
       Client.default,
       DashboardService.live,
+      SkillLifecycleService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

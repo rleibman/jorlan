@@ -15,6 +15,7 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import jorlan.service.skills.declarative.SkillLifecycleService
 import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
@@ -198,6 +199,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         oauthCredSvcLayer,
         DashboardService.live,
         Client.default.orDie,
+        SkillLifecycleService.live,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
       ).orDie
   }

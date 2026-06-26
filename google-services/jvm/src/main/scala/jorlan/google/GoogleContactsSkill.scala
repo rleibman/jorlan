@@ -79,6 +79,7 @@ class GoogleContactsSkill(
         ),
       ),
     ),
+    oauthProvider = Some(OAuthProvider.Google),
   )
 
   override def invoke(

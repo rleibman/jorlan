@@ -227,6 +227,10 @@ object InitServiceSpec extends ZIOSpecDefault {
           CapabilityName("shell.read"),
           // Weather
           CapabilityName("weather.read"),
+          // Custom Skills
+          CapabilityName("skill.create"),
+          CapabilityName("skill.propose"),
+          CapabilityName("admin.skills.approve"),
         ).map(_.value)
         for {
           tokenStore <- ZIO.service[InitTokenStore]

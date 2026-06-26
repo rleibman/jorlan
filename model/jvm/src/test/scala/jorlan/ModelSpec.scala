@@ -683,7 +683,7 @@ object ModelSpec extends ZIOSpecDefault {
       assertTrue(s.page == 0)
     },
     test("SkillVersionSearch can be constructed") {
-      val s = SkillVersionSearch(skillId = SkillId(1L), page = 0, pageSize = 10, sorts = None)
+      val s = SkillVersionSearch(skillId = Some(SkillId(1L)), page = 0, pageSize = 10, sorts = None)
       assertTrue(s.page == 0)
     },
   )

@@ -512,13 +512,22 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
   }
 
   override val skill: SkillRepository[AsyncCallback] = new SkillRepository[AsyncCallback] {
-    override def getById(id:    SkillId):        AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
-    override def search(s:      SkillSearch):    AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(List.empty)
-    override def upsert(skill:  SkillRecord):    AsyncCallback[SkillRecord] = ???
-    override def getVersion(id: SkillVersionId): AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
+    override def getById(id: SkillId):                 AsyncCallback[Option[SkillRecord]] = AsyncCallback.pure(None)
+    override def search(s:   SkillSearch):             AsyncCallback[List[SkillRecord]] = AsyncCallback.pure(List.empty)
+    override def searchByTier(tiers: List[SkillTier]): AsyncCallback[List[SkillRecord]] =
+      AsyncCallback.pure(List.empty)
+    override def upsert(skill:  SkillRecord):           AsyncCallback[SkillRecord] = ???
+    override def getVersion(id: SkillVersionId):        AsyncCallback[Option[SkillVersion]] = AsyncCallback.pure(None)
     override def searchVersions(s: SkillVersionSearch): AsyncCallback[List[SkillVersion]] =
       AsyncCallback.pure(List.empty)
-    override def upsertVersion(v: SkillVersion):        AsyncCallback[SkillVersion] = ???
+    override def upsertVersion(v: SkillVersion): AsyncCallback[SkillVersion] = ???
+    override def upsertVersionStatus(
+      id:         SkillVersionId,
+      status:     SkillStatus,
+      reviewNote: Option[String],
+    ):                                                        AsyncCallback[Unit] = AsyncCallback.unit
+    override def getVersionWithSkillName(id: SkillVersionId): AsyncCallback[Option[(SkillVersion, String)]] =
+      AsyncCallback.pure(None)
     override def getConnector(id: ConnectorInstanceId): AsyncCallback[Option[ConnectorInstance]] =
       AsyncCallback.pure(None)
     override def searchConnectors(s: ConnectorSearch): AsyncCallback[List[ConnectorInstance]] =
@@ -595,6 +604,70 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter
         .asyncCalibanCallWithAuth(JorlanClient.Mutations.reloadMcpServers(()))
         .map(_.getOrElse(false))
+
+  }
+
+  // ── Skill Lifecycle ────────────────────────────────────────────────────────
+
+  object skillLifecycle {
+
+    def skillVersions(skillId: SkillId): AsyncCallback[List[SkillVersionInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.skillVersions(skillId)(JorlanClient.SkillVersionView.view),
+        )
+        .map(_.getOrElse(List.empty).map(toSkillVersionInfo))
+
+    def pendingSkillVersions(): AsyncCallback[List[SkillVersionInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.pendingSkillVersions(JorlanClient.SkillVersionView.view),
+        )
+        .map(_.getOrElse(List.empty).map(toSkillVersionInfo))
+
+    def allCustomSkills(): AsyncCallback[List[SkillVersionInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Queries.allCustomSkills(JorlanClient.SkillVersionView.view),
+        )
+        .map(_.getOrElse(List.empty).map(toSkillVersionInfo))
+
+    def createSkillDraft(manifestJson: String): AsyncCallback[Option[SkillVersionInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.createSkillDraft(manifestJson)(JorlanClient.SkillVersionView.view),
+        )
+        .map(_.map(toSkillVersionInfo))
+
+    def advanceSkillLifecycle(versionId: Long): AsyncCallback[Option[LifecycleResultInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.advanceSkillLifecycle(versionId.toString)(
+            JorlanClient.SkillLifecycleResultView.view,
+          ),
+        )
+        .map(_.map(toLifecycleResultInfo))
+
+    def approveSkillVersion(versionId: Long): AsyncCallback[Option[LifecycleResultInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.approveSkillVersion(versionId.toString)(
+            JorlanClient.SkillLifecycleResultView.view,
+          ),
+        )
+        .map(_.map(toLifecycleResultInfo))
+
+    def rejectSkillVersion(
+      versionId: Long,
+      reason:    String,
+    ): AsyncCallback[Option[LifecycleResultInfo]] =
+      adapter
+        .asyncCalibanCallWithAuth(
+          JorlanClient.Mutations.rejectSkillVersion(versionId.toString, reason)(
+            JorlanClient.SkillLifecycleResultView.view,
+          ),
+        )
+        .map(_.map(toLifecycleResultInfo))
 
   }
 
@@ -938,6 +1011,30 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       configJsModule = v.configJsModule,
       dashboardJsModule = v.dashboardJsModule,
       hasDashboardData = v.hasDashboardData,
+      oauthProvider = v.oauthProvider.flatMap(p => OAuthProvider.values.find(_.toString == p.value)),
+    )
+
+  private def toSkillVersionInfo(v: JorlanClient.SkillVersionView.SkillVersionViewView): SkillVersionInfo =
+    SkillVersionInfo(
+      id = v.id.toLong,
+      skillId = v.skillId.value,
+      skillName = v.skillName,
+      version = v.version,
+      tier = v.tier,
+      manifestJson = v.manifestJson,
+      status = SkillStatus.valueOf(v.status.value),
+      reviewNote = v.reviewNote,
+      createdAt = v.createdAt,
+      createdBy = v.createdBy.map(_.value),
+    )
+
+  private def toLifecycleResultInfo(v: JorlanClient.SkillLifecycleResultView.SkillLifecycleResultViewView)
+    : LifecycleResultInfo =
+    LifecycleResultInfo(
+      versionId = v.versionId.toLong,
+      newStatus = SkillStatus.valueOf(v.newStatus.value),
+      errors = v.errors,
+      info = v.info,
     )
 
   private def toUser(v: JorlanClient.User.UserView): User =

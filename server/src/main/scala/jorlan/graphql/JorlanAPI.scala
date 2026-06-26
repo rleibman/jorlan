@@ -18,6 +18,7 @@ import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
 import jorlan.service.*
 import jorlan.service.mcp.{McpManagerImpl, McpServerConfig, McpTransport}
 import jorlan.service.skills.SkillRegistry
+import jorlan.service.skills.declarative.{LifecycleResult, SkillLifecycleService}
 import zio.*
 import zio.json.ast.Json
 import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
@@ -200,6 +201,29 @@ object JorlanAPI {
       repr = _.toString,
     )
 
+  private given Schema[Any, OAuthProvider] =
+    Schema.enumSchema[OAuthProvider](
+      name = "OAuthProvider",
+      values = OAuthProvider.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given ArgBuilder[OAuthProvider] =
+    ArgBuilder.string.flatMap(s =>
+      OAuthProvider.values
+        .find(_.toString == s)
+        .fold(Left(CalibanError.ExecutionError(s"Unknown OAuthProvider: '$s'")))(Right(_)),
+    )
+
   private given Schema[Any, RetryBackoffPolicy] =
     Schema.enumSchema[RetryBackoffPolicy](
       name = "RetryBackoffPolicy",
@@ -349,6 +373,28 @@ object JorlanAPI {
   private given Schema[Any, SkillId] =
     Schema.scalarSchema("SkillId", None, None, None, id => Value.IntValue(id.value))
 
+  private given Schema[Any, SkillVersionId] =
+    Schema.scalarSchema("SkillVersionId", None, None, None, id => Value.IntValue(id.value))
+
+  private given ArgBuilder[SkillVersionId] = ArgBuilder.long.map(SkillVersionId(_))
+  private given ArgBuilder[SkillId] = ArgBuilder.long.map(SkillId(_))
+
+  private given Schema[Any, SkillStatus] =
+    Schema.enumSchema[SkillStatus](
+      name = "SkillStatus",
+      values = SkillStatus.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
   private given Schema[Any, SchedulerJob] = Schema.gen[Any, SchedulerJob]
 
   private given Schema[Any, SchedulerTrigger] = Schema.gen[Any, SchedulerTrigger]
@@ -462,7 +508,30 @@ object JorlanAPI {
     configJsModule:    Option[String],
     dashboardJsModule: Option[String],
     hasDashboardData:  Boolean,
+    oauthProvider:     Option[OAuthProvider],
   ) derives Schema.SemiAuto, ArgBuilder
+
+  /** GQL-safe view of a [[SkillVersion]] with its parent skill name. */
+  case class SkillVersionView(
+    id:           SkillVersionId,
+    skillId:      SkillId,
+    skillName:    String,
+    version:      String,
+    tier:         String,
+    manifestJson: String,
+    status:       SkillStatus,
+    reviewNote:   Option[String],
+    createdAt:    Instant,
+    createdBy:    Option[UserId],
+  ) derives Schema.SemiAuto
+
+  /** GQL result of a lifecycle transition. */
+  case class SkillLifecycleResultView(
+    versionId: SkillVersionId,
+    newStatus: SkillStatus,
+    errors:    List[String],
+    info:      List[String],
+  ) derives Schema.SemiAuto
 
   /** A timestamped count bucket for time-series charts. */
   case class TimeSeriesPoint(
@@ -709,6 +778,12 @@ object JorlanAPI {
     enabled:   Boolean = true,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `rejectSkillVersion` — resets an AwaitingApproval version to Draft with an admin note. */
+  case class RejectSkillVersionInput(
+    versionId: SkillVersionId,
+    reason:    String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Result type for `oauthStatus` — whether the user has connected credentials for a provider. */
   case class OAuthStatus(
     connected: Boolean,
@@ -775,6 +850,12 @@ object JorlanAPI {
     allKnownCapabilities: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityName]],
     /** Validates the current configuration of a skill (API key, connectivity, etc.). Requires `admin.settings`. */
     skillValidate: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillValidationResult],
+    /** Returns all versions for a skill. Requires `admin.settings`. */
+    skillVersions: SkillId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillVersionView]],
+    /** Returns all skill versions awaiting admin approval. Requires `admin.skills.approve`. */
+    pendingSkillVersions: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillVersionView]],
+    /** Returns the latest version of each Declarative or AgentDraft skill. Requires `admin.settings`. */
+    allCustomSkills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillVersionView]],
   )
 
   case class Mutations(
@@ -850,6 +931,18 @@ object JorlanAPI {
       * effect on the next server restart.
       */
     updateSkillConfig: UpdateSkillConfigInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    /** Creates a new declarative skill draft from a JSON manifest string. Requires `skill.create`. */
+    createSkillDraft: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillVersionView],
+    /** Advances a skill version to the next lifecycle state. */
+    advanceSkillLifecycle: SkillVersionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillLifecycleResultView],
+    /** Approves a skill version that is AwaitingApproval, making it Active. Requires `admin.skills.approve`. */
+    approveSkillVersion: SkillVersionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillLifecycleResultView],
+    /** Rejects a skill version that is AwaitingApproval, resetting it to Draft. Requires `admin.skills.approve`. */
+    rejectSkillVersion: RejectSkillVersionInput => ZIO[
+      JorlanApiEnv & JorlanSession,
+      JorlanError,
+      SkillLifecycleResultView,
+    ],
   )
 
   private case class Subscriptions(
@@ -957,6 +1050,27 @@ object JorlanAPI {
       url = cfg.url,
       enabled = cfg.enabled,
     )
+
+  private def toSkillVersionView(
+    version:   SkillVersion,
+    skillName: String,
+    tier:      SkillTier,
+  ): SkillVersionView =
+    SkillVersionView(
+      id = version.id,
+      skillId = version.skillId,
+      skillName = skillName,
+      version = version.version,
+      tier = tier.toString,
+      manifestJson = version.manifestJson.toString,
+      status = version.status,
+      reviewNote = version.reviewNote,
+      createdAt = version.createdAt,
+      createdBy = version.createdBy,
+    )
+
+  private def toLifecycleResultView(r: LifecycleResult): SkillLifecycleResultView =
+    SkillLifecycleResultView(r.versionId, r.newStatus, r.errors, r.info)
 
   // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -1079,6 +1193,7 @@ object JorlanAPI {
               configJsModule = skill.descriptor.configJsModule,
               dashboardJsModule = skill.descriptor.dashboardJsModule,
               hasDashboardData = skill.isInstanceOf[HasDashboardData],
+              oauthProvider = skill.descriptor.oauthProvider,
             )
           },
           contacts = name =>
@@ -1237,6 +1352,59 @@ object JorlanAPI {
                   ZIO.succeed(SkillValidationResult(ok = false, message = s"Skill '$name' not found"))
               }
             } yield result,
+          skillVersions = skillId =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("admin.settings", actorId)
+              versions <- ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.skill.searchVersions(SkillVersionSearch(skillId = Some(skillId), pageSize = 200)),
+                ).mapError(JorlanError(_))
+              skillOpt <- ZIO.serviceWithZIO[ZIORepositories](_.skill.getById(skillId)).mapError(JorlanError(_))
+              skill    <- ZIO.fromOption(skillOpt).orElseFail(JorlanError(s"Skill $skillId not found"))
+            } yield versions.map(v => toSkillVersionView(v, skill.name, skill.tier)),
+          pendingSkillVersions = for {
+            actorId  <- actorIdFromSession
+            _        <- requireCapability("admin.skills.approve", actorId)
+            versions <- ZIO
+              .serviceWithZIO[ZIORepositories](
+                _.skill.searchVersions(SkillVersionSearch(status = Some(SkillStatus.AwaitingApproval), pageSize = 200)),
+              ).mapError(JorlanError(_))
+            result <- ZIO.foreach(versions) { v =>
+              ZIO
+                .serviceWithZIO[ZIORepositories](_.skill.getVersionWithSkillName(v.id))
+                .mapError(JorlanError(_))
+                .flatMap {
+                  case Some((ver, name)) =>
+                    ZIO
+                      .serviceWithZIO[ZIORepositories](_.skill.getById(ver.skillId))
+                      .mapError(JorlanError(_))
+                      .map(s => toSkillVersionView(ver, name, s.fold(SkillTier.Declarative)(_.tier)))
+                  case None => ZIO.succeed(toSkillVersionView(v, "", SkillTier.Declarative))
+                }
+            }
+          } yield result,
+          allCustomSkills = for {
+            actorId <- actorIdFromSession
+            _       <- requireCapability("admin.settings", actorId)
+            skills  <- ZIO
+              .serviceWithZIO[ZIORepositories](
+                _.skill.searchByTier(List(SkillTier.Declarative, SkillTier.AgentDraft)),
+              ).mapError(JorlanError(_))
+            result <- ZIO.foreach(skills) { skill =>
+              ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.skill.searchVersions(
+                    SkillVersionSearch(
+                      skillId = Some(skill.id),
+                      pageSize = 200,
+                      sorts = Some(Sort(SkillVersionOrder.CreatedAt, OrderDirection.Desc)),
+                    ),
+                  ),
+                ).mapError(JorlanError(_))
+                .map(versions => versions.headOption.map(v => toSkillVersionView(v, skill.name, skill.tier)))
+            }
+          } yield result.flatten,
         ),
         Mutations(
           createUser = input =>
@@ -1783,6 +1951,44 @@ object JorlanAPI {
               _ <- ZIO.serviceWithZIO[SkillRegistry](_.reloadSkillConfig(key, input.configJson))
               _ <- ZIO.logInfo(s"Skill config reloaded live for '${input.name}' (key=$key)")
             } yield true,
+          createSkillDraft = manifestStr =>
+            for {
+              actorId      <- actorIdFromSession
+              _            <- requireCapability("skill.create", actorId)
+              manifestJson <- ZIO
+                .fromEither(manifestStr.fromJson[zio.json.ast.Json])
+                .mapError(e => JorlanError(s"Invalid manifest JSON: $e"))
+              version <- ZIO.serviceWithZIO[SkillLifecycleService](
+                _.createDraft(manifestJson, SkillTier.Declarative, actorId),
+              )
+              result <- ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.skill.getVersionWithSkillName(version.id),
+                ).mapError(JorlanError(_))
+            } yield result match {
+              case Some((v, name)) => toSkillVersionView(v, name, SkillTier.Declarative)
+              case None            => toSkillVersionView(version, "", SkillTier.Declarative)
+            },
+          advanceSkillLifecycle = versionId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("skill.create", actorId)
+              result  <- ZIO.serviceWithZIO[SkillLifecycleService](_.advance(versionId))
+            } yield toLifecycleResultView(result),
+          approveSkillVersion = versionId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.skills.approve", actorId)
+              result  <- ZIO.serviceWithZIO[SkillLifecycleService](_.approve(versionId, actorId))
+            } yield toLifecycleResultView(result),
+          rejectSkillVersion = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.skills.approve", actorId)
+              result  <- ZIO.serviceWithZIO[SkillLifecycleService](
+                _.reject(input.versionId, input.reason, actorId),
+              )
+            } yield toLifecycleResultView(result),
         ),
         Subscriptions(
           approvalNotifications = ZStream.empty,

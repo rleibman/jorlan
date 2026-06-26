@@ -1,5 +1,6 @@
 package jorlan.graphql.client
 
+import caliban.client.CalibanClientError.DecodingError
 import caliban.client.FieldBuilder._
 import caliban.client._
 import caliban.client.__Value._
@@ -12,7 +13,65 @@ object JorlanClient {
 
   type ChannelIdentityId = String
         
-  
+type SkillVersionId = String
+        
+  sealed trait OAuthProvider extends scala.Product with scala.Serializable { def value: String }
+          object OAuthProvider {
+            case object Google extends OAuthProvider { val value: String = "Google" }
+case object Discord extends OAuthProvider { val value: String = "Discord" }
+case object Telegram extends OAuthProvider { val value: String = "Telegram" }
+
+            implicit val decoder: ScalarDecoder[OAuthProvider] = {
+              case __StringValue ("Google") => Right(OAuthProvider.Google)
+case __StringValue ("Discord") => Right(OAuthProvider.Discord)
+case __StringValue ("Telegram") => Right(OAuthProvider.Telegram)
+              case other => Left(DecodingError(s"Can't build OAuthProvider from input $other"))
+            }
+            implicit val encoder: ArgEncoder[OAuthProvider] = {
+              case OAuthProvider.Google => __EnumValue("Google")
+case OAuthProvider.Discord => __EnumValue("Discord")
+case OAuthProvider.Telegram => __EnumValue("Telegram")
+            }
+
+            val values: scala.collection.immutable.Vector[OAuthProvider] = scala.collection.immutable.Vector(Google, Discord, Telegram)
+          }
+       
+sealed trait SkillStatus extends scala.Product with scala.Serializable { def value: String }
+          object SkillStatus {
+            case object Draft extends SkillStatus { val value: String = "Draft" }
+case object Validated extends SkillStatus { val value: String = "Validated" }
+case object PermissionReviewed extends SkillStatus { val value: String = "PermissionReviewed" }
+case object SandboxTested extends SkillStatus { val value: String = "SandboxTested" }
+case object AwaitingApproval extends SkillStatus { val value: String = "AwaitingApproval" }
+case object Active extends SkillStatus { val value: String = "Active" }
+case object Deprecated extends SkillStatus { val value: String = "Deprecated" }
+case object Revoked extends SkillStatus { val value: String = "Revoked" }
+
+            implicit val decoder: ScalarDecoder[SkillStatus] = {
+              case __StringValue ("Draft") => Right(SkillStatus.Draft)
+case __StringValue ("Validated") => Right(SkillStatus.Validated)
+case __StringValue ("PermissionReviewed") => Right(SkillStatus.PermissionReviewed)
+case __StringValue ("SandboxTested") => Right(SkillStatus.SandboxTested)
+case __StringValue ("AwaitingApproval") => Right(SkillStatus.AwaitingApproval)
+case __StringValue ("Active") => Right(SkillStatus.Active)
+case __StringValue ("Deprecated") => Right(SkillStatus.Deprecated)
+case __StringValue ("Revoked") => Right(SkillStatus.Revoked)
+              case other => Left(DecodingError(s"Can't build SkillStatus from input $other"))
+            }
+            implicit val encoder: ArgEncoder[SkillStatus] = {
+              case SkillStatus.Draft => __EnumValue("Draft")
+case SkillStatus.Validated => __EnumValue("Validated")
+case SkillStatus.PermissionReviewed => __EnumValue("PermissionReviewed")
+case SkillStatus.SandboxTested => __EnumValue("SandboxTested")
+case SkillStatus.AwaitingApproval => __EnumValue("AwaitingApproval")
+case SkillStatus.Active => __EnumValue("Active")
+case SkillStatus.Deprecated => __EnumValue("Deprecated")
+case SkillStatus.Revoked => __EnumValue("Revoked")
+            }
+
+            val values: scala.collection.immutable.Vector[SkillStatus] = scala.collection.immutable.Vector(Draft, Validated, PermissionReviewed, SandboxTested, AwaitingApproval, Active, Deprecated, Revoked)
+          }
+       
   
   type AgentSession
 object AgentSession {
@@ -481,14 +540,14 @@ def view: ViewSelection = (id ~ jobId ~ triggerType ~ expression ~ enabled ~ cre
 type SkillInfo
 object SkillInfo {
   
-final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String], dashboardJsModule: scala.Option[String], hasDashboardData: Boolean)
+final case class SkillInfoView[ToolsSelection](name: String, tier: String, tools: List[ToolsSelection], enabled: Boolean, keywords: List[String], configKey: scala.Option[String], configJsModule: scala.Option[String], dashboardJsModule: scala.Option[String], hasDashboardData: Boolean, oauthProvider: scala.Option[OAuthProvider])
 
 
 
 
 type ViewSelection[ToolsSelection] = SelectionBuilder[SkillInfo, SkillInfoView[ToolsSelection]]
 
-def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule ~ dashboardJsModule ~ hasDashboardData).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData) }
+def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSelection]): ViewSelection[ToolsSelection] = (name ~ tier ~ tools(toolsSelection) ~ enabled ~ keywords ~ configKey ~ configJsModule ~ dashboardJsModule ~ hasDashboardData ~ oauthProvider).map { case (name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData, oauthProvider) => SkillInfoView(name, tier, tools, enabled, keywords, configKey, configJsModule, dashboardJsModule, hasDashboardData, oauthProvider) }
 
   def name: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
   def tier: SelectionBuilder[SkillInfo, String] = _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
@@ -499,6 +558,26 @@ def view[ToolsSelection](toolsSelection: SelectionBuilder[SkillToolInfo, ToolsSe
   def configJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("configJsModule", OptionOf(Scalar()))
   def dashboardJsModule: SelectionBuilder[SkillInfo, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("dashboardJsModule", OptionOf(Scalar()))
   def hasDashboardData: SelectionBuilder[SkillInfo, Boolean] = _root_.caliban.client.SelectionBuilder.Field("hasDashboardData", Scalar())
+  def oauthProvider: SelectionBuilder[SkillInfo, scala.Option[OAuthProvider]] = _root_.caliban.client.SelectionBuilder.Field("oauthProvider", OptionOf(Scalar()))
+}
+
+
+type SkillLifecycleResultView
+object SkillLifecycleResultView {
+  
+final case class SkillLifecycleResultViewView(versionId: SkillVersionId, newStatus: SkillStatus, errors: List[String], info: List[String])
+
+
+
+
+type ViewSelection = SelectionBuilder[SkillLifecycleResultView, SkillLifecycleResultViewView]
+
+def view: ViewSelection = (versionId ~ newStatus ~ errors ~ info).map { case (versionId, newStatus, errors, info) => SkillLifecycleResultViewView(versionId, newStatus, errors, info) }
+
+  def versionId: SelectionBuilder[SkillLifecycleResultView, SkillVersionId] = _root_.caliban.client.SelectionBuilder.Field("versionId", Scalar())
+  def newStatus: SelectionBuilder[SkillLifecycleResultView, SkillStatus] = _root_.caliban.client.SelectionBuilder.Field("newStatus", Scalar())
+  def errors: SelectionBuilder[SkillLifecycleResultView, List[String]] = _root_.caliban.client.SelectionBuilder.Field("errors", ListOf(Scalar()))
+  def info: SelectionBuilder[SkillLifecycleResultView, List[String]] = _root_.caliban.client.SelectionBuilder.Field("info", ListOf(Scalar()))
 }
 
 
@@ -535,6 +614,31 @@ def view: ViewSelection = (ok ~ message).map { case (ok, message) => SkillValida
 
   def ok: SelectionBuilder[SkillValidationResult, Boolean] = _root_.caliban.client.SelectionBuilder.Field("ok", Scalar())
   def message: SelectionBuilder[SkillValidationResult, String] = _root_.caliban.client.SelectionBuilder.Field("message", Scalar())
+}
+
+
+type SkillVersionView
+object SkillVersionView {
+  
+final case class SkillVersionViewView(id: SkillVersionId, skillId: jorlan.SkillId, skillName: String, version: String, tier: String, manifestJson: String, status: SkillStatus, reviewNote: scala.Option[String], createdAt: java.time.Instant, createdBy: scala.Option[jorlan.UserId])
+
+
+
+
+type ViewSelection = SelectionBuilder[SkillVersionView, SkillVersionViewView]
+
+def view: ViewSelection = (id ~ skillId ~ skillName ~ version ~ tier ~ manifestJson ~ status ~ reviewNote ~ createdAt ~ createdBy).map { case (id, skillId, skillName, version, tier, manifestJson, status, reviewNote, createdAt, createdBy) => SkillVersionViewView(id, skillId, skillName, version, tier, manifestJson, status, reviewNote, createdAt, createdBy) }
+
+  def id: SelectionBuilder[SkillVersionView, SkillVersionId] = _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+  def skillId: SelectionBuilder[SkillVersionView, jorlan.SkillId] = _root_.caliban.client.SelectionBuilder.Field("skillId", Scalar())
+  def skillName: SelectionBuilder[SkillVersionView, String] = _root_.caliban.client.SelectionBuilder.Field("skillName", Scalar())
+  def version: SelectionBuilder[SkillVersionView, String] = _root_.caliban.client.SelectionBuilder.Field("version", Scalar())
+  def tier: SelectionBuilder[SkillVersionView, String] = _root_.caliban.client.SelectionBuilder.Field("tier", Scalar())
+  def manifestJson: SelectionBuilder[SkillVersionView, String] = _root_.caliban.client.SelectionBuilder.Field("manifestJson", Scalar())
+  def status: SelectionBuilder[SkillVersionView, SkillStatus] = _root_.caliban.client.SelectionBuilder.Field("status", Scalar())
+  def reviewNote: SelectionBuilder[SkillVersionView, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("reviewNote", OptionOf(Scalar()))
+  def createdAt: SelectionBuilder[SkillVersionView, java.time.Instant] = _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
+  def createdBy: SelectionBuilder[SkillVersionView, scala.Option[jorlan.UserId]] = _root_.caliban.client.SelectionBuilder.Field("createdBy", OptionOf(Scalar()))
 }
 
 
@@ -633,6 +737,9 @@ object Queries {
   def mcpServers[A](innerSelection: SelectionBuilder[McpServerView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("mcpServers", OptionOf(ListOf(Obj(innerSelection))))
   def allKnownCapabilities: SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[jorlan.CapabilityName]]] = _root_.caliban.client.SelectionBuilder.Field("allKnownCapabilities", OptionOf(ListOf(Scalar())))
   def skillValidate[A](value : String)(innerSelection: SelectionBuilder[SkillValidationResult, A])(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("skillValidate", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "String!")))
+  def skillVersions[A](value : jorlan.SkillId)(innerSelection: SelectionBuilder[SkillVersionView, A])(implicit encoder0: ArgEncoder[jorlan.SkillId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("skillVersions", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "SkillId!")))
+  def pendingSkillVersions[A](innerSelection: SelectionBuilder[SkillVersionView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("pendingSkillVersions", OptionOf(ListOf(Obj(innerSelection))))
+  def allCustomSkills[A](innerSelection: SelectionBuilder[SkillVersionView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("allCustomSkills", OptionOf(ListOf(Obj(innerSelection))))
 }
 
 
@@ -683,6 +790,10 @@ object Mutations {
   def enableSkill(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("enableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def disableSkill(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("disableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def updateSkillConfig(name : String, configJson : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("updateSkillConfig", OptionOf(Scalar()), arguments = List(Argument("name", name, "String!"), Argument("configJson", configJson, "String!")))
+  def createSkillDraft[A](value : String)(innerSelection: SelectionBuilder[SkillVersionView, A])(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("createSkillDraft", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "String!")))
+  def advanceSkillLifecycle[A](value : SkillVersionId)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("advanceSkillLifecycle", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "SkillVersionId!")))
+  def approveSkillVersion[A](value : SkillVersionId)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("approveSkillVersion", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "SkillVersionId!")))
+  def rejectSkillVersion[A](versionId : SkillVersionId, reason : String)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("rejectSkillVersion", OptionOf(Obj(innerSelection)), arguments = List(Argument("versionId", versionId, "SkillVersionId!"), Argument("reason", reason, "String!")))
 }
 
 

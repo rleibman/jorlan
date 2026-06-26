@@ -521,7 +521,7 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def search(s: SkillSearch): RepositoryTask[List[SkillRecord]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qSkills)
+    val base = quote(qSkills.filter(r => lift(s.name).forall(n => r.name == n)))
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[SkillRecord]] = s.sorts match {
       case Some(Sort(SkillOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
@@ -566,7 +566,11 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def searchVersions(s: SkillVersionSearch): RepositoryTask[List[SkillVersion]] = {
     val offset = s.page * s.pageSize
     val ps = s.pageSize
-    val base = quote(qSkillVersions.filter(_.skillId == lift(s.skillId)))
+    val base = quote(
+      qSkillVersions
+        .filter(v => lift(s.skillId).forall(sid => v.skillId == sid))
+        .filter(v => lift(s.status).forall(st => v.status == st)),
+    )
     val limited = quote(base.drop(lift(offset)).take(lift(ps)))
     val sorted: Quoted[Query[SkillVersion]] = s.sorts match {
       case Some(Sort(SkillVersionOrder.Id, OrderDirection.Desc))        => quote(limited.sortBy(_.id)(Ord.desc))
@@ -594,10 +598,44 @@ private class QuillSkillRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
                 t,
                 e,
               ) => t.status -> e.status,
+              (
+                t,
+                e,
+              ) => t.reviewNote -> e.reviewNote,
             )
             .returningGenerated(_.id),
         ).map(id => v.copy(id = id)),
     )
+
+  override def upsertVersionStatus(
+    id:         SkillVersionId,
+    status:     SkillStatus,
+    reviewNote: Option[String],
+  ): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qSkillVersions
+            .filter(_.id == lift(id))
+            .update(_.status -> lift(status), _.reviewNote -> lift(reviewNote)),
+        ).unit,
+    )
+
+  override def getVersionWithSkillName(id: SkillVersionId): RepositoryTask[Option[(SkillVersion, String)]] =
+    exec(
+      qc.ctx
+        .run(
+          qSkillVersions
+            .filter(_.id == lift(id))
+            .join(qSkills)
+            .on(_.skillId == _.id)
+            .map { case (v, s) => (v, s.name) },
+        ).map(_.headOption),
+    )
+
+  override def searchByTier(tiers: List[SkillTier]): RepositoryTask[List[SkillRecord]] =
+    if (tiers.isEmpty) exec(qc.ctx.run(qSkills))
+    else exec(qc.ctx.run(qSkills.filter(s => liftQuery(tiers).contains(s.tier))))
 
   override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
     exec(qc.ctx.run(qConnectorInstances.filter(_.id == lift(id))).map(_.headOption))
@@ -1289,7 +1327,45 @@ private class QuillPermissionRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
   override def upsertCapabilityGrant(grant: CapabilityGrant): RepositoryTask[CapabilityGrant] =
     if (grant.id.value == 0L) {
       exec(
-        qc.ctx.run(qCapabilityGrants.insertValue(lift(grant)).returningGenerated(_.id)).map(id => grant.copy(id = id)),
+        qc.ctx
+          .run(
+            qCapabilityGrants
+              .insertValue(lift(grant))
+              .onConflictUpdate(
+                (
+                  t,
+                  e,
+                ) => t.approvalMode -> e.approvalMode,
+                (
+                  t,
+                  e,
+                ) => t.expiresAt -> e.expiresAt,
+                (
+                  t,
+                  e,
+                ) => t.resourceConstraints -> e.resourceConstraints,
+                (
+                  t,
+                  e,
+                ) => t.scopeJson -> e.scopeJson,
+                (
+                  t,
+                  e,
+                ) => t.grantorId -> e.grantorId,
+              ),
+          )
+          .flatMap(_ =>
+            qc.ctx
+              .run(
+                qCapabilityGrants
+                  .filter(g =>
+                    g.capability == lift(grant.capability) &&
+                      g.granteeId == lift(grant.granteeId) &&
+                      g.granteeType == lift(grant.granteeType),
+                  )
+                  .take(1),
+              ).map(_.headOption.getOrElse(grant)),
+          ),
       )
     } else {
       exec(

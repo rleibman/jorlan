@@ -75,6 +75,8 @@ case class SkillVersion(
   manifestJson: Json,
   status:       SkillStatus,
   createdAt:    Instant,
+  createdBy:    Option[UserId] = None,
+  reviewNote:   Option[String] = None,
 ) derives JsonCodec
 
 /** A configured and named instance of a connector to an external system.
@@ -95,5 +97,11 @@ case class ConnectorInstance(
 ) derives JsonCodec {
 
   override def toString: String = s"ConnectorInstance($id, $connectorType, $name, [redacted], $status, $createdAt)"
+
+}
+
+enum OAuthProvider derives JsonCodec {
+
+  case Google, Discord, Telegram // Microsoft, Slack, Telegram, Discord, GitHub
 
 }

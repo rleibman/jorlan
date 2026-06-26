@@ -18,6 +18,7 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.{EmailSkill, SkillRegistry}
+import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.*
 import zio.*
 import zio.http.Client
@@ -243,6 +244,7 @@ object JorlanEndToEndSpec
       stubOAuthCredentialService,
       Client.default,
       DashboardService.live,
+      SkillLifecycleService.live,
     )
 
   private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]

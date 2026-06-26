@@ -44,6 +44,7 @@ object SkillsPage {
     validating:       Set[String],
     validationResult: Map[String, SkillValidationResult],
     toast:            Option[ToastMessage],
+    oauthConnected:   Map[OAuthProvider, Boolean],
   )
 
   val component =
@@ -64,6 +65,7 @@ object SkillsPage {
           validating = Set.empty,
           validationResult = Map.empty,
           toast = None,
+          oauthConnected = Map.empty[OAuthProvider, Boolean],
         ),
       )
       .useEffectOnMountBy {
@@ -75,7 +77,19 @@ object SkillsPage {
             AsyncCallbackRepositories.skill
               .listSkills()
               .flatMap { skills =>
-                state.setState(state.value.copy(skills = skills, loading = false)).asAsyncCallback
+                val providers = skills.flatMap(_.oauthProvider).distinct
+                val checkProviders: AsyncCallback[Map[OAuthProvider, Boolean]] =
+                  AsyncCallback
+                    .traverse(providers) { provider =>
+                      AsyncCallbackRepositories.extCredential
+                        .oauthStatus(provider.toString)
+                        .map(statusOpt => provider -> statusOpt.exists(_.connected))
+                    }.map(_.toMap)
+                checkProviders.flatMap { connected =>
+                  state
+                    .setState(state.value.copy(skills = skills, loading = false, oauthConnected = connected))
+                    .asAsyncCallback
+                }
               }
               .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
               .runNow()
@@ -307,13 +321,18 @@ object SkillsPage {
                                 .asInstanceOf[SxProps[Theme]],
                             ).asInstanceOf[Box.Props],
                         )(
-                          if (state.value.validating.contains(skill.name))
+                          if (
+                            state.value.validating.contains(skill.name) || state.value.configSaving.contains(skill.name)
+                          )
                             CircularProgress.size(18)()
                           else
                             MuiButton
                               .size("small")
                               .variant("outlined")
-                              .onClick(() => validateSkill(skill).runNow())("Validate"),
+                              .onClick { () =>
+                                val json = state.value.configJson.get(skill.name).flatten.getOrElse("{}")
+                                saveConfig(skill, json).runNow()
+                              }("Validate"),
                           state.value.validationResult
                             .get(skill.name)
                             .fold(EmptyVdom) { r =>
@@ -463,6 +482,9 @@ object SkillsPage {
                     state.value.skills.flatMap { skill =>
                       val isExpanded = state.value.expanded.contains(skill.name)
                       val isToggling = state.value.toggling.contains(skill.name)
+                      val providerConnected =
+                        skill.oauthProvider.forall(p => state.value.oauthConnected.getOrElse(p, false))
+
                       scala.List[VdomElement](
                         TableRow
                           .withKey(skill.name)(
@@ -472,18 +494,39 @@ object SkillsPage {
                                 .onClick(() => toggleExpand(skill.name).runNow())(if (isExpanded) "▲" else "▼"),
                             ),
                             TableCell()(
-                              Typography.withProps(
-                                TypographyOwnProps()
-                                  .setVariant("body2")
+                              Box.withProps(
+                                BoxOwnProps[Theme]()
                                   .setSx(
                                     js.Dynamic
-                                      .literal(
-                                        color = if (skill.enabled) "text.primary" else "text.disabled",
-                                        fontStyle = if (skill.enabled) "normal" else "italic",
-                                      ).asInstanceOf[SxProps[Theme]],
-                                  )
-                                  .asInstanceOf[Typography.Props],
-                              )(skill.name),
+                                      .literal(display = "flex", alignItems = "center", gap = 1)
+                                      .asInstanceOf[SxProps[Theme]],
+                                  ).asInstanceOf[Box.Props],
+                              )(
+                                Typography.withProps(
+                                  TypographyOwnProps()
+                                    .setVariant("body2")
+                                    .setSx(
+                                      js.Dynamic
+                                        .literal(
+                                          color = if (skill.enabled) "text.primary" else "text.disabled",
+                                          fontStyle = if (skill.enabled) "normal" else "italic",
+                                        ).asInstanceOf[SxProps[Theme]],
+                                    )
+                                    .asInstanceOf[Typography.Props],
+                                )(skill.name),
+                                if (!providerConnected)
+                                  Chip.withProps(
+                                    ChipOwnProps()
+                                      .setLabel(
+                                        s"Connect ${skill.oauthProvider.fold("account")(_.toString)} to enable",
+                                      )
+                                      .setSize("small")
+                                      .setColor("warning")
+                                      .setVariant("outlined")
+                                      .asInstanceOf[Chip.Props],
+                                  )()
+                                else EmptyVdom,
+                              ),
                             ),
                             TableCell()(
                               Chip.withProps(
@@ -508,6 +551,7 @@ object SkillsPage {
                                   SwitchProps()
                                     .asInstanceOf[SwitchBaseProps]
                                     .setChecked(skill.enabled)
+                                    .setDisabled(!providerConnected)
                                     .setOnChange(
                                       (
                                         _,
