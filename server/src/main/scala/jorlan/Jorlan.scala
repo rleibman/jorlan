@@ -192,11 +192,16 @@ object Jorlan extends ZIOApp {
         .loadAll(
           pluginsDir = new java.io.File(config.jorlan.pluginsDir),
           client = httpClient,
-          getSetting = key => repos.setting.get(key).orDie,
-          setSetting = (
-            key,
-            value,
-          ) => repos.setting.set(key, value).orDie,
+          getSetting = key =>
+            repos.setting
+              .get(key)
+              .tapError(e => ZIO.logWarning(s"Plugin getSetting('$key') failed: ${e.msg}"))
+              .orElseSucceed(None),
+          setSetting = (key, value) =>
+            repos.setting
+              .set(key, value)
+              .tapError(e => ZIO.logWarning(s"Plugin setSetting('$key') failed: ${e.msg}"))
+              .orElseSucceed(()),
         ).catchAll(e => ZIO.logError(s"Plugin loading failed: ${e.msg}").as(List.empty))
       _ <- ZIO.foreach(pluginSkills)(registry.register)
       _ <- ZIO
