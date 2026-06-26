@@ -226,8 +226,8 @@ class DiscordConnectorSkill(
               inbound,
               config.unrecognizedPolicy,
               onResponse = Some(text =>
-                apiClient
-                  .sendToChannel(channelId, text)
+                (if (msg.guildId.isDefined) apiClient.sendToChannel(channelId, text)
+                 else apiClient.sendToDm(msg.authorId, text))
                   .tapError(e => ZIO.logWarning(s"[discord] reply failed for channel $channelId: ${e.msg}"))
                   .ignore,
               ),
