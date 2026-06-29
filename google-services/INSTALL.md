@@ -27,7 +27,11 @@
     - `https://www.googleapis.com/auth/calendar`
     - `https://www.googleapis.com/auth/contacts.readonly`
     - `https://www.googleapis.com/auth/drive`
-5. Add test users (your own Google account) if using External type
+5. **Add test users** — this is required if you chose **External** and your app has not gone through
+   Google's verification process (the default for self-hosted installs). Under **Test users**, click
+   **+ Add users** and add every Google account that will connect to Jorlan. Without this step,
+   Google will return `Error 403: access_denied` ("Jorlan has not completed the Google verification
+   process") when users attempt to authorise.
 
 ---
 
@@ -39,7 +43,7 @@
       Google allows `http://localhost` redirect URIs for Desktop app credentials, so the OAuth flow
       works on any machine where Jorlan is running. Once a user completes the initial authorisation,
       the stored refresh token is used automatically for scheduled tasks and background agents.
-3. Authorised redirect URI: `http://localhost:8080/oauth/google/callback`
+3. Authorised redirect URI: `http://localhost:8080/api/oauth/callback/google`
     - If you run Jorlan on a different port, adjust accordingly.
     - Google permits plain `http://` for `localhost` loopback redirects on Desktop app credentials.
 4. Download the JSON credentials file
@@ -53,16 +57,16 @@ Add the OAuth client details to `/etc/jorlan/server.env` (or the server configur
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:8080/oauth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:8080/api/oauth/callback/google
 ```
 
 Or set via `server_settings`:
 
 ```sql
-INSERT INTO server_settings (`key`, `value`)
+INSERT INTO server_settings (`setting_key`, `value`)
 VALUES ('oauth.google.clientId', '"your-client-id"'),
        ('oauth.google.clientSecret', '"your-client-secret"'),
-       ('oauth.google.redirectUri', '"http://localhost:8080/oauth/google/callback"')
+       ('oauth.google.redirectUri', '"http://localhost:8080/api/oauth/callback/google"')
 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`);
 ```
 
@@ -98,6 +102,6 @@ Grant via **Admin → Agents → \<agent\> → Capabilities**.
 | Symptom                            | Check                                                                     |
 |------------------------------------|---------------------------------------------------------------------------|
 | "Redirect URI mismatch"            | The redirect URI in Google Cloud must exactly match `GOOGLE_REDIRECT_URI`; ensure you used **Desktop app** type, not "Web application" |
-| "Access blocked: app not verified" | Add yourself as a test user in the OAuth consent screen                   |
+| `Error 403: access_denied` ("not completed verification") | In Google Cloud Console → **APIs & Services → OAuth consent screen → Test users**, click **+ Add users** and add your Google account email. Required for all External-type apps that haven't been through Google's verification process. |
 | Token refresh failures             | The user must re-authorise via Settings → Integrations                    |
 | Scope errors                       | Ensure all 4 APIs are enabled in the Google Cloud project                 |

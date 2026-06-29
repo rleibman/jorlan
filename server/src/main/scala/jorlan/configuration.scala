@@ -12,7 +12,7 @@ import com.typesafe.config.{Config as TypesafeConfig, ConfigFactory}
 import zio.config.magnolia.DeriveConfig
 import zio.config.typesafe.TypesafeConfigProvider
 import zio.json.JsonCodec
-import zio.{Duration, IO, UIO, ZIO, ZLayer}
+import zio.{Duration, IO, ZIO, ZLayer}
 
 import java.io.File
 import scala.language.unsafeNulls
@@ -91,17 +91,41 @@ case class GoogleOAuthSettings(
   credentialEncryptionKey: String = "",
 )
 
+/** Discord OAuth 2.0 login settings (separate from the bot/gateway connector). */
+case class DiscordLoginSettings(
+  clientId:     String = "",
+  clientSecret: String = "",
+  redirectUri:  String = "http://localhost:8080/oauth/discord/callback",
+)
+
+/** Telegram Login Widget settings.
+  *
+  * @param botToken
+  *   The bot token (used only for HMAC verification — never sent to the client).
+  * @param botUsername
+  *   The bot's @username (without @), injected into the Login Widget HTML so the browser knows which bot to use.
+  * @param redirectUri
+  *   The callback URL registered with Telegram (must be the same host as the running server).
+  */
+case class TelegramLoginSettings(
+  botToken:    String = "",
+  botUsername: String = "",
+  redirectUri: String = "http://localhost:8080/oauth/telegram/callback",
+)
+
 /** Root server configuration, assembled from all module configs. */
 case class JorlanConfig(
-  db:         DatabaseConfig,
-  auth:       AuthConfig,
-  flyway:     FlywayConfig = FlywayConfig(),
-  http:       HttpConfig = HttpConfig(),
-  ai:         LangChainConfig = LangChainConfig(),
-  agent:      AgentSettings = AgentSettings(),
-  scheduler:  SchedulerSettings = SchedulerSettings(),
-  google:     GoogleOAuthSettings = GoogleOAuthSettings(),
-  pluginsDir: String = "/opt/jorlan/plugins",
+  db:            DatabaseConfig,
+  auth:          AuthConfig,
+  flyway:        FlywayConfig = FlywayConfig(),
+  http:          HttpConfig = HttpConfig(),
+  ai:            LangChainConfig = LangChainConfig(),
+  agent:         AgentSettings = AgentSettings(),
+  scheduler:     SchedulerSettings = SchedulerSettings(),
+  google:        GoogleOAuthSettings = GoogleOAuthSettings(),
+  discordLogin:  DiscordLoginSettings = DiscordLoginSettings(),
+  telegramLogin: TelegramLoginSettings = TelegramLoginSettings(),
+  pluginsDir:    String = "/opt/jorlan/plugins",
 )
 
 /** Root application configuration. */

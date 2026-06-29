@@ -113,6 +113,7 @@ object SubscriptionClientIntegrationSpec
       stubOAuthCredentialService,
       Client.default,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

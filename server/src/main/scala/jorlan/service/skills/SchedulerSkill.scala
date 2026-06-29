@@ -8,7 +8,6 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.*
 import jorlan.service.JobManager
 import just.semver.SemVer
 import zio.*
@@ -43,6 +42,25 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       "daily",
       "weekly",
       "hourly",
+    ),
+    doc = Some(
+      """|## Scheduler Skill
+         |
+         |Agent-directed job scheduling using cron expressions.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `scheduler.create_job` | Create a new cron job | `scheduler.manage` |
+         || `scheduler.list_jobs` | List all scheduled jobs | `scheduler.manage` |
+         || `scheduler.cancel_job` | Cancel/delete a job | `scheduler.manage` |
+         |
+         |### Setup
+         |No external configuration required. The skill is always available.
+         |Grant the `scheduler.manage` capability to agents.
+         |
+         |### Notes
+         |Uses standard 5-field cron syntax (e.g. `0 10 * * *` = daily at 10am).""".stripMargin,
     ),
     tools = List(
       ToolDescriptor(

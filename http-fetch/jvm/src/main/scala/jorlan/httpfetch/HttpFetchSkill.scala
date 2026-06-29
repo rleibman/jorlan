@@ -64,6 +64,29 @@ class HttpFetchSkill(
     ),
     configKey = Some("skill.httpFetch"),
     configJsModule = Some("jorlan-http-fetch"),
+    doc = Some(
+      """|## HTTP Fetch Skill
+         |
+         |Lets agents make HTTP GET and POST requests to external URLs.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `http_fetch.get` | HTTP GET request | `http_fetch.call` |
+         || `http_fetch.post` | HTTP POST request | `http_fetch.call` |
+         |
+         |### Configuration
+         |1. Enable the `http_fetch` skill in Admin → Skills.
+         |2. Add a `skill.httpFetch` entry in Server Settings with:
+         |   - `allowedHosts`: permitted host patterns (e.g. `["api.example.com", "*.example.org"]`; use `["*"]` to allow all)
+         |   - `maxResponseBytes`: max response size in bytes (default 65536)
+         |   - `timeoutSeconds`: request timeout (default 10)
+         |3. Grant the `http_fetch.call` capability to agents.
+         |
+         |### Notes
+         |Requests to hosts not in the allowlist are rejected without making a network call.
+         |Supports wildcard host patterns (`*.example.com`).""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "http_fetch.get",

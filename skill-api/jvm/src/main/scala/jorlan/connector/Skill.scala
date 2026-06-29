@@ -163,6 +163,7 @@ case class SkillDescriptor(
   configJsModule:    Option[String] = None,
   dashboardJsModule: Option[String] = None,
   oauthProvider:     Option[OAuthProvider] = None,
+  doc:               Option[String] = None,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

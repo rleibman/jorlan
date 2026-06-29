@@ -76,6 +76,51 @@ class DiscordConnectorSkill(
     ),
     configKey = Some("skill.discord"),
     configJsModule = Some("jorlan-discord"),
+    doc = Some(
+      """|# Discord Connector Skill
+         |
+         |Bidirectional Discord integration — receive messages from Discord channels/DMs and reply via the same channel.
+         |
+         |## Tools
+         |
+         || Tool                       | Description                                              | Capability      |
+         ||----------------------------|----------------------------------------------------------|-----------------|
+         || `discord.send_message`     | Send a message to a guild text channel by Snowflake ID   | `discord.send`  |
+         || `discord.send_dm`          | Send a DM to a user by Snowflake user ID                 | `discord.send`  |
+         || `discord.get_history`      | Retrieve recent messages from a channel (up to 100)      | `discord.read`  |
+         || `discord.get_channel_info` | Get channel name, guild, and type by Snowflake channel ID | `discord.read`  |
+         |
+         |## Setup
+         |
+         |1. Create a Discord Application and Bot at <https://discord.com/developers/applications>
+         |2. Enable **Message Content Intent** and **Server Members Intent** in Bot settings
+         |3. Generate an invite URL with scopes `bot` + permissions: Read Messages, Send Messages, Read History
+         |4. Navigate to **Admin → Connectors** in Jorlan, click **+ Add Connector → Discord**
+         |5. Fill in **Bot Token**, optional **Mention Only**, **Allowed Guild IDs**, **Allowed User IDs**
+         |
+         |## User mapping
+         |
+         |For each Discord user: **Admin → Users → \<user\> → Identities** → add a Discord identity with the user's Snowflake ID.
+         |(In Discord: Settings → Advanced → Developer Mode → right-click user → Copy User ID)
+         |
+         |## Capabilities
+         |
+         || Capability      | Allows                                              |
+         ||-----------------|-----------------------------------------------------|
+         || `discord.send`  | Send messages and DMs on Discord                    |
+         || `discord.read`  | Read channel history and channel metadata           |
+         |
+         |## Filtering options
+         |
+         || Setting              | Default      | Description                                                   |
+         ||---------------------|--------------|---------------------------------------------------------------|
+         || `botToken`           | (required)   | Discord bot token                                             |
+         || `allowedGuildIds`    | (empty = all)| Restrict to specific servers                                  |
+         || `allowedUserIds`     | (empty = all)| Restrict to specific users                                    |
+         || `mentionOnly`        | `true`       | Only process messages that @mention the bot in guild channels  |
+         || `unrecognizedPolicy` | `Reject`     | `Reject` or `Quarantine` unknown senders                      |
+         |""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "discord.send_message",
@@ -207,36 +252,33 @@ class DiscordConnectorSkill(
 
   private def processMessage(msg: DiscordRawMessage): UIO[Unit] = {
     // Skip bots
-    if (msg.isBot) {
-      ZIO.unit
-    } else if (
-      config.allowedGuildIds.nonEmpty && msg.guildId.isDefined && !config.allowedGuildIds.contains(msg.guildId.get)
-    ) {
+    if (config.allowedGuildIds.nonEmpty && msg.guildId.isDefined && !config.allowedGuildIds.contains(msg.guildId.get)) {
       ZIO.logDebug(s"[discord] dropping message from unlisted guild ${msg.guildId.get}")
     } else if (config.allowedUserIds.nonEmpty && !config.allowedUserIds.contains(msg.authorId)) {
       ZIO.logDebug(s"[discord] dropping message from unlisted user ${msg.authorId}")
     } else if (config.mentionOnly && msg.guildId.isDefined && !msg.isMention) {
       ZIO.logDebug(s"[discord] dropping guild message with no bot mention from ${msg.authorId}")
-    } else {
-      DiscordMessageNormalizer.normalize(msg) match {
-        case None          => ZIO.unit
-        case Some(inbound) =>
-          val channelId = msg.channelId
-          ingress
-            .receive(
-              inbound,
-              config.unrecognizedPolicy,
-              onResponse = Some(text =>
-                (if (msg.guildId.isDefined) apiClient.sendToChannel(channelId, text)
-                 else apiClient.sendToDm(msg.authorId, text))
-                  .tapError(e => ZIO.logWarning(s"[discord] reply failed for channel $channelId: ${e.msg}"))
-                  .ignore,
-              ),
-            )
-            .tapError(e => ZIO.logWarning(s"[discord] ingress error for message ${msg.messageId}: ${e.msg}"))
-            .ignore
-      }
-    }
+    } else
+      {
+        DiscordMessageNormalizer.normalize(msg) match {
+          case None          => ZIO.unit
+          case Some(inbound) =>
+            val channelId = msg.channelId
+            ingress
+              .receive(
+                inbound,
+                config.unrecognizedPolicy,
+                onResponse = Some(text =>
+                  (if (msg.guildId.isDefined) apiClient.sendToChannel(channelId, text)
+                   else apiClient.sendToDm(msg.authorId, text))
+                    .tapError(e => ZIO.logWarning(s"[discord] reply failed for channel $channelId: ${e.msg}"))
+                    .ignore,
+                ),
+              )
+              .tapError(e => ZIO.logWarning(s"[discord] ingress error for message ${msg.messageId}: ${e.msg}"))
+              .ignore
+        }
+      }.unless(msg.isBot).unit
   }
 
 }

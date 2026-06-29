@@ -71,6 +71,7 @@ case class McpServerInfo(
   env:       List[McpEnvVarInfo] = List.empty,
   url:       Option[String] = None,
   enabled:   Boolean = true,
+  keywords:  List[String] = List.empty,
 ) derives JsonCodec
 
 /** Result of a skill configuration validation check. */
@@ -91,6 +92,7 @@ case class SkillInfo(
   dashboardJsModule: Option[String] = None,
   hasDashboardData:  Boolean = false,
   oauthProvider:     Option[OAuthProvider] = None,
+  doc:               Option[String] = None,
 ) derives JsonCodec
 
 case class SkillVersionInfo(

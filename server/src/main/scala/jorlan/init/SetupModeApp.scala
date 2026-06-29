@@ -7,13 +7,11 @@
 package jorlan.init
 
 import jorlan.*
-import jorlan.db.repository.{RepositoryError, ZIORepositories, ZIOServerSettingsRepository}
+import jorlan.db.repository.{RepositoryError, ZIORepositories}
 import zio.*
 import zio.http.*
 import zio.json.*
-import zio.json.ast.Json
 
-import java.util.concurrent.TimeUnit
 import scala.language.unsafeNulls
 
 /** HTTP app served while the server is uninitialized.

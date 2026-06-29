@@ -8,7 +8,6 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
-import jorlan.*
 import zio.*
 
 /** Evaluates a [[CapabilityRequest]] by querying the permission store in the prescribed priority order:

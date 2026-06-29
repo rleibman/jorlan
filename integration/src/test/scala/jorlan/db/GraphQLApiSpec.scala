@@ -102,6 +102,7 @@ object GraphQLApiSpec
       stubOAuthCredentialService,
       Client.default.orDie,
       DashboardService.live,
+      ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
       SkillLifecycleService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

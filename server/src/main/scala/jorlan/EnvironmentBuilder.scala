@@ -6,25 +6,21 @@
 
 package jorlan
 
-import _root_.auth.oauth.{OAuthService, OAuthStateStore}
+import _root_.auth.oauth.{OAuthProviderConfig, OAuthService, OAuthStateStore}
 import _root_.auth.{AuthConfig, AuthServer, key}
 import ai.{EmbeddingModel, EmbeddingStore, LangChainServiceBuilder}
+import jorlan.*
 import jorlan.auth.JorlanAuthServer
 import jorlan.connector.*
-import jorlan.telegram.*
-import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkill}
 import jorlan.db.repository.{QuillRepositories, ZIORepositories}
-import jorlan.*
-import jorlan.email.{ImapSmtpProvider, PgpService}
+import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkill}
 import jorlan.google.*
-import jorlan.*
 import jorlan.service.*
-import jorlan.service.DashboardService
 import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
-import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill}
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
@@ -41,8 +37,48 @@ object EnvironmentBuilder {
     ZLayer
       .fromZIO(
         ZIO.serviceWithZIO[ConfigurationService](_.appConfig).map { cfg =>
-          val a = cfg.jorlan.auth
-          OAuthService.live() // Note if you later want to support oauth
+          val googleCfg = cfg.jorlan.google
+          val discordCfg = cfg.jorlan.discordLogin
+          val tgCfg = cfg.jorlan.telegramLogin
+
+          val googleConfig = Option.when(googleCfg.clientId.nonEmpty)(
+            OAuthProviderConfig(
+              clientId = googleCfg.clientId,
+              clientSecret = googleCfg.clientSecret,
+              authorizationUri = "https://accounts.google.com/o/oauth2/v2/auth",
+              tokenUri = "https://oauth2.googleapis.com/token",
+              userInfoUri = "https://www.googleapis.com/oauth2/v3/userinfo",
+              redirectUri = googleCfg.redirectUri,
+              scopes = List("openid", "email", "profile"),
+            ),
+          )
+          val discordConfig = Option.when(discordCfg.clientId.nonEmpty)(
+            OAuthProviderConfig(
+              clientId = discordCfg.clientId,
+              clientSecret = discordCfg.clientSecret,
+              authorizationUri = "https://discord.com/oauth2/authorize",
+              tokenUri = "https://discord.com/api/oauth2/token",
+              userInfoUri = "https://discord.com/api/users/@me",
+              redirectUri = discordCfg.redirectUri,
+              scopes = List("identify", "email"),
+            ),
+          )
+          val telegramConfig = Option.when(tgCfg.botToken.nonEmpty)(
+            OAuthProviderConfig(
+              clientId = tgCfg.botUsername,
+              clientSecret = tgCfg.botToken,
+              authorizationUri = "",
+              tokenUri = "",
+              userInfoUri = "",
+              redirectUri = tgCfg.redirectUri,
+              scopes = List.empty,
+            ),
+          )
+
+          OAuthService.live(
+            googleConfig = googleConfig,
+            discordConfig = discordConfig,
+          )
         },
       ).flatten
 
@@ -50,7 +86,8 @@ object EnvironmentBuilder {
     : ZLayer[ZIORepositories & MessageIngress & Client, JorlanError, ConnectorManager] =
     ZLayer.fromZIO {
       for {
-        skillRepo  <- ZIO.serviceWith[ZIORepositories](_.skill)
+        repos <- ZIO.service[ZIORepositories]
+        skillRepo = repos.skill
         ingress    <- ZIO.service[MessageIngress]
         httpClient <- ZIO.service[Client]
         connectors <- skillRepo
@@ -73,9 +110,29 @@ object EnvironmentBuilder {
             s"[connector] Skipping ${parsed.flatten.length - deduped.length} duplicate Telegram instance(s) with the same bot token",
           ),
         )
+        // Resolver: look up a user's Telegram chatId by display name
+        telegramNameResolver: jorlan.telegram.TelegramNameResolver = { name =>
+          repos.user
+            .search(UserSearch(fuzzyName = Some(name), active = Some(true))).mapError(JorlanError(_)).flatMap { users =>
+              val ranked = jorlan.service.FuzzyNameMatch.rank(users, name)(_.displayName)
+              ZIO
+                .foreach(ranked.headOption) { user =>
+                  repos.user
+                    .getChannelIdentities(user.id).mapError(JorlanError(_)).map { ids =>
+                      ids.find(_.channelType == ChannelType.Telegram).map(_.channelUserId)
+                    }
+                }.map(_.flatten)
+            }
+        }
         telegramSkills <- ZIO.foreach(deduped) { case (ci, cfg) =>
           ZIO.logInfo(s"[connector:${ci.id}] creating Telegram connector") *>
-            TelegramConnectorSkill.make(cfg, ci.id, TelegramApiClientLive(cfg, httpClient), ingress)
+            TelegramConnectorSkill.make(
+              cfg,
+              ci.id,
+              TelegramApiClientLive(cfg, httpClient),
+              ingress,
+              telegramNameResolver,
+            )
         }
         discordInstances = connectors.filter(_.connectorType == ConnectorType.Discord)
         _ <- ZIO.logInfo(s"[connector] found ${discordInstances.length} Discord connector instance(s) in DB")
@@ -157,7 +214,6 @@ object EnvironmentBuilder {
         MemoryServiceImpl.live,
         NotificationRouter.live,
         SkillRegistry.liveSecure,
-        SkillLifecycleService.live,
         DashboardService.live,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
@@ -166,6 +222,8 @@ object EnvironmentBuilder {
         liveConnectorManagerLayer,
         oauthCredentialServiceLayer,
         Client.default,
+        OAuthReconnectService.live,
+        SkillLifecycleService.live,
       ).orDie
 
 }

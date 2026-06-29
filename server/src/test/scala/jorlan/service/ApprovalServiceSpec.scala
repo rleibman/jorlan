@@ -8,7 +8,6 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
-import jorlan.*
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*

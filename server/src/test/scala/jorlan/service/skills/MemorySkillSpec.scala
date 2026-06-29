@@ -6,14 +6,13 @@
 
 package jorlan.service.skills
 
+import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.*
 import jorlan.service.MemoryService
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.skills.MemorySkill
-import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.testing.{InMemoryRepositories, NoOpEmbeddingLayers}
 import zio.*
 import zio.json.ast.Json

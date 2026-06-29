@@ -9,6 +9,7 @@ package jorlan.service.skills.declarative
 import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.skills.SkillRegistry
+import jorlan.service.CapabilityEvaluator
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.http.Client
@@ -44,20 +45,23 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
     raw.fromJson[Json].getOrElse(Json.Obj())
   }
 
-  private val baseLayer: ULayer[SkillLifecycleService] =
-    ZLayer.make[SkillLifecycleService](
+  private val allowAll: ULayer[CapabilityEvaluator] =
+    ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
+
+  private val baseLayer: ULayer[SkillRegistry] =
+    ZLayer.make[SkillRegistry](
       InMemoryRepositories.live(),
-      SkillRegistry.live,
+      allowAll,
       FakeModelGateway.layer(List.empty),
       Client.default.orDie,
-      SkillLifecycleService.live,
+      SkillRegistry.liveSecure,
     )
 
   override def spec: Spec[TestEnvironment & zio.Scope, Any] =
     suite("SkillLifecycleService")(
       test("createDraft creates a version with Draft status") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
         } yield assertTrue(
           sv.status == SkillStatus.Draft,
@@ -66,13 +70,13 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("createDraft with invalid manifest fails") {
         for {
-          svc    <- ZIO.service[SkillLifecycleService]
+          svc    <- ZIO.service[SkillRegistry]
           result <- svc.createDraft(Json.Str("bad json"), SkillTier.Declarative, UserId(1L)).either
         } yield assertTrue(result.isLeft)
       }.provide(baseLayer),
       test("advance from Draft moves to Validated") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           r   <- svc.advance(sv.id)
         } yield assertTrue(
@@ -82,7 +86,7 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("advance from Validated moves to PermissionReviewed") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           _   <- svc.advance(sv.id)
           r   <- svc.advance(sv.id)
@@ -90,7 +94,7 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("advance through full pipeline reaches AwaitingApproval") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           r1  <- svc.advance(sv.id)
           r2  <- svc.advance(sv.id)
@@ -105,7 +109,7 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("approve from AwaitingApproval makes skill Active") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           _   <- svc.advance(sv.id)
           _   <- svc.advance(sv.id)
@@ -116,14 +120,14 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("approve from non-AwaitingApproval status fails") {
         for {
-          svc    <- ZIO.service[SkillLifecycleService]
+          svc    <- ZIO.service[SkillRegistry]
           sv     <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           result <- svc.approve(sv.id, UserId(99L)).either
         } yield assertTrue(result.isLeft)
       }.provide(baseLayer),
       test("reject from AwaitingApproval returns to Draft with note") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           _   <- svc.advance(sv.id)
           _   <- svc.advance(sv.id)
@@ -137,7 +141,7 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
       }.provide(baseLayer),
       test("advance from AwaitingApproval returns error (no further advance)") {
         for {
-          svc <- ZIO.service[SkillLifecycleService]
+          svc <- ZIO.service[SkillRegistry]
           sv  <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
           _   <- svc.advance(sv.id)
           _   <- svc.advance(sv.id)

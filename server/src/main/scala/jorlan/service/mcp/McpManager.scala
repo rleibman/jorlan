@@ -65,7 +65,16 @@ class McpManagerImpl(
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP transport requires 'url'"))
           case Some(url) =>
             HttpMcpClient.make(client, url).flatMap { httpClient =>
-              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient))
+              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords))
+            }
+        }
+      case McpTransport.HttpSse =>
+        cfg.url match {
+          case None =>
+            ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP+SSE transport requires 'url'"))
+          case Some(url) =>
+            HttpSseMcpClient.make(client, url).flatMap { httpClient =>
+              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords))
             }
         }
       case McpTransport.Stdio =>
@@ -75,7 +84,7 @@ class McpManagerImpl(
           case Some(_) =>
             // StdioMcpClient.make uses ZIO.acquireRelease, so the process lifetime is bound to the caller's Scope
             StdioMcpClient.make(cfg).flatMap { stdioClient =>
-              stdioClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, stdioClient))
+              stdioClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, stdioClient, cfg.keywords))
             }
         }
     }

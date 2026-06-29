@@ -7,15 +7,12 @@
 package jorlan.service.skills
 
 import ai.{EmbeddingModel, EmbeddingStore}
-import dev.langchain4j.store.embedding.{EmbeddingSearchRequest, filter as lc4jFilter}
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.*
 import jorlan.service.MemoryService
-import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import just.semver.SemVer
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
@@ -51,6 +48,26 @@ class MemorySkill(
       "history",
       "save",
       "persist",
+    ),
+    doc = Some(
+      """|## Memory Skill
+         |
+         |Explicit agent-directed memory operations for storing and recalling information.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `memory.remember` | Store a named fact | `memory.write` |
+         || `memory.recall` | Search memory by semantic query | `memory.read` |
+         || `memory.forget` | Delete a named memory entry | `memory.write` |
+         |
+         |### Setup
+         |No external configuration required. The skill is always available.
+         |Grant `memory.write` and `memory.read` capabilities to agents.
+         |
+         |### Notes
+         |`memory.remember` with `scope: user` persists across sessions.
+         |`memory.remember` with `scope: private` is session-only.""".stripMargin,
     ),
     tools = List(
       ToolDescriptor(
@@ -274,7 +291,7 @@ class MemorySkill(
   ): IO[JorlanError, MemoryRecord] =
     memoryService.markPrivate(id, requestingUserId)
 
-  def searchSemantic(
+  private def searchSemantic(
     query:  String,
     userId: UserId,
     limit:  Int,

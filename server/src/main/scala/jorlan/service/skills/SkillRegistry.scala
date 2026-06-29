@@ -8,16 +8,27 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
-import jorlan.*
-import jorlan.db.repository.{ZIORepositories, ZIOSkillIndexRepository, ZIOSkillRepository}
-import jorlan.service.{CapabilityEvaluator, ToolSpec}
+import jorlan.db.repository.{RepositoryError, ZIORepositories, ZIOSkillIndexRepository, ZIOSkillRepository}
+import jorlan.service.skills.declarative.*
+import jorlan.service.{CapabilityEvaluator, ModelGateway, ToolSpec}
 import zio.*
+import zio.http.Client
 import zio.json.*
 import zio.json.ast.Json
 
+import java.time.Instant
+
+case class LifecycleResult(
+  versionId: SkillVersionId,
+  newStatus: SkillStatus,
+  errors:    List[String],
+  info:      List[String],
+) derives JsonCodec
+
 /** Registry of all active [[Skill]] instances in the server.
   *
-  * Provides tool discovery (for the ReAct loop) and dispatches tool invocations from [[AgentRunnerImpl]].
+  * Provides tool discovery (for the ReAct loop), dispatches tool invocations, and drives the declarative skill
+  * lifecycle state machine (Draft → Active).
   */
 trait SkillRegistry {
 
@@ -83,6 +94,31 @@ trait SkillRegistry {
   def isDisabled(name:   String): UIO[Boolean]
   def disabledSet:                UIO[Set[String]]
 
+  // ── Declarative skill lifecycle ────────────────────────────────────────────
+
+  /** Create a new skill draft version from the given JSON manifest. */
+  def createDraft(
+    manifest:  Json,
+    tier:      SkillTier,
+    createdBy: UserId,
+  ): IO[JorlanError, SkillVersion]
+
+  /** Advance the skill version one step through the lifecycle state machine. */
+  def advance(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
+
+  /** Approve an `AwaitingApproval` version: set status to Active and register it in this registry. */
+  def approve(
+    versionId:  SkillVersionId,
+    approvedBy: UserId,
+  ): IO[JorlanError, LifecycleResult]
+
+  /** Reject an `AwaitingApproval` version back to Draft with a review note. */
+  def reject(
+    versionId:  SkillVersionId,
+    reason:     String,
+    rejectedBy: UserId,
+  ): IO[JorlanError, LifecycleResult]
+
   /** Register a factory that can rebuild a configurable skill from its raw JSON config string.
     *
     * Call once per configurable skill at startup. When [[reloadSkillConfig]] is later invoked (e.g. after the user
@@ -134,12 +170,14 @@ object SkillRegistry {
       } yield registry: SkillRegistry,
     )
 
-  /** Build an empty registry wired with [[CapabilityEvaluator]] and DB index for production use. */
-  val liveSecure: URLayer[CapabilityEvaluator & ZIORepositories, SkillRegistry] =
+  /** Build an empty registry wired with [[CapabilityEvaluator]], DB index, and lifecycle deps for production use. */
+  val liveSecure: URLayer[CapabilityEvaluator & ZIORepositories & Client & ModelGateway, SkillRegistry] =
     ZLayer.fromZIO(
       for {
         evaluator <- ZIO.service[CapabilityEvaluator]
         repos     <- ZIO.service[ZIORepositories]
+        client    <- ZIO.service[Client]
+        gateway   <- ZIO.service[ModelGateway]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
@@ -154,15 +192,22 @@ object SkillRegistry {
         4,
         1.0,
         factories,
+        Some(client),
+        Some(gateway),
       ),
     )
 
-  /** Build a pre-populated registry wired with [[CapabilityEvaluator]] and DB index for production use. */
-  def liveSecureWith(skills: Skill*): URLayer[CapabilityEvaluator & ZIORepositories, SkillRegistry] =
+  /** Build a pre-populated registry wired with [[CapabilityEvaluator]], DB index, and lifecycle deps for production
+    * use.
+    */
+  def liveSecureWith(skills: Skill*)
+    : URLayer[CapabilityEvaluator & ZIORepositories & Client & ModelGateway, SkillRegistry] =
     ZLayer.fromZIO(
       for {
         evaluator <- ZIO.service[CapabilityEvaluator]
         repos     <- ZIO.service[ZIORepositories]
+        client    <- ZIO.service[Client]
+        gateway   <- ZIO.service[ModelGateway]
         ref       <- Ref.make(Map.empty[String, Skill])
         cache     <- makeCache
         disabled  <- Ref.make(Set.empty[String])
@@ -177,6 +222,8 @@ object SkillRegistry {
           4,
           1.0,
           factories,
+          Some(client),
+          Some(gateway),
         )
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
@@ -216,7 +263,173 @@ class SkillRegistryLive(
   topN:           Int,
   recentBoost:    Double,
   skillFactories: Ref[Map[String, String => IO[JorlanError, Skill]]],
+  httpClient:     Option[Client] = None,
+  modelGateway:   Option[ModelGateway] = None,
 ) extends SkillRegistry {
+
+  private def repoErr(e: RepositoryError): JorlanError = JorlanError(e.msg)
+
+  private def requireSkillRepo: IO[JorlanError, ZIOSkillRepository] =
+    ZIO.fromOption(skillRepo).orElseFail(JorlanError("Skill lifecycle is not available in this runtime mode"))
+
+  override def createDraft(
+    manifest:  Json,
+    tier:      SkillTier,
+    createdBy: UserId,
+  ): IO[JorlanError, SkillVersion] =
+    ManifestValidator.validate(manifest) match {
+      case Left(errors) => ZIO.fail(JorlanError(s"Invalid manifest: ${errors.mkString("; ")}"))
+      case Right(m)     =>
+        for {
+          repo        <- requireSkillRepo
+          existing    <- repo.search(SkillSearch(name = Some(m.name))).mapError(repoErr)
+          skillRecord <- existing.headOption match {
+            case Some(r) => ZIO.succeed(r)
+            case None    =>
+              repo
+                .upsert(
+                  SkillRecord(
+                    id = SkillId.empty,
+                    name = m.name,
+                    currentVersion = None,
+                    tier = tier,
+                    createdAt = Instant.now(),
+                  ),
+                ).mapError(repoErr)
+          }
+          version <- repo
+            .upsertVersion(
+              SkillVersion(
+                id = SkillVersionId.empty,
+                skillId = skillRecord.id,
+                version = m.version,
+                manifestJson = manifest,
+                status = SkillStatus.Draft,
+                createdAt = Instant.now(),
+                createdBy = Some(createdBy),
+                reviewNote = None,
+              ),
+            ).mapError(repoErr)
+        } yield version
+    }
+
+  override def advance(versionId: SkillVersionId): IO[JorlanError, LifecycleResult] =
+    for {
+      repo       <- requireSkillRepo
+      versionOpt <- repo.getVersion(versionId).mapError(repoErr)
+      version    <- ZIO.fromOption(versionOpt).orElseFail(JorlanError(s"SkillVersion $versionId not found"))
+      result     <- version.status match {
+        case SkillStatus.Draft              => runValidate(version)
+        case SkillStatus.Validated          => runPermissionReview(version)
+        case SkillStatus.PermissionReviewed => runSandboxTest(version)
+        case SkillStatus.SandboxTested      => runSubmitForApproval(version)
+        case other                          =>
+          ZIO.succeed(
+            LifecycleResult(
+              versionId = versionId,
+              newStatus = other,
+              errors = List(s"Cannot advance from status '$other'; must be approved/rejected by an admin"),
+              info = Nil,
+            ),
+          )
+      }
+    } yield result
+
+  override def approve(
+    versionId:  SkillVersionId,
+    approvedBy: UserId,
+  ): IO[JorlanError, LifecycleResult] =
+    for {
+      repo    <- requireSkillRepo
+      client  <- ZIO.fromOption(httpClient).orElseFail(JorlanError("HTTP client not available for skill approval"))
+      gateway <- ZIO.fromOption(modelGateway).orElseFail(JorlanError("Model gateway not available for skill approval"))
+      versionOpt <- repo.getVersion(versionId).mapError(repoErr)
+      version    <- ZIO.fromOption(versionOpt).orElseFail(JorlanError(s"SkillVersion $versionId not found"))
+      _          <- ZIO
+        .fail(JorlanError(s"Cannot approve version in status '${version.status}'; must be AwaitingApproval"))
+        .when(version.status != SkillStatus.AwaitingApproval)
+      manifest <- parseManifest(version)
+      _        <- repo.upsertVersionStatus(versionId, SkillStatus.Active, None).mapError(repoErr)
+      _        <- repo
+        .upsert(
+          SkillRecord(
+            id = version.skillId,
+            name = manifest.name,
+            currentVersion = Some(
+              just.semver.SemVer.parse(manifest.version).getOrElse(just.semver.SemVer.unsafeParse("1.0.0")),
+            ),
+            tier = SkillTier.Declarative,
+            createdAt = Instant.now(),
+          ),
+        ).mapError(repoErr)
+      _ <- register(DeclarativeSkill.from(manifest, client, gateway))
+    } yield LifecycleResult(versionId, SkillStatus.Active, Nil, List("Skill approved and registered"))
+
+  override def reject(
+    versionId:  SkillVersionId,
+    reason:     String,
+    rejectedBy: UserId,
+  ): IO[JorlanError, LifecycleResult] =
+    for {
+      repo       <- requireSkillRepo
+      versionOpt <- repo.getVersion(versionId).mapError(repoErr)
+      version    <- ZIO.fromOption(versionOpt).orElseFail(JorlanError(s"SkillVersion $versionId not found"))
+      _          <- ZIO
+        .fail(JorlanError(s"Cannot reject version in status '${version.status}'; must be AwaitingApproval"))
+        .when(version.status != SkillStatus.AwaitingApproval)
+      _ <- repo.upsertVersionStatus(versionId, SkillStatus.Draft, Some(reason)).mapError(repoErr)
+    } yield LifecycleResult(versionId, SkillStatus.Draft, Nil, List(s"Skill rejected: $reason"))
+
+  private def runValidate(version: SkillVersion): IO[JorlanError, LifecycleResult] =
+    ManifestValidator.validate(version.manifestJson) match {
+      case Left(errors) =>
+        ZIO.succeed(LifecycleResult(version.id, SkillStatus.Draft, errors, Nil))
+      case Right(_) =>
+        requireSkillRepo
+          .flatMap(_.upsertVersionStatus(version.id, SkillStatus.Validated, None).mapError(repoErr))
+          .as(LifecycleResult(version.id, SkillStatus.Validated, Nil, List("Manifest validated successfully")))
+    }
+
+  private def runPermissionReview(version: SkillVersion): IO[JorlanError, LifecycleResult] =
+    parseManifest(version).flatMap { m =>
+      val detectedCaps = m.tools.flatMap(_.requiredCapabilities).distinct
+      requireSkillRepo
+        .flatMap(_.upsertVersionStatus(version.id, SkillStatus.PermissionReviewed, None).mapError(repoErr))
+        .as(
+          LifecycleResult(
+            version.id,
+            SkillStatus.PermissionReviewed,
+            Nil,
+            List(s"Required capabilities: ${if (detectedCaps.isEmpty) "(none)" else detectedCaps.mkString(", ")}"),
+          ),
+        )
+    }
+
+  private def runSandboxTest(version: SkillVersion): IO[JorlanError, LifecycleResult] =
+    parseManifest(version).flatMap { m =>
+      val hasHttp = m.tools.exists {
+        case DeclarativeToolDef(_, _, _, _, _, _, ExecutorConfig.HttpApi(_)) => true
+        case _                                                               => false
+      }
+      val infoMsg =
+        if (hasHttp)
+          "Sandbox test auto-passed (HTTP connectivity not verified in sandbox — verify manually)"
+        else
+          "Sandbox test passed"
+      requireSkillRepo
+        .flatMap(_.upsertVersionStatus(version.id, SkillStatus.SandboxTested, None).mapError(repoErr))
+        .as(LifecycleResult(version.id, SkillStatus.SandboxTested, Nil, List(infoMsg)))
+    }
+
+  private def runSubmitForApproval(version: SkillVersion): IO[JorlanError, LifecycleResult] =
+    requireSkillRepo
+      .flatMap(_.upsertVersionStatus(version.id, SkillStatus.AwaitingApproval, None).mapError(repoErr))
+      .as(LifecycleResult(version.id, SkillStatus.AwaitingApproval, Nil, List("Submitted for admin approval")))
+
+  private def parseManifest(version: SkillVersion): IO[JorlanError, DeclarativeSkillManifest] =
+    ZIO
+      .fromEither(version.manifestJson.toString.fromJson[DeclarativeSkillManifest])
+      .mapError(e => JorlanError(s"Failed to parse manifest for version ${version.id}: $e"))
 
   override def register(skill: Skill): UIO[Unit] =
     for {

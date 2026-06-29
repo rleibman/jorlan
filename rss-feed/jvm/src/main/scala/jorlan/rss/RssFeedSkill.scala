@@ -58,6 +58,39 @@ class RssFeedSkill(
     ),
     configKey = None,
     configJsModule = Some("jorlan-rss-feed"),
+    doc = Some(
+      """|# RSS Feed Skill
+         |
+         |Built-in skill for subscribing to and reading RSS and Atom news feeds (RSS 2.0 and Atom 1.0).
+         |
+         |## Tools
+         |
+         || Tool              | Description                                          | Capability  |
+         ||-------------------|------------------------------------------------------|-------------|
+         || `rss.fetch`       | Fetch a feed URL and return the most recent entries  | `rss.read`  |
+         || `rss.list_saved`  | List all persisted feed URLs                         | `rss.read`  |
+         || `rss.save_feed`   | Add a feed URL to the persisted list                 | `rss.read`  |
+         || `rss.remove_feed` | Remove a feed URL from the persisted list            | `rss.read`  |
+         |
+         |## Setup
+         |
+         |No external API key required. Grant the `rss.read` capability to an agent via **Admin → Agents → Capabilities**.
+         |
+         |## Packaging
+         |
+         |The skill ships as two artifacts:
+         |- **JVM runtime**: `sbt rssFeedSkillJVM/package` — include on the server classpath
+         |- **Config UI**: `sbt rssFeedSkillJS/fullLinkJS` — copy output to `<staticContentDir>/skills/jorlan-rss-feed-skill.js`
+         |
+         |## Troubleshooting
+         |
+         || Symptom | Check |
+         ||---------|-------|
+         || Parse error | Verify the URL serves valid RSS 2.0 or Atom 1.0 XML |
+         || Config UI blank | Ensure `jorlan-rss-feed-skill.js` is in the `skills/` static directory |
+         || Agent cannot call tools | Confirm the agent has the `rss.read` capability |
+         |""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "rss.fetch",

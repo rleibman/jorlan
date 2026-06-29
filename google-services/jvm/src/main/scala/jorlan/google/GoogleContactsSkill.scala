@@ -11,7 +11,6 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import jorlan.service.{GoogleContact, GoogleContactsProvider as GoogleContactsProviderTrait}
 import just.semver.SemVer
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
@@ -43,6 +42,24 @@ class GoogleContactsSkill(
       "find person",
       "lookup contact",
     ),
+    doc = Some(
+      """|## Google Contacts Skill
+         |
+         |Reads contacts from Google Contacts (People API) using OAuth.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `google_contacts.list_contacts` | List all contacts | `google_contacts.read` |
+         || `google_contacts.search_contacts` | Search contacts by name/email | `google_contacts.read` |
+         || `google_contacts.get_contact` | Get contact by resource name | `google_contacts.read` |
+         |
+         |### Setup
+         |1. Configure Google OAuth credentials in Server Settings:
+         |   - `google.clientId`, `google.clientSecret`, `google.redirectUri`
+         |2. Users must connect their Google account via Admin → Integrations → Google.
+         |3. Grant the `google_contacts.read` capability to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "google_contacts.list_contacts",
@@ -70,8 +87,8 @@ class GoogleContactsSkill(
       ),
       ToolDescriptor(
         name = "google_contacts.get_contact",
-        description = "Retrieve a specific Google Contact by its People API resource name.",
-        inputSchema = json"""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name, e.g. 'people/c1234567890'"}},"required":["resourceName"]}""",
+        description = "Retrieve a specific Google Contact by resource name or display name.",
+        inputSchema = json"""{"type":"object","properties":{"resourceName":{"type":"string","description":"People API resource name (e.g. 'people/c1234567890') from list/search results, or a display name to look up automatically"}},"required":["resourceName"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("google_contacts.read")),
         examplePrompts = List(
@@ -133,15 +150,37 @@ class GoogleContactsSkill(
         )
     }
 
+  /** Resolve a resourceName that may be a display name rather than a real People API resource name. Real resource names
+    * always start with "people/". Anything else is treated as a display name and resolved via search.
+    */
+  private def resolveResourceName(
+    userId:             UserId,
+    resourceNameOrName: String,
+  ): IO[JorlanError, String] =
+    if (resourceNameOrName.startsWith("people/")) {
+      ZIO.succeed(resourceNameOrName)
+    } else {
+      for {
+        contacts <- contactsProvider.searchContacts(userId, resourceNameOrName, 1)
+        resolved <- ZIO
+          .fromOption(contacts.headOption.map(_.resourceName)).orElseFail(
+            JorlanError(
+              s"No contact found matching '$resourceNameOrName'. Use the 'resourceName' field from google_contacts.list_contacts or google_contacts.search_contacts.",
+            ),
+          )
+      } yield resolved
+    }
+
   private def getContact(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
     str(args, "resourceName") match {
-      case None               => ZIO.fail(JorlanError("google_contacts.get_contact: resourceName is required"))
-      case Some(resourceName) =>
+      case None                  => ZIO.fail(JorlanError("google_contacts.get_contact: resourceName is required"))
+      case Some(rawResourceName) =>
         for {
-          contactOpt <- contactsProvider.getContact(ctx.actorId, resourceName)
+          resourceName <- resolveResourceName(ctx.actorId, rawResourceName)
+          contactOpt   <- contactsProvider.getContact(ctx.actorId, resourceName)
         } yield contactOpt match {
           case None          => Json.Obj("found" -> Json.Bool(false), "resourceName" -> Json.Str(resourceName))
           case Some(contact) => Json.Obj("found" -> Json.Bool(true), "contact" -> contactToJson(contact))

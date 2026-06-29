@@ -7,8 +7,7 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
-import jorlan.*
+import jorlan.db.repository.ZIORepositories
 import zio.*
 
 import java.time.Instant

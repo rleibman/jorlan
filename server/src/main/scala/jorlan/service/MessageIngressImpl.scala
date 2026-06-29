@@ -8,10 +8,8 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.db.repository.{ZIOAgentRepository, ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
-import jorlan.*
+import jorlan.db.repository.{ZIORepositories, ZIOUserRepository}
 import zio.*
-import zio.stream.*
 
 /** Connector-agnostic ingress pipeline.
   *
@@ -107,7 +105,7 @@ class MessageIngressImpl(
                         chunk,
                       ) => acc + chunk.content
                     }
-                    .flatMap(text => if (text.trim.isEmpty) ZIO.unit else cb(text))
+                    .flatMap(text => cb(text).unless(text.trim.isEmpty))
                     .catchAllCause(cause =>
                       ZIO.logWarning(
                         s"[ingress:${msg.channelType}] onResponse callback failed: ${cause.squash.getMessage}",
@@ -143,9 +141,7 @@ class MessageIngressImpl(
               .createSession(user.id, modelId = None)
               .flatMap { session =>
                 repo.agent
-                  .upsertSession(session.copy(chatRef = Some(msg.chatRef)))
-                  .mapError(JorlanError(_))
-                  .map(_.id)
+                  .upsertSession(session.copy(chatRef = Some(msg.chatRef))).mapBoth(JorlanError(_), _.id)
               }
         }
       }

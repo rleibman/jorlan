@@ -6,7 +6,7 @@
 
 package jorlan.web
 
-import auth.{AuthClient, LoginRouter}
+import auth.{AuthClient, LoginRouter, OAuthProviderUI}
 import caliban.ScalaJSClientAdapter
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
@@ -102,8 +102,8 @@ object JorlanWebApp {
             // OAuth callback result banner — shown when redirected back from Google with ?oauth=success/error
             oauthToast.value.fold(EmptyVdom) { result =>
               Alert.severity(if (result == "success") "success" else "error")(
-                if (result == "success") "Google account connected successfully."
-                else "Failed to connect Google account. Please try again.",
+                if (result == "success") "Account connected successfully."
+                else "Failed to connect account. Please try again.",
               )
             },
             userState.value match {
@@ -112,7 +112,11 @@ object JorlanWebApp {
               case Some(None) =>
                 LoginRouter[ConnectionId](
                   connectionId = Some(ApiClientSttp4.connectionId),
-                  oauthProviders = List.empty,
+                  oauthProviders = List(
+                    OAuthProviderUI(provider = "google", label = "Continue with Google"),
+                    OAuthProviderUI(provider = "discord", label = "Continue with Discord"),
+                    OAuthProviderUI(provider = "telegram", label = "Continue with Telegram"),
+                  ),
                 )
               case Some(Some(user)) =>
                 AppRouter(user)

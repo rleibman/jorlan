@@ -6,6 +6,7 @@
 
 package jorlan.graphql
 
+import ai.{EmbeddingModel, EmbeddingStore}
 import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
@@ -16,7 +17,6 @@ import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
 import jorlan.service.skills.declarative.SkillLifecycleService
-import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
 import zio.http.Client
@@ -199,6 +199,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         oauthCredSvcLayer,
         DashboardService.live,
         Client.default.orDie,
+        ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
         SkillLifecycleService.live,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
       ).orDie

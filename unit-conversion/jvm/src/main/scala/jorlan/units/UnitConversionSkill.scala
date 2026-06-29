@@ -393,6 +393,24 @@ class UnitConversionSkill extends Skill {
       "power",
       "storage",
     ),
+    doc = Some(
+      """|## Unit Conversion Skill
+         |
+         |Converts numeric values between units of measure using the squants library. No capabilities required.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `units.convert` | Convert value between units | *(none)* |
+         |
+         |### Configuration
+         |No configuration required. The skill is always available.
+         |
+         |### Supported Dimensions
+         |Length, Mass, Temperature, Volume, Velocity, Area, Energy, Power, Time, Digital Information.
+         |
+         |**Examples:** `100 km → miles`, `37 C → F`, `5 kg → lb`, `1 hour → seconds`, `2 GB → MB`""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "units.convert",

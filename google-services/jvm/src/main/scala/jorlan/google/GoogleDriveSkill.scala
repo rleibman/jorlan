@@ -47,11 +47,29 @@ class GoogleDriveSkill(
       "cloud storage",
       "list files",
     ),
+    doc = Some(
+      """|## Google Drive Skill
+         |
+         |Reads files from Google Drive using OAuth.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `drive.listFiles` | List files in Drive or a folder | `drive.read` |
+         || `drive.readFile` | Read text content of a file | `drive.read` |
+         || `drive.downloadFile` | Download binary file as Artifact | `drive.read` |
+         |
+         |### Setup
+         |1. Configure Google OAuth credentials in Server Settings:
+         |   - `google.clientId`, `google.clientSecret`, `google.redirectUri`
+         |2. Users must connect their Google account via Admin → Integrations → Google.
+         |3. Grant the `drive.read` capability to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "drive.listFiles",
         description = "List files in Google Drive, optionally filtered by folder or search query.",
-        inputSchema = json"""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID (omit for root)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"folderId":{"type":"string","description":"Parent folder ID from drive.listFiles `id` field, or folder name (resolved automatically)"},"query":{"type":"string","description":"Search query"},"maxResults":{"type":"integer","description":"Maximum number of files (default 10)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -63,7 +81,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.readFile",
         description = "Read the text content of a Google Drive file (Google Docs are exported as plain text).",
-        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"}},"required":["fileId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"Drive file ID from drive.listFiles `id` field, or the file name (resolved automatically)"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -74,7 +92,7 @@ class GoogleDriveSkill(
       ToolDescriptor(
         name = "drive.downloadFile",
         description = "Download a binary file from Google Drive. The file bytes are stored as an Artifact.",
-        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"The Drive file ID"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"fileId":{"type":"string","description":"Drive file ID from drive.listFiles `id` field, or the file name (resolved automatically)"},"name":{"type":"string","description":"Display name for the artifact"}},"required":["fileId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("drive.read")),
         examplePrompts = List(
@@ -107,14 +125,42 @@ class GoogleDriveSkill(
       "webViewLink" -> f.webViewLink.fold[Json](Json.Null)(Json.Str(_)),
     )
 
+  private val driveIdPattern = "^[a-zA-Z0-9_-]{20,}$".r
+
+  /** Resolve a fileId or folderId that may be a human-readable name rather than a real Drive ID. Drive file IDs are
+    * long alphanumeric strings (≥20 chars, no spaces). Anything else is treated as a filename and looked up via Drive
+    * search.
+    */
+  private def resolveFileId(
+    userId:       UserId,
+    fileIdOrName: String,
+  ): IO[JorlanError, DriveFileId] =
+    if (driveIdPattern.matches(fileIdOrName)) {
+      ZIO.succeed(DriveFileId(fileIdOrName))
+    } else {
+      for {
+        files    <- driveProvider.listFiles(userId, None, Some(s"name='$fileIdOrName'"), 1)
+        resolved <- ZIO
+          .fromOption(files.headOption.map(f => DriveFileId(f.id.value))).orElseFail(
+            JorlanError(s"No Drive file found with name '$fileIdOrName'. Use the 'id' field from drive.listFiles."),
+          )
+      } yield resolved
+    }
+
   private def listFiles(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val folderId = str(args, "folderId")
+    val rawFolderId = str(args, "folderId")
     val query = str(args, "query")
     val maxResults = int(args, "maxResults").getOrElse(10)
     for {
+      // Resolve folderId by name if it doesn't look like a real Drive ID
+      folderId <- rawFolderId match {
+        case None     => ZIO.none
+        case Some(id) =>
+          resolveFileId(ctx.actorId, id).map(f => Some(f.value)).catchAll(_ => ZIO.succeed(Some(id)))
+      }
       files <- driveProvider.listFiles(ctx.actorId, folderId, query, maxResults)
     } yield Json.Obj(
       "files" -> Json.Arr(files.map(fileToJson)*),
@@ -127,11 +173,12 @@ class GoogleDriveSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     str(args, "fileId") match {
-      case None         => ZIO.fail(JorlanError("drive.readFile: fileId is required"))
-      case Some(fileId) =>
+      case None            => ZIO.fail(JorlanError("drive.readFile: fileId is required"))
+      case Some(rawFileId) =>
         for {
-          content <- driveProvider.readTextFile(ctx.actorId, DriveFileId(fileId))
-        } yield Json.Obj("fileId" -> Json.Str(fileId), "content" -> Json.Str(content))
+          fileId  <- resolveFileId(ctx.actorId, rawFileId)
+          content <- driveProvider.readTextFile(ctx.actorId, fileId)
+        } yield Json.Obj("fileId" -> Json.Str(fileId.value), "content" -> Json.Str(content))
     }
 
   private def downloadFile(
@@ -139,15 +186,15 @@ class GoogleDriveSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     str(args, "fileId") match {
-      case None         => ZIO.fail(JorlanError("drive.downloadFile: fileId is required"))
-      case Some(fileId) =>
+      case None            => ZIO.fail(JorlanError("drive.downloadFile: fileId is required"))
+      case Some(rawFileId) =>
         for {
-          bytes <- driveProvider.downloadFile(ctx.actorId, DriveFileId(fileId))
+          fileId <- resolveFileId(ctx.actorId, rawFileId)
+          bytes  <- driveProvider.downloadFile(ctx.actorId, fileId)
         } yield Json.Obj(
-          "fileId"    -> Json.Str(fileId),
+          "fileId"    -> Json.Str(fileId.value),
           "sizeBytes" -> Json.Num(bytes.length),
-          // Note: bytes are returned in-band as base64. Persistent artifact storage is deferred.
-          "content" -> Json.Str(java.util.Base64.getEncoder.encodeToString(bytes)),
+          "content"   -> Json.Str(java.util.Base64.getEncoder.encodeToString(bytes)),
         )
     }
 

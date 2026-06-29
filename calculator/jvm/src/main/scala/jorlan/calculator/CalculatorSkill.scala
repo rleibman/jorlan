@@ -62,6 +62,22 @@ class CalculatorSkill extends Skill {
       "/",
       "%",
     ),
+    doc = Some(
+      """|## Calculator Skill
+         |
+         |Evaluates mathematical expressions using the mXparser library. No capabilities required.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `calculator.evaluate` | Evaluate a math expression | *(none)* |
+         |
+         |### Configuration
+         |No configuration required. The skill is always available.
+         |
+         |### Supported Operations
+         |Arithmetic, algebra, trigonometry (`sin`, `cos`, `tan`), logarithms (`log`, `ln`), square root (`sqrt`), exponentiation (`^`), percentage (`%`), and many common math functions.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "calculator.evaluate",

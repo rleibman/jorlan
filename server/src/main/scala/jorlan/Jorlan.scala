@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
   ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
-  jorlan.service.skills.declarative.SkillLifecycleService
+  jorlan.service.skills.declarative.SkillLifecycleService & jorlan.service.OAuthReconnectService
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -80,9 +80,9 @@ object Jorlan extends ZIOApp {
             AuthRoutes(authServer),
             JorlanRoutes,
             HealthRoutes,
-            StaticRoutes,
             StatusRoutes(startTime),
             oauthRoutes,
+            StaticRoutes, // must be last — its GET / trailing catch-all matches any path
           )
 
         override def api: ZIO[
@@ -182,7 +182,6 @@ object Jorlan extends ZIOApp {
       _ <- registry.register(CalculatorSkill())
       _ <- registry.register(MemorySkill(memService, embeddingStore, embeddingModel))
       _ <- registry.register(SchedulerSkill(jobManager))
-      _ <- registry.register(ContactsSkill(repos))
       _ <- registry.register(WorkspaceSkill(workRoot, workspaceCfg))
       _ <- registry.register(ShellSkill(shellCfg, repos))
       _ <- registry.register(NotifySkill(notifRouter))

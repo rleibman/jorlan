@@ -9,7 +9,6 @@ package jorlan.service
 import jorlan.*
 import jorlan.connector.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.testing.*
 import zio.*
 import zio.stream.ZStream
@@ -109,9 +108,10 @@ object MessageIngressSpec extends ZIOSpecDefault {
   private class RecordingAgentRunner(dispatched: Ref[List[(AgentSessionId, String)]]) extends AgentRunner {
 
     override def processMessage(
-      sessionId: AgentSessionId,
-      content:   String,
-      actorId:   Option[UserId],
+      sessionId:  AgentSessionId,
+      content:    String,
+      actorId:    Option[UserId],
+      withMemory: Boolean = true,
     ): IO[JorlanError, Unit] =
       dispatched.update(_ :+ (sessionId, content))
     override def subscribeToSession(

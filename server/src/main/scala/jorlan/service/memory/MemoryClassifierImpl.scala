@@ -6,7 +6,6 @@
 
 package jorlan.service.memory
 
-import jorlan.MemoryScope
 import jorlan.*
 import jorlan.service.MemoryClassifier
 import zio.*

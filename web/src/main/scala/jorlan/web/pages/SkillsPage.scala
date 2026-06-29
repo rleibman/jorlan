@@ -10,6 +10,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
+import jorlan.web.Marked
 import jorlan.web.components.{MuiButton, Toast, ToastMessage, ToastSeverity}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
@@ -45,6 +46,7 @@ object SkillsPage {
     validationResult: Map[String, SkillValidationResult],
     toast:            Option[ToastMessage],
     oauthConnected:   Map[OAuthProvider, Boolean],
+    showDocFor:       Option[String],
   )
 
   val component =
@@ -66,6 +68,7 @@ object SkillsPage {
           validationResult = Map.empty,
           toast = None,
           oauthConnected = Map.empty[OAuthProvider, Boolean],
+          showDocFor = None,
         ),
       )
       .useEffectOnMountBy {
@@ -562,12 +565,19 @@ object SkillsPage {
                                 )(),
                             ),
                             TableCell()(
-                              skill.configJsModule.fold[VdomNode](EmptyVdom) { _ =>
-                                MuiButton
-                                  .size("small")
-                                  .variant("outlined")
-                                  .onClick(() => openConfigure(skill).runNow())("Configure")
-                              },
+                              Box.withProps(
+                                BoxOwnProps[Theme]()
+                                  .setSx(
+                                    js.Dynamic.literal(display = "flex", gap = 0.5).asInstanceOf[SxProps[Theme]],
+                                  ).asInstanceOf[Box.Props],
+                              )(
+                                skill.configJsModule.fold[VdomNode](EmptyVdom) { _ =>
+                                  MuiButton
+                                    .size("small")
+                                    .variant("outlined")
+                                    .onClick(() => openConfigure(skill).runNow())("Configure")
+                                },
+                              ),
                             ),
                           ),
                       ) ++ (
@@ -628,8 +638,25 @@ object SkillsPage {
                                 ),
                               )
                             else List.empty
+                          val docsRow: List[VdomElement] =
+                            skill.doc.fold(List.empty[VdomElement]) { _ =>
+                              List(
+                                Box.withProps(
+                                  BoxOwnProps[Theme]()
+                                    .setSx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])
+                                    .asInstanceOf[Box.Props],
+                                )(
+                                  MuiButton
+                                    .size("small")
+                                    .variant("outlined")
+                                    .onClick(() => state.modState(_.copy(showDocFor = Some(skill.name))).runNow())(
+                                      "Docs",
+                                    ),
+                                ),
+                              )
+                            }
                           val detailChildren: List[VdomElement] =
-                            keywordsRow ++ configRow ++ skill.tools.map(renderToolCard)
+                            docsRow ++ keywordsRow ++ configRow ++ skill.tools.map(renderToolCard)
                           scala
                             .List[VdomElement](
                               TableRow
@@ -652,6 +679,39 @@ object SkillsPage {
                   ),
                 ),
               ),
+            // Skill documentation dialog
+            state.value.showDocFor.fold(EmptyVdom) { skillName =>
+              val docContent = state.value.skills
+                .find(_.name == skillName)
+                .flatMap(_.doc)
+                .getOrElse("")
+              val renderedHtml = Marked.parse(docContent)
+              Dialog(true)(
+                DialogTitle()(s"$skillName — Documentation"),
+                DialogContent()(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(
+                            minWidth = 520,
+                            maxHeight = 520,
+                            overflowY = "auto",
+                            p = 1,
+                          ).asInstanceOf[SxProps[Theme]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    <.div(
+                      ^.dangerouslySetInnerHtml := renderedHtml,
+                      ^.cls                     := "skill-doc-content",
+                    ),
+                  ),
+                ),
+                DialogActions()(
+                  MuiButton.onClick(() => state.modState(_.copy(showDocFor = None)).runNow())("Close"),
+                ),
+              )
+            },
             Toast(
               message = state.value.toast,
               onClose = state.modState(_.copy(toast = None)),

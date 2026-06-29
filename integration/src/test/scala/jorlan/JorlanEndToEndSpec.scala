@@ -244,6 +244,7 @@ object JorlanEndToEndSpec
       stubOAuthCredentialService,
       Client.default,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

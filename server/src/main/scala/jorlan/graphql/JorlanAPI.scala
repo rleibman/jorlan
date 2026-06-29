@@ -13,12 +13,12 @@ import caliban.schema.Schema.auto.*
 import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
-import jorlan.db.repository.*
 import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
+import jorlan.db.repository.*
 import jorlan.service.*
 import jorlan.service.mcp.{McpManagerImpl, McpServerConfig, McpTransport}
 import jorlan.service.skills.SkillRegistry
-import jorlan.service.skills.declarative.{LifecycleResult, SkillLifecycleService}
+import jorlan.service.skills.LifecycleResult
 import zio.*
 import zio.json.ast.Json
 import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
@@ -509,6 +509,7 @@ object JorlanAPI {
     dashboardJsModule: Option[String],
     hasDashboardData:  Boolean,
     oauthProvider:     Option[OAuthProvider],
+    doc:               Option[String],
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** GQL-safe view of a [[SkillVersion]] with its parent skill name. */
@@ -765,6 +766,7 @@ object JorlanAPI {
     env:       List[McpEnvVar],
     url:       Option[String],
     enabled:   Boolean,
+    keywords:  List[String],
   ) derives Schema.SemiAuto
 
   /** Input for `upsertMcpServer` — add or replace a server config entry. */
@@ -776,6 +778,7 @@ object JorlanAPI {
     env:       List[McpEnvVar] = List.empty,
     url:       Option[String] = None,
     enabled:   Boolean = true,
+    keywords:  List[String] = List.empty,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Input for `rejectSkillVersion` — resets an AwaitingApproval version to Draft with an admin note. */
@@ -824,7 +827,7 @@ object JorlanAPI {
     skills: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SkillInfo]],
     /** Returns the current config JSON for a configurable skill. Requires `admin.settings`. */
     skillConfig: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[String]],
-    /** Case-insensitive substring search on user displayName, with channel identities. Requires `contacts.read`. */
+    /** Case-insensitive substring search on user displayName, with channel identities. Requires `users.read`. */
     contacts: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ContactResult]],
     /** Returns OAuth connection status for a given provider. */
     oauthStatus: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, OAuthStatus],
@@ -1049,6 +1052,7 @@ object JorlanAPI {
       env = cfg.env.map { case (k, v) => McpEnvVar(k, v) }.toList,
       url = cfg.url,
       enabled = cfg.enabled,
+      keywords = cfg.keywords,
     )
 
   private def toSkillVersionView(
@@ -1194,12 +1198,13 @@ object JorlanAPI {
               dashboardJsModule = skill.descriptor.dashboardJsModule,
               hasDashboardData = skill.isInstanceOf[HasDashboardData],
               oauthProvider = skill.descriptor.oauthProvider,
+              doc = skill.descriptor.doc,
             )
           },
           contacts = name =>
             for {
               actorId  <- actorIdFromSession
-              _        <- requireCapability("contacts.read", actorId)
+              _        <- requireCapability("users.read", actorId)
               rawUsers <- ZIO
                 .serviceWithZIO[ZIORepositories](
                   _.user.search(UserSearch(fuzzyName = Some(name), active = Some(true))),
@@ -1745,9 +1750,9 @@ object JorlanAPI {
             } yield succeeded,
           startOAuth = provider =>
             for {
-              // Resolve caller; fail early if unauthenticated
-              _ <- actorIdFromSession
-            } yield OAuthStartResult(authUrl = s"/api/oauth/start/$provider"),
+              actorId <- actorIdFromSession
+              authUrl <- ZIO.serviceWithZIO[OAuthReconnectService](_.buildAuthUrl(actorId, provider))
+            } yield OAuthStartResult(authUrl = authUrl),
           revokeOAuth = provider =>
             for {
               actorId <- actorIdFromSession
@@ -1890,6 +1895,7 @@ object JorlanAPI {
                 env = input.env.map(e => e.key -> e.value).toMap,
                 url = input.url,
                 enabled = input.enabled,
+                keywords = input.keywords,
               )
               json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
               existing <- json match {
@@ -1901,6 +1907,13 @@ object JorlanAPI {
               _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
+              registry <- ZIO.service[SkillRegistry]
+              client   <- ZIO.service[zio.http.Client]
+              repos    <- ZIO.service[ZIORepositories]
+              _        <- ZIO
+                .scoped {
+                  McpManagerImpl(registry, client, repos.setting).loadAndRegister
+                }.tapError(e => ZIO.logWarning(s"MCP auto-reload after upsert failed: ${e.msg}")).ignore
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
@@ -1958,7 +1971,7 @@ object JorlanAPI {
               manifestJson <- ZIO
                 .fromEither(manifestStr.fromJson[zio.json.ast.Json])
                 .mapError(e => JorlanError(s"Invalid manifest JSON: $e"))
-              version <- ZIO.serviceWithZIO[SkillLifecycleService](
+              version <- ZIO.serviceWithZIO[SkillRegistry](
                 _.createDraft(manifestJson, SkillTier.Declarative, actorId),
               )
               result <- ZIO
@@ -1973,19 +1986,19 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("skill.create", actorId)
-              result  <- ZIO.serviceWithZIO[SkillLifecycleService](_.advance(versionId))
+              result  <- ZIO.serviceWithZIO[SkillRegistry](_.advance(versionId))
             } yield toLifecycleResultView(result),
           approveSkillVersion = versionId =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.skills.approve", actorId)
-              result  <- ZIO.serviceWithZIO[SkillLifecycleService](_.approve(versionId, actorId))
+              result  <- ZIO.serviceWithZIO[SkillRegistry](_.approve(versionId, actorId))
             } yield toLifecycleResultView(result),
           rejectSkillVersion = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.skills.approve", actorId)
-              result  <- ZIO.serviceWithZIO[SkillLifecycleService](
+              result  <- ZIO.serviceWithZIO[SkillRegistry](
                 _.reject(input.versionId, input.reason, actorId),
               )
             } yield toLifecycleResultView(result),

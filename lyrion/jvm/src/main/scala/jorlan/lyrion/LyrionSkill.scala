@@ -73,6 +73,31 @@ class LyrionSkill(
     ),
     configKey = Some("skill.lyrion"),
     configJsModule = Some("jorlan-lyrion"),
+    doc = Some(
+      """|## Lyrion Skill
+         |
+         |Controls a Lyrion Music Server (LMS) via its JSON-RPC API.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `lyrion.players` | List all players | `lyrion.control` |
+         || `lyrion.status` | Get playback status | `lyrion.control` |
+         || `lyrion.play` | Start/resume playback | `lyrion.control` |
+         || `lyrion.pause` | Pause/unpause playback | `lyrion.control` |
+         || `lyrion.stop` | Stop playback | `lyrion.control` |
+         || `lyrion.volume` | Set or adjust volume | `lyrion.control` |
+         || `lyrion.next` | Skip to next track | `lyrion.control` |
+         || `lyrion.prev` | Go to previous track | `lyrion.control` |
+         || `lyrion.playlist` | Browse current playlist | `lyrion.control` |
+         |
+         |### Setup
+         |1. Ensure Lyrion Music Server is running and accessible from the Jorlan server.
+         |2. Enable `lyrion` in Admin → Skills and add a `skill.lyrion` entry in Server Settings:
+         |   - `host`: hostname or IP of the LMS server
+         |   - `port`: JSON-RPC port (default 9000)
+         |3. Grant the `lyrion.control` capability to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "lyrion.players",

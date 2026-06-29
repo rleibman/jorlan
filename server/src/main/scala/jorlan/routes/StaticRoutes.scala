@@ -6,9 +6,9 @@
 
 package jorlan.routes
 
-import StaticRoutes.file
 import auth.*
 import jorlan.*
+import jorlan.routes.StaticRoutes.file
 import zio.*
 import zio.http.*
 import zio.stream.ZStream
@@ -84,9 +84,58 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
     }
   }
 
+  private def telegramLoginHtml(
+    botUsername: String,
+    redirectUri: String,
+  ): String =
+    s"""<!DOCTYPE html>
+       |<html lang="en">
+       |<head>
+       |  <meta charset="UTF-8">
+       |  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+       |  <title>Sign in with Telegram — Jorlan</title>
+       |  <style>
+       |    body { display:flex; align-items:center; justify-content:center; min-height:100vh;
+       |           margin:0; font-family:sans-serif; background:#f5f5f5; }
+       |    .card { background:#fff; border-radius:8px; padding:2rem; box-shadow:0 2px 8px rgba(0,0,0,.12);
+       |            text-align:center; }
+       |    h1 { font-size:1.4rem; margin-bottom:1.5rem; }
+       |  </style>
+       |</head>
+       |<body>
+       |  <div class="card">
+       |    <h1>Sign in with Telegram</h1>
+       |    <script
+       |      async
+       |      src="https://telegram.org/js/telegram-widget.js?22"
+       |      data-telegram-login="$botUsername"
+       |      data-size="large"
+       |      data-radius="4"
+       |      data-auth-url="$redirectUri"
+       |      data-request-access="write">
+       |    </script>
+       |    <p style="margin-top:1.5rem;color:#888;font-size:.85rem;">
+       |      You will be redirected back to Jorlan after authorizing.
+       |    </p>
+       |  </div>
+       |</body>
+       |</html>""".stripMargin
+
   override def unauth: ZIO[ConfigurationService, JorlanError, Routes[ConfigurationService, JorlanError]] =
     ZIO.succeed(
       Routes(
+        Method.GET / "telegram-login" -> handler { (req: Request) =>
+          (for {
+            config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig).mapError(e => JorlanError(e.msg, e.cause))
+            tgCfg = config.jorlan.telegramLogin
+            state = req.url.queryParams.queryParam("state").getOrElse("")
+            redirectWithState =
+              tgCfg.redirectUri + (if (state.nonEmpty) s"?state=${java.net.URLEncoder.encode(state, "UTF-8")}" else "")
+            html = telegramLoginHtml(tgCfg.botUsername, redirectWithState)
+          } yield Response.html(html)).catchAll { e =>
+            ZIO.succeed(Response(Status.InternalServerError, body = Body.fromString(e.msg)))
+          }
+        },
         Method.GET / Root -> handler {
           (
             _: Request
@@ -107,18 +156,26 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
             _:    Request,
           ) =>
             val somethingElse = path.toString
-            Handler
-              .fromFileZIO {
-                for {
-                  config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
-                  staticContentDir = config.jorlan.http.staticContentDir
-                  // Fall back to index.html for SPA routing when the requested path doesn't exist
-                  result <- file(s"$staticContentDir/$somethingElse")
-                    .orElse(file(s"$staticContentDir/index.html"))
-                } yield result
-              }.mapError(JorlanError(_))
-              .map(response => response.updateHeaders(_ => getHeaders(somethingElse)))
-              .contramap[(Path, Request)](_._2)
+            // Never serve the SPA for /api/ paths — those are server routes and should 404 if unmatched
+            if (somethingElse.startsWith("api/") || somethingElse == "api") {
+              Handler
+                .fromZIO(
+                  ZIO.fail(NotFoundError(java.nio.file.Paths.get(somethingElse), s"No API route: $somethingElse")),
+                ).mapError(JorlanError(_))
+            } else {
+              Handler
+                .fromFileZIO {
+                  for {
+                    config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+                    staticContentDir = config.jorlan.http.staticContentDir
+                    // Fall back to index.html for SPA routing when the requested path doesn't exist as a static file
+                    result <- file(s"$staticContentDir/$somethingElse")
+                      .orElse(file(s"$staticContentDir/index.html"))
+                  } yield result
+                }.mapError(JorlanError(_))
+                .map(response => response.updateHeaders(_ => getHeaders(somethingElse)))
+                .contramap[(Path, Request)](_._2)
+            }
         },
       ),
     )

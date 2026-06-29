@@ -121,8 +121,7 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
     queue.clear()
     val _ = queue.offer(Left(()))
     val jda = jdaRef.getAndSet(null)
-    if (jda == null) ZIO.unit
-    else ZIO.blocking(ZIO.attempt(jda.shutdown())).ignore
+    ZIO.blocking(ZIO.attempt(jda.shutdown())).ignore.unless(jda == null).unit
   }
 
   override def nextEvent(): IO[JorlanError, Option[DiscordRawMessage]] =

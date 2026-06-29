@@ -8,6 +8,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
+import jorlan.service.TestFixtures.given
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.json.ast.Json
@@ -15,8 +16,6 @@ import zio.test.*
 import zio.test.Assertion.*
 
 import java.time.Instant
-
-import jorlan.service.TestFixtures.given
 
 object DashboardServiceSpec extends ZIOSpecDefault {
 

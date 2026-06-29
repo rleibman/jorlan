@@ -24,7 +24,7 @@ Routes a text message to a user's preferred channel (Telegram preferred when con
 
 **Input:** `{ "message": "<text>", "userId": 42 }`
 
-Omit `userId` to notify the currently authenticated user. Use `contacts.find` to look up user IDs for other users.
+Omit `userId` to notify the currently authenticated user. Use `users.find` to look up user IDs for other users.
 
 ### `notify.channel`
 

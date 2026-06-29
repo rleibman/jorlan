@@ -26,10 +26,11 @@ object ChannelType {
 
   def fromProvider(provider: String): Option[ChannelType] = {
     provider.toLowerCase match {
-      case "google"  => Some(Google)
-      case "github"  => Some(GitHub)
-      case "discord" => Some(Discord)
-      case _         => None
+      case "google"   => Some(Google)
+      case "github"   => Some(GitHub)
+      case "discord"  => Some(Discord)
+      case "telegram" => Some(Telegram)
+      case _          => None
     }
   }
 

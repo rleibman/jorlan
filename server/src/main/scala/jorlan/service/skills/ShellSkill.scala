@@ -71,6 +71,30 @@ class ShellSkill(
       "directory",
       "list files",
     ),
+    doc = Some(
+      """|## Shell Skill
+         |
+         |Executes shell commands from a configured allowlist and provides sandboxed read-only file inspection tools.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `shell.run` | Execute a binary from the allowlist | `shell.execute` |
+         || `shell.ls` | List directory contents (sandboxed) | `shell.read` |
+         || `shell.cat` | Read file contents (sandboxed) | `shell.read` |
+         || `shell.grep` | Search for a pattern (sandboxed) | `shell.read` |
+         || `shell.find` | Find files/directories (sandboxed) | `shell.read` |
+         || `shell.head` | First N lines of a file (sandboxed) | `shell.read` |
+         || `shell.tail` | Last N lines of a file (sandboxed) | `shell.read` |
+         || `shell.wc` | Word/line/char count (sandboxed) | `shell.read` |
+         |
+         |### Setup
+         |1. Enable `shell` in Admin → Skills and add a `skill.shell` entry in Server Settings:
+         |   - `allowedBinaries`: list of permitted binaries (e.g. `["git","docker","python3"]`)
+         |   - `sandboxRoot`: root directory for sandboxed read-only tools
+         |   - `defaultTimeoutSeconds`: default command timeout
+         |2. Grant `shell.execute` (for `shell.run`) and/or `shell.read` (for inspection tools) to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "shell.run",
@@ -376,8 +400,7 @@ class ShellSkill(
             .attemptBlocking(sandboxRoot.toRealPath())
             .mapError(e => JorlanError(s"shell: cannot resolve sandbox root: ${e.getMessage}"))
           real <- ZIO
-            .attemptBlocking(lexical.toRealPath())
-            .mapError(_ => JorlanError(s"Path does not exist: '$relOrAbs'"))
+            .attemptBlocking(lexical.toRealPath()).orElseFail(JorlanError(s"Path does not exist: '$relOrAbs'"))
           _ <- ZIO.fail(JorlanError(s"Path traversal rejected: '$relOrAbs'")).unless(real.startsWith(rootReal))
         } yield real
       }

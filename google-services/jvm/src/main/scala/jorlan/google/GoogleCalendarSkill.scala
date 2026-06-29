@@ -11,7 +11,6 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import jorlan.service.CalendarProvider
 import just.semver.SemVer
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
@@ -51,10 +50,31 @@ class GoogleCalendarSkill(
       "agenda",
       "due date",
     ),
+    doc = Some(
+      """|## Google Calendar Skill
+         |
+         |Reads and manages events in Google Calendar using OAuth.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `calendar.listCalendars` | List available calendars | `calendar.read` |
+         || `calendar.listEvents` | List events in a calendar | `calendar.read` |
+         || `calendar.getEvent` | Get a specific event | `calendar.read` |
+         || `calendar.createEvent` | Create a new event | `calendar.write` |
+         || `calendar.updateEvent` | Update an existing event | `calendar.write` |
+         || `calendar.deleteEvent` | Delete an event | `calendar.write` |
+         |
+         |### Setup
+         |1. Configure Google OAuth credentials in Server Settings:
+         |   - `google.clientId`, `google.clientSecret`, `google.redirectUri`
+         |2. Users must connect their Google account via Admin → Integrations → Google.
+         |3. Grant `calendar.read` and/or `calendar.write` capabilities to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "calendar.listCalendars",
-        description = "List all available calendars for the authenticated user.",
+        description = "List all available calendars for the authenticated user. Returns each calendar's `id` (use this as `calendarId` in other tools) and `summary` (display name).",
         inputSchema = json"""{"type":"object","properties":{},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
@@ -66,7 +86,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.listEvents",
         description = "List events in a calendar within an optional time range.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID (default: 'primary')"},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format"},"timeMax":{"type":"string","description":"End time in ISO 8601 format"}}}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field (e.g. 'primary' or 'abc123@group.calendar.google.com'). Do NOT use the calendar display name."},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format"},"timeMax":{"type":"string","description":"End time in ISO 8601 format"}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -78,7 +98,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.getEvent",
         description = "Get details for a specific calendar event.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID"}},"required":["calendarId","eventId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"eventId":{"type":"string","description":"The event ID"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -89,7 +109,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.createEvent",
         description = "Create a new calendar event.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format"},"end":{"type":"string","description":"End time in ISO 8601 format"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format"},"end":{"type":"string","description":"End time in ISO 8601 format"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -101,7 +121,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.updateEvent",
         description = "Update an existing calendar event.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string"},"summary":{"type":"string"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"}},"required":["calendarId","eventId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"eventId":{"type":"string"},"summary":{"type":"string"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -113,7 +133,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.deleteEvent",
         description = "Delete a calendar event.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string"},"eventId":{"type":"string","description":"The event ID to delete"}},"required":["calendarId","eventId"]}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"eventId":{"type":"string","description":"The event ID to delete"}},"required":["calendarId","eventId"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -176,20 +196,45 @@ class GoogleCalendarSkill(
       ),
     )
 
+  /** Resolve a calendarId that may be a display name (summary) rather than a real Google ID. Google calendar IDs always
+    * contain '@' or equal "primary". If the provided value looks like a display name, we fetch the calendar list and
+    * match by summary (case-insensitive).
+    */
+  private def resolveCalendarId(
+    userId:     UserId,
+    calendarId: String,
+  ): IO[JorlanError, CalendarId] =
+    if (calendarId == "primary" || calendarId.contains("@")) {
+      ZIO.succeed(CalendarId(calendarId))
+    } else {
+      for {
+        cals     <- calendarProvider.listCalendars(userId)
+        resolved <- ZIO
+          .fromOption(
+            cals.find(_.summary.equalsIgnoreCase(calendarId)).map(c => CalendarId(c.id.value)),
+          ).orElseFail(
+            JorlanError(
+              s"No calendar found with name '$calendarId'. Use the 'id' field from calendar.listCalendars.",
+            ),
+          )
+      } yield resolved
+    }
+
   private def listEvents(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val calId = str(args, "calendarId").getOrElse("primary")
+    val rawCalId = str(args, "calendarId").getOrElse("primary")
     val maxResults = int(args, "maxResults").getOrElse(10)
     for {
+      calId   <- resolveCalendarId(ctx.actorId, rawCalId)
       timeMin <- str(args, "timeMin").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
         ZIO.fromEither(parseInstant(s)).map(Some(_)),
       )
       timeMax <- str(args, "timeMax").fold[IO[JorlanError, Option[Instant]]](ZIO.none)(s =>
         ZIO.fromEither(parseInstant(s)).map(Some(_)),
       )
-      events <- calendarProvider.listEvents(ctx.actorId, CalendarId(calId), maxResults, timeMin, timeMax)
+      events <- calendarProvider.listEvents(ctx.actorId, calId, maxResults, timeMin, timeMax)
     } yield Json.Obj(
       "events" -> Json.Arr(events.map(entryToJson)*),
       "count"  -> Json.Num(events.size),
@@ -201,9 +246,10 @@ class GoogleCalendarSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     (str(args, "calendarId"), str(args, "eventId")) match {
-      case (Some(calId), Some(evId)) =>
+      case (Some(rawCalId), Some(evId)) =>
         for {
-          event <- calendarProvider.getEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
+          calId <- resolveCalendarId(ctx.actorId, rawCalId)
+          event <- calendarProvider.getEvent(ctx.actorId, calId, CalendarEventId(evId))
         } yield entryToJson(event)
       case _ => ZIO.fail(JorlanError("calendar.getEvent: calendarId and eventId are required"))
     }
@@ -217,8 +263,9 @@ class GoogleCalendarSkill(
     val startOpt = str(args, "start")
     val endOpt = str(args, "end")
     (calIdOpt, summaryOpt, startOpt, endOpt) match {
-      case (Some(calId), Some(summary), Some(startStr), Some(endStr)) =>
+      case (Some(rawCalId), Some(summary), Some(startStr), Some(endStr)) =>
         for {
+          calId <- resolveCalendarId(ctx.actorId, rawCalId)
           start <- ZIO.fromEither(parseInstant(startStr))
           end   <- ZIO.fromEither(parseInstant(endStr))
           attendees = strList(args, "attendees").map(email =>
@@ -226,7 +273,7 @@ class GoogleCalendarSkill(
           )
           entry = CalendarEntry(
             id = CalendarEventId(""), // empty-string sentinel: provider assigns the real ID on create
-            calendarId = CalendarId(calId),
+            calendarId = calId,
             summary = summary,
             description = str(args, "description"),
             location = str(args, "location"),
@@ -237,7 +284,7 @@ class GoogleCalendarSkill(
             organizer = None,
             status = CalendarEventStatus.Confirmed,
           )
-          created <- calendarProvider.createEvent(ctx.actorId, CalendarId(calId), entry)
+          created <- calendarProvider.createEvent(ctx.actorId, calId, entry)
         } yield entryToJson(created)
       case _ => ZIO.fail(JorlanError("calendar.createEvent: calendarId, summary, start, and end are required"))
     }
@@ -248,9 +295,10 @@ class GoogleCalendarSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     (str(args, "calendarId"), str(args, "eventId")) match {
-      case (Some(calId), Some(evId)) =>
+      case (Some(rawCalId), Some(evId)) =>
         for {
-          existing <- calendarProvider.getEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
+          calId    <- resolveCalendarId(ctx.actorId, rawCalId)
+          existing <- calendarProvider.getEvent(ctx.actorId, calId, CalendarEventId(evId))
           start    <- str(args, "start").fold[IO[JorlanError, Instant]](ZIO.succeed(existing.start))(s =>
             ZIO.fromEither(parseInstant(s)),
           )
@@ -264,7 +312,7 @@ class GoogleCalendarSkill(
             start = start,
             end = end,
           )
-          result <- calendarProvider.updateEvent(ctx.actorId, CalendarId(calId), updated)
+          result <- calendarProvider.updateEvent(ctx.actorId, calId, updated)
         } yield entryToJson(result)
       case _ => ZIO.fail(JorlanError("calendar.updateEvent: calendarId and eventId are required"))
     }
@@ -274,9 +322,10 @@ class GoogleCalendarSkill(
     args: Json,
   ): IO[JorlanError, Json] =
     (str(args, "calendarId"), str(args, "eventId")) match {
-      case (Some(calId), Some(evId)) =>
+      case (Some(rawCalId), Some(evId)) =>
         for {
-          _ <- calendarProvider.deleteEvent(ctx.actorId, CalendarId(calId), CalendarEventId(evId))
+          calId <- resolveCalendarId(ctx.actorId, rawCalId)
+          _     <- calendarProvider.deleteEvent(ctx.actorId, calId, CalendarEventId(evId))
         } yield Json.Obj("eventId" -> Json.Str(evId), "deleted" -> Json.Bool(true))
       case _ => ZIO.fail(JorlanError("calendar.deleteEvent: calendarId and eventId are required"))
     }

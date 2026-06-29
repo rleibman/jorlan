@@ -147,6 +147,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       stubOAuthCredentialService,
       Client.default,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

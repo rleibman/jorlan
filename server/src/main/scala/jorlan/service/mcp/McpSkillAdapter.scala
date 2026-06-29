@@ -21,9 +21,10 @@ import zio.json.ast.Json
   * `serverName` is sanitized to replace characters that are not `[A-Za-z0-9_.]` with `_`; dots are preserved.
   */
 class McpSkillAdapter(
-  serverName: String,
-  tools:      List[McpTool],
-  client:     McpClient,
+  serverName:     String,
+  tools:          List[McpTool],
+  client:         McpClient,
+  serverKeywords: List[String] = List.empty,
 ) extends Skill {
 
   private val sanitizedName: String = serverName.replaceAll("[^A-Za-z0-9_.]", "_")
@@ -41,6 +42,7 @@ class McpSkillAdapter(
         outputSchema = Json.Obj("type" -> Json.Str("string")),
         requiredCapabilities = List(CapabilityName("mcp.call")),
         examplePrompts = List.empty,
+        keywords = serverKeywords,
       )
     },
   )

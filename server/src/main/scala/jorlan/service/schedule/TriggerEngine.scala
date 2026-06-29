@@ -208,7 +208,7 @@ class TriggerEngineImpl(
           // soft so that successful tool invocations (e.g. sending a Telegram message) are not
           // incorrectly reported as job failures.
           _ <- agentRunner
-            .processMessage(session.id, content, Some(job.userId))
+            .processMessage(session.id, content, Some(job.userId), withMemory = false)
             .tapError(err =>
               ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} processMessage soft error: ${err.msg}"),
             )
