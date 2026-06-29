@@ -2004,7 +2004,9 @@ object JorlanAPI {
             } yield toLifecycleResultView(result),
         ),
         Subscriptions(
-          approvalNotifications = ZStream.empty,
+          approvalNotifications = ZStream.unwrap(
+            ZIO.serviceWithZIO[ApprovalHub](_.subscribeToNewRequests),
+          ),
           eventLogTail = ZStream.unwrap(
             for {
               hub    <- ZIO.service[EventLogHub]

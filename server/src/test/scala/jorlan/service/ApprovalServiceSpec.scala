@@ -8,6 +8,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
+import jorlan.service.{ApprovalHub, ApprovalServiceImpl, CapabilityEvaluatorImpl, EventLogHub}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
@@ -64,6 +65,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       InMemoryRepositories.live(),
       CapabilityEvaluatorImpl.live,
       EventLogHub.live,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
     )
 

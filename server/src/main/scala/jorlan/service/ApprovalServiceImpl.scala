@@ -26,6 +26,7 @@ private class ApprovalServiceImpl(
   evaluator:   CapabilityEvaluator,
   repo:        ZIORepositories,
   eventLogHub: EventLogHub,
+  hub:         ApprovalHub,
 ) extends ApprovalService {
 
   override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
@@ -48,8 +49,12 @@ private class ApprovalServiceImpl(
 
   override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
     for {
-      now       <- Clock.instant
-      saved     <- repo.permission.recordApprovalDecision(decision)
+      now   <- Clock.instant
+      saved <- repo.permission.recordApprovalDecision(decision)
+      _     <- hub.completeDecision(
+        saved.approvalRequestId,
+        saved.decision == ApprovalStatus.Approved,
+      )
       eventType <- saved.decision match {
         case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
         case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>
@@ -81,6 +86,7 @@ private class ApprovalServiceImpl(
     for {
       now      <- Clock.instant
       saved    <- repo.permission.createApprovalRequest(req)
+      _        <- hub.notifyNewRequest(saved)
       logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
@@ -134,7 +140,7 @@ private class ApprovalServiceImpl(
 
 object ApprovalServiceImpl {
 
-  val live: URLayer[CapabilityEvaluator & ZIORepositories & EventLogHub, ApprovalService] =
-    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _))
+  val live: URLayer[CapabilityEvaluator & ZIORepositories & EventLogHub & ApprovalHub, ApprovalService] =
+    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _, _))
 
 }

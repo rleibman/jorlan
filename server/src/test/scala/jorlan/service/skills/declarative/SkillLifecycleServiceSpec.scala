@@ -9,7 +9,7 @@ package jorlan.service.skills.declarative
 import jorlan.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.skills.SkillRegistry
-import jorlan.service.CapabilityEvaluator
+import jorlan.service.{ApprovalHub, ApprovalService, CapabilityEvaluator}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.http.Client
@@ -48,10 +48,21 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
   private val allowAll: ULayer[CapabilityEvaluator] =
     ZLayer.succeed((_: CapabilityRequest) => ZIO.succeed(EvaluationResult.ResourcePermissionAllows))
 
+  private val noOpApprovalService: ULayer[ApprovalService] =
+    ZLayer.succeed(new ApprovalService {
+      override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
+        ZIO.succeed(AuthorizationResult.Allowed)
+      override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
+        ZIO.succeed(decision)
+      override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+    })
+
   private val baseLayer: ULayer[SkillRegistry] =
     ZLayer.make[SkillRegistry](
       InMemoryRepositories.live(),
       allowAll,
+      noOpApprovalService,
+      ApprovalHub.live,
       FakeModelGateway.layer(List.empty),
       Client.default.orDie,
       SkillRegistry.liveSecure,

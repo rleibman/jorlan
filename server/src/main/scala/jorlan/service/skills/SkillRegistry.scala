@@ -10,7 +10,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
 import jorlan.db.repository.{RepositoryError, ZIORepositories, ZIOSkillIndexRepository, ZIOSkillRepository}
 import jorlan.service.skills.declarative.*
-import jorlan.service.{CapabilityEvaluator, ModelGateway, ToolSpec}
+import jorlan.service.{ApprovalHub, ApprovalService, CapabilityEvaluator, ModelGateway, ToolSpec}
 import zio.*
 import zio.http.Client
 import zio.json.*
@@ -170,18 +170,25 @@ object SkillRegistry {
       } yield registry: SkillRegistry,
     )
 
-  /** Build an empty registry wired with [[CapabilityEvaluator]], DB index, and lifecycle deps for production use. */
-  val liveSecure: URLayer[CapabilityEvaluator & ZIORepositories & Client & ModelGateway, SkillRegistry] =
+  /** Build an empty registry wired with [[CapabilityEvaluator]], [[ApprovalService]], DB index, and lifecycle deps for
+    * production use.
+    */
+  val liveSecure: URLayer[
+    CapabilityEvaluator & ApprovalService & ApprovalHub & ZIORepositories & Client & ModelGateway,
+    SkillRegistry,
+  ] =
     ZLayer.fromZIO(
       for {
-        evaluator <- ZIO.service[CapabilityEvaluator]
-        repos     <- ZIO.service[ZIORepositories]
-        client    <- ZIO.service[Client]
-        gateway   <- ZIO.service[ModelGateway]
-        ref       <- Ref.make(Map.empty[String, Skill])
-        cache     <- makeCache
-        disabled  <- Ref.make(Set.empty[String])
-        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
+        evaluator       <- ZIO.service[CapabilityEvaluator]
+        approvalService <- ZIO.service[ApprovalService]
+        approvalHub     <- ZIO.service[ApprovalHub]
+        repos           <- ZIO.service[ZIORepositories]
+        client          <- ZIO.service[Client]
+        gateway         <- ZIO.service[ModelGateway]
+        ref             <- Ref.make(Map.empty[String, Skill])
+        cache           <- makeCache
+        disabled        <- Ref.make(Set.empty[String])
+        factories       <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
       } yield SkillRegistryLive(
         ref,
         Some(evaluator),
@@ -194,24 +201,30 @@ object SkillRegistry {
         factories,
         Some(client),
         Some(gateway),
+        Some(approvalService),
+        Some(approvalHub),
       ),
     )
 
-  /** Build a pre-populated registry wired with [[CapabilityEvaluator]], DB index, and lifecycle deps for production
-    * use.
+  /** Build a pre-populated registry wired with [[CapabilityEvaluator]], [[ApprovalService]], DB index, and lifecycle
+    * deps for production use.
     */
-  def liveSecureWith(skills: Skill*)
-    : URLayer[CapabilityEvaluator & ZIORepositories & Client & ModelGateway, SkillRegistry] =
+  def liveSecureWith(skills: Skill*): URLayer[
+    CapabilityEvaluator & ApprovalService & ApprovalHub & ZIORepositories & Client & ModelGateway,
+    SkillRegistry,
+  ] =
     ZLayer.fromZIO(
       for {
-        evaluator <- ZIO.service[CapabilityEvaluator]
-        repos     <- ZIO.service[ZIORepositories]
-        client    <- ZIO.service[Client]
-        gateway   <- ZIO.service[ModelGateway]
-        ref       <- Ref.make(Map.empty[String, Skill])
-        cache     <- makeCache
-        disabled  <- Ref.make(Set.empty[String])
-        factories <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
+        evaluator       <- ZIO.service[CapabilityEvaluator]
+        approvalService <- ZIO.service[ApprovalService]
+        approvalHub     <- ZIO.service[ApprovalHub]
+        repos           <- ZIO.service[ZIORepositories]
+        client          <- ZIO.service[Client]
+        gateway         <- ZIO.service[ModelGateway]
+        ref             <- Ref.make(Map.empty[String, Skill])
+        cache           <- makeCache
+        disabled        <- Ref.make(Set.empty[String])
+        factories       <- Ref.make(Map.empty[String, String => IO[JorlanError, Skill]])
         registry = SkillRegistryLive(
           ref,
           Some(evaluator),
@@ -224,6 +237,8 @@ object SkillRegistry {
           factories,
           Some(client),
           Some(gateway),
+          Some(approvalService),
+          Some(approvalHub),
         )
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
@@ -254,17 +269,19 @@ object SkillRegistry {
 }
 
 class SkillRegistryLive(
-  skills:         Ref[Map[String, Skill]],
-  evaluator:      Option[CapabilityEvaluator],
-  toolSpecsCache: Ref[Option[List[ToolSpec]]],
-  disabled:       Ref[Set[String]],
-  skillRepo:      Option[ZIOSkillRepository],
-  skillIndexRepo: Option[ZIOSkillIndexRepository],
-  topN:           Int,
-  recentBoost:    Double,
-  skillFactories: Ref[Map[String, String => IO[JorlanError, Skill]]],
-  httpClient:     Option[Client] = None,
-  modelGateway:   Option[ModelGateway] = None,
+  skills:          Ref[Map[String, Skill]],
+  evaluator:       Option[CapabilityEvaluator],
+  toolSpecsCache:  Ref[Option[List[ToolSpec]]],
+  disabled:        Ref[Set[String]],
+  skillRepo:       Option[ZIOSkillRepository],
+  skillIndexRepo:  Option[ZIOSkillIndexRepository],
+  topN:            Int,
+  recentBoost:     Double,
+  skillFactories:  Ref[Map[String, String => IO[JorlanError, Skill]]],
+  httpClient:      Option[Client] = None,
+  modelGateway:    Option[ModelGateway] = None,
+  approvalService: Option[ApprovalService] = None,
+  approvalHub:     Option[ApprovalHub] = None,
 ) extends SkillRegistry {
 
   private def repoErr(e: RepositoryError): JorlanError = JorlanError(e.msg)
@@ -661,15 +678,22 @@ class SkillRegistryLive(
     }
   }
 
-  /** Returns `Some(denialReason)` if capability gating is enabled and any required capability is denied. */
+  /** Returns `Some(denialReason)` if capability gating is enabled and any required capability is denied.
+    *
+    * When [[ApprovalService]] is wired, a `PendingApproval` result blocks the calling fiber for up to 10 minutes while
+    * a human reviews the request in the UI. The fiber resumes with `None` on approval or `Some(reason)` on denial or
+    * timeout.
+    *
+    * Falls back to the lightweight [[CapabilityEvaluator]] path when `ApprovalService` is not injected (tests / no-op
+    * mode).
+    */
   private def checkCapabilities(
     toolName: String,
     ctx:      InvocationContext,
     skill:    Skill,
-  ): UIO[Option[String]] =
-    evaluator match {
-      case None     => ZIO.none
-      case Some(ev) =>
+  ): UIO[Option[String]] = {
+    (approvalService, approvalHub) match {
+      case (Some(svc), Some(hub)) =>
         skill.descriptor.tools.find(_.name == toolName) match {
           case None                                            => ZIO.none
           case Some(tool) if tool.requiredCapabilities.isEmpty => ZIO.none
@@ -681,19 +705,57 @@ class SkillRegistryLive(
               ) =>
                 if (denied.isDefined) ZIO.succeed(denied)
                 else
-                  ev.evaluate(
-                    CapabilityRequest(cap, ctx.actorId, ctx.agentId, ctx.sessionId, None),
-                  ).fold(
-                      _ => Some(s"capability check failed for '${cap.value}'"),
+                  svc
+                    .authorize(CapabilityRequest(cap, ctx.actorId, ctx.agentId, ctx.sessionId, None))
+                    .foldZIO(
+                      err => ZIO.succeed(Some(s"capability check failed for '${cap.value}': ${err.msg}")),
                       {
-                        case EvaluationResult.ExplicitDeny => Some(s"access denied: explicit deny on '${cap.value}'")
-                        case EvaluationResult.DefaultDeny  => Some(s"access denied: no permission for '${cap.value}'")
-                        case _                             => None
+                        case AuthorizationResult.Allowed        => ZIO.succeed(None)
+                        case AuthorizationResult.Denied(reason) =>
+                          ZIO.succeed(Some(s"access denied: $reason for '${cap.value}'"))
+                        case AuthorizationResult.PendingApproval(request, _) =>
+                          hub.awaitDecision(request.id, 10.minutes).map {
+                            case Some(true)  => None
+                            case Some(false) => Some(s"access denied: user rejected approval for '${cap.value}'")
+                            case None        => Some(s"access denied: approval request timed out for '${cap.value}'")
+                          }
                       },
                     )
             }
         }
+
+      case _ =>
+        evaluator match {
+          case None     => ZIO.none
+          case Some(ev) =>
+            skill.descriptor.tools.find(_.name == toolName) match {
+              case None                                            => ZIO.none
+              case Some(tool) if tool.requiredCapabilities.isEmpty => ZIO.none
+              case Some(tool)                                      =>
+                ZIO.foldLeft(tool.requiredCapabilities)(Option.empty[String]) {
+                  (
+                    denied,
+                    cap,
+                  ) =>
+                    if (denied.isDefined) ZIO.succeed(denied)
+                    else
+                      ev.evaluate(
+                        CapabilityRequest(cap, ctx.actorId, ctx.agentId, ctx.sessionId, None),
+                      ).fold(
+                          _ => Some(s"capability check failed for '${cap.value}'"),
+                          {
+                            case EvaluationResult.ExplicitDeny =>
+                              Some(s"access denied: explicit deny on '${cap.value}'")
+                            case EvaluationResult.DefaultDeny =>
+                              Some(s"access denied: no permission for '${cap.value}'")
+                            case _ => None
+                          },
+                        )
+                }
+            }
+        }
     }
+  }
 
   private def validateRequiredFields(
     toolName: String,

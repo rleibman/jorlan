@@ -200,6 +200,7 @@ object EnvironmentBuilder {
         QuillRepositories.live,
         dataSourceLayer,
         CapabilityEvaluatorImpl.live,
+        ApprovalHub.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
         oauthServiceLayer,

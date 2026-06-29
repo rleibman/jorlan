@@ -29,7 +29,8 @@ import zio.test.*
   *   - All Mutations (createUser, updateUser, createRole, assignRole, revokeRole, grantPermission, revokePermission)
   *   - Authorization helpers: `actorIdFromSession` (unauthenticated → error), `requireCapability` (deny/allow)
   *   - Input validation: `grantPermission` must target exactly one of userId/roleId
-  *   - Subscription stubs: `approvalNotifications` and `eventLogTail` return empty streams
+  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalHub]]; `eventLogTail` returns an empty stream in
+  *     tests
   */
 object JorlanAPISpec extends ZIOSpecDefault {
 
@@ -195,6 +196,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         approvalSvcLayer,
+        ApprovalHub.live,
         noOpNotificationRouter,
         oauthCredSvcLayer,
         DashboardService.live,
@@ -491,7 +493,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         schema.contains("eventLogTail"),
       )
     },
-    test("approvalNotifications stub returns an empty stream") {
+    test("approvalNotifications subscription yields no events without published requests") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.executeRequest(
@@ -500,11 +502,12 @@ object JorlanAPISpec extends ZIOSpecDefault {
           ),
         )
         events <- result.data match {
-          case caliban.ResponseValue.StreamValue(stream) => stream.take(10).runCollect.map(_.toList)
-          case _                                         => ZIO.succeed(List.empty)
+          case caliban.ResponseValue.StreamValue(stream) =>
+            stream.take(1).timeout(200.millis).runCollect.map(_.toList)
+          case _ => ZIO.succeed(List.empty)
         }
       } yield assertTrue(events.isEmpty)
-    }.provideLayer(makeAppLayer()),
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
   )
 
   // ─── Personality query / mutation ────────────────────────────────────────────
