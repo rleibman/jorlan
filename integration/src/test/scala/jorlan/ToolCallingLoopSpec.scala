@@ -125,6 +125,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
   ): ZLayer[ZIORepositories & ConfigurationService, Throwable, FullEnv] =
     ZLayer.makeSome[ZIORepositories & ConfigurationService, FullEnv](
       stubCapabilityEvaluator,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,

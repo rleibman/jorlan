@@ -137,13 +137,14 @@ class TelegramConnectorSkill(
          |3. Grant the `telegram.send` capability to agents.
          |
          |### Notes
-         |Use `user_mgmt.find` to look up a user's Telegram chat ID before sending.
-         |The `chatId` field accepts Telegram numeric user or group IDs.""".stripMargin,
+         |IMPORTANT: Always call `user_mgmt.find` first to look up the person and get their real Telegram `channelUserId`.
+         |Never guess, fabricate, or use placeholder chatIds — an invented ID will always fail with "chat not found".
+         |The `chatId` field must be the exact numeric Telegram chat or user ID returned by `user_mgmt.find`.""".stripMargin,
     ),
     tools = List(
       ToolDescriptor(
         name = "telegram.send_message",
-        description = "Send a text message via Telegram to a chat. 'chatId' is the Telegram numeric chat or user ID — obtain it from user_mgmt.find if you only know the person's name.",
+        description = "Send a text message via Telegram to a chat. 'chatId' MUST be a real Telegram numeric chat or user ID — NEVER guess or fabricate one. Always call user_mgmt.find first to get the identity, then extract the Telegram channelUserId from the result. Do not proceed without a confirmed chatId.",
         inputSchema = sendMessageSchema,
         outputSchema = emptyOutputSchema,
         requiredCapabilities = List(sendCapability),

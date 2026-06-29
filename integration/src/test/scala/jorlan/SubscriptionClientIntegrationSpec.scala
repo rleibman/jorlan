@@ -91,6 +91,7 @@ object SubscriptionClientIntegrationSpec
       configLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,

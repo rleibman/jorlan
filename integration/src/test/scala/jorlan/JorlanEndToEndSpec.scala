@@ -222,6 +222,7 @@ object JorlanEndToEndSpec
       configLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,

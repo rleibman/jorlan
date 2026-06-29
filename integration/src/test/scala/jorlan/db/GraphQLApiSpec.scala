@@ -84,6 +84,7 @@ object GraphQLApiSpec
       JorlanContainer.repositoryLayer,
       stubCapabilityEvaluator,
       stubApprovalService,
+      ApprovalHub.live,
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
       ToolEventHub.live,
