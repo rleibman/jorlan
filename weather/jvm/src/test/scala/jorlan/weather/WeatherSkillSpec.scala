@@ -191,11 +191,11 @@ object WeatherSkillSpec extends ZIOSpecDefault {
           )
         } yield assert(result)(equalTo(Json.Arr()))
       }.provide(Server.defaultWith(_.port(0)), Client.default),
-      test("weather.current missing required arg fails with ValidationError") {
+      test("weather.current non-object args fails with ValidationError") {
         for {
           client <- ZIO.service[Client]
           skill = new WeatherSkill(dummyCfg, client)
-          result <- skill.invoke(dummyCtx, "weather.current", Json.Obj()).exit
+          result <- skill.invoke(dummyCtx, "weather.current", Json.Str("bad")).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Client.default),
       test("weather.alerts missing lat fails with ValidationError") {
@@ -266,6 +266,197 @@ object WeatherSkillSpec extends ZIOSpecDefault {
           case Json.Obj(fields) =>
             assertTrue(fields.exists { case ("temperature", _) => true; case _ => false }) &&
             assertTrue(fields.exists { case ("description", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── default location ────────────────────────────────────────────────
+      test("weather.current uses defaultLocation when location arg is omitted") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleCurrentBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg.copy(defaultLocation = "Tokyo"), client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.current", Json.Obj())
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("temperature", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("weather.forecast uses defaultLocation when location arg is omitted") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleForecastBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg.copy(defaultLocation = "Berlin"), client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.forecast", Json.Obj())
+        } yield result match {
+          case Json.Arr(items) => assertTrue(items.nonEmpty)
+          case _               => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── forecast days defaults ───────────────────────────────────────────
+      test("weather.forecast defaults to 5 days when days arg is omitted") {
+        // cnt = 5 * 8 = 40 entries requested; the stub returns 2 items
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleForecastBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.forecast", Json.Obj("location" -> Json.Str("Paris")))
+        } yield result match {
+          case Json.Arr(items) => assertTrue(items.length == 2) // stub returns 2 items regardless of cnt
+          case _               => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("weather.forecast clamps days > 5 to 5") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleForecastBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(
+            dummyCtx,
+            "weather.forecast",
+            Json.Obj("location" -> Json.Str("Paris"), "days" -> Json.Num(10)),
+          )
+        } yield result match {
+          case Json.Arr(items) => assertTrue(items.length == 2)
+          case _               => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("weather.forecast clamps days < 1 to 1") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleForecastBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(
+            dummyCtx,
+            "weather.forecast",
+            Json.Obj("location" -> Json.Str("Paris"), "days" -> Json.Num(0)),
+          )
+        } yield result match {
+          case Json.Arr(items) => assertTrue(items.length == 2)
+          case _               => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("weather.forecast with non-integer days field fails with ValidationError") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client)
+          result <- skill
+            .invoke(
+              dummyCtx,
+              "weather.forecast",
+              Json.Obj("location" -> Json.Str("Paris"), "days" -> Json.Str("five")),
+            ).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Client.default),
+      // ─── forecast with missing list field ────────────────────────────────
+      test("weather.forecast returns empty array when list field is absent") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.forecast", Json.Obj("location" -> Json.Str("Paris")))
+        } yield assert(result)(equalTo(Json.Arr()))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── alerts missing lon ───────────────────────────────────────────────
+      test("weather.alerts missing lon fails with ValidationError") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client)
+          result <- skill.invoke(dummyCtx, "weather.alerts", Json.Obj("lat" -> Json.Num(37.77))).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Client.default),
+      // ─── weather.current response edge cases ─────────────────────────────
+      test("weather.current returns zeros when main and weather fields are absent") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.current", Json.Obj("location" -> Json.Str("Nowhere")))
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("temperature", Json.Num(n)) => n.doubleValue() == 0.0; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── validate() ──────────────────────────────────────────────────────
+      test("validate returns not-ok when apiKey is blank") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(WeatherConfig(apiKey = ""), client)
+          result <- skill.validate()
+        } yield assertTrue(!result.ok)
+      }.provide(Client.default),
+      test("validate returns ok when HTTP call succeeds") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleCurrentBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(
+            WeatherConfig(apiKey = "test-key", defaultLocation = "London"),
+            client,
+            s"http://localhost:$port",
+          )
+          result <- skill.validate()
+        } yield assertTrue(result.ok)
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("validate returns not-ok when HTTP call fails") {
+        for {
+          port <- Server.install(
+            Routes(
+              Method.ANY / trailing -> handler {
+                (
+                  _: Path,
+                  _: Request,
+                ) =>
+                  Response(status = Status.InternalServerError, body = Body.fromString("error"))
+              },
+            ),
+          )
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(
+            WeatherConfig(apiKey = "test-key", defaultLocation = "London"),
+            client,
+            s"http://localhost:$port",
+          )
+          result <- skill.validate()
+        } yield assertTrue(!result.ok)
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── dashboardData HTTP error ─────────────────────────────────────────
+      test("dashboardData catches HTTP error and returns error JSON") {
+        for {
+          port <- Server.install(
+            Routes(
+              Method.ANY / trailing -> handler {
+                (
+                  _: Path,
+                  _: Request,
+                ) =>
+                  Response(status = Status.InternalServerError, body = Body.fromString("server error"))
+              },
+            ),
+          )
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(
+            WeatherConfig(apiKey = "test-key", defaultLocation = "London"),
+            client,
+            s"http://localhost:$port",
+          )
+          result <- skill.dashboardData(dummyCtx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("error", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── normalizeLocation ────────────────────────────────────────────────
+      test("weather.current normalizes location with spaces around comma") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleCurrentBody))
+          client <- ZIO.service[Client]
+          skill = new WeatherSkill(dummyCfg, client, s"http://localhost:$port")
+          result <- skill.invoke(dummyCtx, "weather.current", Json.Obj("location" -> Json.Str(" London , GB ")))
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("temperature", _) => true; case _ => false })
           case _ => assertTrue(false)
         }
       }.provide(Server.defaultWith(_.port(0)), Client.default),

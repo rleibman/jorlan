@@ -284,6 +284,301 @@ object MarketDataSkillSpec extends ZIOSpecDefault {
           case _ => assertTrue(false)
         }
       }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── market.watchlist ────────────────────────────────────────────────
+      test("market.watchlist returns quotes for default SPY/DIA/GLD tickers") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.watchlist", Json.Obj())
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("quotes", Json.Arr(items)) => items.length == 3; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.watchlist uses configured preferredStocks with colon format") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(
+              apiKey = "dummy-key",
+              baseUrl = s"http://localhost:$port/query",
+              preferredStocks = List("AAPL:Apple Inc", "TSLA"),
+            ),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.watchlist", Json.Obj())
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("quotes", Json.Arr(items)) => items.length == 2; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.watchlist fetchQuote falls back to N/A when Global Quote absent") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(
+              apiKey = "dummy-key",
+              baseUrl = s"http://localhost:$port/query",
+              preferredStocks = List("AAPL"),
+            ),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.watchlist", Json.Obj())
+        } yield result match {
+          case Json.Obj(fields) =>
+            val quotes = fields.collectFirst { case ("quotes", Json.Arr(q)) => q }.getOrElse(Chunk.empty)
+            val firstPrice = quotes.headOption.flatMap {
+              case Json.Obj(fs) => fs.collectFirst { case ("price", Json.Str(p)) => p }
+              case _            => None
+            }
+            assertTrue(firstPrice.contains("N/A"))
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.watchlist catchAll produces N/A when HTTP request fails") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("not-json-at-all"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(
+              apiKey = "dummy-key",
+              baseUrl = s"http://localhost:$port/query",
+              preferredStocks = List("AAPL"),
+            ),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.watchlist", Json.Obj())
+        } yield result match {
+          case Json.Obj(fields) =>
+            val quotes = fields.collectFirst { case ("quotes", Json.Arr(q)) => q }.getOrElse(Chunk.empty)
+            val firstPrice = quotes.headOption.flatMap {
+              case Json.Obj(fs) => fs.collectFirst { case ("price", Json.Str(p)) => p }
+              case _            => None
+            }
+            assertTrue(firstPrice.contains("N/A"))
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── missing required fields ──────────────────────────────────────────
+      test("market.quote fails with JorlanError when symbol field is missing") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Obj()).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.search fails with JorlanError when query field is missing") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.search", Json.Obj()).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.news fails with JorlanError when symbol field is missing") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj()).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.quote fails when args is not a JSON object") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Str("bad")).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── HTTP error responses ──────────────────────────────────────────────
+      test("market.quote fails with JorlanError on HTTP 500") {
+        for {
+          port <- Server.install(
+            Routes(
+              Method.ANY / trailing -> handler {
+                (
+                  _: Path,
+                  _: Request,
+                ) =>
+                  Response(status = Status.InternalServerError, body = Body.fromString("server error"))
+              },
+            ),
+          )
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL"))).exit
+        } yield assert(result)(failsWithA[JorlanError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.quote fails with JorlanError on invalid JSON body") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("not valid json!!!"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.quote", Json.Obj("symbol" -> Json.Str("AAPL"))).exit
+        } yield assert(result)(failsWithA[JorlanError])
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── market.news: news feed edge cases ────────────────────────────────
+      test("market.news returns empty array when feed field is absent") {
+        for {
+          port   <- Server.install(fixedBodyRoutes("{}"))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield assert(result)(equalTo(Json.Arr()))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.news uses Neutral sentiment when ticker not found in ticker_sentiment") {
+        val noMatchNewsBody: String =
+          """|{
+             |  "feed": [
+             |    {
+             |      "title": "Generic Tech News",
+             |      "url": "https://example.com/tech",
+             |      "summary": "Technology sector update",
+             |      "ticker_sentiment": [
+             |        {
+             |          "ticker": "MSFT",
+             |          "relevance_score": "0.5",
+             |          "ticker_sentiment_label": "Bullish"
+             |        }
+             |      ]
+             |    }
+             |  ]
+             |}""".stripMargin
+        for {
+          port   <- Server.install(fixedBodyRoutes(noMatchNewsBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield result match {
+          case Json.Arr(items) =>
+            val sentiment = items.headOption.flatMap {
+              case Json.Obj(fs) => fs.collectFirst { case ("sentiment", Json.Str(s)) => s }
+              case _            => None
+            }
+            assertTrue(sentiment.contains("Neutral"))
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.news rate limit returns error") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(rateLimitBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.news", Json.Obj("symbol" -> Json.Str("AAPL")))
+        } yield assert(result)(
+          equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
+        )
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("market.search rate limit returns error") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(rateLimitBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.invoke(dummyCtx, "market.search", Json.Obj("query" -> Json.Str("Apple")))
+        } yield assert(result)(
+          equalTo(Json.Obj("error" -> Json.Str("Rate limit exceeded, please wait before retrying"))),
+        )
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── validate() ──────────────────────────────────────────────────────
+      test("validate returns not-ok when apiKey is empty") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(AlphaVantageConfig(), client)
+          result <- skill.validate()
+        } yield assertTrue(!result.ok)
+      }.provide(Client.default),
+      test("validate returns ok when HTTP call succeeds") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.validate()
+        } yield assertTrue(result.ok)
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("validate returns not-ok when HTTP call fails") {
+        for {
+          port <- Server.install(
+            Routes(
+              Method.ANY / trailing -> handler {
+                (
+                  _: Path,
+                  _: Request,
+                ) =>
+                  Response(status = Status.InternalServerError, body = Body.fromString("error"))
+              },
+            ),
+          )
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(apiKey = "dummy-key", baseUrl = s"http://localhost:$port/query"),
+            client,
+          )
+          result <- skill.validate()
+        } yield assertTrue(!result.ok)
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      // ─── dashboardData with configured preferredStocks ───────────────────
+      test("dashboardData uses configured preferredStocks with colon format") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleQuoteBody))
+          client <- ZIO.service[Client]
+          skill = new MarketDataSkill(
+            AlphaVantageConfig(
+              apiKey = "dummy-key",
+              baseUrl = s"http://localhost:$port/query",
+              preferredStocks = List("AAPL:Apple Inc", "MSFT:Microsoft"),
+            ),
+            client,
+          )
+          result <- skill.dashboardData(dummyCtx)
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("quotes", Json.Arr(items)) => items.length == 2; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
     ) @@ TestAspect.withLiveClock
 
 }

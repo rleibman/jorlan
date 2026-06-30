@@ -16,6 +16,13 @@ import zio.json.ast.Json
 
 /** A runtime `Skill` constructed from a [[DeclarativeSkillManifest]]. Dispatches each tool invocation to either
   * [[HttpApiExecutor]] or [[PromptTemplateExecutor]] based on the tool's executor config.
+  *
+  * @param manifest
+  *   Parsed and validated skill manifest. Defines the skill name, tier, and tool descriptors.
+  * @param client
+  *   HTTP client used by [[HttpApiExecutor]] for outbound requests.
+  * @param gateway
+  *   Model gateway used by [[PromptTemplateExecutor]] for LLM inference.
   */
 class DeclarativeSkill(
   manifest: DeclarativeSkillManifest,
@@ -60,6 +67,18 @@ class DeclarativeSkill(
 
 object DeclarativeSkill {
 
+  /** Constructs a [[DeclarativeSkill]] from an already-validated manifest.
+    *
+    * Prefer this factory over `new` — it makes the intent clear at call sites where the manifest has been obtained from
+    * [[SkillLifecycleService]] after passing [[ManifestValidator]].
+    *
+    * @param manifest
+    *   Validated manifest (name, version, tools with executor configs).
+    * @param client
+    *   ZIO HTTP client injected for [[HttpApiExecutor]] tool calls.
+    * @param gateway
+    *   Model gateway injected for [[PromptTemplateExecutor]] tool calls.
+    */
   def from(
     manifest: DeclarativeSkillManifest,
     client:   Client,

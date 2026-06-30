@@ -616,27 +616,10 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`field`, Json.Num(n)) => n } match {
           case Some(n) =>
-            ZIO
-              .attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
-          case None =>
-            str(args, field) match {
-              case Some(s) =>
-                s.toLongOption match {
-                  case Some(n) => ZIO.succeed(n)
-                  case None    => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field must be numeric, got '$s'"))
-                }
-              case None => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
-            }
-        }
-      case _ =>
-        str(args, field) match {
-          case Some(s) =>
-            s.toLongOption match {
-              case Some(n) => ZIO.succeed(n)
-              case None    => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field must be numeric, got '$s'"))
-            }
+            ZIO.attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
           case None => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
         }
+      case _ => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
     }
 
   private def parseApprovalMode(s: String): Option[ApprovalMode] =

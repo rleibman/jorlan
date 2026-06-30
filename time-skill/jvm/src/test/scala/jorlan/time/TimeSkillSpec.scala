@@ -279,6 +279,59 @@ object TimeSkillSpec extends ZIOSpecDefault {
           assertTrue(tz.contains("America/Chicago"))
         }
       },
+      test("validate returns ok=true for valid default timezone") {
+        val result = skill.validate()
+        assertZIO(result)(hasField("ok", (_: SkillValidationResult).ok, isTrue))
+      },
+      test("validate returns ok=false for invalid default timezone") {
+        val badSkill = new TimeSkill(TimeConfig(defaultTimezone = "Not/A/Zone"))
+        val result = badSkill.validate()
+        assertZIO(result)(hasField("ok", (_: SkillValidationResult).ok, isFalse))
+      },
+      test("time.diff with exactly 1 day, 1 hour, 1 minute, 1 second uses singular forms") {
+        val args = Json.Obj(
+          "from"         -> Json.Str("2026-06-16T00:00:00"),
+          "to"           -> Json.Str("2026-06-17T01:01:01"),
+          "fromTimezone" -> Json.Str("UTC"),
+          "toTimezone"   -> Json.Str("UTC"),
+        )
+        for {
+          result <- skill.invoke(ctx, "time.diff", args)
+        } yield {
+          val human = strField(result, "humanReadable")
+          assertTrue(
+            human.exists(_.contains("1 day")),
+            human.exists(_.contains("1 hour")),
+            human.exists(_.contains("1 minute")),
+            human.exists(_.contains("1 second")),
+          )
+        }
+      },
+      test("time.diff with 0 seconds returns humanReadable with '0 second'") {
+        val args = Json.Obj(
+          "from"         -> Json.Str("2026-06-16T12:00:00"),
+          "to"           -> Json.Str("2026-06-16T12:00:00"),
+          "fromTimezone" -> Json.Str("UTC"),
+          "toTimezone"   -> Json.Str("UTC"),
+        )
+        for {
+          result <- skill.invoke(ctx, "time.diff", args)
+        } yield {
+          val human = strField(result, "humanReadable")
+          val secs = numField(result, "totalSeconds")
+          assertTrue(secs.contains(0.0), human.exists(_.contains("0 second")))
+        }
+      },
+      test("time.add_duration with invalid duration string fails") {
+        val args = Json.Obj(
+          "datetime" -> Json.Str("2026-06-16T10:00:00"),
+          "timezone" -> Json.Str("UTC"),
+          "duration" -> Json.Str("not-a-duration"),
+        )
+        for {
+          exit <- skill.invoke(ctx, "time.add_duration", args).exit
+        } yield assert(exit)(fails(isSubtype[JorlanError](anything)))
+      },
     )
 
 }

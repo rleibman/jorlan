@@ -30,6 +30,11 @@ import zio.json.literal.*
   *   - `discord.send_dm` (requires `discord.send`)
   *   - `discord.get_history` (requires `discord.read`)
   *   - `discord.get_channel_info` (requires `discord.read`)
+  *
+  * '''Name-resolution asymmetry''': Unlike the Telegram connector (which injects a `TelegramNameResolver` so agents can
+  * address users by display name), this connector requires callers to supply raw Discord snowflake IDs for `channelId`
+  * and `userId`. There is no injected resolver that maps display names to IDs. A future `DiscordNameResolver` could be
+  * added following the same pattern as `TelegramNameResolver` in `TelegramConnectorSkill`.
   */
 class DiscordConnectorSkill(
   config:         DiscordConfig,
@@ -180,42 +185,30 @@ class DiscordConnectorSkill(
     tool: String,
     args: Json,
   ): IO[JorlanError, Json] = {
-    val obj = args.asObject.getOrElse(Json.Obj())
     tool match {
       case "discord.send_message" =>
-        val channelId = obj.get("channelId").flatMap(_.asString)
-        val content = obj.get("content").flatMap(_.asString)
-        (channelId, content) match {
-          case (Some(cid), Some(c)) => apiClient.sendToChannel(cid, c).as(Json.Obj())
-          case (None, _)            => ZIO.fail(JorlanError("channelId is required for discord.send_message"))
-          case (_, None)            => ZIO.fail(JorlanError("content is required for discord.send_message"))
-        }
+        for {
+          channelId <- requireStr(args, "channelId")
+          content   <- requireStr(args, "content")
+          _         <- apiClient.sendToChannel(channelId, content)
+        } yield Json.Obj()
 
       case "discord.send_dm" =>
-        val userId = obj.get("userId").flatMap(_.asString)
-        val content = obj.get("content").flatMap(_.asString)
-        (userId, content) match {
-          case (Some(uid), Some(c)) => apiClient.sendToDm(uid, c).as(Json.Obj())
-          case (None, _)            => ZIO.fail(JorlanError("userId is required for discord.send_dm"))
-          case (_, None)            => ZIO.fail(JorlanError("content is required for discord.send_dm"))
-        }
+        for {
+          userId  <- requireStr(args, "userId")
+          content <- requireStr(args, "content")
+          _       <- apiClient.sendToDm(userId, content)
+        } yield Json.Obj()
 
       case "discord.get_history" =>
-        val channelId = obj.get("channelId").flatMap(_.asString)
-        val limit =
-          obj.get("limit").flatMap(_.asNumber).map(n => BigDecimal(n.value).toInt).getOrElse(50).max(1).min(100)
-        channelId match {
-          case Some(cid) =>
-            apiClient.getChannelHistory(cid, limit).map(msgs => Json.Arr(msgs*))
-          case None => ZIO.fail(JorlanError("channelId is required for discord.get_history"))
-        }
+        for {
+          channelId <- requireStr(args, "channelId")
+          limit = int(args, "limit").getOrElse(50).max(1).min(100)
+          msgs <- apiClient.getChannelHistory(channelId, limit)
+        } yield Json.Arr(msgs*)
 
       case "discord.get_channel_info" =>
-        val channelId = obj.get("channelId").flatMap(_.asString)
-        channelId match {
-          case Some(cid) => apiClient.getChannelInfo(cid)
-          case None      => ZIO.fail(JorlanError("channelId is required for discord.get_channel_info"))
-        }
+        requireStr(args, "channelId").flatMap(apiClient.getChannelInfo)
 
       case other => ZIO.fail(JorlanError(s"Unknown discord tool: $other"))
     }
@@ -246,39 +239,41 @@ class DiscordConnectorSkill(
           case None =>
             ZIO.logInfo("[discord] event loop received shutdown sentinel, stopping")
           case Some(msg) =>
-            processMessage(msg) *> eventLoop
+            processMessage(msg).forkDaemon *> eventLoop
         },
       )
 
   private def processMessage(msg: DiscordRawMessage): UIO[Unit] = {
-    // Skip bots
-    if (config.allowedGuildIds.nonEmpty && msg.guildId.isDefined && !config.allowedGuildIds.contains(msg.guildId.get)) {
+    if (msg.isBot) {
+      ZIO.logDebug(s"[discord] dropping message from bot ${msg.authorId}")
+    } else if (
+      config.allowedGuildIds.nonEmpty && msg.guildId.isDefined && !config.allowedGuildIds.contains(msg.guildId.get)
+    ) {
       ZIO.logDebug(s"[discord] dropping message from unlisted guild ${msg.guildId.get}")
     } else if (config.allowedUserIds.nonEmpty && !config.allowedUserIds.contains(msg.authorId)) {
       ZIO.logDebug(s"[discord] dropping message from unlisted user ${msg.authorId}")
     } else if (config.mentionOnly && msg.guildId.isDefined && !msg.isMention) {
       ZIO.logDebug(s"[discord] dropping guild message with no bot mention from ${msg.authorId}")
-    } else
-      {
-        DiscordMessageNormalizer.normalize(msg) match {
-          case None          => ZIO.unit
-          case Some(inbound) =>
-            val channelId = msg.channelId
-            ingress
-              .receive(
-                inbound,
-                config.unrecognizedPolicy,
-                onResponse = Some(text =>
-                  (if (msg.guildId.isDefined) apiClient.sendToChannel(channelId, text)
-                   else apiClient.sendToDm(msg.authorId, text))
-                    .tapError(e => ZIO.logWarning(s"[discord] reply failed for channel $channelId: ${e.msg}"))
-                    .ignore,
-                ),
-              )
-              .tapError(e => ZIO.logWarning(s"[discord] ingress error for message ${msg.messageId}: ${e.msg}"))
-              .ignore
-        }
-      }.unless(msg.isBot).unit
+    } else {
+      DiscordMessageNormalizer.normalize(msg) match {
+        case None          => ZIO.unit
+        case Some(inbound) =>
+          val channelId = msg.channelId
+          ingress
+            .receive(
+              inbound,
+              config.unrecognizedPolicy,
+              onResponse = Some(text =>
+                (if (msg.guildId.isDefined) apiClient.sendToChannel(channelId, text)
+                 else apiClient.sendToDm(msg.authorId, text))
+                  .tapError(e => ZIO.logWarning(s"[discord] reply failed for channel $channelId: ${e.msg}"))
+                  .ignore,
+              ),
+            )
+            .tapError(e => ZIO.logWarning(s"[discord] ingress error for message ${msg.messageId}: ${e.msg}"))
+            .ignore
+      }
+    }
   }
 
 }

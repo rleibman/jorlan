@@ -1,200 +1,212 @@
 ---
 name: coverage-gaps
-description: Known untested areas by package, updated 2026-06-12 (includes Phase 13)
+description: Known untested areas by package, updated 2026-06-29 (includes Sprint 1/2/3)
 metadata:
   type: project
 ---
 
+## Sprint 3 — Approvals, Discord, RSS (2026-06-29)
+
+### ApprovalHub — WELL COVERED, minor gaps
+- awaitDecision approved concurrently: COVERED
+- awaitDecision denied concurrently: COVERED
+- race safety (preDecision): COVERED
+- timeout: COVERED
+- single subscriber receives request: COVERED
+- multiple subscribers: COVERED
+- MISSING: subscriber queue cleanup after stream terminates (the `ensuring` block)
+- MISSING: notifyNewRequest with zero subscribers (trivial no-op path)
+- MISSING: multiple requests to same subscriber
+
+### ToolEventHub — WELL COVERED, minor gaps
+- subscriber receives event for its session: COVERED
+- different session filtered out: COVERED
+- publish with no subscriber is no-op: COVERED
+- multiple subscribers same session: COVERED
+- MISSING: subscriber cleanup after stream terminates
+- MISSING: ToolResultEvent delivery (only ToolInvokedEvent used in filtering test)
+- MISSING: multiple session isolation test
+
+### HumanApprovalNotifierImpl — WELL COVERED, minor gaps
+- logs ApprovalRequested event: COVERED
+- second request succeeds: COVERED
+- MISSING: resource field in EventLog not asserted (set to Some(request.id))
+- MISSING: request with agentId set
+
+### ApprovalServiceImpl (unit) — WELL COVERED, gaps remain
+- recordDecision Approved: COVERED
+- recordDecision Rejected: COVERED
+- session branch with/without sessionId: COVERED
+- PerInvocation → PendingApproval: COVERED
+- Once → PendingApproval (no existing): COVERED
+- Session → PendingApproval (no existing): COVERED
+- recordDecision with Pending status fails: COVERED
+- authorize Allowed (Persistent): COVERED
+- authorize Denied: COVERED
+- expireStaleRequests: COVERED
+- MISSING: Cancelled/Expired status → EventType.ApprovalDenied branch
+- MISSING: Once grant with existing approved request → Allowed
+- MISSING: hub.notifyNewRequest call verified (wired but not asserted)
+
+### ApprovalService integration (db/ApprovalServiceSpec) — WELL COVERED
+- Persistent grant → Allowed + event: COVERED
+- Denied grant → Denied + event: COVERED
+- PerInvocation → PendingApproval with DB-assigned id: COVERED
+- expireStaleRequests with stale: COVERED
+- expireStaleRequests with none stale: COVERED
+- MISSING: recordDecision at DB level (integration)
+- MISSING: Once grant end-to-end approval flow
+
+### DiscordConnectorSkill — WELL COVERED, gaps remain
+- descriptor fields: COVERED
+- send_message happy path: COVERED
+- send_dm happy path: COVERED
+- get_channel_info: COVERED
+- get_history: COVERED
+- unknown tool: COVERED
+- send_message missing channelId: COVERED
+- send_message missing content: COVERED
+- send_dm missing userId: COVERED
+- start/stop: COVERED
+- event loop normalizes DM: COVERED
+- event loop skips bots: COVERED
+- event loop drops unlisted guilds: COVERED
+- event loop drops unlisted users: COVERED
+- mentionOnly config: COVERED
+- MISSING: send_dm missing content field
+- MISSING: sendToChannel/sendToDm apiClient failure path
+- MISSING: get_channel_info missing channelId
+- MISSING: get_history missing channelId
+
+### DiscordMessageNormalizer — WELL COVERED, minor gaps
+- DM → Private: COVERED
+- guild → Group: COVERED
+- bot dropped: COVERED
+- content preserved: COVERED
+- chatRef: COVERED
+- channelUserId: COVERED
+- receivedAt: COVERED
+- MISSING: empty content string
+- MISSING: isMention=true on DM (guildId=None)
+
+### RssFeedParser — GOOD COVERAGE, edge case gaps
+- RSS 2.0 parsing: COVERED
+- Atom 1.0 parsing: COVERED
+- limit: COVERED
+- invalid XML: COVERED
+- non-feed root element: COVERED
+- MISSING: empty channel (no items) returns empty list
+- MISSING: Atom entry with updated fallback (no published)
+- MISSING: Atom entry with content (no summary)
+- MISSING: Atom link rel="self" filtered vs rel="alternate" used
+
+### RssFeedSkill — PARTIAL COVERAGE — rss.fetch ZERO TESTS
+- rss.list_saved empty: COVERED
+- rss.list_saved with feeds: COVERED
+- rss.save_feed adds URL: COVERED
+- rss.save_feed dedup: COVERED
+- rss.remove_feed removes: COVERED
+- rss.remove_feed no-op: COVERED
+- unknown tool: COVERED
+- MISSING: rss.fetch — ENTIRE TOOL UNTESTED (fetchFeed, fetchXml, HTTP error, parse, encode)
+- MISSING: rss.save_feed missing url field
+- MISSING: rss.remove_feed missing url field
+- MISSING: args is not JSON object → ValidationError
+- MISSING: limit clamping behavior (min 1, max 50)
+- MISSING: totalFeeds field not asserted in save_feed response
+
+## Sprint 2 — Declarative Skills (2026-06-26)
+
+### ManifestValidatorSpec — GOOD COVERAGE, minor gaps
+- valid http_api: COVERED
+- valid prompt_template: COVERED
+- invalid JSON: COVERED
+- name with uppercase: COVERED
+- name with spaces: COVERED
+- name with underscore/digits: COVERED
+- empty version: COVERED
+- empty description: COVERED
+- empty tools: COVERED
+- tool without prefix: COVERED
+- unsupported HTTP method: COVERED
+- empty URL: COVERED
+- empty systemPrompt: COVERED
+- MISSING: empty userPromptTemplate in PromptTemplate fails
+- MISSING: empty tool.description fails
+- MISSING: non-object inputSchema fails
+- MISSING: multiple simultaneous errors accumulation
+
+### SkillLifecycleServiceSpec — GOOD COVERAGE, gaps remain
+- createDraft creates Draft: COVERED
+- createDraft invalid manifest fails: COVERED
+- advance Draft → Validated: COVERED
+- advance Validated → PermissionReviewed: COVERED
+- advance full pipeline to AwaitingApproval: COVERED
+- approve from AwaitingApproval → Active: COVERED
+- approve from non-AwaitingApproval fails: COVERED
+- reject returns to Draft with note: COVERED
+- advance from AwaitingApproval returns error: COVERED
+- MISSING: advance — version not found → JorlanError
+- MISSING: approve/reject — version not found → JorlanError
+- MISSING: reject from non-AwaitingApproval status fails
+- MISSING: createDraft for second version of same existing skill (existing headOption → Some branch)
+- MISSING: approve — skill registered in SkillRegistry after approval (not asserted)
+
+### HttpApiExecutor — ZERO DIRECT TESTS (Critical)
+- URL template substitution: NOT TESTED
+- HTTP method dispatch (GET/POST/PUT/DELETE/PATCH): NOT TESTED
+- JSON response parsing: NOT TESTED
+- plain text response (non-JSON body): NOT TESTED
+- HTTP 4xx/5xx response → JorlanError: NOT TESTED
+- invalid URL → JorlanError: NOT TESTED
+- body template substitution: NOT TESTED
+
+### PromptTemplateExecutor — ZERO DIRECT TESTS (Critical)
+- template substitution for systemPrompt: NOT TESTED
+- template substitution for userPromptTemplate: NOT TESTED
+- FinalAnswer path → Json.Str: NOT TESTED
+- ToolCallRequested path → JorlanError: NOT TESTED
+
+### DeclarativeSkill — ZERO DIRECT TESTS (Critical)
+- unknown tool returns JorlanError: NOT TESTED
+- routes to HttpApiExecutor for HttpApi executor: NOT TESTED
+- routes to PromptTemplateExecutor for PromptTemplate executor: NOT TESTED
+
+### SkillAuthoringSkill — ZERO TESTS (Critical)
+- skill_authoring.propose happy path (4-advance auto-pipeline): NOT TESTED
+- skill_authoring.propose manifest field missing: NOT TESTED
+- skill_authoring.propose invalid JSON manifest string: NOT TESTED
+- skill_authoring.propose with validation errors stops early: NOT TESTED
+- unknown tool: NOT TESTED
+
+### GraphQL toolEvents subscription — ZERO TESTS (High)
+- toolEvents subscription receives ToolInvokedEvent: NOT TESTED
+- toolEvents subscription receives ToolResultEvent: NOT TESTED
+- toolEvents subscription session-isolation: NOT TESTED
+
+### InMemorySkillRepo connector stubs — LANDMINE
+- getConnector, searchConnectors, upsertConnector throw ??? — will fail at runtime
+  for any test that exercises connector paths via InMemoryRepositories
+
+### approvalNotifications GQL subscription — PARTIAL (High)
+- schema contains approvalNotifications: COVERED
+- subscription yields empty stream without published requests: COVERED
+- MISSING: subscription receives published request end-to-end at GQL layer
+
 ## Phase 13 Email/Calendar Skills — Coverage Gaps (2026-06-12)
-
-### OAuthRoutes — ZERO UNIT TESTS (Critical)
-- `GET /api/oauth/start/:provider` — missing X-User-Id header → 400 error: NOT TESTED
-- `GET /api/oauth/start/:provider` — happy path building authUrl + stateJwt: NOT TESTED
-- `GET /api/oauth/callback/google` — missing `code` param → error redirect: NOT TESTED
-- `GET /api/oauth/callback/google` — missing `state` param → error redirect: NOT TESTED
-- `GET /api/oauth/callback/google` — expired state JWT → error redirect: NOT TESTED
-- `GET /api/oauth/callback/google` — invalid HMAC signature → error redirect: NOT TESTED
-- `GET /api/oauth/callback/google` — token exchange HTTP error → error redirect: NOT TESTED
-- `GET /api/oauth/callback/google` — success path → stores credential + redirects: NOT TESTED
-- `verifyStateJwt` private helper — invalid format (no dot): NOT TESTED
-- `verifyStateJwt` — expired token: NOT TESTED
-- `buildStateJwt` round-trip: NOT TESTED
-- NOTE: The JWT format is custom (base64url(payload).HmacSHA256), which has security implications; the signature verification deserves targeted tests
-
-### OAuthCredentialServiceImpl — ZERO UNIT TESTS (Critical)
-- `store` round-trip (encrypt + persist to repo): NOT TESTED
-- `load` decrypts and returns parsed JSON: NOT TESTED
-- `load` when no credential exists → None: NOT TESTED
-- `load` with corrupt ciphertext in repo → decrypt failure propagated: NOT TESTED
-- `revoke` delegates to repo.delete: NOT TESTED
-- `listProviders` delegates to repo.listByUser: NOT TESTED
-- `refreshAccessToken` — no credential found → fail: NOT TESTED
-- `refreshAccessToken` — no `refresh_token` field in stored JSON → fail: NOT TESTED
-- `refreshAccessToken` — HTTP call succeeds → stores updated token: NOT TESTED
-- `refreshAccessToken` — HTTP call fails → IO.fail: NOT TESTED
-- `mergeAccessToken` replaces old access_token: NOT TESTED
-- `extractExpiresAt` from `expiry_date` field: NOT TESTED
-- `extractScopes` from `scope` field: NOT TESTED
-- NOTE: All 5 callers in production (GmailProvider, GoogleCalendarProvider, GoogleDriveProvider, JorlanAPI, OAuthRoutes) call `refreshAccessToken`; this path is only stubbed in tests
-
-### GraphQL OAuth & invokeTool resolvers — ZERO TEST COVERAGE (High)
-- `oauthStatus` query — connected=true when credential exists: NOT TESTED in any spec
-- `oauthStatus` query — connected=false when no credential: NOT TESTED
-- `oauthStatus` query — unauthenticated → fails: NOT TESTED
-- `listOAuthProviders` query — returns list from service: NOT TESTED
-- `listOAuthProviders` query — unauthenticated → fails: NOT TESTED
-- `startOAuth` mutation — returns redirect URL prefix: NOT TESTED
-- `startOAuth` mutation — unauthenticated → fails: NOT TESTED
-- `revokeOAuth` mutation — calls OAuthCredentialService.revoke: NOT TESTED
-- `revokeOAuth` mutation — unauthenticated → fails: NOT TESTED
-- `invokeTool` mutation — dispatches to SkillRegistry: NOT TESTED
-- `invokeTool` mutation — unknown tool → JorlanError: NOT TESTED
-- `invokeTool` mutation — unauthenticated → fails: NOT TESTED
-
-### GmailProvider / GoogleCalendarProvider / GoogleDriveProvider — ZERO UNIT TESTS (High)
-- All three real providers use `withGmail`/`withCalendar`/`withDrive` pattern: NONE TESTED
-- Token refresh called on every provider method: not tested at any level (real HTTP calls)
-- `messageToEmail` conversion (header extraction, body decoding, attachment parsing): NOT TESTED
-- `extractTextBody` multipart parsing: NOT TESTED
-- `toInstant` for EventDateTime with date-only (all-day event) vs datetime: NOT TESTED
-- `buildRfc822` message construction (to, cc, bcc, replyTo): NOT TESTED
-- NOTE: These require live Google API; acceptable, but no wiremock-style HTTP mock layer exists
-
-### EmailSkill — GOOD COVERAGE, two gaps
-- email.list: COVERED
-- email.list with maxResults: COVERED
-- email.read: COVERED
-- email.read unknown id: COVERED
-- email.read missing messageId: COVERED
-- email.send happy path: COVERED
-- email.send missing fields: COVERED
-- email.draft: COVERED
-- email.archive: COVERED
-- email.delete: COVERED
-- email.reply: COVERED
-- email.search: COVERED
-- email.search missing query: COVERED
-- unknown tool: COVERED
-- MISSING: email.send with cc/bcc optional fields populated — args include "cc" and "bcc" arrays; EmailSkill extracts via SkillArgs.strList but no test passes cc/bcc values and verifies them on the sent draft
-- MISSING: email.reply missing messageId (no "messageId" arg) — the reply impl calls email.read first; a missing messageId should fail but no test covers this path directly (email.read missing messageId test covers the sub-call, but not through email.reply)
-
-### GoogleCalendarSkill — GOOD COVERAGE, one gap
-- calendar.listCalendars: COVERED
-- calendar.listEvents: COVERED
-- calendar.listEvents missing calendarId: COVERED
-- calendar.getEvent: COVERED
-- calendar.getEvent unknown event: COVERED
-- calendar.createEvent: COVERED
-- calendar.createEvent missing fields: COVERED
-- calendar.deleteEvent: COVERED
-- unknown tool: COVERED
-- MISSING: calendar.updateEvent — `calendar.updateEvent` is a registered tool in the invoke dispatch (line 120 of GoogleCalendarSkill.scala) but has NO test in GoogleCalendarSkillSpec. The FakeCalendarProvider in the spec correctly implements updateEvent, but the tool is never called.
-
-### GoogleDriveSkill — GOOD COVERAGE, one gap
-- drive.listFiles: COVERED
-- drive.listFiles with folderId: COVERED
-- drive.listFiles with maxResults: COVERED
-- drive.readFile: COVERED
-- drive.readFile unknown file: COVERED
-- drive.readFile missing fileId: COVERED
-- drive.downloadFile: COVERED
-- drive.downloadFile missing fileId: COVERED
-- unknown tool: COVERED
-- MISSING: drive.listFiles with `query` parameter — FakeDriveProvider.listFiles accepts a `query: Option[String]` and filters by filename, but no test passes a `query` argument to verify name-based search filtering
-
-### ExternalCredentialRepository — WELL COVERED
-- upsert + find round-trip: COVERED
-- upsert updates existing (idempotent): COVERED
-- delete removes credential: COVERED
-- listByUser returns all credentials for user: COVERED
-- find returns None for non-existent: COVERED
-- MISSING: find for non-existent provider returns None even when user has other credentials: edge case not explicitly tested (only tested when user has NO credentials at all)
-- MISSING: listByUser when user has no credentials → empty list: not directly tested (only tested when user has 2 credentials)
-
-### OAuthCredentialEncryptor — WELL COVERED
-- encrypt + decrypt round-trip: COVERED
-- encrypt produces different ciphertext (random IV): COVERED
-- decrypt with wrong key fails: COVERED
-- encrypt + decrypt with JSON object payload: COVERED
-- MISSING: decrypt with malformed base64 IV → exception caught → Left(JorlanError): NOT TESTED
-- MISSING: decrypt with non-JSON object passed as encrypted payload → Chunk.empty path: NOT TESTED
-
-### New Skills not registered in SkillRegistry.live (Observation)
-- EmailSkill, GoogleCalendarSkill, GoogleDriveSkill are registered dynamically in Jorlan.scala startup (lines 152-154) AFTER SkillRegistry.liveSecure is constructed in EnvironmentBuilder
-- This means `SkillRegistry.allTools` and `skills` query in tests that use the standard app layer do NOT include these three skills
-- No test verifies that the `skills` GraphQL query includes email/calendar/drive tool descriptors after startup registration
+[carry-forward — see prior entries; gaps remain as documented]
 
 ## Phase 12 Built-in Skills — Coverage Gaps (2026-06-10)
-
-### SkillRegistry — WELL COVERED, minor gaps remain
-- MISSING: validateRequiredFields — `inputSchema` is not a `Json.Obj` → falls to `Right(Nil)` (no required fields assumed); never tested
-- MISSING: validateRequiredFields — `required` key absent from schema fields → `orElse(Some(Nil))` → empty required list; never tested
-- MISSING: invoke unknown tool name within a known namespace (tool not in descriptor.tools); validateRequiredFields returns `Left("unknown tool '...'")` without calling skill.invoke; not tested
-- MISSING: re-registering the same namespace replaces the previous skill (Map semantics)
-
-### NotificationRouter — WELL COVERED, two gaps
-- MISSING: notifyUser fallback to first available channel when no Telegram identity exists (orElse(identities.headOption)); only the no-identity path and the Telegram path are tested; the "non-Telegram first-in-list fallback" branch is not
-- MISSING: notifyChannel — connector.invoke fails with JorlanError → catchAll returns Json.Str("Error: ..."); no test injects a connector that throws
-
-### ContactsSkill — WELL COVERED, minor gaps
-- MISSING: contacts.find — args that are not a Json.Obj; getStr returns None → "name is required" error path, but only Json.Obj() is tested, not a non-object root
-
-### WorkspaceSkill — WELL COVERED, minor gaps
-- MISSING: workspaceSearch — prefix resolves to a path that is NOT a directory; the `!Files.isDirectory(p)` branch returns `Option(p.getParent).getOrElse(workspaceRoot)` → not covered
-- MISSING: workspaceWrite — Files.createDirectories or Files.write throws a non-security IOException
-
-### ShellSkill — WELL COVERED, minor gaps
-- MISSING: getStrList — args with a `args` key that contains non-string array elements (Json.Num inside the array)
-- MISSING: Command fails to launch (binary doesn't exist despite being in allowlist)
-
-### AgentRunnerImpl — PARTIALLY COVERED (most coverage via AgentRunnerSpec + AgentRunnerReActSpec)
-- MISSING: resolveAgentId — session exists in repo → session.agentId cached; only AgentId.empty (no session) path is exercised
-- MISSING: loadConversationHistory — session found, messages loaded → modelGateway.seedHistory called; the actual history-loading path (not-seeded + non-empty messages) is NOT tested
-- MISSING: getOrCreateConversation — active conversation found in DB (not in cache) → reuses it
-- MISSING: buildMemoryContext error path — memoryService.query failing → catchAll returns ""; no failing MemoryService wired
-- MISSING: logSkillEvent — SkillInvoked and SkillSucceeded event types written during ReAct tool call; event log contents not asserted
+[carry-forward — see prior entries; gaps remain as documented]
 
 ## Phase 11 Telegram Connector — Coverage Gaps (2026-06-07)
-
-### MessageIngressImpl — PARTIALLY COVERED
-- MISSING: ExplicitDeny branch — only DefaultDeny tested
-- MISSING: Quarantine policy — `UnrecognizedIdentityPolicy.Quarantine` defined but never tested
-- MISSING: session reuse by chatRef — no test sends two messages to same chatRef
-- MISSING: event log written on dispatch — not asserted
-
-### ConnectorManager — NO UNIT TESTS
-- `ConnectorManagerImpl.startAll` / `stopAll` — no tests
-
-### TelegramConnectorSkill — MOSTLY COVERED, gaps remain
-- MISSING: send_photo invoke, send_file invoke
-- MISSING: filterUpdates with non-empty allowedChatIds/allowedUserIds
-- MISSING: pollLoop offset advancement
-
-### DB: userByChannelIdentity — NOT INTEGRATION-TESTED (Critical path)
-### DB: chatRef column on AgentSession — NOT INTEGRATION-TESTED
+[carry-forward — see prior entries; gaps remain as documented]
 
 ## Phase 10 Durable Scheduler — Coverage Gaps (2026-06-04)
-
-### TriggerEngine — advanceTriggers NEVER TESTED
-- OneShot/Cron/Interval/Event trigger advancement: NOT TESTED
-- MissedRunPolicy: NOT IMPLEMENTED OR TESTED
-
-### GraphQL Scheduler API — ZERO unit or integration tests
-- `jobs`, `job`, `triggers`, `listApprovals`, `listCapabilities` queries: NOT TESTED
-- All scheduler mutations: NOT TESTED
-
-## Phase 9 Memory System — Coverage Gaps (2026-06-03)
-### MemoryAccessPolicyImpl — PARTIALLY COVERED
-- Workspace scope, Shared scope direct assertion: NOT TESTED
-### MemoryServiceImpl — PARTIALLY COVERED
-- checkpoint with empty messages list: NOT TESTED
-- query with textSearch parameter: only via MemorySkillSpec
-### AgentRunnerImpl (memory integration) — MISSING
-- buildMemoryContext with real sessions: NOT TESTED
-- buildMemoryContext error path: NOT TESTED
+[carry-forward — see prior entries; gaps remain as documented]
 
 ## Critical Untested Areas (carry-forward)
-1. `JorlanAuthServer` — entire auth layer: login, changePassword, createOAuthUser, etc.
-2. `OAuthRoutes` — zero tests; JWT state logic has security implications
-3. `OAuthCredentialServiceImpl` — zero unit tests; token refresh is production hot path
-4. `UserZIORepository.login` / `changePassword` — security-critical SQL logic never integration-tested
+1. JorlanAuthServer — entire auth layer: login, changePassword, createOAuthUser, etc.
+2. OAuthRoutes — zero tests; JWT state logic has security implications
+3. OAuthCredentialServiceImpl — zero unit tests; token refresh is production hot path
+4. UserZIORepository.login / changePassword — security-critical SQL logic never integration-tested

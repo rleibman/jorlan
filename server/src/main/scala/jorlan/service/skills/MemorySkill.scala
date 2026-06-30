@@ -167,7 +167,9 @@ class MemorySkill(
     def optField(name: String): Option[String] =
       args match {
         case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Str(v)) => v }
-        case _                => None
+        // $COVERAGE-OFF$ non-Obj args always fail on field() first; never reached
+        case _ => None
+        // $COVERAGE-ON$
       }
 
     tool match {

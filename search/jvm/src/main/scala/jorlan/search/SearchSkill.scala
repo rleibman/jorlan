@@ -183,8 +183,8 @@ class SearchSkill(
   private def webSearch(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
-      searchDepth = optStr(args, "searchDepth").getOrElse("basic")
+      maxResults = int(args, "maxResults").getOrElse(config.maxResults)
+      searchDepth = str(args, "searchDepth").getOrElse("basic")
       requestBody = Json.Obj(
         "api_key"      -> Json.Str(config.apiKey),
         "query"        -> Json.Str(query),
@@ -199,8 +199,8 @@ class SearchSkill(
   private def newsSearch(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
-      days = optInt(args, "days")
+      maxResults = int(args, "maxResults").getOrElse(config.maxResults)
+      days = int(args, "days")
       baseFields = List(
         "api_key"      -> Json.Str(config.apiKey),
         "query"        -> Json.Str(query),

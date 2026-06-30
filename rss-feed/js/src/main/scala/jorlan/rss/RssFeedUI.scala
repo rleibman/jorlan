@@ -25,7 +25,15 @@ object RssFeedUI {
     <.div(
       ^.style := js.Dynamic.literal(maxWidth = "480px", padding = "8px"),
       <.p("No configuration required."),
-      <.p("Use the ", <.code("rss.save_feed"), ", ", <.code("rss.list_saved"), ", and ", <.code("rss.fetch"), " tools to manage and read your RSS/Atom feeds."),
+      <.p(
+        "Use the ",
+        <.code("rss.save_feed"),
+        ", ",
+        <.code("rss.list_saved"),
+        ", and ",
+        <.code("rss.fetch"),
+        " tools to manage and read your RSS/Atom feeds.",
+      ),
     )
   }
 

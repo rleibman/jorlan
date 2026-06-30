@@ -101,8 +101,13 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
                   receivedAt = java.time.Instant.now(),
                 )
                 if (!queue.offer(Right(raw))) {
+                  // Queue full — drop the oldest message to make room (sliding behaviour).
                   val _ = queue.poll()
                   val _ = queue.offer(Right(raw))
+                  // TODO never, ever use println in a zio app.
+                  java.lang.System.err.println(
+                    s"[DiscordApiClient] WARN: inbound queue full; oldest message dropped (channel=${raw.channelId})",
+                  )
                 }
               }
             }
@@ -117,12 +122,16 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
         ZIO.succeed(jdaRef.set(jda))
       }
 
-  override def disconnect(): UIO[Unit] = {
-    queue.clear()
-    val _ = queue.offer(Left(()))
-    val jda = jdaRef.getAndSet(null)
-    ZIO.blocking(ZIO.attempt(jda.shutdown())).ignore.unless(jda == null).unit
-  }
+  override def disconnect(): UIO[Unit] =
+    ZIO
+      .succeed {
+        queue.clear()
+        val _ = queue.offer(Left(()))
+        jdaRef.getAndSet(null)
+      }
+      .flatMap { jda =>
+        ZIO.blocking(ZIO.attempt(jda.nn.shutdown())).ignore.unless(jda == null).unit
+      }
 
   override def nextEvent(): IO[JorlanError, Option[DiscordRawMessage]] =
     ZIO
@@ -139,21 +148,23 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
     else f(jda.nn)
   }
 
+  private def withChannel[A](channelId: String)(f: TextChannel => IO[JorlanError, A]): IO[JorlanError, A] =
+    withJda { jda =>
+      val channel: TextChannel | Null = jda.getTextChannelById(channelId)
+      if (channel == null) ZIO.fail(JorlanError(s"Discord: text channel $channelId not found"))
+      else f(channel.nn)
+    }
+
   override def sendToChannel(
     channelId: String,
     content:   String,
   ): IO[JorlanError, Unit] =
-    withJda { jda =>
-      val channel: TextChannel | Null = jda.getTextChannelById(channelId)
-      if (channel == null) {
-        ZIO.fail(JorlanError(s"Discord: text channel $channelId not found"))
-      } else {
-        ZIO.blocking {
-          ZIO
-            .attempt(channel.nn.sendMessage(content).complete())
-            .mapError(e => JorlanError(s"Discord sendToChannel failed: ${e.getMessage}"))
-            .unit
-        }
+    withChannel(channelId) { channel =>
+      ZIO.blocking {
+        ZIO
+          .attempt(channel.sendMessage(content).complete())
+          .mapError(e => JorlanError(s"Discord sendToChannel failed: ${e.getMessage}"))
+          .unit
       }
     }
 
@@ -177,50 +188,39 @@ class DiscordApiClientLive(config: DiscordConfig) extends DiscordApiClient {
     channelId: String,
     limit:     Int,
   ): IO[JorlanError, List[Json]] =
-    withJda { jda =>
-      val channel: TextChannel | Null = jda.getTextChannelById(channelId)
-      if (channel == null) {
-        ZIO.fail(JorlanError(s"Discord: text channel $channelId not found"))
-      } else {
-        ZIO.blocking {
-          ZIO
-            .attempt {
-              val history = channel.nn.getHistory()
-              val msgs = history.retrievePast(limit).complete()
-              import scala.jdk.CollectionConverters.*
-              msgs.nn.asScala.toList.map { m =>
-                Json.Obj(
-                  "id"        -> Json.Str(m.nn.getId),
-                  "authorId"  -> Json.Str(m.nn.getAuthor.getId),
-                  "author"    -> Json.Str(m.nn.getAuthor.getName),
-                  "content"   -> Json.Str(m.nn.getContentRaw),
-                  "timestamp" -> Json.Str(m.nn.getTimeCreated.toInstant.toString),
-                )
-              }
+    withChannel(channelId) { channel =>
+      ZIO.blocking {
+        ZIO
+          .attempt {
+            val history = channel.getHistory()
+            val msgs = history.retrievePast(limit).complete()
+            import scala.jdk.CollectionConverters.*
+            msgs.nn.asScala.toList.map { m =>
+              Json.Obj(
+                "id"        -> Json.Str(m.nn.getId),
+                "authorId"  -> Json.Str(m.nn.getAuthor.getId),
+                "author"    -> Json.Str(m.nn.getAuthor.getName),
+                "content"   -> Json.Str(m.nn.getContentRaw),
+                "timestamp" -> Json.Str(m.nn.getTimeCreated.toInstant.toString),
+              )
             }
-            .mapError(e => JorlanError(s"Discord getChannelHistory failed: ${e.getMessage}"))
-        }
+          }
+          .mapError(e => JorlanError(s"Discord getChannelHistory failed: ${e.getMessage}"))
       }
     }
 
   override def getChannelInfo(channelId: String): IO[JorlanError, Json] =
-    withJda { jda =>
-      val channel: TextChannel | Null = jda.getTextChannelById(channelId)
-      if (channel == null) {
-        ZIO.fail(JorlanError(s"Discord: text channel $channelId not found"))
-      } else {
-        ZIO.succeed {
-          val ch = channel.nn
-          val guildId = ch.getGuild.getId
-          val gName = ch.getGuild.getName
-          Json.Obj(
-            "id"        -> Json.Str(ch.getId),
-            "name"      -> Json.Str(ch.getName),
-            "guildId"   -> Json.Str(guildId),
-            "guildName" -> Json.Str(gName),
-            "type"      -> Json.Str("TEXT"),
-          )
-        }
+    withChannel(channelId) { channel =>
+      ZIO.succeed {
+        val guildId = channel.getGuild.getId
+        val gName = channel.getGuild.getName
+        Json.Obj(
+          "id"        -> Json.Str(channel.getId),
+          "name"      -> Json.Str(channel.getName),
+          "guildId"   -> Json.Str(guildId),
+          "guildName" -> Json.Str(gName),
+          "type"      -> Json.Str("TEXT"),
+        )
       }
     }
 

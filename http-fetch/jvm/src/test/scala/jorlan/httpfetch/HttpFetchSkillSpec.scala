@@ -250,6 +250,84 @@ object HttpFetchSkillSpec extends ZIOSpecDefault {
           case _ => assertTrue(false)
         }
       }.provide(Client.default),
+      test("malformed url with no host is rejected (isHostAllowed returns false)") {
+        for {
+          client <- ZIO.service[Client]
+          skill = new HttpFetchSkill(HttpFetchConfig(allowedHosts = List("*")), client)
+          result <- skill.invoke(
+            dummyCtx,
+            "http_fetch.get",
+            Json.Obj("url" -> Json.Str("not-a-url-at-all")),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("error", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Client.default),
+      test("wildcard allowlist matches exact base domain (no subdomain)") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleJsonBody))
+          client <- ZIO.service[Client]
+          skill = new HttpFetchSkill(
+            HttpFetchConfig(allowedHosts = List("*.example.com")),
+            client,
+            url => url.replaceAll("https?://[^/]+", s"http://localhost:$port"),
+          )
+          result <- skill.invoke(
+            dummyCtx,
+            "http_fetch.get",
+            Json.Obj("url" -> Json.Str("https://example.com/data")),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("status", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("http_fetch.get response with no Content-Type header uses octet-stream default") {
+        val noCtRoutes: Routes[Any, Nothing] =
+          Routes(
+            Method.ANY / trailing -> handler {
+              (
+                _: Path,
+                _: Request,
+              ) =>
+                Response(status = Status.Ok, body = Body.fromString("raw body"))
+            },
+          )
+        for {
+          port   <- Server.install(noCtRoutes)
+          client <- ZIO.service[Client]
+          skill = makeSkill(port)(client)
+          result <- skill.invoke(dummyCtx, "http_fetch.get", Json.Obj("url" -> Json.Str("https://api.example.com")))
+        } yield result match {
+          case Json.Obj(fields) =>
+            val ct = fields.collectFirst { case ("contentType", Json.Str(v)) => v }.getOrElse("")
+            assertTrue(ct == "application/octet-stream")
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("http_fetch.post with extra headers sends request and gets response") {
+        for {
+          port   <- Server.install(fixedBodyRoutes(sampleJsonBody))
+          client <- ZIO.service[Client]
+          skill = makeSkill(port)(client)
+          result <- skill.invoke(
+            dummyCtx,
+            "http_fetch.post",
+            Json.Obj(
+              "url"     -> Json.Str("https://api.example.com/submit"),
+              "body"    -> Json.Str("{}"),
+              "headers" -> Json.Obj("X-Api-Key" -> Json.Str("secret")),
+            ),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            assertTrue(fields.exists { case ("status", _) => true; case _ => false })
+          case _ => assertTrue(false)
+        }
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
     ) @@ TestAspect.withLiveClock
 
 }

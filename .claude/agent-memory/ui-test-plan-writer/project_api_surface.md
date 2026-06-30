@@ -1,18 +1,38 @@
 ---
 name: project-api-surface
-description: Jorlan has no traditional UI; primary external API is Caliban GraphQL at server/src/main/scala/jorlan/graphql/JorlanAPI.scala
+description: Jorlan has a Scala.js + React SPA (web module) and a separate Next.js landing page. Primary API is Caliban GraphQL.
 metadata:
   type: project
 ---
 
-Jorlan exposes its entire control-plane via a Caliban GraphQL API. There is no frontend UI.
+Jorlan now has two frontend surfaces:
 
-Test plans must target GraphQL queries, mutations, and subscriptions — not browser screens.
+1. **Landing page** — Next.js/React marketing site in `landing/`. Static content, all links point to GitHub.
+2. **Web SPA** — Scala.js + React 19 + MUI v9. Routes: hash-based (#/skills, #/custom-skills, #/mcp, #/approvals, etc.). Authentication via AuthClient. App at http://localhost:9000 when running.
+
+Key web pages and routes:
+- `#/` — Chat (always mounted)
+- `#/dashboard` — Dashboard
+- `#/sessions` — Sessions
+- `#/approvals` — ApprovalsPage (GQL + WS subscription)
+- `#/memory` — Memory
+- `#/scheduler` — Scheduler
+- `#/events` — Event Log (always mounted)
+- `#/skills` — SkillsPage (skill registry, enable/disable, config, docs)
+- `#/custom-skills` — CustomSkillsPage (declarative skill CRUD + approvals workflow)
+- `#/mcp` — McpServersPage (MCP server CRUD + reload)
+- `#/users` — UsersPage
+- `#/roles` — RolesPage
+- `#/settings` — SettingsPage
+- `#/oauth` — OAuthManagementPage
 
 Key files:
-- `server/src/main/scala/jorlan/graphql/JorlanAPI.scala` — all queries, mutations, subscriptions
-- `server/src/main/scala/jorlan/graphql/JorlanRoutes.scala` — HTTP wiring for the GraphQL endpoint
-- Authentication: Bearer token via `AuthServer`; session injected as `JorlanSession` into the ZIO env
+- `web/src/main/scala/jorlan/web/AppRouter.scala` — hash routing
+- `web/src/main/scala/jorlan/web/AppShell.scala` — nav drawer + app bar
+- `web/src/main/scala/jorlan/web/pages/` — all page components
+- `web/src/main/scala/jorlan/web/components/CreateSkillWizard.scala` — 5-step wizard
+- `server/src/main/scala/jorlan/graphql/JorlanAPI.scala` — GraphQL API
+- `web/src/main/scala/jorlan/web/AsyncCallbackRepositories.scala` — GQL client wrappers
 
-**Why:** No web frontend exists. Test plans written as screen-based UI tests would be wrong.
-**How to apply:** Frame all test cases as GraphQL operations (queries/mutations/subscriptions) or as unit/integration test layer assertions.
+**Why:** Phase 15 added the Scala.js web frontend. Test plans can now target real browser-rendered screens.
+**How to apply:** Write UI test cases as browser interaction sequences against http://localhost:9000.

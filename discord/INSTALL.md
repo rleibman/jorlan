@@ -72,25 +72,6 @@ Grant via **Admin → Agents → \<agent\> → Capabilities**.
 
 ---
 
-## 6. (Optional) Discord Social Login
-
-To allow users to log into Jorlan using their Discord account:
-
-1. In the Discord Developer Portal, go to **OAuth2 → General**
-2. Add a redirect URI: `http://localhost:8080/oauth/discord/callback` (adjust host/port as needed)
-3. Copy the **Client ID** and **Client Secret**
-4. Add to Jorlan configuration:
-
-```env
-DISCORD_LOGIN_CLIENT_ID=your-client-id
-DISCORD_LOGIN_CLIENT_SECRET=your-client-secret
-DISCORD_LOGIN_REDIRECT_URI=http://localhost:8080/oauth/discord/callback
-```
-
-This is separate from the bot token — it allows Jorlan's web login page to show "Continue with Discord".
-
----
-
 ## Troubleshooting
 
 | Symptom                                  | Check                                                                              |

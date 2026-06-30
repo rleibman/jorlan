@@ -7,8 +7,9 @@
 package jorlan.service.mcp
 
 import jorlan.*
-import jorlan.db.repository.ZIOServerSettingsRepository
+import jorlan.db.repository.{ZIORepositories, ZIOServerSettingsRepository}
 import jorlan.service.skills.SkillRegistry
+import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -18,7 +19,6 @@ import zio.test.Assertion.*
 
 object McpManagerSpec extends ZIOSpecDefault {
 
-  // Minimal fake MCP server: responds to initialize, tools/list, tools/call
   private val initializeResponseBody: String =
     """{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"fake","version":"1.0"}}}"""
 
@@ -31,7 +31,7 @@ object McpManagerSpec extends ZIOSpecDefault {
   private def fakeMcpRoutes(
     toolsJson:      String,
     callResultText: String,
-  ): Routes[Any, Nothing] = {
+  ): Routes[Any, Nothing] =
     Routes(
       Method.ANY / trailing -> handler {
         (
@@ -43,10 +43,8 @@ object McpManagerSpec extends ZIOSpecDefault {
               if (body.contains("\"initialize\"")) initializeResponseBody
               else if (body.contains("tools/list")) toolsListResponseBody(toolsJson)
               else if (body.contains("tools/call")) callResultResponseBody(callResultText)
-              else if (body.contains("notifications/initialized"))
-                """{"jsonrpc":"2.0","result":{}}"""
+              else if (body.contains("notifications/initialized")) """{"jsonrpc":"2.0","result":{}}"""
               else """{"jsonrpc":"2.0","result":{}}"""
-
             Response(
               status = Status.Ok,
               headers = Headers(Header.ContentType(MediaType.application.json).untyped),
@@ -55,90 +53,90 @@ object McpManagerSpec extends ZIOSpecDefault {
           }.orDie
       },
     )
-  }
 
-  private class FakeSettingsRepo(settingsMap: Map[String, Json]) extends ZIOServerSettingsRepository {
+  private def reposLayer(settings: Map[String, Json]): ULayer[ZIORepositories] =
+    ZLayer
+      .fromZIO(
+        InMemoryRepositories.InMemoryServerSettingsRepo
+          .make(settings).map(settingsRepo => InMemoryRepositories.live(settingsRepoOpt = Some(settingsRepo))),
+      ).flatten
 
-    override def get(key: String): UIO[Option[Json]] = ZIO.succeed(settingsMap.get(key))
-
-    override def set(
-      key:   String,
-      value: Json,
-    ): UIO[Unit] = ZIO.unit
-
-    override def serverPersonality(): UIO[Option[jorlan.Personality]] = ZIO.succeed(None)
-
-    override def updatePersonality(
-      name:      String,
-      formality: jorlan.Formality,
-      languages: List[String],
-      expertise: List[String],
-      prompt:    String,
-    ): UIO[Option[jorlan.Personality]] = ZIO.succeed(None)
-
-  }
+  private def makeLayer(settings: Map[String, Json]): TaskLayer[McpManager & SkillRegistry & ZIORepositories] =
+    ZLayer.make[McpManager & SkillRegistry & ZIORepositories](
+      reposLayer(settings),
+      SkillRegistry.live,
+      Client.default,
+      McpManager.live,
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("McpManagerSpec")(
       test("no mcp.servers key → loadAndRegister succeeds with no registrations") {
-        val settings = FakeSettingsRepo(Map.empty)
         for {
-          registry <- ZIO.service[SkillRegistry]
-          client   <- ZIO.service[Client]
-          manager = McpManagerImpl(registry, client, settings)
-          _      <- ZIO.scoped(manager.loadAndRegister)
-          skills <- registry.allSkills
+          _      <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
+          skills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
         } yield assert(skills)(isEmpty)
-      }.provide(SkillRegistry.live, Client.default),
+      }.provide(makeLayer(Map.empty)),
       test("empty mcp.servers array → no registrations") {
-        val settings = FakeSettingsRepo(Map("mcp.servers" -> Json.Arr()))
         for {
-          registry <- ZIO.service[SkillRegistry]
-          client   <- ZIO.service[Client]
-          manager = McpManagerImpl(registry, client, settings)
-          _      <- ZIO.scoped(manager.loadAndRegister)
-          skills <- registry.allSkills
+          _      <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
+          skills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
         } yield assert(skills)(isEmpty)
-      }.provide(SkillRegistry.live, Client.default),
+      }.provide(makeLayer(Map("mcp.servers" -> Json.Arr()))),
       test("disabled server is skipped") {
-        val cfg = McpServerConfig(
-          name = "disabled",
-          transport = McpTransport.Http,
-          url = Some("http://localhost:9999"),
-          enabled = false,
-        )
-        val cfgJson = List(cfg).toJson
-        val settings = FakeSettingsRepo(
-          Map("mcp.servers" -> Json.decoder.decodeJson(cfgJson).getOrElse(Json.Arr())),
-        )
+        val cfgJson = List(
+          McpServerConfig(
+            name = "disabled",
+            transport = McpTransport.Http,
+            url = Some("http://localhost:9999"),
+            enabled = false,
+          ),
+        ).toJson
+        val settings = Map("mcp.servers" -> Json.decoder.decodeJson(cfgJson).getOrElse(Json.Arr()))
         for {
-          registry <- ZIO.service[SkillRegistry]
-          client   <- ZIO.service[Client]
-          manager = McpManagerImpl(registry, client, settings)
-          _      <- ZIO.scoped(manager.loadAndRegister)
-          skills <- registry.allSkills
+          _      <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
+          skills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
         } yield assert(skills)(isEmpty)
-      }.provide(SkillRegistry.live, Client.default),
+      }.provide(
+        makeLayer(
+          Map(
+            "mcp.servers" -> Json.decoder
+              .decodeJson(
+                List(
+                  McpServerConfig(
+                    name = "disabled",
+                    transport = McpTransport.Http,
+                    url = Some("http://localhost:9999"),
+                    enabled = false,
+                  ),
+                ).toJson,
+              ).getOrElse(Json.Arr()),
+          ),
+        ),
+      ),
       test("one HTTP server with tools → adapter registered with correct tool names") {
         val toolsJson =
           """[{"name":"read_file","description":"Read a file","inputSchema":{"type":"object"}},{"name":"write_file","description":"Write a file","inputSchema":{"type":"object"}}]"""
-        for {
-          port     <- Server.install(fakeMcpRoutes(toolsJson, "ok"))
-          registry <- ZIO.service[SkillRegistry]
-          client   <- ZIO.service[Client]
-          cfg = McpServerConfig(
+        val cfgJson = List(
+          McpServerConfig(
             name = "testserver",
             transport = McpTransport.Http,
-            url = Some(s"http://localhost:$port/mcp"),
+            url = Some("__PORT__"),
             enabled = true,
+          ),
+        ).toJson
+        for {
+          port <- Server.install(fakeMcpRoutes(toolsJson, "ok"))
+          _    <- ZIO.serviceWithZIO[ZIORepositories](
+            _.setting.set(
+              "mcp.servers",
+              Json.decoder
+                .decodeJson(cfgJson.replace("__PORT__", s"http://localhost:$port/mcp"))
+                .getOrElse(Json.Arr()),
+            ),
           )
-          cfgJson = List(cfg).toJson
-          settings = FakeSettingsRepo(
-            Map("mcp.servers" -> Json.decoder.decodeJson(cfgJson).getOrElse(Json.Arr())),
-          )
-          manager = McpManagerImpl(registry, client, settings)
-          _      <- ZIO.scoped(manager.loadAndRegister)
-          skills <- registry.allSkills
+          _      <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
+          skills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
         } yield {
           val mcpSkills = skills.filter(_.descriptor.name.startsWith("mcp."))
           assert(mcpSkills)(hasSize(equalTo(1))) &&
@@ -147,28 +145,42 @@ object McpManagerSpec extends ZIOSpecDefault {
             equalTo(List("mcp.testserver.read_file", "mcp.testserver.write_file")),
           )
         }
-      }.provide(Server.defaultWith(_.port(0)), Client.default, SkillRegistry.live),
+      }.provide(Server.defaultWith(_.port(0)), makeLayer(Map.empty)),
       test("HTTP server fails to respond → warning logged, registration skipped, no error") {
-        // Use a port that is not listening
-        val cfg = McpServerConfig(
-          name = "badserver",
-          transport = McpTransport.Http,
-          url = Some("http://localhost:19999/mcp"),
-          enabled = true,
-        )
-        val cfgJson = List(cfg).toJson
-        val settings = FakeSettingsRepo(
-          Map("mcp.servers" -> Json.decoder.decodeJson(cfgJson).getOrElse(Json.Arr())),
+        val settings = Map(
+          "mcp.servers" -> Json.decoder
+            .decodeJson(
+              List(
+                McpServerConfig(
+                  name = "badserver",
+                  transport = McpTransport.Http,
+                  url = Some("http://localhost:19999/mcp"),
+                  enabled = true,
+                ),
+              ).toJson,
+            ).getOrElse(Json.Arr()),
         )
         for {
-          registry <- ZIO.service[SkillRegistry]
-          client   <- ZIO.service[Client]
-          manager = McpManagerImpl(registry, client, settings)
-          // Should succeed even though the server is unreachable (error is logged and ignored)
-          result <- ZIO.scoped(manager.loadAndRegister).exit
-          skills <- registry.allSkills
+          result <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).exit
+          skills <- ZIO.serviceWithZIO[SkillRegistry](_.allSkills)
         } yield assert(result)(succeeds(anything)) && assert(skills)(isEmpty)
-      }.provide(SkillRegistry.live, Client.default),
+      }.provide(
+        makeLayer(
+          Map(
+            "mcp.servers" -> Json.decoder
+              .decodeJson(
+                List(
+                  McpServerConfig(
+                    name = "badserver",
+                    transport = McpTransport.Http,
+                    url = Some("http://localhost:19999/mcp"),
+                    enabled = true,
+                  ),
+                ).toJson,
+              ).getOrElse(Json.Arr()),
+          ),
+        ),
+      ),
     ) @@ TestAspect.withLiveClock
 
 }

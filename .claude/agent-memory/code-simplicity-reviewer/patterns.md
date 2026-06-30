@@ -188,6 +188,21 @@ type: project
 - `buildRfc822` in GmailProvider is missing the `From:` header; RFC 822 requires it and Gmail API will reject messages without it.
 - `ToolDescriptor.inputSchema` in all three skills uses `Json.decoder.decodeJson("""...""").getOrElse(Json.Obj())` — silently falls back to empty schema on malformed literals. 16 occurrences across EmailSkill, GoogleCalendarSkill, GoogleDriveSkill. Should be a compile-time literal check or at minimum a `.getOrElse` that logs a warning.
 
+## Sprint 1-3 (Sprints branch, 2026-06-29) Observations
+
+- `substitute(template, args)` is copy-pasted verbatim between `HttpApiExecutor` and `PromptTemplateExecutor`. Extract to a shared object in the `declarative` package.
+- `RssFeedSkill` (which extends `Skill`) defines private `fieldStr` / `fieldIntOpt` helpers that duplicate the inherited `str` / `int` / `optInt` from the `Skill` trait. The only delta is the ZIO error-wrapping; a `requireStr(args, name)` that wraps `ZIO.fromOption(str(args,name)).orElseFail(...)` should live in the `Skill` trait, not be re-invented per skill.
+- `UserManagementSkill.requireLong` has two nested `match` blocks handling `Json.Num` vs stringified numbers, plus a second top-level `match` for non-Obj JSON — overly complex for a helper that fires on every tool call. The string fallback path shouldn't be needed if schema validation runs first.
+- `SkillLifecycleService.advance/approve/reject` each start with the same 2-line version lookup (`repos.skill.getVersion → ZIO.fromOption.orElseFail`). Extract to `private def requireVersion(id: SkillVersionId)`.
+- `DiscordApiClient`: `sendToChannel`, `getChannelHistory`, `getChannelInfo` all repeat the same `val channel = jda.getTextChannelById(channelId); if (channel == null) ZIO.fail(...) else ZIO.blocking { ... }` block. Extract `private def withChannel[A](jda, channelId)(f)`.
+- `DiscordConnectorSkill.processMessage`: the `isBot` guard is placed as `.unless(msg.isBot)` at the end of the else block, not as the first early-exit check. Reorder to `if (msg.isBot) ZIO.unit else ...` for clarity.
+- `Skill` trait has `str`/`optStr` with identical bodies (only param name differs), and `int`/`optInt` with identical bodies. Dead duplication; remove the `opt` variants.
+- First 4 `ToolDescriptor.inputSchema` values in `UserManagementSkill` use `Json.decoder.decodeJson(...).getOrElse(Json.Obj())` (silent failure); remaining 12 use `json"""..."""` literal (compile-time safe). Should be migrated to `json"""..."""` for consistency and safety.
+- `SkillLifecycleService.createDraft/approve` call `Instant.now()` 3 times (lines 91, 104, 158) instead of `Clock.instant` — untestable and inconsistent with the rest of the codebase.
+- `ManifestValidator`: the `if (condition) Nil else List(msg)` pattern appears 8 times. A `private def require(cond: Boolean, msg: => String): List[String]` would clean up the repetition.
+- `SkillAuthoringSkill.propose`: 4 sequential `advance()` calls chained with `if (rN.errors.isEmpty) ... else ZIO.succeed(rN)` manually implement a short-circuit fold. A recursive helper or `ZIO.iterate` is cleaner.
+- `CreateSkillWizard`: `Box.withProps(BoxOwnProps[Theme]().setSx(js.Dynamic.literal(display="flex",flexDirection="column",gap=2).asInstanceOf[SxProps[Theme]]).asInstanceOf[Box.Props])` is repeated 5+ times — extract as a `private def columnBox(children: VdomNode*)`.
+
 ## Phase 8.5 Manual Testing Branch Observations (2026-06-02)
 - `logErrors` / `logRequests` wrappers in JorlanAPI: inline `new OverallWrapper[Any]` bodies are verbose; Caliban supports `wrapper` via `OverallWrapper.apply` or the `wrap` DSL. Both wrappers currently use nearly identical boilerplate.
 - `AgentRunnerImpl.processMessage` uses nested `Ref.make.flatMap { … Ref.make.flatMap { … } }` — extracting both Refs before the for-comp is cleaner.

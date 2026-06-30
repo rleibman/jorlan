@@ -17,12 +17,122 @@ they appear in the Skill Registry and can be invoked through the normal ReAct lo
 
 ---
 
-## OurGroceries MCP Server
+## Transport Types
+
+| Transport | When to use | Required fields |
+|-----------|-------------|-----------------|
+| `Stdio`   | Any MCP server that speaks stdio (most npm packages, local binaries) | `command`, `args` |
+| `Http`    | Remote MCP servers exposing an HTTP endpoint | `url` |
+
+---
+
+## Required Capabilities
+
+| Capability | Grants |
+|------------|--------|
+| `admin.settings` | Register, update, and delete MCP server configurations |
+| `admin.mcp.reload` | Trigger a live reload of all registered MCP servers |
+
+These are automatically granted to the admin user at startup.
+
+---
+
+## Environment Variables
+
+Environment variables are passed to the subprocess at launch. Common uses:
+
+- API keys and tokens for the upstream service
+- Account identifiers (team IDs, workspace slugs)
+- Debug/log level flags for the MCP server process
+
+Variables are stored in the `mcpServer.envVars` column and injected at subprocess spawn
+time. They are visible to all Jorlan admins — do not store secrets that should be
+per-user or per-session.
+
+---
+
+## GraphQL API
+
+### Queries
+- `mcpServers: [McpServer!]` — list all registered servers (requires `admin.settings`)
+
+### Mutations
+- `upsertMcpServer(input: McpServerInput!): McpServer` — create or update a server config
+- `deleteMcpServer(id: McpServerId!): Boolean` — remove a server config
+- `reloadMcpServers: Boolean` — live-reload all server connections (requires `admin.mcp.reload`)
+
+---
+
+## Adding a Server via the Admin UI
+
+1. Navigate to **Settings → MCP Servers**.
+2. Click **Add Server**.
+3. Fill in the form:
+
+   | Field     | Description |
+   |-----------|-------------|
+   | Name      | Short identifier (used as tool namespace prefix) |
+   | Transport | `Stdio` or `Http` |
+   | Command   | (stdio only) Executable to run, e.g. `npx` |
+   | Args      | (stdio only) Comma-separated arguments |
+   | URL       | (http only) Server base URL |
+   | Env vars  | Key=value pairs for the subprocess environment |
+   | Enabled   | Uncheck to disable without deleting |
+
+4. Click **Save**, then click **Reload**.
+
+---
+
+## Adding a Server via GraphQL
+
+```graphql
+mutation {
+  upsertMcpServer(input: {
+    name:      "my-server"
+    transport: Stdio
+    command:   "npx"
+    args:      ["-y", "my-mcp-package"]
+    envVars:   [{ key: "API_KEY", value: "..." }]
+    enabled:   true
+  }) {
+    id
+    name
+  }
+}
+```
+
+---
+
+## Verifying Registration
+
+After reload, the server's tools appear in **Settings → Skill Registry** under the
+server's name as a namespace prefix. If they don't appear, check the Jorlan server
+logs for subprocess startup errors.
+
+---
+
+## General Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| Tools don't appear after reload | Check Jorlan server logs for subprocess errors |
+| `command` not found | Verify the binary is on `$PATH` for the OS user running Jorlan, or use the full path |
+| Subprocess exits immediately | Run the command manually in a terminal to see the error output |
+| HTTP server unreachable | Confirm the URL is reachable from the Jorlan host; check firewall / TLS settings |
+| Permission denied | Ensure the calling user has `admin.mcp.reload` before triggering reload |
+
+---
+
+## Example: OurGroceries MCP Server
 
 [OurGroceries](https://www.ourgroceries.com/) is a shared grocery-list app.
-This MCP server lets Jorlan agents read and manage your grocery lists.
+This example wires the [`@sergib/ourgroceries-mcp`](https://github.com/sargue/ourgroceries-mcp)
+server (v2.1.0+) so Jorlan agents can read and manage grocery lists.
 
-**Package**: [`@sergib/ourgroceries-mcp`](https://github.com/sargue/ourgroceries-mcp) (v2.1.0+)
+### Prerequisites
+
+- Node.js 18+ and `npx` available on the machine running Jorlan
+- An [OurGroceries account](https://www.ourgroceries.com/)
 
 ### Tools provided
 
@@ -37,16 +147,7 @@ This MCP server lets Jorlan agents read and manage your grocery lists.
 | List categories | View available categories for the account |
 | Resolve item | Convert natural language to known item/list values |
 
----
-
-## Prerequisites
-
-- Node.js 18+ and `npx` available on the machine running Jorlan
-- An [OurGroceries account](https://www.ourgroceries.com/)
-
----
-
-## Step 1 — Authenticate (one-time)
+### Step 1 — Authenticate (one-time)
 
 Run this on the **same machine** that runs the Jorlan server, as the **same OS user**:
 
@@ -63,91 +164,38 @@ Credentials are stored in `~/.config/ourgroceries-mcp/config.json`.
 > sudo -u jorlan npx -y @sergib/ourgroceries-mcp login
 > ```
 
----
+### Step 2 — Register in Jorlan
 
-## Step 2 — Register the Server in Jorlan
+| Field     | Value |
+|-----------|-------|
+| Name      | `ourgroceries` |
+| Transport | `Stdio` |
+| Command   | `npx` |
+| Args      | `-y, @sergib/ourgroceries-mcp` |
+| Env vars  | *(leave empty — credentials come from the config file)* |
+| Enabled   | ✓ |
 
-### Via the Admin UI
+**Alternative**: if you prefer explicit credentials over the config file, extract
+`OURGROCERIES_AUTH_COOKIE` and `OURGROCERIES_TEAM_ID` from
+`~/.config/ourgroceries-mcp/config.json` after login and supply them as env vars.
 
-1. Navigate to **Settings → MCP Servers**.
-2. Click **Add Server**.
-3. Fill in the form:
+### Step 3 — Reload and verify
 
-   | Field     | Value |
-   |-----------|-------|
-   | Name      | `ourgroceries` |
-   | Transport | `Stdio` |
-   | Command   | `npx` |
-   | Args      | `-y, @sergib/ourgroceries-mcp` |
-   | Env vars  | *(leave empty — credentials come from the config file)* |
-   | Enabled   | ✓ |
+Click **Reload** on the MCP Servers page (or call `reloadMcpServers` via GraphQL).
+OurGroceries tools should now appear in **Settings → Skill Registry** under `ourgroceries`.
 
-4. Click **Save**.
+### Using OurGroceries in an Agent Session
 
-### Alternative: env-var credentials
-
-If you prefer to pass credentials explicitly instead of relying on the config file,
-obtain the values from `~/.config/ourgroceries-mcp/config.json` after login
-and add them as env vars in the form:
-
-| Key | Value |
-|-----|-------|
-| `OURGROCERIES_AUTH_COOKIE` | *(value from config file)* |
-| `OURGROCERIES_TEAM_ID` | *(value from config file)* |
-
----
-
-## Step 3 — Reload MCP Servers
-
-After saving, click **Reload** on the MCP Servers page (or use the GraphQL mutation
-`reloadMcpServers` — requires the `admin.mcp.reload` capability).
-
-Jorlan will spawn the subprocess, fetch the tool catalogue, and register the tools.
-
----
-
-## Step 4 — Verify
-
-The OurGroceries tools should now appear in **Settings → Skill Registry** under the
-`ourgroceries` namespace. If you don't see them, check the server logs for subprocess
-startup errors.
-
----
-
-## Using OurGroceries in an Agent Session
-
-Once registered, agents can use natural-language instructions:
+Once registered, agents respond to natural-language instructions:
 
 - *"Add milk and eggs to the Costco list."*
 - *"What's on the weekly shopping list?"*
 - *"Cross off everything on the Trader Joe's list."*
 
-No extra capability grants are required — MCP tool access follows the agent's existing
-permission model.
-
----
-
-## Troubleshooting
+### OurGroceries troubleshooting
 
 | Symptom | Check |
 |---------|-------|
-| Tools don't appear after reload | Check Jorlan server logs for subprocess errors; verify `npx` is on `$PATH` for the jorlan user |
 | Authentication errors | Re-run `npx -y @sergib/ourgroceries-mcp login` as the correct OS user |
-| `config.json` not found | Jorlan is running as a different user than the one that logged in; use env-var credentials instead |
-| `npx` not found | Install Node.js or set the full path to `npx` in the Command field (e.g. `/usr/local/bin/npx`) |
-| Subprocess exits immediately | Run `npx -y @sergib/ourgroceries-mcp` manually in a terminal to see the error output |
-
----
-
-## Adding Other MCP Servers
-
-The same pattern applies to any MCP server distributed via npm:
-
-1. Find the package name and run command from the server's README.
-2. Run any one-time authentication the server requires (as the jorlan OS user).
-3. Register in **Settings → MCP Servers** with transport `Stdio`, command `npx`,
-   and the package as the first arg.
-4. Reload.
-
-For HTTP-transport MCP servers, set transport to `Http` and provide the server URL
-instead of a command.
+| `config.json` not found | Jorlan is running as a different user than the one that logged in; use env-var credentials |
+| `npx` not found | Install Node.js or set the full path to `npx` in the Command field |

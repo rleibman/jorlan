@@ -10,6 +10,7 @@ import jorlan.*
 import jorlan.connector.InvocationContext
 import zio.*
 import zio.http.*
+import zio.http.ZClient
 import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
@@ -54,12 +55,46 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
   private def makeSkill(
     feedsRef: Ref[List[String]],
     client:   Client,
-  ): RssFeedSkill =
-    RssFeedSkill(
-      client = client,
-      getFeeds = feedsRef.get,
-      saveFeeds = feeds => feedsRef.set(feeds),
-    )
+  ): UIO[RssFeedSkill] =
+    Ref.make(Map.empty[String, FeedCacheEntry]).map { cache =>
+      RssFeedSkill(
+        client = client,
+        getFeeds = feedsRef.get,
+        saveFeeds = feeds => feedsRef.set(feeds),
+        feedCache = cache,
+      )
+    }
+
+  private def stubClient(
+    responseBody: String,
+    status:       Status = Status.Ok,
+  ): Client = {
+    val driver = new ZClient.Driver[Any, Scope, Throwable] {
+      override def request(
+        version:        Version,
+        method:         Method,
+        url:            URL,
+        headers:        Headers,
+        body:           Body,
+        sslConfig:      Option[ClientSSLConfig],
+        proxy:          Option[Proxy],
+      )(implicit trace: Trace,
+      ): ZIO[Any & Scope, Throwable, Response] =
+        ZIO.succeed(Response(status = status, body = Body.fromString(responseBody)))
+
+      override def socket[Env1 <: Any](
+        version: Version,
+        url:     URL,
+        headers: Headers,
+        app:     WebSocketApp[Env1],
+      )(implicit
+        trace: Trace,
+        ev:    Scope =:= Scope,
+      ): ZIO[Env1 & Scope, Throwable, Response] =
+        ZIO.fail(new Exception("websocket not supported in stub"))
+    }
+    ZClient.fromDriver(driver)
+  }
 
   override def spec =
     suite("RssFeedSkillSpec")(
@@ -101,15 +136,15 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
         test("returns empty list initially") {
           for {
             feedsRef <- Ref.make(List.empty[String])
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            result <- skill.invoke(dummyCtx, "rss.list_saved", Json.Obj())
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            result   <- skill.invoke(dummyCtx, "rss.list_saved", Json.Obj())
           } yield assertTrue(result == Json.Arr())
         },
         test("returns saved feeds") {
           for {
             feedsRef <- Ref.make(List("https://example.com/feed.xml"))
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            result <- skill.invoke(dummyCtx, "rss.list_saved", Json.Obj())
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            result   <- skill.invoke(dummyCtx, "rss.list_saved", Json.Obj())
           } yield assertTrue(result == Json.Arr(Json.Str("https://example.com/feed.xml")))
         },
       ),
@@ -117,9 +152,10 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
         test("adds a new feed URL") {
           for {
             feedsRef <- Ref.make(List.empty[String])
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            result <- skill.invoke(dummyCtx, "rss.save_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
-            feeds  <- feedsRef.get
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            result   <- skill
+              .invoke(dummyCtx, "rss.save_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
+            feeds <- feedsRef.get
           } yield assertTrue(
             feeds == List("https://example.com/feed.xml"),
             result match {
@@ -131,8 +167,8 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
         test("does not duplicate an already-saved feed") {
           for {
             feedsRef <- Ref.make(List("https://example.com/feed.xml"))
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            _    <- skill.invoke(dummyCtx, "rss.save_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            _ <- skill.invoke(dummyCtx, "rss.save_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
             feeds <- feedsRef.get
           } yield assertTrue(feeds.size == 1)
         },
@@ -141,9 +177,10 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
         test("removes an existing feed URL") {
           for {
             feedsRef <- Ref.make(List("https://example.com/feed.xml", "https://other.com/rss"))
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            result <- skill.invoke(dummyCtx, "rss.remove_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
-            feeds  <- feedsRef.get
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            result   <- skill
+              .invoke(dummyCtx, "rss.remove_feed", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
+            feeds <- feedsRef.get
           } yield assertTrue(
             feeds == List("https://other.com/rss"),
             result match {
@@ -155,9 +192,10 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
         test("remove of non-existent URL is a no-op") {
           for {
             feedsRef <- Ref.make(List("https://example.com/feed.xml"))
-            skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-            result <- skill.invoke(dummyCtx, "rss.remove_feed", Json.Obj("url" -> Json.Str("https://nonexistent.com/rss")))
-            feeds  <- feedsRef.get
+            skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+            result   <- skill
+              .invoke(dummyCtx, "rss.remove_feed", Json.Obj("url" -> Json.Str("https://nonexistent.com/rss")))
+            feeds <- feedsRef.get
           } yield assertTrue(
             feeds == List("https://example.com/feed.xml"),
             result match {
@@ -167,11 +205,65 @@ object RssFeedSkillSpec extends ZIOSpecDefault {
           )
         },
       ),
+      suite("rss.fetch")(
+        test("fetches and parses an RSS feed") {
+          for {
+            feedsRef <- Ref.make(List.empty[String])
+            client = stubClient(sampleRss)
+            skill  <- makeSkill(feedsRef, client)
+            result <- skill.invoke(dummyCtx, "rss.fetch", Json.Obj("url" -> Json.Str("https://example.com/feed.xml")))
+          } yield assertTrue(result match {
+            case Json.Arr(entries) => entries.size == 2
+            case _                 => false
+          })
+        },
+        test("respects limit arg") {
+          for {
+            feedsRef <- Ref.make(List.empty[String])
+            client = stubClient(sampleRss)
+            skill  <- makeSkill(feedsRef, client)
+            result <- skill.invoke(
+              dummyCtx,
+              "rss.fetch",
+              Json.Obj("url" -> Json.Str("https://example.com/feed.xml"), "limit" -> Json.Num(1)),
+            )
+          } yield assertTrue(result match {
+            case Json.Arr(entries) => entries.size == 1
+            case _                 => false
+          })
+        },
+        test("fails with JorlanError on HTTP non-2xx") {
+          for {
+            feedsRef <- Ref.make(List.empty[String])
+            client = stubClient("Not Found", Status.NotFound)
+            skill  <- makeSkill(feedsRef, client)
+            result <- skill
+              .invoke(dummyCtx, "rss.fetch", Json.Obj("url" -> Json.Str("https://example.com/feed.xml"))).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("fails with JorlanError when body is not valid XML") {
+          for {
+            feedsRef <- Ref.make(List.empty[String])
+            client = stubClient("not xml")
+            skill  <- makeSkill(feedsRef, client)
+            result <- skill
+              .invoke(dummyCtx, "rss.fetch", Json.Obj("url" -> Json.Str("https://example.com/feed.xml"))).either
+          } yield assertTrue(result.isLeft)
+        },
+        test("fails when url arg is missing") {
+          for {
+            feedsRef <- Ref.make(List.empty[String])
+            client = stubClient(sampleRss)
+            skill  <- makeSkill(feedsRef, client)
+            result <- skill.invoke(dummyCtx, "rss.fetch", Json.Obj()).either
+          } yield assertTrue(result.isLeft)
+        },
+      ),
       test("unknown tool returns error") {
         for {
           feedsRef <- Ref.make(List.empty[String])
-          skill = makeSkill(feedsRef, null.asInstanceOf[Client])
-          result <- skill.invoke(dummyCtx, "rss.nonexistent", Json.Obj()).either
+          skill    <- makeSkill(feedsRef, null.asInstanceOf[Client])
+          result   <- skill.invoke(dummyCtx, "rss.nonexistent", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
     )

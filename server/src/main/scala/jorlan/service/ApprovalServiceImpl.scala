@@ -77,7 +77,8 @@ private class ApprovalServiceImpl(
       _ <- eventLogHub.publishTyped(logEntry)
     } yield saved
 
-  override def expireStaleRequests(): IO[JorlanError, Long] = repo.permission.expireAllStaleApprovalRequests()
+  override def expireStaleRequests(): IO[JorlanError, Long] =
+    hub.purgeExpiredPreDecisions() *> repo.permission.expireAllStaleApprovalRequests()
 
   private def requestApproval(
     req:     ApprovalRequest,
@@ -92,8 +93,8 @@ private class ApprovalServiceImpl(
           id = EventLogId.empty,
           eventType = EventType.ApprovalRequested,
           actorId = actorId,
-          agentId = None,
-          sessionId = None,
+          agentId = saved.agentId,
+          sessionId = saved.sessionId,
           resource = Some(saved.id),
           payloadJson = None,
           occurredAt = now,

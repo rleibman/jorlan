@@ -296,12 +296,25 @@ class StdioMcpClient private (
   private def writeRequest(json: String): UIO[Unit] =
     stdinQueue.offer(Chunk.fromArray((json + "\n").getBytes("UTF-8"))).unit
 
-  private def readResponse: IO[JorlanError, Json] =
-    outputQueue.take.flatMap { line =>
-      ZIO
-        .fromEither(Json.decoder.decodeJson(line))
-        .mapError(e => JorlanError(s"MCP stdio: bad JSON response: $e — raw: $line"))
-    }
+  private val responseTimeoutSeconds: Long = 30
+
+  /** Read the next JSON-RPC response from stdout, skipping non-JSON lines (startup banners etc.). Fails with
+    * [[JorlanError]] if no JSON line arrives within [[responseTimeoutSeconds]] seconds.
+    */
+  private def readResponse: IO[JorlanError, Json] = {
+    def loop: IO[JorlanError, Json] =
+      outputQueue.take
+        .timeout(Duration.fromSeconds(responseTimeoutSeconds))
+        .someOrFail(JorlanError(s"MCP stdio: timed out after ${responseTimeoutSeconds}s waiting for JSON response"))
+        .flatMap { line =>
+          Json.decoder.decodeJson(line) match {
+            case Right(json) => ZIO.succeed(json)
+            case Left(_)     =>
+              ZIO.logDebug(s"MCP stdio: skipping non-JSON line: $line") *> loop
+          }
+        }
+    loop
+  }
 
   private def sendRequest(json: String): IO[JorlanError, Json] = {
     semaphore.withPermit {
@@ -371,11 +384,21 @@ object StdioMcpClient {
       process <- ZIO.acquireRelease(
         cmdWithStdin.run.mapError(e => JorlanError(s"MCP stdio: failed to start process: ${e.getMessage}", Some(e))),
       )(proc => proc.isAlive.flatMap(alive => ZIO.when(alive)(proc.killForcibly)).orDie)
-      // Fork a fiber to drain stdout lines into outputQueue
+      // Fork a fiber to drain stdout lines into outputQueue; includes non-JSON startup banners which readResponse skips
       _ <- ZIO.acquireRelease(
         process.stdout.linesStream
           .mapError(e => JorlanError(s"MCP stdio: stdout error: ${e.getMessage}", Some(e)))
-          .foreach(line => outputQ.offer(line).unit)
+          .foreach(line =>
+            ZIO.logDebug(s"MCP stdio [${config.name}] stdout: $line") *>
+              outputQ.offer(line).unit,
+          )
+          .forkDaemon,
+      )(_.interrupt)
+      // Drain stderr to prevent the process from blocking on a full pipe; log at warn level but never enqueue
+      _ <- ZIO.acquireRelease(
+        process.stderr.linesStream
+          .foreach(line => ZIO.logWarning(s"MCP stderr [${config.name}]: $line"))
+          .orDie
           .forkDaemon,
       )(_.interrupt)
       idRef     <- Ref.make(1)
@@ -384,22 +407,30 @@ object StdioMcpClient {
       initId <- idRef.getAndUpdate(_ + 1)
       initReq =
         s"""{"jsonrpc":"2.0","id":$initId,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"jorlan","version":"1.0"}}}"""
-      _ <- semaphore.withPermit {
-        client.writeRequest(initReq) *> client.readResponse.flatMap {
-          case Json.Obj(fields) =>
-            fields.collectFirst { case ("error", Json.Obj(errFields)) =>
-              errFields.collectFirst { case ("message", Json.Str(m)) => m }.getOrElse("unknown error")
-            } match {
-              case Some(msg) => ZIO.fail(JorlanError(s"MCP server error: $msg"))
-              case None      =>
-                fields.collectFirst { case ("result", _) => () } match {
-                  case Some(_) => ZIO.unit
-                  case None    => ZIO.fail(JorlanError("MCP stdio: initialize response has no 'result' field"))
-                }
-            }
-          case _ => ZIO.fail(JorlanError("MCP stdio: initialize returned unexpected response shape"))
+      initTimeoutSeconds = 10L
+      _ <- semaphore
+        .withPermit {
+          client.writeRequest(initReq) *> client.readResponse.flatMap {
+            case Json.Obj(fields) =>
+              fields.collectFirst { case ("error", Json.Obj(errFields)) =>
+                errFields.collectFirst { case ("message", Json.Str(m)) => m }.getOrElse("unknown error")
+              } match {
+                case Some(msg) => ZIO.fail(JorlanError(s"MCP server error: $msg"))
+                case None      =>
+                  fields.collectFirst { case ("result", _) => () } match {
+                    case Some(_) => ZIO.unit
+                    case None    => ZIO.fail(JorlanError("MCP stdio: initialize response has no 'result' field"))
+                  }
+              }
+            case _ => ZIO.fail(JorlanError("MCP stdio: initialize returned unexpected response shape"))
+          }
         }
-      }
+        .timeout(Duration.fromSeconds(initTimeoutSeconds))
+        .flatMap {
+          case Some(_) => ZIO.unit
+          case None    =>
+            ZIO.logWarning(s"MCP stdio [${config.name}]: initialize timed out after ${initTimeoutSeconds}s — continuing without confirmation")
+        }
       // Send initialized notification (no response expected)
       notifReq = s"""{"jsonrpc":"2.0","method":"notifications/initialized"}"""
       _ <- client.writeRequest(notifReq)

@@ -15,6 +15,12 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
+private case class FeedCacheEntry(
+  etag:         Option[String],
+  lastModified: Option[String],
+  entries:      List[RssEntry],
+)
+
 /** Built-in skill for reading RSS and Atom news feeds.
   *
   * Tools:
@@ -25,14 +31,20 @@ import zio.json.literal.*
   *
   * No external API key required. Feed list is stored under the `skill.rss` server_settings key.
   *
-  * @param client zio-http client for fetching feed XML
-  * @param getFeeds effect that reads the saved feed list from settings
-  * @param saveFeeds effect that overwrites the saved feed list in settings
+  * @param client
+  *   zio-http client for fetching feed XML
+  * @param getFeeds
+  *   effect that reads the saved feed list from settings
+  * @param saveFeeds
+  *   effect that overwrites the saved feed list in settings
+  * @param feedCache
+  *   per-URL ETag / Last-Modified / parsed-entries cache; avoids re-downloading unchanged feeds
   */
 class RssFeedSkill(
   client:    Client,
   getFeeds:  IO[Nothing, List[String]],
   saveFeeds: List[String] => IO[Nothing, Unit],
+  feedCache: Ref[Map[String, FeedCacheEntry]],
 ) extends Skill {
 
   override val descriptor: SkillDescriptor = SkillDescriptor(
@@ -121,7 +133,7 @@ class RssFeedSkill(
         description = "Save a feed URL to the tracked feed list so it can be easily fetched later.",
         inputSchema = json"""{"type":"object","properties":{"url":{"type":"string","description":"The RSS or Atom feed URL to save"}},"required":["url"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
-        requiredCapabilities = List(CapabilityName("rss.read")),
+        requiredCapabilities = List(CapabilityName("rss.manage")),
         examplePrompts = List(
           "Save https://feeds.bbci.co.uk/news/rss.xml as a watched feed",
           "Add the Hacker News feed to my list",
@@ -133,7 +145,7 @@ class RssFeedSkill(
         description = "Remove a feed URL from the tracked feed list.",
         inputSchema = json"""{"type":"object","properties":{"url":{"type":"string","description":"The RSS or Atom feed URL to remove"}},"required":["url"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
-        requiredCapabilities = List(CapabilityName("rss.read")),
+        requiredCapabilities = List(CapabilityName("rss.manage")),
         examplePrompts = List(
           "Remove https://feeds.bbci.co.uk/news/rss.xml from my feeds",
           "Stop tracking the Hacker News feed",
@@ -158,16 +170,59 @@ class RssFeedSkill(
 
   private def fetchFeed(args: Json): IO[JorlanError, Json] =
     for {
-      url   <- fieldStr(args, "url")
-      limit <- fieldIntOpt(args, "limit").map(_.getOrElse(10).max(1).min(50))
-      xml   <- fetchXml(url)
-      entries <- ZIO
-        .fromEither(RssFeedParser.parse(xml, url, limit))
-        .mapError(msg => JorlanError(s"Failed to parse feed '$url': $msg"))
-      json <- ZIO
+      url <- requireStr(args, "url")
+      limit = int(args, "limit").getOrElse(10).max(1).min(50)
+      entries <- fetchEntries(url, limit)
+      json    <- ZIO
         .fromEither(entries.toJsonAST)
         .mapError(e => JorlanError(s"Failed to encode feed entries for '$url': $e"))
     } yield json
+
+  private def fetchEntries(
+    url:   String,
+    limit: Int,
+  ): IO[JorlanError, List[RssEntry]] =
+    for {
+      cached <- feedCache.get.map(_.get(url))
+      baseReq = Request
+        .get(url)
+        .addHeader(
+          Header.Accept(
+            MediaType.application.`rss+xml`,
+            MediaType.application.xml,
+            MediaType.text.xml,
+            MediaType.text.plain,
+          ),
+        )
+      req = cached.foldLeft(baseReq) {
+        (
+          r,
+          c,
+        ) =>
+          val withEtag = c.etag.fold(r)(v => r.addHeader(Header.Custom("If-None-Match", v)))
+          val withLastMod =
+            c.lastModified.fold(withEtag)(v => withEtag.addHeader(Header.Custom("If-Modified-Since", v)))
+          withLastMod
+      }
+      resp    <- client.batched(req).mapError(e => JorlanError(s"HTTP error fetching '$url'", Some(e)))
+      entries <-
+        if (resp.status.code == 304) {
+          ZIO.succeed(cached.map(_.entries).getOrElse(List.empty))
+        } else if (!resp.status.isSuccess) {
+          ZIO.fail(JorlanError(s"Feed '$url' returned HTTP ${resp.status.code}"))
+        } else {
+          for {
+            body   <- resp.body.asString.mapError(e => JorlanError(s"Failed to read feed response for '$url'", Some(e)))
+            parsed <- ZIO
+              .fromEither(RssFeedParser.parse(body, url, limit)).mapError(msg =>
+                JorlanError(s"Failed to parse feed '$url': $msg"),
+              )
+            etag = resp.headers.get("ETag")
+            lastMod = resp.headers.get("Last-Modified")
+            _ <- feedCache.update(_.updated(url, FeedCacheEntry(etag, lastMod, parsed)))
+          } yield parsed
+        }
+    } yield entries.take(limit)
 
   private def listSaved(): IO[JorlanError, Json] =
     getFeeds.map { feeds =>
@@ -176,70 +231,27 @@ class RssFeedSkill(
 
   private def saveFeed(args: Json): IO[JorlanError, Json] =
     for {
-      url     <- fieldStr(args, "url")
+      url     <- requireStr(args, "url")
       current <- getFeeds
       updated = if (current.contains(url)) current else current :+ url
-      _       <- saveFeeds(updated)
+      _ <- saveFeeds(updated)
     } yield Json.Obj(
-      "saved"    -> Json.Bool(true),
-      "url"      -> Json.Str(url),
+      "saved"      -> Json.Bool(true),
+      "url"        -> Json.Str(url),
       "totalFeeds" -> Json.Num(updated.size),
     )
 
   private def removeFeed(args: Json): IO[JorlanError, Json] =
     for {
-      url     <- fieldStr(args, "url")
+      url     <- requireStr(args, "url")
       current <- getFeeds
       updated = current.filterNot(_ == url)
       removed = current.size != updated.size
-      _       <- saveFeeds(updated)
+      _ <- saveFeeds(updated)
     } yield Json.Obj(
       "removed"    -> Json.Bool(removed),
       "url"        -> Json.Str(url),
       "totalFeeds" -> Json.Num(updated.size),
     )
-
-  private def fetchXml(url: String): IO[JorlanError, String] =
-    client
-      .batched(Request.get(url).addHeader(Header.Accept(MediaType.application.`rss+xml`, MediaType.application.xml, MediaType.text.xml, MediaType.text.plain)))
-      .mapError(e => JorlanError(s"HTTP error fetching '$url'", Some(e)))
-      .flatMap { resp =>
-        resp.body.asString
-          .mapError(e => JorlanError(s"Failed to read feed response body for '$url'", Some(e)))
-          .flatMap { body =>
-            if (!resp.status.isSuccess)
-              ZIO.fail(JorlanError(s"Feed '$url' returned HTTP ${resp.status.code}"))
-            else
-              ZIO.succeed(body)
-          }
-      }
-
-  private def fieldStr(
-    args: Json,
-    name: String,
-  ): IO[JorlanError, String] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`name`, Json.Str(v)) => v }
-          .fold(ZIO.fail(ValidationError(s"missing required field '$name'")): IO[JorlanError, String])(ZIO.succeed(_))
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
-
-  private def fieldIntOpt(
-    args: Json,
-    name: String,
-  ): IO[JorlanError, Option[Int]] =
-    args match {
-      case Json.Obj(fields) =>
-        fields.collectFirst { case (`name`, v) => v } match {
-          case None              => ZIO.none
-          case Some(Json.Num(n)) =>
-            ZIO
-              .attempt(n.intValueExact()).mapBoth(_ => ValidationError(s"field '$name' must be an integer"), Some(_))
-          case Some(_) => ZIO.fail(ValidationError(s"field '$name' must be an integer"))
-        }
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
 
 }

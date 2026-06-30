@@ -12,6 +12,9 @@ import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+
 /** Adapts an MCP server's tool list as a Jorlan [[Skill]].
   *
   * Tool names follow the pattern `mcp.<serverName>.<mcpToolName>`, where `mcp.<serverName>` is the skill namespace.
@@ -19,12 +22,18 @@ import zio.json.ast.Json
   * name are safe.
   *
   * `serverName` is sanitized to replace characters that are not `[A-Za-z0-9_.]` with `_`; dots are preserved.
+  *
+  * When a tool result exceeds [[spillThresholdBytes]] and a [[spillDir]] is configured, the full content is written to
+  * a file in that directory and the LLM receives a compact descriptor instead. This prevents oversized results from
+  * filling the context window.
   */
 class McpSkillAdapter(
-  serverName:     String,
-  tools:          List[McpTool],
-  client:         McpClient,
-  serverKeywords: List[String] = List.empty,
+  serverName:          String,
+  tools:               List[McpTool],
+  client:              McpClient,
+  serverKeywords:      List[String] = List.empty,
+  spillDir:            Option[Path] = None,
+  spillThresholdBytes: Int = 4 * 1024,
 ) extends Skill {
 
   private val sanitizedName: String = serverName.replaceAll("[^A-Za-z0-9_.]", "_")
@@ -57,7 +66,34 @@ class McpSkillAdapter(
     if (mcpToolName == tool)
       ZIO.fail(JorlanError(s"McpSkillAdapter: tool '$tool' is not in namespace '$namespace'"))
     else
-      client.callTool(mcpToolName, args).map(Json.Str(_))
+      client.callTool(mcpToolName, args).flatMap { result =>
+        if (result.length <= spillThresholdBytes || spillDir.isEmpty)
+          ZIO.succeed(Json.Str(result))
+        else
+          spillToWorkspace(result, mcpToolName)
+      }
+  }
+
+  private def spillToWorkspace(
+    result:      String,
+    mcpToolName: String,
+  ): IO[JorlanError, Json] = {
+    val safeTool = mcpToolName.replaceAll("[^A-Za-z0-9_]", "_")
+    val fileName = s"mcp_${sanitizedName}_${safeTool}_${java.lang.System.currentTimeMillis()}.json"
+    val dir = spillDir.get
+    ZIO
+      .attemptBlocking {
+        Files.createDirectories(dir)
+        Files.write(dir.resolve(fileName), result.getBytes(StandardCharsets.UTF_8))
+      }
+      .mapError(e => JorlanError(s"MCP spill: failed to write workspace file '$fileName': ${e.getMessage}"))
+      .as(
+        Json.Str(
+          s"[Result too large: ${result.length} bytes — inline limit is $spillThresholdBytes bytes]\n" +
+            s"Full content saved to workspace file: $fileName\n" +
+            s"Use workspace.read with path \"$fileName\" to access the data.",
+        ),
+      )
   }
 
 }

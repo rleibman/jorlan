@@ -21,8 +21,8 @@ object PromptTemplateExecutor {
     sessionId: AgentSessionId,
     gateway:   ModelGateway,
   ): IO[JorlanError, Json] = {
-    val systemPrompt = substitute(config.systemPrompt, args)
-    val userPrompt = substitute(config.userPromptTemplate, args)
+    val systemPrompt = DeclarativeArgSubstitution.substitute(config.systemPrompt, args)
+    val userPrompt = DeclarativeArgSubstitution.substitute(config.userPromptTemplate, args)
     val messages = List(SystemMsg(systemPrompt), UserMsg(userPrompt))
     gateway
       .chatStep(sessionId, messages, List.empty)
@@ -33,20 +33,5 @@ object PromptTemplateExecutor {
           ZIO.fail(JorlanError(s"Prompt template tool triggered unexpected tool call: $name"))
       }
   }
-
-  private def substitute(
-    template: String,
-    args:     Json,
-  ): String =
-    args match {
-      case Json.Obj(fields) =>
-        fields.foldLeft(template) {
-          case (t, (key, Json.Str(v)))  => t.replace(s"{{$key}}", v)
-          case (t, (key, Json.Num(n)))  => t.replace(s"{{$key}}", n.toString)
-          case (t, (key, Json.Bool(b))) => t.replace(s"{{$key}}", b.toString)
-          case (t, _)                   => t
-        }
-      case _ => template
-    }
 
 }

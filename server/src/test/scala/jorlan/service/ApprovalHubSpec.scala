@@ -92,6 +92,22 @@ object ApprovalHubSpec extends ZIOSpecDefault {
           items2.toList == List(req),
         )
       },
+      test("subscriber queue is removed from list when stream completes") {
+        for {
+          hub <- ApprovalHub.make
+          // Subscribe and immediately complete by taking 0 items
+          stream <- hub.subscribeToNewRequests
+          _      <- stream.take(0).runDrain
+          _      <- ZIO.sleep(20.millis) // allow ensuring cleanup to run
+          // Publish a request — if the queue is still registered, the publish would try to enqueue
+          // Subscribe a second time and verify exactly one subscriber sees the new request
+          req = makeRequest(7L)
+          stream2 <- hub.subscribeToNewRequests
+          fiber   <- stream2.take(1).timeout(100.millis).runCollect.map(_.toList).fork
+          _       <- hub.notifyNewRequest(req)
+          items   <- fiber.join
+        } yield assertTrue(items == List(req))
+      },
     ) @@ TestAspect.withLiveClock @@ TestAspect.timeout(30.seconds)
 
 }

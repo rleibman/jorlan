@@ -25,7 +25,7 @@ class SkillAuthoringSkill(lifecycle: SkillLifecycleService) extends Skill {
   override val descriptor: SkillDescriptor = SkillDescriptor(
     name = "skill_authoring",
     tier = SkillTier.BuiltIn,
-    skillVersion = SemVer.parse(jorlan.BuildInfo.version).getOrElse(jorlan.BuildInfo.version),
+    skillVersion = SemVer.parse(skill.BuildInfo.version).getOrElse(skill.BuildInfo.version),
     keywords = List("create skill", "propose skill", "new skill", "author skill", "custom skill"),
     tools = List(
       ToolDescriptor(
@@ -62,35 +62,41 @@ class SkillAuthoringSkill(lifecycle: SkillLifecycleService) extends Skill {
       case other                     => ZIO.fail(JorlanError(s"SkillAuthoringSkill: unknown tool '$other'"))
     }
 
+  private def advanceWhileOk(
+    versionId:      SkillVersionId,
+    stepsRemaining: Int,
+  ): IO[JorlanError, LifecycleResult] =
+    if (stepsRemaining <= 0) ZIO.fail(JorlanError("skill_authoring: advance loop exceeded maximum steps"))
+    else
+      lifecycle.advance(versionId).flatMap { result =>
+        if (result.errors.isEmpty && stepsRemaining > 1) advanceWhileOk(versionId, stepsRemaining - 1)
+        else ZIO.succeed(result)
+      }
+
   private def propose(
     ctx:  InvocationContext,
     args: Json,
   ): IO[JorlanError, Json] =
-    str(args, "manifest") match {
-      case None          => ZIO.fail(JorlanError("skill_authoring.propose: 'manifest' argument is required"))
-      case Some(jsonStr) =>
-        for {
-          manifestJson <- ZIO
-            .fromEither(jsonStr.fromJson[Json])
-            .mapError(e => JorlanError(s"Invalid manifest JSON: $e"))
-          version <- lifecycle.createDraft(manifestJson, SkillTier.AgentDraft, ctx.actorId)
-          // Auto-advance: Draft → Validated → PermissionReviewed → SandboxTested → AwaitingApproval
-          r1 <- lifecycle.advance(version.id)
-          r2 <- if (r1.errors.isEmpty) lifecycle.advance(version.id) else ZIO.succeed(r1)
-          r3 <- if (r2.errors.isEmpty) lifecycle.advance(version.id) else ZIO.succeed(r2)
-          r4 <- if (r3.errors.isEmpty) lifecycle.advance(version.id) else ZIO.succeed(r3)
-        } yield Json.Obj(
-          "versionId" -> Json.Str(version.id.value.toString),
-          "status"    -> Json.Str(r4.newStatus.toString),
-          "errors"    -> Json.Arr(r4.errors.map(Json.Str(_))*),
-          "info"      -> Json.Arr(r4.info.map(Json.Str(_))*),
-          "message"   -> Json.Str(
-            if (r4.errors.isEmpty)
-              s"Skill proposed successfully. Status: ${r4.newStatus}. An admin will review it."
-            else
-              s"Skill proposal had errors: ${r4.errors.mkString("; ")}",
-          ),
-        )
+    requireStr(args, "manifest").flatMap { jsonStr =>
+      for {
+        manifestJson <- ZIO
+          .fromEither(jsonStr.fromJson[Json])
+          .mapError(e => JorlanError(s"Invalid manifest JSON: $e"))
+        version <- lifecycle.createDraft(manifestJson, SkillTier.AgentDraft, ctx.actorId)
+        // Auto-advance: Draft → Validated → PermissionReviewed → SandboxTested → AwaitingApproval (4 steps)
+        result <- advanceWhileOk(version.id, 4)
+      } yield Json.Obj(
+        "versionId" -> Json.Str(version.id.value.toString),
+        "status"    -> Json.Str(result.newStatus.toString),
+        "errors"    -> Json.Arr(result.errors.map(Json.Str(_))*),
+        "info"      -> Json.Arr(result.info.map(Json.Str(_))*),
+        "message"   -> Json.Str(
+          if (result.errors.isEmpty)
+            s"Skill proposed successfully. Status: ${result.newStatus}. An admin will review it."
+          else
+            s"Skill proposal had errors: ${result.errors.mkString("; ")}",
+        ),
+      )
     }
 
 }

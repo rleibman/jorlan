@@ -192,21 +192,6 @@ class HttpFetchSkill(
   }
 
   // ---------------------------------------------------------------------------
-  // Argument helpers
-  // ---------------------------------------------------------------------------
-
-  private def requireStr(
-    args: Json,
-    key:  String,
-  ): IO[JorlanError, String] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`key`, Json.Str(v)) => v }
-          .fold(ZIO.fail(ValidationError(s"missing required argument '$key'")): IO[JorlanError, String])(ZIO.succeed(_))
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
-
   /** Extract optional headers from the `"headers"` field (object of string-string pairs). */
   private def extractHeaders(
     args: Json,
@@ -307,8 +292,8 @@ class HttpFetchSkill(
           ZIO.succeed(disallowedResponse(rawUrl))
         } else {
           val url = urlTransform(rawUrl)
-          val bodyStr = optStr(args, "body").getOrElse("")
-          val contentType = optStr(args, "contentType").getOrElse("application/json")
+          val bodyStr = str(args, "body").getOrElse("")
+          val contentType = str(args, "contentType").getOrElse("application/json")
           val extraHeaders = extractHeaders(args)
           val mediaType = MediaType
             .parseCustomMediaType(contentType)

@@ -16,15 +16,6 @@ import zio.http.Client
 import zio.json.*
 import zio.json.ast.Json
 
-import java.time.Instant
-
-case class LifecycleResult(
-  versionId: SkillVersionId,
-  newStatus: SkillStatus,
-  errors:    List[String],
-  info:      List[String],
-) derives JsonCodec
-
 /** Registry of all active [[Skill]] instances in the server.
   *
   * Provides tool discovery (for the ReAct loop), dispatches tool invocations, and drives the declarative skill
@@ -298,6 +289,7 @@ class SkillRegistryLive(
       case Left(errors) => ZIO.fail(JorlanError(s"Invalid manifest: ${errors.mkString("; ")}"))
       case Right(m)     =>
         for {
+          now         <- Clock.instant
           repo        <- requireSkillRepo
           existing    <- repo.search(SkillSearch(name = Some(m.name))).mapError(repoErr)
           skillRecord <- existing.headOption match {
@@ -310,7 +302,7 @@ class SkillRegistryLive(
                     name = m.name,
                     currentVersion = None,
                     tier = tier,
-                    createdAt = Instant.now(),
+                    createdAt = now,
                   ),
                 ).mapError(repoErr)
           }
@@ -322,7 +314,7 @@ class SkillRegistryLive(
                 version = m.version,
                 manifestJson = manifest,
                 status = SkillStatus.Draft,
-                createdAt = Instant.now(),
+                createdAt = now,
                 createdBy = Some(createdBy),
                 reviewNote = None,
               ),
@@ -366,17 +358,18 @@ class SkillRegistryLive(
         .fail(JorlanError(s"Cannot approve version in status '${version.status}'; must be AwaitingApproval"))
         .when(version.status != SkillStatus.AwaitingApproval)
       manifest <- parseManifest(version)
-      _        <- repo.upsertVersionStatus(versionId, SkillStatus.Active, None).mapError(repoErr)
-      _        <- repo
+      semVer   <- ZIO
+        .fromOption(just.semver.SemVer.parse(manifest.version).toOption)
+        .orElseFail(JorlanError(s"Malformed version string '${manifest.version}' in manifest"))
+      _ <- repo.upsertVersionStatus(versionId, SkillStatus.Active, None).mapError(repoErr)
+      _ <- repo
         .upsert(
           SkillRecord(
             id = version.skillId,
             name = manifest.name,
-            currentVersion = Some(
-              just.semver.SemVer.parse(manifest.version).getOrElse(just.semver.SemVer.unsafeParse("1.0.0")),
-            ),
+            currentVersion = Some(semVer),
             tier = SkillTier.Declarative,
-            createdAt = Instant.now(),
+            createdAt = version.createdAt,
           ),
         ).mapError(repoErr)
       _ <- register(DeclarativeSkill.from(manifest, client, gateway))
@@ -479,12 +472,12 @@ class SkillRegistryLive(
                 skill.descriptor.tools.flatMap(_.examplePrompts)
             ).mkString(" ")
             val effect = for {
+              now        <- Clock.instant
               allRecords <- sRepo.search(SkillSearch(pageSize = 1000))
               existing = allRecords.find(_.name == skill.descriptor.name)
               skillRecord <- existing match {
                 case Some(r) => ZIO.succeed(r)
                 case None    =>
-                  import java.time.Instant
                   sRepo.upsert(
                     SkillRecord(
                       id = SkillId.empty,
@@ -494,7 +487,7 @@ class SkillRegistryLive(
                         case _ => None
                       },
                       tier = skill.descriptor.tier,
-                      createdAt = Instant.now(),
+                      createdAt = now,
                     ),
                   )
               }

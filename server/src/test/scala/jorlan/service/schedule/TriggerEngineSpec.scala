@@ -116,7 +116,12 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       for {
         _ <- invoked.update(_ :+ (sessionId, content))
         _ <- hub.publish(ResponseChunk(sessionId, "done", finished = false))
-        _ <- hub.publish(ResponseChunk(sessionId, "", finished = true))
+        _ <-
+          if (shouldSucceed) {
+            hub.publish(ResponseChunk(sessionId, "", finished = true))
+          } else {
+            hub.publish(ResponseChunk(sessionId, "simulated failure", finished = true, isError = true))
+          }
         _ <- ZIO.fail(JorlanError("simulated failure")).unless(shouldSucceed)
       } yield ()
 

@@ -17,6 +17,7 @@ import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkil
 import jorlan.google.*
 import jorlan.service.*
 import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
@@ -225,6 +226,7 @@ object EnvironmentBuilder {
         Client.default,
         OAuthReconnectService.live,
         SkillLifecycleService.live,
+        McpManager.live,
       ).orDie
 
 }

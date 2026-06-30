@@ -249,6 +249,38 @@ object MemorySkillSpec extends ZIOSpec[MemoryService & EmbeddingStore & Embeddin
           result <- skill.invoke(ctx, "memory.remember", Json.Arr(Json.Str("bad"))).either
         } yield assertTrue(result.isLeft)
       },
+      // ─── memory.search_semantic ────────────────────────────────────────────────
+      test("invoke memory.search_semantic returns empty array from no-op store") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(ctx, "memory.search_semantic", Json.Obj("query" -> Json.Str("something semantic")))
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke memory.search_semantic with limit parameter uses it") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(
+            ctx,
+            "memory.search_semantic",
+            Json.Obj("query" -> Json.Str("semantic search"), "limit" -> Json.Str("3")),
+          )
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke memory.search_semantic missing query fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(ctx, "memory.search_semantic", Json.Obj()).either
+        } yield assertTrue(result.isLeft)
+      },
     )
 
 }

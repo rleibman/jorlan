@@ -16,9 +16,9 @@ import jorlan.*
 import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
 import jorlan.db.repository.*
 import jorlan.service.*
-import jorlan.service.mcp.{McpManagerImpl, McpServerConfig, McpTransport}
+import jorlan.service.mcp.{McpManager, McpServerConfig, McpTransport}
 import jorlan.service.skills.SkillRegistry
-import jorlan.service.skills.LifecycleResult
+import jorlan.service.skills.declarative.LifecycleResult
 import zio.*
 import zio.json.ast.Json
 import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
@@ -1871,14 +1871,9 @@ object JorlanAPI {
             } yield config,
           reloadMcpServers = _ =>
             for {
-              actorId  <- actorIdFromSession
-              _        <- requireCapability("admin.mcp.reload", actorId)
-              registry <- ZIO.service[SkillRegistry]
-              repos    <- ZIO.service[ZIORepositories]
-              client   <- ZIO.service[zio.http.Client]
-              _        <- ZIO.scoped {
-                McpManagerImpl(registry, client, repos.setting).loadAndRegister
-              }
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.mcp.reload", actorId)
+              _       <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
             } yield true,
           upsertMcpServer = input =>
             for {
@@ -1907,13 +1902,7 @@ object JorlanAPI {
               _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
-              registry <- ZIO.service[SkillRegistry]
-              client   <- ZIO.service[zio.http.Client]
-              repos    <- ZIO.service[ZIORepositories]
-              _        <- ZIO
-                .scoped {
-                  McpManagerImpl(registry, client, repos.setting).loadAndRegister
-                }.tapError(e => ZIO.logWarning(s"MCP auto-reload after upsert failed: ${e.msg}")).ignore
+              _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
@@ -2005,7 +1994,11 @@ object JorlanAPI {
         ),
         Subscriptions(
           approvalNotifications = ZStream.unwrap(
-            ZIO.serviceWithZIO[ApprovalHub](_.subscribeToNewRequests),
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("approval.read", actorId)
+              stream  <- ZIO.serviceWithZIO[ApprovalHub](_.subscribeToNewRequests)
+            } yield stream.filter(_.requestorUserId == actorId),
           ),
           eventLogTail = ZStream.unwrap(
             for {

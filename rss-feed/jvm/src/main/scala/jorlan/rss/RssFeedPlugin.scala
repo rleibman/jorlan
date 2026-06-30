@@ -21,13 +21,14 @@ class RssFeedPlugin extends SkillPlugin {
     getSetting: String => UIO[Option[Json]],
     setSetting: (String, Json) => UIO[Unit],
   ): IO[JorlanError, Skill] =
-    ZIO.succeed(
+    Ref.make(Map.empty[String, FeedCacheEntry]).map { cache =>
       RssFeedSkill(
         client = client,
         getFeeds = getSetting("skill.rss")
           .map(_.flatMap(_.as[List[String]].toOption).getOrElse(List.empty)),
         saveFeeds = feeds => setSetting("skill.rss", Json.Arr(feeds.map(Json.Str(_))*)),
-      ),
-    )
+        feedCache = cache,
+      )
+    }
 
 }

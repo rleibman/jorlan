@@ -431,20 +431,6 @@ class LyrionSkill(
     }
 
   /** Extract a required string arg from the invocation args JSON. */
-  private def requireStr(
-    args: Json,
-    name: String,
-  ): IO[JorlanError, String] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`name`, Json.Str(v)) => v }
-          .fold(ZIO.fail(ValidationError(s"missing required argument '$name'")): IO[JorlanError, String])(
-            ZIO.succeed(_),
-          )
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
-
   override def invoke(
     ctx:  InvocationContext,
     tool: String,
@@ -601,7 +587,7 @@ class LyrionSkill(
   private def search(args: Json): IO[JorlanError, Json] =
     for {
       query <- requireStr(args, "query")
-      count = optInt(args, "count").getOrElse(10)
+      count = int(args, "count").getOrElse(10)
       encoded = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8)
       result <- rpc("", List(Json.Str("search"), Json.Num(0), Json.Num(count * 3), Json.Str(s"term:$query")))
     } yield {
@@ -647,8 +633,8 @@ class LyrionSkill(
     }
 
   private def browseArtists(args: Json): IO[JorlanError, Json] = {
-    val count = optInt(args, "count").getOrElse(100)
-    val filters = optStr(args, "genreId").map(id => List(Json.Str(s"genre_id:$id"))).getOrElse(List.empty)
+    val count = int(args, "count").getOrElse(100)
+    val filters = str(args, "genreId").map(id => List(Json.Str(s"genre_id:$id"))).getOrElse(List.empty)
     rpc("", List(Json.Str("artists"), Json.Num(0), Json.Num(count)) ++ filters).map { result =>
       Json.Arr(
         arrField(result, "artists_loop").map { a =>
@@ -659,10 +645,10 @@ class LyrionSkill(
   }
 
   private def browseAlbums(args: Json): IO[JorlanError, Json] = {
-    val count = optInt(args, "count").getOrElse(50)
+    val count = int(args, "count").getOrElse(50)
     val filters = List(
-      optStr(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
-      optStr(args, "genreId").map(id => Json.Str(s"genre_id:$id")),
+      str(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
+      str(args, "genreId").map(id => Json.Str(s"genre_id:$id")),
     ).flatten
     rpc("", List(Json.Str("albums"), Json.Num(0), Json.Num(count), Json.Str("tags:la")) ++ filters).map { result =>
       Json.Arr(
@@ -679,10 +665,10 @@ class LyrionSkill(
   }
 
   private def browseSongs(args: Json): IO[JorlanError, Json] = {
-    val count = optInt(args, "count").getOrElse(50)
+    val count = int(args, "count").getOrElse(50)
     val filters = List(
-      optStr(args, "albumId").map(id => Json.Str(s"album_id:$id")),
-      optStr(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
+      str(args, "albumId").map(id => Json.Str(s"album_id:$id")),
+      str(args, "artistId").map(id => Json.Str(s"artist_id:$id")),
     ).flatten
     rpc("", List(Json.Str("songs"), Json.Num(0), Json.Num(count), Json.Str("tags:alta")) ++ filters).map { result =>
       Json.Arr(
@@ -704,7 +690,7 @@ class LyrionSkill(
       playerId <- requirePlayerId(args)
       itemType <- requireStr(args, "type")
       id       <- requireStr(args, "id")
-      mode = optStr(args, "mode").getOrElse("load")
+      mode = str(args, "mode").getOrElse("load")
       validMode <- ZIO
         .fromOption(Some(mode).filter(m => m == "load" || m == "add"))
         .orElseFail(ValidationError(s"lyrion.queue: mode must be 'load' or 'add', got '$mode'"))
@@ -811,17 +797,17 @@ class LyrionSkill(
       timeStr  <- requireStr(args, "time")
       timeSecs <- parseTimeHHMM(timeStr)
       dow      <- parseDays(args)
-      enabled = optInt(args, "enabled")
+      enabled = int(args, "enabled")
         .map(_ != 0).orElse(args match {
           case Json.Obj(f) => f.collectFirst { case ("enabled", Json.Bool(b)) => b }
           case _           => None
         }).getOrElse(true)
-      repeat = optInt(args, "repeat")
+      repeat = int(args, "repeat")
         .map(_ != 0).orElse(args match {
           case Json.Obj(f) => f.collectFirst { case ("repeat", Json.Bool(b)) => b }
           case _           => None
         }).getOrElse(true)
-      volume = optInt(args, "volume").getOrElse(-1)
+      volume = int(args, "volume").getOrElse(-1)
       params = List(
         Json.Str("alarm"),
         Json.Str("add"),
@@ -845,7 +831,7 @@ class LyrionSkill(
     for {
       playerId     <- requireStr(args, "playerId")
       id           <- requireStr(args, "id")
-      timeParamOpt <- optStr(args, "time")
+      timeParamOpt <- str(args, "time")
         .map(t => parseTimeHHMM(t).map(s => Some(s"time:$s")))
         .getOrElse(ZIO.succeed(None))
       dowParamOpt <- args match {
@@ -869,7 +855,7 @@ class LyrionSkill(
           }
         case _ => None
       }
-      volumeParamOpt = optInt(args, "volume").map(v => s"volume:$v")
+      volumeParamOpt = int(args, "volume").map(v => s"volume:$v")
       updateParams = List(
         Some(s"id:$id"),
         timeParamOpt,

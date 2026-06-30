@@ -164,6 +164,43 @@ object SkillLifecycleServiceSpec extends ZIOSpecDefault {
           r.errors.nonEmpty,
         )
       }.provide(baseLayer),
+      test("advance with non-existent versionId fails with JorlanError") {
+        for {
+          svc    <- ZIO.service[SkillRegistry]
+          result <- svc.advance(SkillVersionId(999999L)).either
+        } yield assertTrue(result.isLeft)
+      }.provide(baseLayer),
+      test("approve with non-existent versionId fails with JorlanError") {
+        for {
+          svc    <- ZIO.service[SkillRegistry]
+          result <- svc.approve(SkillVersionId(999999L), UserId(1L)).either
+        } yield assertTrue(result.isLeft)
+      }.provide(baseLayer),
+      test("reject with non-existent versionId fails with JorlanError") {
+        for {
+          svc    <- ZIO.service[SkillRegistry]
+          result <- svc.reject(SkillVersionId(999999L), "reason", UserId(1L)).either
+        } yield assertTrue(result.isLeft)
+      }.provide(baseLayer),
+      test("createDraft with same name reuses existing skillId") {
+        for {
+          svc <- ZIO.service[SkillRegistry]
+          sv1 <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
+          sv2 <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
+        } yield assertTrue(sv1.skillId == sv2.skillId)
+      }.provide(baseLayer),
+      test("approve makes skill accessible as a callable tool in the registry") {
+        for {
+          svc    <- ZIO.service[SkillRegistry]
+          sv     <- svc.createDraft(validManifestJson, SkillTier.Declarative, UserId(1L))
+          _      <- svc.advance(sv.id)
+          _      <- svc.advance(sv.id)
+          _      <- svc.advance(sv.id)
+          _      <- svc.advance(sv.id)
+          _      <- svc.approve(sv.id, UserId(99L))
+          skills <- svc.allSkills
+        } yield assertTrue(skills.exists(_.descriptor.name == "weather"))
+      }.provide(baseLayer),
     )
 
 }

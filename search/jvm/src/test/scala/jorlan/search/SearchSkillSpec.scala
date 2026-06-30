@@ -205,6 +205,76 @@ object SearchSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(dummyCtx, "search.extract", Json.Obj()).exit
         } yield assert(result)(failsWithA[ValidationError])
       }.provide(Client.default) @@ TestAspect.ignore,
+      test("search.news with days parameter includes days field in request") {
+        for {
+          bodyRef <- Ref.make(Option.empty[String])
+          port    <- Server.install(captureRequestRoutes(bodyRef, sampleSearchResponse))
+          client  <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          _ <- skill.invoke(
+            dummyCtx,
+            "search.news",
+            Json.Obj("query" -> Json.Str("AI news"), "days" -> Json.Num(7)),
+          )
+          captured <- bodyRef.get
+        } yield assert(captured)(isSome(containsString("\"days\":7")))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("search.web with no results key in response returns empty array") {
+        val noResultsResponse = """{"answer": "nothing found"}"""
+        for {
+          port   <- Server.install(routes(noResultsResponse))
+          client <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          result <- skill.invoke(dummyCtx, "search.web", Json.Obj("query" -> Json.Str("test")))
+        } yield assert(result)(equalTo(Json.Arr()))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("search.extract with no results key in response returns empty array") {
+        val noResultsResponse = """{"failed_results": []}"""
+        for {
+          port   <- Server.install(routes(noResultsResponse))
+          client <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          result <- skill.invoke(
+            dummyCtx,
+            "search.extract",
+            Json.Obj("urls" -> Json.Arr(Json.Str("https://example.com"))),
+          )
+        } yield assert(result)(equalTo(Json.Arr()))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
+      test("unknown tool fails with ValidationError") {
+        for {
+          client <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = "http://localhost:9999", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          result <- skill.invoke(dummyCtx, "search.unknown", Json.Obj()).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Client.default),
+      test("postJson with non-object args to field helper fails with ValidationError") {
+        for {
+          client <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = "http://localhost:9999", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          result <- skill.invoke(dummyCtx, "search.web", Json.Str("not an object")).exit
+        } yield assert(result)(failsWithA[ValidationError])
+      }.provide(Client.default),
+      test("search.web with searchDepth parameter passes it to request") {
+        for {
+          bodyRef <- Ref.make(Option.empty[String])
+          port    <- Server.install(captureRequestRoutes(bodyRef, sampleSearchResponse))
+          client  <- ZIO.service[Client]
+          cfg = SearchConfig(apiKey = "test-key", baseUrl = s"http://localhost:$port", maxResults = 5)
+          skill = new SearchSkill(cfg, client)
+          _ <- skill.invoke(
+            dummyCtx,
+            "search.web",
+            Json.Obj("query" -> Json.Str("test"), "searchDepth" -> Json.Str("advanced")),
+          )
+          captured <- bodyRef.get
+        } yield assert(captured)(isSome(containsString("\"search_depth\":\"advanced\"")))
+      }.provide(Server.defaultWith(_.port(0)), Client.default),
     ) @@ TestAspect.withLiveClock
 
 }

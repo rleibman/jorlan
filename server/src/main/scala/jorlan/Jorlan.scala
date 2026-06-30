@@ -23,7 +23,7 @@ import jorlan.routes.*
 import jorlan.search.{SearchConfig, SearchSkill}
 import jorlan.service.skills.SkillPluginLoader
 import jorlan.service.*
-import jorlan.service.mcp.McpManagerImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.{TimeConfig, TimeSkill}
@@ -42,7 +42,8 @@ import java.util.concurrent.TimeUnit
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
   JobManager & ApprovalService & ApprovalHub & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
   EventLogHub & ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
-  jorlan.service.skills.declarative.SkillLifecycleService & jorlan.service.OAuthReconnectService
+  jorlan.service.skills.declarative.SkillLifecycleService & jorlan.service.OAuthReconnectService &
+  jorlan.service.mcp.McpManager
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -415,10 +416,7 @@ object Jorlan extends ZIOApp {
       lifecycleSvc <- ZIO.service[jorlan.service.skills.declarative.SkillLifecycleService]
       _            <- registry.register(SkillAuthoringSkill(lifecycleSvc))
       // ── MCP servers ───────────────────────────────────────────────────────────
-      _ <- ZIO
-        .scoped {
-          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
-        }.mapError(e => new Throwable(e.msg))
+      _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
       // ── Apply explicit skill.disabled list from server_settings ───────────────
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>

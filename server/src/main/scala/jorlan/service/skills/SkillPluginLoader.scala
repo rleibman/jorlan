@@ -54,13 +54,13 @@ object SkillPluginLoader {
   ): IO[JorlanError, List[Skill]] = {
     ZIO.acquireReleaseWith(
       ZIO
-        .attempt {
+        .attemptBlockingIO {
           val parent = Thread.currentThread().getContextClassLoader.nn
           new URLClassLoader(Array(jar.toURI.toURL), parent)
         }.mapError(e => JorlanError(s"Failed to open plugin JAR '${jar.getName}'", Some(e))),
-    )(_ => ZIO.unit) { cl =>
+    )(cl => ZIO.attempt(cl.close()).ignore) { cl =>
       ZIO
-        .attempt {
+        .attemptBlockingIO {
           ServiceLoader
             .load(classOf[SkillPlugin], cl)
             .iterator()

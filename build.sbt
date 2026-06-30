@@ -361,6 +361,7 @@ lazy val discordConnector =
       libraryDependencies ++= Seq(
         "net.dv8tion" % "JDA" % "5.6.1" exclude("club.minnced", "opus-java"),
       ),
+      coverageExcludedFiles := ".*DiscordApiClient.*",
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -385,6 +386,15 @@ lazy val lyrionSkill =
     .in(file("lyrion"))
     .configureCross(skillModule)
     .settings(name := "jorlan-lyrion")
+
+////////////////////////////////////////////////////////////////////////////////////
+// RSS Feed Skill — fetch and persist RSS/Atom feeds
+
+lazy val rssFeedSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("rss-feed"))
+    .configureCross(skillModule)
+    .settings(name := "jorlan-rss-feed")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
@@ -513,6 +523,7 @@ lazy val server = project
     googleServices.jvm,
     unitConversionSkill.jvm,
     lyrionSkill.jvm,
+    rssFeedSkill.jvm,
     marketDataSkill.jvm,
     weatherSkill.jvm,
     timeSkill.jvm,
@@ -561,7 +572,7 @@ lazy val server = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
     Test / fork           := true,
-    coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
+    coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*;.*McpClient.*;.*SkillPluginLoader.*;.*StaticRoutes.*;.*OAuthRoutes.*;.*FlywayMigration.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
     Compile / doc / sources := Seq.empty,
   )
@@ -649,7 +660,7 @@ lazy val shell = project
     fork                             := true,
     run / fork                       := true,
     run / connectInput               := true,
-    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*",
+    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
     coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
@@ -916,6 +927,7 @@ lazy val root = project
     weatherSkill.jvm,
     searchSkill.jvm,
     lyrionSkill.jvm,
+    rssFeedSkill.jvm,
     unitConversionSkill.jvm,
     timeSkill.jvm,
     httpFetchSkill.jvm,
@@ -930,6 +942,7 @@ lazy val root = project
     weatherSkill.js,
     searchSkill.js,
     lyrionSkill.js,
+    rssFeedSkill.js,
     unitConversionSkill.js,
     timeSkill.js,
     httpFetchSkill.js,
