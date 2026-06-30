@@ -11,10 +11,13 @@ import jorlan.{
   ApprovalRequestId,
   CapabilityGrantId,
   ChannelIdentityId,
+  McpEnvVarInfo,
   MemoryRecordId,
   MemoryScope,
   RoleId,
   SchedulerJobId,
+  SchedulerTriggerId,
+  SkillId,
   UserId,
 }
 
@@ -112,8 +115,83 @@ enum ShellCommand {
     name:        String,
     description: Option[String],
   )
+  case RolesUpdate(
+    id:    RoleId,
+    field: String,
+    value: String,
+  )
+  case RolesDelete(id: RoleId)
+  case RolesCapabilities(id: RoleId)
+  case RolesGrantCapability(
+    id:           RoleId,
+    capability:   String,
+    approvalMode: String,
+  )
+  case RolesRevokeGrant(grantId: CapabilityGrantId)
+  case UsersReactivate(id: UserId)
   case SchedulerList
   case SchedulerResult(id: SchedulerJobId)
+  case SchedulerCreate(
+    name:   String,
+    prompt: String,
+  )
+  case SchedulerUpdate(
+    id:    SchedulerJobId,
+    field: String,
+    value: String,
+  )
+  case SchedulerDelete(id: SchedulerJobId)
+  case SchedulerPause(id: SchedulerJobId)
+  case SchedulerResume(id: SchedulerJobId)
+  case SchedulerCancel(id: SchedulerJobId)
+  case SchedulerRun(id: SchedulerJobId)
+  case SchedulerTriggers(id: SchedulerJobId)
+  case SchedulerTriggerAdd(
+    id:          SchedulerJobId,
+    triggerType: String,
+    expression:  String,
+  )
+  case SchedulerTriggerDelete(triggerId: SchedulerTriggerId)
+  case McpList
+  case McpAdd(
+    name:      String,
+    transport: String,
+    command:   Option[String],
+    args:      List[String],
+    env:       List[McpEnvVarInfo],
+    url:       Option[String],
+    enabled:   Boolean,
+    keywords:  List[String],
+  )
+  case McpEdit(
+    name:      String,
+    transport: Option[String],
+    command:   Option[String],
+    args:      Option[List[String]],
+    env:       Option[List[McpEnvVarInfo]],
+    url:       Option[String],
+    enabled:   Option[Boolean],
+    keywords:  Option[List[String]],
+  )
+  case McpDelete(name: String)
+  case McpReload
+  case McpEnable(name: String)
+  case McpDisable(name: String)
+  case SkillsDocs(name: String)
+  case SkillsValidate(name: String)
+  case SkillsListCustom
+  case SkillsListPending
+  case SkillsVersions(skillId: SkillId)
+  case SkillsCreate(manifestFile: String)
+  case SkillsAdvance(versionId: String)
+  case SkillsApprove(versionId: String)
+  case SkillsReject(
+    versionId: String,
+    reason:    String,
+  )
+  case EventsTail
+  case EventsList(count: Int)
+  case Dashboard
   case OAuthStatus(provider: String)
   case OAuthConnect(provider: String)
   case OAuthRevoke(provider: String)
@@ -129,12 +207,43 @@ enum ShellCommand {
 
 object ShellCommand {
 
+  private case class McpFlags(
+    transport: Option[String] = None,
+    command:   Option[String] = None,
+    args:      List[String] = Nil,
+    env:       List[McpEnvVarInfo] = Nil,
+    url:       Option[String] = None,
+    enabled:   Option[Boolean] = None,
+    keywords:  List[String] = Nil,
+  )
+
+  @annotation.tailrec
+  private def parseMcpFlags(tokens: List[String], acc: McpFlags = McpFlags()): McpFlags =
+    tokens match {
+      case "--transport" :: v :: rest => parseMcpFlags(rest, acc.copy(transport = Some(v)))
+      case "--command" :: v :: rest   => parseMcpFlags(rest, acc.copy(command = Some(v)))
+      case "--url" :: v :: rest       => parseMcpFlags(rest, acc.copy(url = Some(v)))
+      case "--args" :: v :: rest      => parseMcpFlags(rest, acc.copy(args = acc.args :+ v))
+      case "--env" :: kv :: rest      =>
+        val newEnv = kv.split("=", 2).toList match {
+          case k :: v :: Nil => acc.env :+ McpEnvVarInfo(k, v)
+          case _             => acc.env
+        }
+        parseMcpFlags(rest, acc.copy(env = newEnv))
+      case "--keywords" :: v :: rest  =>
+        parseMcpFlags(rest, acc.copy(keywords = v.split(",").map(_.trim).filter(_.nonEmpty).toList))
+      case "--disabled" :: rest       => parseMcpFlags(rest, acc.copy(enabled = Some(false)))
+      case "--enabled" :: rest        => parseMcpFlags(rest, acc.copy(enabled = Some(true)))
+      case _ :: rest                  => parseMcpFlags(rest, acc)
+      case Nil                        => acc
+    }
+
   /** Parse a raw input line into a [[ShellCommand]]. Starts with `/` → command; otherwise → message. */
   def parse(line: String): ShellCommand = {
     if (!line.startsWith("/")) {
       Message(line)
     } else {
-      val parts = line.stripPrefix("/").split("\\s+", 4).toList
+      val parts = line.stripPrefix("/").split("\\s+").toList
       parts match {
         case "help" :: _                                              => Help
         case "commands" :: _                                          => Commands
@@ -184,6 +293,17 @@ object ShellCommand {
         case "skills" :: "disable" :: name :: _                             => SkillsDisable(name)
         case "skills" :: "config" :: "get" :: name :: _                     => SkillsGetConfig(name)
         case "skills" :: "config" :: "set" :: name :: rest if rest.nonEmpty => SkillsSetConfig(name, rest.mkString(" "))
+        case "skills" :: "docs" :: name :: _                                => SkillsDocs(name)
+        case "skills" :: "validate" :: name :: _                            => SkillsValidate(name)
+        case "skills" :: "list-custom" :: _                                 => SkillsListCustom
+        case "skills" :: "list-pending" :: _                                => SkillsListPending
+        case "skills" :: "versions" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SkillsVersions(SkillId(idStr.toLong))
+        case "skills" :: "create" :: manifestFile :: _  => SkillsCreate(manifestFile)
+        case "skills" :: "advance" :: versionId :: _    => SkillsAdvance(versionId)
+        case "skills" :: "approve" :: versionId :: _    => SkillsApprove(versionId)
+        case "skills" :: "reject" :: versionId :: rest if rest.nonEmpty =>
+          SkillsReject(versionId, rest.mkString(" "))
         case "skills" :: _                                                  => Skills
         case "contacts" :: "find" :: rest if rest.nonEmpty                  => ContactsFind(rest.mkString(" "))
         case "contacts" :: _                                                => Unknown("/contacts")
@@ -195,6 +315,8 @@ object ShellCommand {
           UsersCreate(displayName, email)
         case "users" :: "deactivate" :: idStr :: _ if idStr.toLongOption.isDefined =>
           UsersDeactivate(UserId(idStr.toLong))
+        case "users" :: "reactivate" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          UsersReactivate(UserId(idStr.toLong))
         case "users" :: "update" :: idStr :: field :: rest if idStr.toLongOption.isDefined && rest.nonEmpty =>
           UsersUpdate(UserId(idStr.toLong), field, rest.mkString(" "))
         case "users" :: "capabilities" :: idStr :: _ if idStr.toLongOption.isDefined =>
@@ -221,6 +343,16 @@ object ShellCommand {
         case "roles" :: "list" :: _              => RolesList
         case "roles" :: "create" :: name :: rest =>
           RolesCreate(name, if (rest.nonEmpty) Some(rest.mkString(" ")) else None)
+        case "roles" :: "update" :: idStr :: field :: rest if idStr.toLongOption.isDefined && rest.nonEmpty =>
+          RolesUpdate(RoleId(idStr.toLong), field, rest.mkString(" "))
+        case "roles" :: "delete" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          RolesDelete(RoleId(idStr.toLong))
+        case "roles" :: "capabilities" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          RolesCapabilities(RoleId(idStr.toLong))
+        case "roles" :: "grant" :: idStr :: cap :: mode :: _ if idStr.toLongOption.isDefined =>
+          RolesGrantCapability(RoleId(idStr.toLong), cap, mode)
+        case "roles" :: "revoke-grant" :: grantIdStr :: _ if grantIdStr.toLongOption.isDefined =>
+          RolesRevokeGrant(CapabilityGrantId(grantIdStr.toLong))
         case "roles" :: _                                                     => Unknown("/roles")
         case "agents" :: "list" :: _                                          => AgentsList
         case "agents" :: "stop" :: idStr :: _ if idStr.toLongOption.isDefined =>
@@ -235,6 +367,26 @@ object ShellCommand {
         case "scheduler" :: "list" :: _                                            => SchedulerList
         case "scheduler" :: "result" :: idStr :: _ if idStr.toLongOption.isDefined =>
           SchedulerResult(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "create" :: name :: rest if rest.nonEmpty => SchedulerCreate(name, rest.mkString(" "))
+        case "scheduler" :: "update" :: idStr :: field :: rest if idStr.toLongOption.isDefined && rest.nonEmpty =>
+          SchedulerUpdate(SchedulerJobId(idStr.toLong), field, rest.mkString(" "))
+        case "scheduler" :: "delete" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerDelete(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "pause" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerPause(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "resume" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerResume(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "cancel" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerCancel(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "run" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerRun(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "triggers" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerTriggers(SchedulerJobId(idStr.toLong))
+        case "scheduler" :: "trigger" :: "add" :: idStr :: trigType :: rest
+            if idStr.toLongOption.isDefined && rest.nonEmpty =>
+          SchedulerTriggerAdd(SchedulerJobId(idStr.toLong), trigType, rest.mkString(" "))
+        case "scheduler" :: "trigger" :: "delete" :: idStr :: _ if idStr.toLongOption.isDefined =>
+          SchedulerTriggerDelete(SchedulerTriggerId(idStr.toLong))
         case "scheduler" :: _                                       => Unknown("/scheduler")
         case "oauth" :: "status" :: provider :: _                   => OAuthStatus(provider)
         case "oauth" :: "connect" :: provider :: _                  => OAuthConnect(provider)
@@ -249,6 +401,23 @@ object ShellCommand {
         case "calendar" :: "list" :: date :: _                      => CalendarList(Some(date))
         case "calendar" :: "list" :: Nil                            => CalendarList(None)
         case "calendar" :: _                                        => Unknown("/calendar")
+        case "mcp" :: "list" :: _                        => McpList
+        case "mcp" :: "add" :: name :: transport :: rest =>
+          val f = parseMcpFlags(rest)
+          McpAdd(name, transport, f.command, f.args, f.env, f.url, f.enabled.getOrElse(true), f.keywords)
+        case "mcp" :: "edit" :: name :: rest             =>
+          val f = parseMcpFlags(rest)
+          McpEdit(name, f.transport, f.command, Some(f.args).filter(_.nonEmpty), Some(f.env).filter(_.nonEmpty), f.url, f.enabled, Some(f.keywords).filter(_.nonEmpty))
+        case "mcp" :: "delete" :: name :: _              => McpDelete(name)
+        case "mcp" :: "reload" :: _                      => McpReload
+        case "mcp" :: "enable" :: name :: _              => McpEnable(name)
+        case "mcp" :: "disable" :: name :: _             => McpDisable(name)
+        case "mcp" :: _                                  => McpList
+        case "events" :: "tail" :: _                                => EventsTail
+        case "events" :: "list" :: n :: _ if n.toIntOption.isDefined => EventsList(n.toInt)
+        case "events" :: "list" :: _                                => EventsList(50)
+        case "events" :: _                                          => EventsTail
+        case "dashboard" :: _                                       => Dashboard
         case other :: _                                             => Unknown(s"/$other")
         case Nil                                                    => Unknown("/")
       }

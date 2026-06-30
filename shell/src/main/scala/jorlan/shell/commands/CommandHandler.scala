@@ -14,7 +14,9 @@ import jorlan.shell.tui.{JorlanScreen, MessageKind}
 import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
 import zio.*
 import zio.json.ast.Json
+import zio.stream.ZStream
 
+import java.nio.file.{Files, Paths}
 import scala.language.unsafeNulls
 
 /** Dispatches a parsed [[ShellCommand]] and writes output to [[JorlanScreen]]. */
@@ -83,8 +85,43 @@ object CommandHandler {
       case ShellCommand.UsersUnlinkIdentity(iid)                 => unlinkUserIdentity(iid)
       case ShellCommand.RolesList                                => listRoles
       case ShellCommand.RolesCreate(name, desc)                  => createRole(name, desc)
+      case ShellCommand.RolesUpdate(id, field, v)                => updateRole(id, field, v)
+      case ShellCommand.RolesDelete(id)                          => deleteRole(id)
+      case ShellCommand.RolesCapabilities(id)                    => listRoleCapabilities(id)
+      case ShellCommand.RolesGrantCapability(id, cap, mode)      => grantRoleCapability(id, cap, mode)
+      case ShellCommand.RolesRevokeGrant(gid)                    => revokeCapabilityGrant(gid)
+      case ShellCommand.UsersReactivate(id)                      => reactivateUser(id)
       case ShellCommand.SchedulerList                            => listSchedulerJobs
       case ShellCommand.SchedulerResult(id)                      => showSchedulerResult(id)
+      case ShellCommand.SchedulerCreate(name, prompt)            => createSchedulerJob(name, prompt)
+      case ShellCommand.SchedulerUpdate(id, field, v)            => updateSchedulerJob(id, field, v)
+      case ShellCommand.SchedulerDelete(id)                      => deleteSchedulerJob(id)
+      case ShellCommand.SchedulerPause(id)                       => pauseSchedulerJob(id)
+      case ShellCommand.SchedulerResume(id)                      => resumeSchedulerJob(id)
+      case ShellCommand.SchedulerCancel(id)                      => cancelSchedulerJob(id)
+      case ShellCommand.SchedulerRun(id)                         => runSchedulerJobNow(id)
+      case ShellCommand.SchedulerTriggers(id)                    => listSchedulerTriggers(id)
+      case ShellCommand.SchedulerTriggerAdd(id, tt, expr)        => addSchedulerTrigger(id, tt, expr)
+      case ShellCommand.SchedulerTriggerDelete(tid)              => deleteSchedulerTrigger(tid)
+      case ShellCommand.McpList                                  => listMcpServers
+      case ShellCommand.McpAdd(n, t, cmd, args, env, url, en, kw) => addMcpServer(n, t, cmd, args, env, url, en, kw)
+      case ShellCommand.McpEdit(n, t, cmd, args, env, url, en, kw) => editMcpServer(n, t, cmd, args, env, url, en, kw)
+      case ShellCommand.McpDelete(name)                          => deleteMcpServer(name)
+      case ShellCommand.McpReload                                => reloadMcpServers
+      case ShellCommand.McpEnable(name)                          => setMcpEnabled(name, enabled = true)
+      case ShellCommand.McpDisable(name)                         => setMcpEnabled(name, enabled = false)
+      case ShellCommand.SkillsDocs(name)                         => showSkillDocs(name)
+      case ShellCommand.SkillsValidate(name)                     => validateSkill(name)
+      case ShellCommand.SkillsListCustom                         => listCustomSkills
+      case ShellCommand.SkillsListPending                        => listPendingSkills
+      case ShellCommand.SkillsVersions(skillId)                  => listSkillVersions(skillId)
+      case ShellCommand.SkillsCreate(file)                       => createSkillDraft(file)
+      case ShellCommand.SkillsAdvance(vid)                       => advanceSkillLifecycle(vid)
+      case ShellCommand.SkillsApprove(vid)                       => approveSkillVersion(vid)
+      case ShellCommand.SkillsReject(vid, reason)                => rejectSkillVersion(vid, reason)
+      case ShellCommand.EventsTail                               => eventsTail
+      case ShellCommand.EventsList(count)                        => eventsList(count)
+      case ShellCommand.Dashboard                                => showDashboard
       case ShellCommand.OAuthStatus(provider)                    => showOAuthStatus(provider)
       case ShellCommand.OAuthConnect(provider)                   => connectOAuth(provider)
       case ShellCommand.OAuthRevoke(provider)                    => revokeOAuth(provider)
@@ -187,8 +224,44 @@ object CommandHandler {
       "/users unlink-identity <identityId>  Remove a channel identity",
       "/roles list                          List all roles",
       "/roles create <name> [description]   Create a new role",
+      "/roles update <id> <field> <value>   Update a role field (name|description)",
+      "/roles delete <id>                   Delete a role",
+      "/roles capabilities <id>             List capability grants for a role",
+      "/roles grant <id> <cap> <mode>       Grant a capability to a role (mode: Manual|AutoApprove|Deny)",
+      "/roles revoke-grant <grantId>        Revoke a role capability grant",
+      "/users reactivate <id>               Reactivate a deactivated user account",
       "/scheduler list                      List all scheduler jobs with status and results",
       "/scheduler result <id>               Show full result/error for a scheduler job",
+      "/scheduler create <name> <prompt>    Create a new scheduler job (defaults: 3 retries, 60s backoff)",
+      "/scheduler update <id> <field> <v>   Update a job field (name|prompt|maxRetries|backoffSeconds|backoffPolicy|missedRunPolicy)",
+      "/scheduler delete <id>               Delete a scheduler job",
+      "/scheduler pause <id>                Pause a scheduler job",
+      "/scheduler resume <id>               Resume a paused scheduler job",
+      "/scheduler cancel <id>               Cancel a scheduler job",
+      "/scheduler run <id>                  Trigger a scheduler job immediately",
+      "/scheduler triggers <id>             List triggers for a scheduler job",
+      "/scheduler trigger add <id> <type> <expr>   Add a trigger (type: Cron|Interval|OneShot|Event)",
+      "/scheduler trigger delete <triggerId>        Delete a trigger",
+      "/mcp list                            List all MCP servers",
+      "/mcp add <name> <transport> [flags]  Add an MCP server (transport: Stdio|Http|HttpSse)",
+      "  flags: --command cmd  --args a  --url url  --env K=V  --keywords k1,k2  --disabled",
+      "/mcp edit <name> [flags]             Edit an existing MCP server (same flags as add)",
+      "/mcp delete <name>                   Delete an MCP server",
+      "/mcp reload                          Hot-reload all MCP server connections",
+      "/mcp enable <name>                   Enable an MCP server",
+      "/mcp disable <name>                  Disable an MCP server",
+      "/skills docs <name>                  Show documentation for a skill",
+      "/skills validate <name>              Validate a skill's configuration",
+      "/skills list-custom                  List all custom skill versions",
+      "/skills list-pending                 List pending custom skill versions awaiting approval",
+      "/skills versions <skillId>           List versions for a skill by skill ID",
+      "/skills create <manifest.json>       Create a custom skill draft from a JSON manifest file",
+      "/skills advance <versionId>          Advance a skill version through its lifecycle",
+      "/skills approve <versionId>          Approve a custom skill version",
+      "/skills reject <versionId> <reason>  Reject a custom skill version",
+      "/events tail                         Live tail the event log (stops on /new or /quit)",
+      "/events list [count]                 Collect and display the last N events (default: 50)",
+      "/dashboard                           Show system KPI stats (sessions, events, skills, scheduler)",
       "/agents list                         List active agent sessions",
       "/agents stop <id>                    Terminate an agent session",
       "/approvals list                      List pending approval requests",
@@ -1176,5 +1249,561 @@ object CommandHandler {
         )
     }
   }
+
+  // ─── Role extensions ─────────────────────────────────────────────────────────
+
+  private val validRoleFields: Set[String] = Set("name", "description")
+
+  private def updateRole(
+    id:    RoleId,
+    field: String,
+    value: String,
+  ): ZIO[Env, Nothing, Unit] =
+    if (!validRoleFields.contains(field.toLowerCase)) {
+      screen(_.addMessage(MessageKind.Error, s"Unknown field '$field'. Valid: ${validRoleFields.mkString(", ")}"))
+    } else {
+      repo(_.permission.searchRoles(RoleSearch(userId = None))).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not fetch roles: $err")),
+        roles =>
+          roles.find(_.id == id) match {
+            case None => screen(_.addMessage(MessageKind.Error, s"Role ${id.value} not found."))
+            case Some(existing) =>
+              val (newName, newDesc) = field.toLowerCase match {
+                case "name"        => (value, existing.description)
+                case "description" => (existing.name, Some(value))
+                case _             => (existing.name, existing.description)
+              }
+              repo(_.updateRole(id, newName, newDesc)).foldZIO(
+                err => screen(_.addMessage(MessageKind.Error, s"Update role failed: $err")),
+                r => screen(_.addMessage(MessageKind.System, s"Role ${r.id.value} updated: ${r.name}")),
+              )
+          },
+      )
+    }
+
+  private def deleteRole(id: RoleId): ZIO[Env, Nothing, Unit] =
+    repo(_.deleteRole(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Delete role failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Role ${id.value} deleted."))
+        else screen(_.addMessage(MessageKind.Error, s"Role ${id.value} not found.")),
+    )
+
+  private def listRoleCapabilities(id: RoleId): ZIO[Env, Nothing, Unit] =
+    repo(_.permission.searchGrants(GrantSearch(roleId = Some(id)))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list capabilities: $err")),
+      {
+        case Nil    => screen(_.addMessage(MessageKind.System, s"No capability grants for role ${id.value}."))
+        case grants =>
+          val lines = grants
+            .map(g => s"  [${g.id.value}] ${g.capability.value}  mode=${g.approvalMode}")
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Capabilities for role ${id.value}:\n$lines"))
+      },
+    )
+
+  private def grantRoleCapability(
+    roleId:       RoleId,
+    capability:   String,
+    approvalMode: String,
+  ): ZIO[Env, Nothing, Unit] = {
+    import java.time.Instant
+    val modeOpt = ApprovalMode.values.find(_.toString.equalsIgnoreCase(approvalMode))
+    modeOpt match {
+      case None =>
+        screen(
+          _.addMessage(MessageKind.Error, s"Unknown mode '$approvalMode'. Valid: ${ApprovalMode.values.mkString(", ")}"),
+        )
+      case Some(mode) =>
+        repo(
+          _.permission.upsertCapabilityGrant(
+            CapabilityGrant(
+              id = CapabilityGrantId.empty,
+              capability = CapabilityName(capability),
+              scopeJson = None,
+              granteeId = roleId.value,
+              granteeType = GranteeType.Role,
+              grantorId = None,
+              approvalMode = mode,
+              expiresAt = None,
+              resourceConstraints = None,
+              createdAt = Instant.now(),
+            ),
+          ),
+        ).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"Grant failed: $err")),
+          g =>
+            screen(
+              _.addMessage(
+                MessageKind.System,
+                s"Granted '${g.capability.value}' to role ${roleId.value} [grant id=${g.id.value}]",
+              ),
+            ),
+        )
+    }
+  }
+
+  // ─── Users extensions ─────────────────────────────────────────────────────────
+
+  private def reactivateUser(id: UserId): ZIO[Env, Nothing, Unit] =
+    repo(_.user.getById(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch user: $err")),
+      {
+        case None           => screen(_.addMessage(MessageKind.Error, s"User ${id.value} not found."))
+        case Some(existing) =>
+          repo(_.user.upsert(existing.copy(active = true))).foldZIO(
+            err => screen(_.addMessage(MessageKind.Error, s"Reactivate failed: $err")),
+            u => screen(_.addMessage(MessageKind.System, s"User ${u.id.value} reactivated: ${u.displayName}")),
+          )
+      },
+    )
+
+  // ─── Scheduler extensions ────────────────────────────────────────────────────
+
+  private def createSchedulerJob(
+    name:   String,
+    prompt: String,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.createJob(name, prompt, 3, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Create job failed: $err")),
+      j =>
+        screen(
+          _.addMessage(
+            MessageKind.System,
+            s"Job created [${j.id.value}] '${j.name}'  status=${j.status}\nUse /scheduler update ${j.id.value} <field> <value> to configure.",
+          ),
+        ),
+    )
+
+  private val validSchedulerFields: Set[String] = Set("name", "prompt", "maxRetries", "backoffSeconds", "backoffPolicy", "missedRunPolicy")
+
+  private def updateSchedulerJob(
+    id:    SchedulerJobId,
+    field: String,
+    value: String,
+  ): ZIO[Env, Nothing, Unit] =
+    if (!validSchedulerFields.contains(field)) {
+      screen(_.addMessage(MessageKind.Error, s"Unknown field '$field'. Valid: ${validSchedulerFields.mkString(", ")}"))
+    } else {
+      repo(_.scheduler.getJob(id)).foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not fetch job: $err")),
+        {
+          case None      => screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found."))
+          case Some(job) =>
+            val updated = field match {
+              case "name"            => job.copy(name = value)
+              case "prompt"          => job.copy(prompt = value)
+              case "maxRetries"      =>
+                value.toIntOption.map(n => job.copy(maxRetries = n))
+                  .getOrElse(job.copy(name = job.name))
+              case "backoffSeconds"  =>
+                value.toIntOption.map(n => job.copy(backoffSeconds = n))
+                  .getOrElse(job.copy(name = job.name))
+              case "backoffPolicy"   =>
+                RetryBackoffPolicy.values.find(_.toString.equalsIgnoreCase(value))
+                  .map(p => job.copy(backoffPolicy = p)).getOrElse(job.copy(name = job.name))
+              case "missedRunPolicy" =>
+                MissedRunPolicy.values.find(_.toString.equalsIgnoreCase(value))
+                  .map(p => job.copy(missedRunPolicy = p)).getOrElse(job.copy(name = job.name))
+              case _                 => job
+            }
+            repo(
+              _.updateJob(
+                id,
+                updated.name,
+                updated.prompt,
+                updated.maxRetries,
+                updated.backoffSeconds,
+                updated.backoffPolicy,
+                updated.missedRunPolicy,
+              ),
+            ).foldZIO(
+              err => screen(_.addMessage(MessageKind.Error, s"Update job failed: $err")),
+              j => screen(_.addMessage(MessageKind.System, s"Job ${j.id.value} '${j.name}' updated.")),
+            )
+        },
+      )
+    }
+
+  private def deleteSchedulerJob(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.deleteJob(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Delete job failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Job ${id.value} deleted."))
+        else screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found.")),
+    )
+
+  private def pauseSchedulerJob(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.pauseJob(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Pause failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Job ${id.value} paused."))
+        else screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found or could not be paused.")),
+    )
+
+  private def resumeSchedulerJob(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.resumeJob(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Resume failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Job ${id.value} resumed."))
+        else screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found or could not be resumed.")),
+    )
+
+  private def cancelSchedulerJob(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.cancelJob(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Cancel failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Job ${id.value} cancelled."))
+        else screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found or could not be cancelled.")),
+    )
+
+  private def runSchedulerJobNow(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.triggerNow(id)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Trigger now failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Job ${id.value} triggered immediately."))
+        else screen(_.addMessage(MessageKind.Error, s"Job ${id.value} not found or could not be triggered.")),
+    )
+
+  private def listSchedulerTriggers(id: SchedulerJobId): ZIO[Env, Nothing, Unit] =
+    repo(_.scheduler.searchTriggers(TriggerSearch(jobId = id))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list triggers: $err")),
+      {
+        case Nil      => screen(_.addMessage(MessageKind.System, s"No triggers for job ${id.value}."))
+        case triggers =>
+          val lines = triggers
+            .map(t => s"  [${t.id.value}] ${t.triggerType}  expr=${t.expression}  enabled=${t.enabled}")
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Triggers for job ${id.value}:\n$lines"))
+      },
+    )
+
+  private def addSchedulerTrigger(
+    id:         SchedulerJobId,
+    triggerType: String,
+    expression:  String,
+  ): ZIO[Env, Nothing, Unit] = {
+    TriggerType.values.find(_.toString.equalsIgnoreCase(triggerType)) match {
+      case None =>
+        screen(
+          _.addMessage(
+            MessageKind.Error,
+            s"Unknown trigger type '$triggerType'. Valid: ${TriggerType.values.mkString(", ")}",
+          ),
+        )
+      case Some(tt) =>
+        repo(_.addTrigger(id, tt, expression)).foldZIO(
+          err => screen(_.addMessage(MessageKind.Error, s"Add trigger failed: $err")),
+          t =>
+            screen(
+              _.addMessage(
+                MessageKind.System,
+                s"Trigger added [${t.id.value}] ${t.triggerType}  expr=${t.expression}",
+              ),
+            ),
+        )
+    }
+  }
+
+  private def deleteSchedulerTrigger(triggerId: SchedulerTriggerId): ZIO[Env, Nothing, Unit] =
+    repo(_.deleteTrigger(triggerId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Delete trigger failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"Trigger ${triggerId.value} deleted."))
+        else screen(_.addMessage(MessageKind.Error, s"Trigger ${triggerId.value} not found.")),
+    )
+
+  // ─── MCP ─────────────────────────────────────────────────────────────────────
+
+  private val listMcpServers: ZIO[Env, Nothing, Unit] =
+    repo(_.listMcpServers()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list MCP servers: $err")),
+      {
+        case Nil     => screen(_.addMessage(MessageKind.System, "No MCP servers configured."))
+        case servers =>
+          val lines = servers.map { s =>
+            val loc = s.command.map(c => s"cmd=$c ${s.args.mkString(" ")}").orElse(s.url.map(u => s"url=$u")).getOrElse("")
+            val envStr = if (s.env.nonEmpty) s"  env=${s.env.map(e => s"${e.key}=${e.value}").mkString(",")}" else ""
+            val kwStr = if (s.keywords.nonEmpty) s"  keywords=${s.keywords.mkString(",")}" else ""
+            val status = if (s.enabled) "enabled" else "DISABLED"
+            s"  ${s.name}  [${s.transport}]  [$status]  $loc$envStr$kwStr"
+          }.mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"MCP servers:\n$lines"))
+      },
+    )
+
+  private def addMcpServer(
+    name:      String,
+    transport: String,
+    command:   Option[String],
+    args:      List[String],
+    env:       List[McpEnvVarInfo],
+    url:       Option[String],
+    enabled:   Boolean,
+    keywords:  List[String],
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.upsertMcpServer(McpServerInfo(name, transport, command, args, env, url, enabled, keywords))).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Add MCP server failed: $err")),
+      s => screen(_.addMessage(MessageKind.System, s"MCP server '${s.name}' saved.")),
+    )
+
+  private def editMcpServer(
+    name:      String,
+    transport: Option[String],
+    command:   Option[String],
+    args:      Option[List[String]],
+    env:       Option[List[McpEnvVarInfo]],
+    url:       Option[String],
+    enabled:   Option[Boolean],
+    keywords:  Option[List[String]],
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.listMcpServers()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch MCP servers: $err")),
+      servers =>
+        servers.find(_.name == name) match {
+          case None => screen(_.addMessage(MessageKind.Error, s"MCP server '$name' not found."))
+          case Some(existing) =>
+            val updated = existing.copy(
+              transport = transport.getOrElse(existing.transport),
+              command = command.orElse(existing.command),
+              args = args.getOrElse(existing.args),
+              env = env.getOrElse(existing.env),
+              url = url.orElse(existing.url),
+              enabled = enabled.getOrElse(existing.enabled),
+              keywords = keywords.getOrElse(existing.keywords),
+            )
+            repo(_.upsertMcpServer(updated)).foldZIO(
+              err => screen(_.addMessage(MessageKind.Error, s"Edit MCP server failed: $err")),
+              s => screen(_.addMessage(MessageKind.System, s"MCP server '${s.name}' updated.")),
+            )
+        },
+    )
+
+  private def deleteMcpServer(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.deleteMcpServer(name)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Delete MCP server failed: $err")),
+      ok =>
+        if (ok) screen(_.addMessage(MessageKind.System, s"MCP server '$name' deleted."))
+        else screen(_.addMessage(MessageKind.Error, s"MCP server '$name' not found.")),
+    )
+
+  private val reloadMcpServers: ZIO[Env, Nothing, Unit] =
+    repo(_.reloadMcpServers()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Reload failed: $err")),
+      _ => screen(_.addMessage(MessageKind.System, "MCP servers reloaded.")),
+    )
+
+  private def setMcpEnabled(
+    name:    String,
+    enabled: Boolean,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.listMcpServers()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch MCP servers: $err")),
+      servers =>
+        servers.find(_.name == name) match {
+          case None => screen(_.addMessage(MessageKind.Error, s"MCP server '$name' not found."))
+          case Some(existing) =>
+            repo(_.upsertMcpServer(existing.copy(enabled = enabled))).foldZIO(
+              err => screen(_.addMessage(MessageKind.Error, s"Update failed: $err")),
+              _ =>
+                screen(
+                  _.addMessage(
+                    MessageKind.System,
+                    s"MCP server '$name' ${if (enabled) "enabled" else "disabled"}.",
+                  ),
+                ),
+            )
+        },
+    )
+
+  // ─── Skill extensions ─────────────────────────────────────────────────────────
+
+  private def showSkillDocs(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.skill.listSkills()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not fetch skills: $err")),
+      skills =>
+        skills.find(_.name == name) match {
+          case None => screen(_.addMessage(MessageKind.Error, s"Skill '$name' not found."))
+          case Some(skill) =>
+            skill.doc match {
+              case None    => screen(_.addMessage(MessageKind.System, s"No documentation available for '$name'."))
+              case Some(d) => screen(_.addMessage(MessageKind.System, s"Docs for '$name':\n$d"))
+            }
+        },
+    )
+
+  private def validateSkill(name: String): ZIO[Env, Nothing, Unit] =
+    repo(_.validateSkill(name)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Validate failed: $err")),
+      { case (ok, msg) =>
+        val status = if (ok) "✓ PASS" else "✗ FAIL"
+        screen(_.addMessage(MessageKind.System, s"Skill '$name' validation: $status\n$msg"))
+      },
+    )
+
+  private val listCustomSkills: ZIO[Env, Nothing, Unit] =
+    repo(_.allCustomSkills()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list custom skills: $err")),
+      {
+        case Nil      => screen(_.addMessage(MessageKind.System, "No custom skills found."))
+        case versions =>
+          val lines = versions
+            .map(v => s"  [${v.id}] ${v.skillName}  v${v.version}  tier=${v.tier}  status=${v.status}")
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Custom skills:\n$lines"))
+      },
+    )
+
+  private val listPendingSkills: ZIO[Env, Nothing, Unit] =
+    repo(_.pendingSkillVersions()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list pending skills: $err")),
+      {
+        case Nil      => screen(_.addMessage(MessageKind.System, "No pending skill versions."))
+        case versions =>
+          val lines = versions
+            .map(v => s"  [${v.id}] ${v.skillName}  v${v.version}  tier=${v.tier}")
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Pending skill versions:\n$lines"))
+      },
+    )
+
+  private def listSkillVersions(skillId: SkillId): ZIO[Env, Nothing, Unit] =
+    repo(_.skillVersions(skillId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not list versions: $err")),
+      {
+        case Nil      => screen(_.addMessage(MessageKind.System, s"No versions for skill ${skillId.value}."))
+        case versions =>
+          val lines = versions
+            .map(v => s"  [${v.id}] v${v.version}  status=${v.status}  created=${v.createdAt}")
+            .mkString("\n")
+          screen(_.addMessage(MessageKind.System, s"Versions for skill ${skillId.value}:\n$lines"))
+      },
+    )
+
+  private def createSkillDraft(manifestFile: String): ZIO[Env, Nothing, Unit] =
+    ZIO
+      .attempt {
+        val path = Paths.get(manifestFile)
+        new String(Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8)
+      }.foldZIO(
+        err => screen(_.addMessage(MessageKind.Error, s"Could not read '$manifestFile': ${err.getMessage}")),
+        manifestJson =>
+          repo(_.createSkillDraft(manifestJson)).foldZIO(
+            err => screen(_.addMessage(MessageKind.Error, s"Create skill draft failed: $err")),
+            v =>
+              screen(
+                _.addMessage(
+                  MessageKind.System,
+                  s"Skill draft created [${v.id}] ${v.skillName}  v${v.version}  status=${v.status}",
+                ),
+              ),
+          ),
+      )
+
+  private def advanceSkillLifecycle(versionId: String): ZIO[Env, Nothing, Unit] =
+    repo(_.advanceSkillLifecycle(versionId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Advance lifecycle failed: $err")),
+      r =>
+        screen(
+          _.addMessage(
+            MessageKind.System,
+            s"Skill ${r.versionId}  newStatus=${r.newStatus}" +
+              (if (r.errors.nonEmpty) s"\nErrors: ${r.errors.mkString(", ")}" else "") +
+              (if (r.info.nonEmpty) s"\nInfo: ${r.info.mkString(", ")}" else ""),
+          ),
+        ),
+    )
+
+  private def approveSkillVersion(versionId: String): ZIO[Env, Nothing, Unit] =
+    repo(_.approveSkillVersion(versionId)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Approve failed: $err")),
+      r => screen(_.addMessage(MessageKind.System, s"Skill ${r.versionId} approved  newStatus=${r.newStatus}")),
+    )
+
+  private def rejectSkillVersion(
+    versionId: String,
+    reason:    String,
+  ): ZIO[Env, Nothing, Unit] =
+    repo(_.rejectSkillVersion(versionId, reason)).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Reject failed: $err")),
+      r => screen(_.addMessage(MessageKind.System, s"Skill ${r.versionId} rejected  newStatus=${r.newStatus}")),
+    )
+
+  // ─── Events ─────────────────────────────────────────────────────────────────
+
+  private val eventsTail: ZIO[Env, Nothing, Unit] = {
+    for {
+      _      <- ZIO.serviceWithZIO[ShellState](_.interruptEventLog)
+      screen <- ZIO.service[JorlanScreen]
+      _      <- screen.addMessage(MessageKind.System, "Tailing event log... (use /new or /quit to stop)")
+      fiber  <- ZIO
+        .scoped(
+          SubscriptionClient
+            .eventLogTail
+            .foreach { e =>
+              val actor = e.actorId.map(id => s" actor=$id").getOrElse("")
+              val sess = e.sessionId.map(id => s" session=$id").getOrElse("")
+              screen.addMessage(MessageKind.System, s"${e.occurredAt}  ${e.eventType}$actor$sess")
+            }
+            .foldZIO(
+              err => screen.addMessage(MessageKind.Error, s"Event stream error: $err"),
+              _ => screen.addMessage(MessageKind.System, "Event log stream ended."),
+            ),
+        )
+        .ensuring(ZIO.serviceWithZIO[ShellState](_.setEventLogFiber(None)))
+        .fork
+      _ <- ZIO.serviceWithZIO[ShellState](_.setEventLogFiber(Some(fiber)))
+    } yield ()
+  }
+
+  private def eventsList(count: Int): ZIO[Env, Nothing, Unit] = {
+    for {
+      _      <- ZIO.serviceWithZIO[ShellState](_.interruptEventLog)
+      screen <- ZIO.service[JorlanScreen]
+      _      <- screen.addMessage(MessageKind.System, s"Fetching last $count events...")
+      fiber  <- ZIO
+        .scoped(
+          SubscriptionClient
+            .eventLogTail
+            .take(count.toLong)
+            .runCollect
+            .foldZIO(
+              err => screen.addMessage(MessageKind.Error, s"Event stream error: $err"),
+              events => {
+                val lines = events.map { e =>
+                  val actor = e.actorId.map(id => s" actor=$id").getOrElse("")
+                  val sess = e.sessionId.map(id => s" session=$id").getOrElse("")
+                  s"  ${e.occurredAt}  ${e.eventType}$actor$sess"
+                }.mkString("\n")
+                if (events.isEmpty) screen.addMessage(MessageKind.System, "No events received.")
+                else screen.addMessage(MessageKind.System, s"Events:\n$lines")
+              },
+            ),
+        )
+        .ensuring(ZIO.serviceWithZIO[ShellState](_.setEventLogFiber(None)))
+        .fork
+      _ <- ZIO.serviceWithZIO[ShellState](_.setEventLogFiber(Some(fiber)))
+    } yield ()
+  }
+
+  // ─── Dashboard ─────────────────────────────────────────────────────────────
+
+  private val showDashboard: ZIO[Env, Nothing, Unit] =
+    repo(_.dashboardKpis()).foldZIO(
+      err => screen(_.addMessage(MessageKind.Error, s"Could not load dashboard: $err")),
+      kpis => {
+        val rate = f"${kpis.schedulerSuccessRate * 100}%.1f%%"
+        screen(
+          _.addMessage(
+            MessageKind.System,
+            s"Dashboard:\n" +
+              s"  Active Sessions:      ${kpis.activeSessions}\n" +
+              s"  Events Today:         ${kpis.eventsToday}\n" +
+              s"  Skill Invocations:    ${kpis.skillInvocations}\n" +
+              s"  Scheduler Success:    $rate",
+          ),
+        )
+      },
+    )
 
 }

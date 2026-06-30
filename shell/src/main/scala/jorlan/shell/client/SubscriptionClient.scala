@@ -31,6 +31,15 @@ import scala.language.unsafeNulls
   *
   * Protocol sequence: connection_init → connection_ack → start → data* → complete
   */
+case class EventLogEntry(
+  id:          Long,
+  eventType:   String,
+  actorId:     Option[Long],
+  sessionId:   Option[Long],
+  occurredAt:  String,
+  payloadJson: Option[String],
+)
+
 trait SubscriptionClient {
 
   /** Returns a stream of [[ResponseChunk]] tokens for the given session. */
@@ -38,6 +47,9 @@ trait SubscriptionClient {
 
   /** Returns a stream of [[ToolEventResult]] events for the given session (SkillInvoked / SkillSucceeded). */
   def toolEventsStream(sessionId: AgentSessionId): ZStream[Scope, String, ToolEventResult.ToolEventResultView]
+
+  /** Returns a live stream of event-log entries. */
+  def eventLogTail: ZStream[Scope, String, EventLogEntry]
 
 }
 
@@ -50,6 +62,9 @@ object SubscriptionClient {
     sessionId: AgentSessionId,
   ): ZStream[SubscriptionClient & Scope, String, ToolEventResult.ToolEventResultView] =
     ZStream.serviceWithStream[SubscriptionClient](_.toolEventsStream(sessionId))
+
+  def eventLogTail: ZStream[SubscriptionClient & Scope, String, EventLogEntry] =
+    ZStream.serviceWithStream[SubscriptionClient](_.eventLogTail)
 
   val live: ZLayer[ShellConfig & AuthClient, Throwable, SubscriptionClient] = ZLayer.scoped {
     for {
@@ -86,6 +101,19 @@ private case class DataPayload(data: AgentResponseData) derives JsonCodec
 
 private case class ToolEventsData(toolEvents: ToolEventData) derives JsonCodec
 private case class ToolEventsPayload(data: ToolEventsData) derives JsonCodec
+
+private case class EventLogEntryData(
+  id:          Long,
+  eventType:   String,
+  actorId:     Option[Long],
+  agentId:     Option[Long],
+  sessionId:   Option[Long],
+  resource:    Option[String],
+  payloadJson: Option[String],
+  occurredAt:  String,
+) derives JsonCodec
+private case class EventLogData(eventLogTail: EventLogEntryData) derives JsonCodec
+private case class EventLogPayload(data: EventLogData) derives JsonCodec
 
 private class SubscriptionClientImpl(
   cfg:     ShellConfig,
@@ -244,6 +272,26 @@ private class SubscriptionClientImpl(
           .map { dp =>
             val td = dp.data.toolEvents
             Some(Right(ToolEventResult.ToolEventResultView(td.sessionId, td.eventType, td.toolName, td.payload)))
+          },
+    )
+  }
+
+  override def eventLogTail: ZStream[Scope, String, EventLogEntry] = {
+    val gqlQuery = JorlanClient.Subscriptions
+      .eventLogTail(JorlanClient.EventLogJson.view)
+      .toGraphQL(useVariables = false)
+      .query
+
+    wsStream[EventLogEntry](
+      gqlQuery,
+      p =>
+        ZIO
+          .fromEither(p.toJson.fromJson[EventLogPayload])
+          .tapError(e => ZIO.logWarning(s"[WS] EventLogPayload decode failed: $e"))
+          .mapError(RuntimeException(_))
+          .map { ep =>
+            val e = ep.data.eventLogTail
+            Some(Right(EventLogEntry(e.id, e.eventType, e.actorId, e.sessionId, e.occurredAt, e.payloadJson)))
           },
     )
   }

@@ -174,7 +174,15 @@ remaining skills.
 - [x] **Vector-backed memory retrieval**: MariaDB vector index, embedding job (via `ai` module),
   `MemoryService.semanticSearch`
 - [ ] Workspace memory snapshots (workspace-scoped memory linked to snapshot artifacts)
-- [ ] Shell parity
+- [x] Shell parity
+  - [x] MCP server management (`/mcp list|add|edit|delete|reload|enable|disable`)
+  - [x] Scheduler full CRUD (`/scheduler create|update|delete|pause|resume|cancel|run|triggers|trigger-add|trigger-delete`)
+  - [x] Roles full management (`/roles update|delete|capabilities|grant|revoke-grant`)
+  - [x] Users reactivate (`/users reactivate`)
+  - [x] Skill docs + validate (`/skills docs|validate`)
+  - [x] Custom skill lifecycle (`/skills list-custom|list-pending|versions|create|advance|approve|reject`)
+  - [x] Event log tail (`/events tail|list`)
+  - [x] Dashboard text stats (`/dashboard`)
 
 #### More Skills
 

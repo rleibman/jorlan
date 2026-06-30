@@ -21,6 +21,31 @@ import scala.language.unsafeNulls
   * Sub-repos provide data-access operations; application-level operations (createSession, submitMessage, etc.) are
   * additional methods. All GQL view → domain conversions are private to [[ZIOClientRepositoriesLive]].
   */
+case class DashboardKpis(
+  activeSessions:     Int,
+  eventsToday:        Int,
+  skillInvocations:   Int,
+  schedulerSuccessRate: Double,
+)
+
+case class SkillVersionInfo2(
+  id:          String,
+  skillId:     Long,
+  skillName:   String,
+  version:     String,
+  tier:        String,
+  status:      SkillStatus,
+  reviewNote:  Option[String],
+  createdAt:   Instant,
+)
+
+case class SkillLifecycleResult(
+  versionId: String,
+  newStatus: SkillStatus,
+  errors:    List[String],
+  info:      List[String],
+)
+
 trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
 
   def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean]
@@ -31,6 +56,54 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
     timedIntervalTurns:   Option[Option[Int]] = None,
     beforeExternalEffect: Option[Boolean] = None,
   ): IO[String, CheckpointPolicyConfig]
+
+  def listMcpServers(): IO[String, List[jorlan.McpServerInfo]]
+  def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo]
+  def deleteMcpServer(name: String): IO[String, Boolean]
+  def reloadMcpServers(): IO[String, Boolean]
+
+  def dashboardKpis(): IO[String, DashboardKpis]
+
+  def updateRole(
+    id:          RoleId,
+    name:        String,
+    description: Option[String],
+  ): IO[String, Role]
+  def deleteRole(id: RoleId): IO[String, Boolean]
+
+  def createJob(
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob]
+  def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob]
+  def addTrigger(
+    jobId:       SchedulerJobId,
+    triggerType: TriggerType,
+    expression:  String,
+  ): IO[String, SchedulerTrigger]
+  def deleteTrigger(id: SchedulerTriggerId): IO[String, Boolean]
+
+  def allCustomSkills(): IO[String, List[SkillVersionInfo2]]
+  def pendingSkillVersions(): IO[String, List[SkillVersionInfo2]]
+  def skillVersions(skillId: SkillId): IO[String, List[SkillVersionInfo2]]
+  def createSkillDraft(manifestJson: String): IO[String, SkillVersionInfo2]
+  def advanceSkillLifecycle(versionId: String): IO[String, SkillLifecycleResult]
+  def approveSkillVersion(versionId: String): IO[String, SkillLifecycleResult]
+  def rejectSkillVersion(versionId: String, reason: String): IO[String, SkillLifecycleResult]
+  def allKnownCapabilities(): IO[String, List[CapabilityName]]
+  def validateSkill(name: String): IO[String, (Boolean, String)]
 
 }
 
@@ -687,6 +760,184 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       timedIntervalTurns = v.timedIntervalTurns,
       beforeExternalEffect = v.beforeExternalEffect,
     )
+
+  // ── MCP ────────────────────────────────────────────────────────────────────
+
+  private def toMcpServerInfo(
+    v: JorlanClient.McpServerView.McpServerViewView[JorlanClient.McpEnvVar.McpEnvVarView],
+  ): jorlan.McpServerInfo =
+    jorlan.McpServerInfo(v.name, v.transport, v.command, v.args, v.env.map(e => McpEnvVarInfo(e.key, e.value)), v.url, v.enabled, v.keywords)
+
+  override def listMcpServers(): IO[String, List[jorlan.McpServerInfo]] =
+    gqlClient
+      .run(JorlanClient.Queries.mcpServers(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)))
+      .map(_.getOrElse(List.empty).map(toMcpServerInfo))
+
+  override def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo] = {
+    val envInputs = server.env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value))
+    gqlClient
+      .run(
+        JorlanClient.Mutations.upsertMcpServer(
+          server.name,
+          server.transport,
+          server.command,
+          server.args,
+          envInputs,
+          server.url,
+          server.enabled,
+          server.keywords,
+        )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)),
+      )
+      .flatMap(r => ZIO.fromOption(r).orElseFail("upsertMcpServer returned nothing"))
+      .map(toMcpServerInfo)
+  }
+
+  override def deleteMcpServer(name: String): IO[String, Boolean] =
+    gqlClient.run(JorlanClient.Mutations.deleteMcpServer(name)).map(_.getOrElse(false))
+
+  override def reloadMcpServers(): IO[String, Boolean] =
+    gqlClient.run(JorlanClient.Mutations.reloadMcpServers(())).map(_.getOrElse(false))
+
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+
+  override def dashboardKpis(): IO[String, DashboardKpis] = {
+    val sel = (JorlanClient.DashboardStats.activeSessionCount ~
+      JorlanClient.DashboardStats.eventCountToday ~
+      JorlanClient.DashboardStats.skillInvocationCount ~
+      JorlanClient.DashboardStats.schedulerSuccessRate).map {
+      case (a, b, c, d) => DashboardKpis(a, b, c, d)
+    }
+    gqlClient
+      .run(JorlanClient.Queries.dashboardStats(sel))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("dashboardStats returned nothing"))
+  }
+
+  // ── Role extensions ────────────────────────────────────────────────────────
+
+  override def updateRole(
+    id:          RoleId,
+    name:        String,
+    description: Option[String],
+  ): IO[String, Role] =
+    gqlClient
+      .run(JorlanClient.Mutations.updateRole(id, name, description)(JorlanClient.Role.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("updateRole returned nothing"))
+      .map(toRole)
+
+  override def deleteRole(id: RoleId): IO[String, Boolean] =
+    gqlClient.run(JorlanClient.Mutations.deleteRole(id)).map(_.getOrElse(false))
+
+  // ── Scheduler extensions ───────────────────────────────────────────────────
+
+  override def createJob(
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob] =
+    gqlClient
+      .run(
+        JorlanClient.Mutations.createJob(name, prompt, None, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
+          JorlanClient.SchedulerJob.view,
+        ),
+      )
+      .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
+      .map(toSchedulerJob)
+
+  override def updateJob(
+    id:              SchedulerJobId,
+    name:            String,
+    prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob] =
+    gqlClient
+      .run(
+        JorlanClient.Mutations.updateJob(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
+          JorlanClient.SchedulerJob.view,
+        ),
+      )
+      .flatMap(r => ZIO.fromOption(r).orElseFail("updateJob returned nothing"))
+      .map(toSchedulerJob)
+
+  override def addTrigger(
+    jobId:       SchedulerJobId,
+    triggerType: TriggerType,
+    expression:  String,
+  ): IO[String, SchedulerTrigger] =
+    gqlClient
+      .run(JorlanClient.Mutations.addTrigger(jobId, triggerType, expression)(JorlanClient.SchedulerTrigger.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("addTrigger returned nothing"))
+      .map(toSchedulerTrigger)
+
+  override def deleteTrigger(id: SchedulerTriggerId): IO[String, Boolean] =
+    gqlClient.run(JorlanClient.Mutations.deleteTrigger(id)).map(_.getOrElse(false))
+
+  // ── Custom Skills ──────────────────────────────────────────────────────────
+
+  private def toSkillVersionInfo2(v: JorlanClient.SkillVersionView.SkillVersionViewView): SkillVersionInfo2 =
+    SkillVersionInfo2(v.id, v.skillId.value, v.skillName, v.version, v.tier, jorlan.SkillStatus.valueOf(v.status.value), v.reviewNote, v.createdAt)
+
+  private def toSkillLifecycleResult(
+    v: JorlanClient.SkillLifecycleResultView.SkillLifecycleResultViewView,
+  ): SkillLifecycleResult =
+    SkillLifecycleResult(v.versionId, jorlan.SkillStatus.valueOf(v.newStatus.value), v.errors, v.info)
+
+  override def allCustomSkills(): IO[String, List[SkillVersionInfo2]] =
+    gqlClient
+      .run(JorlanClient.Queries.allCustomSkills(JorlanClient.SkillVersionView.view))
+      .map(_.getOrElse(List.empty).map(toSkillVersionInfo2))
+
+  override def pendingSkillVersions(): IO[String, List[SkillVersionInfo2]] =
+    gqlClient
+      .run(JorlanClient.Queries.pendingSkillVersions(JorlanClient.SkillVersionView.view))
+      .map(_.getOrElse(List.empty).map(toSkillVersionInfo2))
+
+  override def skillVersions(skillId: SkillId): IO[String, List[SkillVersionInfo2]] =
+    gqlClient
+      .run(JorlanClient.Queries.skillVersions(skillId)(JorlanClient.SkillVersionView.view))
+      .map(_.getOrElse(List.empty).map(toSkillVersionInfo2))
+
+  override def createSkillDraft(manifestJson: String): IO[String, SkillVersionInfo2] =
+    gqlClient
+      .run(JorlanClient.Mutations.createSkillDraft(manifestJson)(JorlanClient.SkillVersionView.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("createSkillDraft returned nothing"))
+      .map(toSkillVersionInfo2)
+
+  override def advanceSkillLifecycle(versionId: String): IO[String, SkillLifecycleResult] =
+    gqlClient
+      .run(JorlanClient.Mutations.advanceSkillLifecycle(versionId)(JorlanClient.SkillLifecycleResultView.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("advanceSkillLifecycle returned nothing"))
+      .map(toSkillLifecycleResult)
+
+  override def approveSkillVersion(versionId: String): IO[String, SkillLifecycleResult] =
+    gqlClient
+      .run(JorlanClient.Mutations.approveSkillVersion(versionId)(JorlanClient.SkillLifecycleResultView.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("approveSkillVersion returned nothing"))
+      .map(toSkillLifecycleResult)
+
+  override def rejectSkillVersion(versionId: String, reason: String): IO[String, SkillLifecycleResult] =
+    gqlClient
+      .run(JorlanClient.Mutations.rejectSkillVersion(versionId, reason)(JorlanClient.SkillLifecycleResultView.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("rejectSkillVersion returned nothing"))
+      .map(toSkillLifecycleResult)
+
+  override def allKnownCapabilities(): IO[String, List[CapabilityName]] =
+    gqlClient
+      .run(JorlanClient.Queries.allKnownCapabilities)
+      .map(_.getOrElse(List.empty))
+
+  override def validateSkill(name: String): IO[String, (Boolean, String)] =
+    gqlClient
+      .run(JorlanClient.Queries.skillValidate(name)(JorlanClient.SkillValidationResult.view))
+      .flatMap(r => ZIO.fromOption(r).orElseFail("skillValidate returned nothing"))
+      .map(v => (v.ok, v.message))
+
+  // ── Existing impl ──────────────────────────────────────────────────────────
 
   override def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean] =
     gqlClient.run(JorlanClient.Mutations.requestCheckpoint(sessionId)).map(_.getOrElse(false))
