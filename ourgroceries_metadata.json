@@ -1,0 +1,132 @@
+{
+  "result": {
+    "tools": [
+      {
+        "name": "get_lists",
+        "description": "Get all grocery lists with their items. Returns list names, IDs, and all items with their status.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "add_item",
+        "description": "Add a new item to a grocery list. You can optionally add a note.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "listId": {
+              "type": "string",
+              "description": "The ID of the list to add the item to"
+            },
+            "value": {
+              "type": "string",
+              "description": "The name/value of the item to add"
+            },
+            "note": {
+              "type": "string",
+              "description": "Optional note for the item",
+              "default": ""
+            }
+          },
+          "required": [
+            "listId",
+            "value"
+          ]
+        }
+      },
+      {
+        "name": "remove_item",
+        "description": "Remove an item from a grocery list",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "listId": {
+              "type": "string",
+              "description": "The ID of the list containing the item"
+            },
+            "itemId": {
+              "type": "string",
+              "description": "The ID of the item to remove"
+            }
+          },
+          "required": [
+            "listId",
+            "itemId"
+          ]
+        }
+      },
+      {
+        "name": "update_item",
+        "description": "Update an item's details (name, category, note, or star rating)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "listId": {
+              "type": "string",
+              "description": "The ID of the list containing the item"
+            },
+            "itemId": {
+              "type": "string",
+              "description": "The ID of the item to update"
+            },
+            "newValue": {
+              "type": "string",
+              "description": "The new name/value for the item"
+            },
+            "categoryId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional category ID (or null to remove category)"
+            },
+            "note": {
+              "type": "string",
+              "description": "Optional note",
+              "default": ""
+            },
+            "star": {
+              "type": "number",
+              "description": "Star rating (0 or 1)",
+              "default": 0
+            }
+          },
+          "required": [
+            "listId",
+            "itemId",
+            "newValue"
+          ]
+        }
+      },
+      {
+        "name": "toggle_item",
+        "description": "Mark an item as crossed off or uncrossed",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "listId": {
+              "type": "string",
+              "description": "The ID of the list containing the item"
+            },
+            "itemId": {
+              "type": "string",
+              "description": "The ID of the item to toggle"
+            },
+            "crossedOff": {
+              "type": "boolean",
+              "description": "Whether the item should be crossed off (true) or not (false)"
+            }
+          },
+          "required": [
+            "listId",
+            "itemId",
+            "crossedOff"
+          ]
+        }
+      }
+    ]
+  },
+  "jsonrpc": "2.0",
+  "id": 2
+}
