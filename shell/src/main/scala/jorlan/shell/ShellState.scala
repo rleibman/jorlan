@@ -35,6 +35,7 @@ case class LiveSession(
 class ShellState private (
   liveSessionRef:   Ref[Option[LiveSession]],
   drainingFiberRef: Ref[Option[Fiber[Nothing, Unit]]],
+  eventLogFiberRef: Ref[Option[Fiber[Nothing, Unit]]],
 ) {
 
   /** Returns the currently active [[LiveSession]], or `None` if no session has been started. */
@@ -59,13 +60,25 @@ class ShellState private (
   def interruptDrain: UIO[Unit] =
     drainingFiberRef.getAndSet(None).flatMap(f => ZIO.foreachDiscard(f)(_.interrupt).unit)
 
+  /** Returns any currently-running event-log tail fiber. */
+  def getEventLogFiber: UIO[Option[Fiber[Nothing, Unit]]] = eventLogFiberRef.get
+
+  /** Registers the active event-log fiber. Pass `None` when the tail exits. */
+  def setEventLogFiber(f: Option[Fiber[Nothing, Unit]]): UIO[Unit] = eventLogFiberRef.set(f)
+
+  /** Interrupt any running event-log fiber and clear it. */
+  def interruptEventLog: UIO[Unit] =
+    eventLogFiberRef.getAndSet(None).flatMap(f => ZIO.foreachDiscard(f)(_.interrupt).unit)
+
 }
 
 object ShellState {
 
   val make: UIO[ShellState] =
-    (Ref.make(Option.empty[LiveSession]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]))
-      .map { case (lr, df) => ShellState(lr, df) }
+    (Ref.make(Option.empty[LiveSession]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]) <*> Ref.make(
+      Option.empty[Fiber[Nothing, Unit]],
+    ))
+      .map { case (lr, df, ef) => ShellState(lr, df, ef) }
 
   val live: ULayer[ShellState] = ZLayer.fromZIO(make)
 
