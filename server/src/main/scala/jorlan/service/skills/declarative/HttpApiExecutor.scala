@@ -90,9 +90,14 @@ object HttpApiExecutor {
     path: String,
   ): Option[Json] = {
     val parts = path.split('.').filter(_.nonEmpty).toList
-    parts.foldLeft(Option(json)) {
-      case (Some(Json.Obj(fields)), key) => fields.collectFirst { case (`key`, v) => v }
-      case _                             => None
+    parts.foldLeft(Option(json)) { (cur, key) =>
+      cur.flatMap {
+        case Json.Obj(fields) =>
+          fields.collectFirst { case (`key`, v) => v }
+        case Json.Arr(items) =>
+          scala.util.Try(key.toInt).toOption.flatMap(i => items.toList.lift(i))
+        case _ => None
+      }
     }
   }
 
