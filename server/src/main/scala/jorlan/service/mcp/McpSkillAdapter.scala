@@ -81,17 +81,18 @@ class McpSkillAdapter(
     val safeTool = mcpToolName.replaceAll("[^A-Za-z0-9_]", "_")
     val fileName = s"mcp_${sanitizedName}_${safeTool}_${java.lang.System.currentTimeMillis()}.json"
     val dir = spillDir.get
+    val relPath = s"${dir.getFileName.toString}/$fileName"
     ZIO
       .attemptBlocking {
         Files.createDirectories(dir)
         Files.write(dir.resolve(fileName), result.getBytes(StandardCharsets.UTF_8))
       }
-      .mapError(e => JorlanError(s"MCP spill: failed to write workspace file '$fileName': ${e.getMessage}"))
+      .mapError(e => JorlanError(s"MCP spill: failed to write workspace file '$relPath': ${e.getMessage}"))
       .as(
         Json.Str(
           s"[Result too large: ${result.length} bytes — inline limit is $spillThresholdBytes bytes]\n" +
-            s"Full content saved to workspace file: $fileName\n" +
-            s"Use workspace.read with path \"$fileName\" to access the data.",
+            s"Full content saved to workspace file: $relPath\n" +
+            s"Use workspace.read with path \"$relPath\" to access the data.",
         ),
       )
   }
