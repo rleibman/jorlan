@@ -33,9 +33,9 @@ case class LiveSession(
   * subscription fiber that streams tokens back from the server.
   */
 class ShellState private (
-  liveSessionRef:    Ref[Option[LiveSession]],
-  drainingFiberRef:  Ref[Option[Fiber[Nothing, Unit]]],
-  eventLogFiberRef:  Ref[Option[Fiber[Nothing, Unit]]],
+  liveSessionRef:   Ref[Option[LiveSession]],
+  drainingFiberRef: Ref[Option[Fiber[Nothing, Unit]]],
+  eventLogFiberRef: Ref[Option[Fiber[Nothing, Unit]]],
 ) {
 
   /** Returns the currently active [[LiveSession]], or `None` if no session has been started. */
@@ -75,7 +75,9 @@ class ShellState private (
 object ShellState {
 
   val make: UIO[ShellState] =
-    (Ref.make(Option.empty[LiveSession]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]))
+    (Ref.make(Option.empty[LiveSession]) <*> Ref.make(Option.empty[Fiber[Nothing, Unit]]) <*> Ref.make(
+      Option.empty[Fiber[Nothing, Unit]],
+    ))
       .map { case (lr, df, ef) => ShellState(lr, df, ef) }
 
   val live: ULayer[ShellState] = ZLayer.fromZIO(make)

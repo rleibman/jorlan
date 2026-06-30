@@ -218,7 +218,10 @@ object ShellCommand {
   )
 
   @annotation.tailrec
-  private def parseMcpFlags(tokens: List[String], acc: McpFlags = McpFlags()): McpFlags =
+  private def parseMcpFlags(
+    tokens: List[String],
+    acc:    McpFlags = McpFlags(),
+  ): McpFlags =
     tokens match {
       case "--transport" :: v :: rest => parseMcpFlags(rest, acc.copy(transport = Some(v)))
       case "--command" :: v :: rest   => parseMcpFlags(rest, acc.copy(command = Some(v)))
@@ -230,12 +233,12 @@ object ShellCommand {
           case _             => acc.env
         }
         parseMcpFlags(rest, acc.copy(env = newEnv))
-      case "--keywords" :: v :: rest  =>
+      case "--keywords" :: v :: rest =>
         parseMcpFlags(rest, acc.copy(keywords = v.split(",").map(_.trim).filter(_.nonEmpty).toList))
-      case "--disabled" :: rest       => parseMcpFlags(rest, acc.copy(enabled = Some(false)))
-      case "--enabled" :: rest        => parseMcpFlags(rest, acc.copy(enabled = Some(true)))
-      case _ :: rest                  => parseMcpFlags(rest, acc)
-      case Nil                        => acc
+      case "--disabled" :: rest => parseMcpFlags(rest, acc.copy(enabled = Some(false)))
+      case "--enabled" :: rest  => parseMcpFlags(rest, acc.copy(enabled = Some(true)))
+      case _ :: rest            => parseMcpFlags(rest, acc)
+      case Nil                  => acc
     }
 
   /** Parse a raw input line into a [[ShellCommand]]. Starts with `/` → command; otherwise → message. */
@@ -299,19 +302,19 @@ object ShellCommand {
         case "skills" :: "list-pending" :: _                                => SkillsListPending
         case "skills" :: "versions" :: idStr :: _ if idStr.toLongOption.isDefined =>
           SkillsVersions(SkillId(idStr.toLong))
-        case "skills" :: "create" :: manifestFile :: _  => SkillsCreate(manifestFile)
-        case "skills" :: "advance" :: versionId :: _    => SkillsAdvance(versionId)
-        case "skills" :: "approve" :: versionId :: _    => SkillsApprove(versionId)
+        case "skills" :: "create" :: manifestFile :: _                  => SkillsCreate(manifestFile)
+        case "skills" :: "advance" :: versionId :: _                    => SkillsAdvance(versionId)
+        case "skills" :: "approve" :: versionId :: _                    => SkillsApprove(versionId)
         case "skills" :: "reject" :: versionId :: rest if rest.nonEmpty =>
           SkillsReject(versionId, rest.mkString(" "))
-        case "skills" :: _                                                  => Skills
-        case "contacts" :: "find" :: rest if rest.nonEmpty                  => ContactsFind(rest.mkString(" "))
-        case "contacts" :: _                                                => Unknown("/contacts")
-        case "capabilities" :: _                                            => Capabilities
-        case "users" :: "list" :: "all" :: _                                => UsersList(None)
-        case "users" :: "list" :: "inactive" :: _                           => UsersList(Some(false))
-        case "users" :: "list" :: _                                         => UsersList(Some(true))
-        case "users" :: "create" :: displayName :: email :: _               =>
+        case "skills" :: _                                    => Skills
+        case "contacts" :: "find" :: rest if rest.nonEmpty    => ContactsFind(rest.mkString(" "))
+        case "contacts" :: _                                  => Unknown("/contacts")
+        case "capabilities" :: _                              => Capabilities
+        case "users" :: "list" :: "all" :: _                  => UsersList(None)
+        case "users" :: "list" :: "inactive" :: _             => UsersList(Some(false))
+        case "users" :: "list" :: _                           => UsersList(Some(true))
+        case "users" :: "create" :: displayName :: email :: _ =>
           UsersCreate(displayName, email)
         case "users" :: "deactivate" :: idStr :: _ if idStr.toLongOption.isDefined =>
           UsersDeactivate(UserId(idStr.toLong))
@@ -401,25 +404,34 @@ object ShellCommand {
         case "calendar" :: "list" :: date :: _                      => CalendarList(Some(date))
         case "calendar" :: "list" :: Nil                            => CalendarList(None)
         case "calendar" :: _                                        => Unknown("/calendar")
-        case "mcp" :: "list" :: _                        => McpList
-        case "mcp" :: "add" :: name :: transport :: rest =>
+        case "mcp" :: "list" :: _                                   => McpList
+        case "mcp" :: "add" :: name :: transport :: rest            =>
           val f = parseMcpFlags(rest)
           McpAdd(name, transport, f.command, f.args, f.env, f.url, f.enabled.getOrElse(true), f.keywords)
-        case "mcp" :: "edit" :: name :: rest             =>
+        case "mcp" :: "edit" :: name :: rest =>
           val f = parseMcpFlags(rest)
-          McpEdit(name, f.transport, f.command, Some(f.args).filter(_.nonEmpty), Some(f.env).filter(_.nonEmpty), f.url, f.enabled, Some(f.keywords).filter(_.nonEmpty))
-        case "mcp" :: "delete" :: name :: _              => McpDelete(name)
-        case "mcp" :: "reload" :: _                      => McpReload
-        case "mcp" :: "enable" :: name :: _              => McpEnable(name)
-        case "mcp" :: "disable" :: name :: _             => McpDisable(name)
-        case "mcp" :: _                                  => McpList
-        case "events" :: "tail" :: _                                => EventsTail
+          McpEdit(
+            name,
+            f.transport,
+            f.command,
+            Some(f.args).filter(_.nonEmpty),
+            Some(f.env).filter(_.nonEmpty),
+            f.url,
+            f.enabled,
+            Some(f.keywords).filter(_.nonEmpty),
+          )
+        case "mcp" :: "delete" :: name :: _                          => McpDelete(name)
+        case "mcp" :: "reload" :: _                                  => McpReload
+        case "mcp" :: "enable" :: name :: _                          => McpEnable(name)
+        case "mcp" :: "disable" :: name :: _                         => McpDisable(name)
+        case "mcp" :: _                                              => McpList
+        case "events" :: "tail" :: _                                 => EventsTail
         case "events" :: "list" :: n :: _ if n.toIntOption.isDefined => EventsList(n.toInt)
-        case "events" :: "list" :: _                                => EventsList(50)
-        case "events" :: _                                          => EventsTail
-        case "dashboard" :: _                                       => Dashboard
-        case other :: _                                             => Unknown(s"/$other")
-        case Nil                                                    => Unknown("/")
+        case "events" :: "list" :: _                                 => EventsList(50)
+        case "events" :: _                                           => EventsTail
+        case "dashboard" :: _                                        => Dashboard
+        case other :: _                                              => Unknown(s"/$other")
+        case Nil                                                     => Unknown("/")
       }
     }
   }
