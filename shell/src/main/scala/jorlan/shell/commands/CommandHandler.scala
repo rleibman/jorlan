@@ -1034,7 +1034,7 @@ object CommandHandler {
     }
 
     repo(_.user.findContacts(Some(name))).foldZIO(
-      err => screen(_.addMessage(MessageKind.Error, s"contacts.find failed: $err")),
+      err => screen(_.addMessage(MessageKind.Error, s"user_mgmt.find failed: $err")),
       json => {
         val users: Seq[Json] = json match {
           case Json.Obj(root) =>

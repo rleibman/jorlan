@@ -9,7 +9,7 @@ package jorlan.testing
 import ai.{EmbeddingModel, EmbeddingStore}
 import dev.langchain4j.data.embedding.Embedding
 import dev.langchain4j.data.segment.TextSegment
-import dev.langchain4j.model.embedding.{EmbeddingModel => JEmbeddingModel}
+import dev.langchain4j.model.embedding.EmbeddingModel as JEmbeddingModel
 import dev.langchain4j.model.output.Response
 import dev.langchain4j.store.embedding.{EmbeddingSearchRequest, EmbeddingSearchResult}
 import zio.*

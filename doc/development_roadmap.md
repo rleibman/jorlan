@@ -71,7 +71,7 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 ### Approvals Page (`ApprovalsPage`)
 
-- [x] Live approval list via `approvalNotifications` subscription
+- [x] Live approval list via `approvalNotifications` subscription (wired in Sprint3/approval-wiring)
 - [x] Table: capability, agent, requested scope, timestamp
 - [x] Approve / Deny buttons → `decideApproval` mutation
 - [ ] Badge on nav item showing pending count (deferred — requires global state)
@@ -142,6 +142,28 @@ See `doc/mini-designs/phase15-web-frontend.md` for full design.
 
 ---
 
+## Sprint3: Approval Wiring
+
+**Goal:** Close the gap between the approval data model (which is complete) and the live end-to-end flow where an
+agent's tool call actually pauses and waits for a human to approve or deny it in the UI.
+
+- [x] **`ApprovalHub` service**: new ZIO service with a `Hub[ApprovalRequest]` for broadcasting new requests to the
+  GraphQL subscription, plus a `Ref[Map[ApprovalRequestId, Promise[Nothing, Boolean]]]` to let agent fibers block until
+  a human decides. Handles the race between `completeDecision` and `awaitDecision`.
+- [x] **Wire `ApprovalServiceImpl`**: inject `ApprovalHub`; call `hub.notifyNewRequest(saved)` in `requestApproval`;
+  call `hub.completeDecision(id, approved)` in `recordDecision` after persisting the decision.
+- [x] **Wire `SkillRegistry.checkCapabilities`**: replace the direct `CapabilityEvaluator.evaluate` call with
+  `ApprovalService.authorize`; on `PendingApproval` result, call `approvalHub.awaitDecision(id, 10.minutes)` and block
+  the agent fiber; map the outcome to `None` (approved) or `Some(reason)` (denied/timed out).
+- [x] **Wire `approvalNotifications` subscription**: change `ZStream.empty` in `JorlanAPI` to
+  `ZStream.unwrap(approvalHub.subscribeToNewRequests)`.
+- [x] **Update `JorlanApiEnv` and `EnvironmentBuilder`**: add `ApprovalHub` to the type alias and `EnvironmentBuilder.live`.
+- [x] **Update `liveSecure` / `liveSecureWith` layers** in `SkillRegistry`: inject `ApprovalService` and `ApprovalHub`.
+- [x] **Tests**: unit test for `ApprovalHub` (race safety, timeout, happy path); update `SkillRegistry` tests to verify
+  that a tool with a required capability blocks until approval is given and resumes correctly.
+
+---
+
 ## Phase 16: Advanced Features
 
 **Goal:** Full platform feature set — declarative skills, agent-authored skills, MCP import, vector memory, and
@@ -160,10 +182,10 @@ remaining skills.
   schema validation on install
 - [x] **Agent-authored skill lifecycle** (Tier 5 → Active): draft → schema validated → permission reviewed → sandbox
   tested → awaiting approval → active (full state machine per design doc)
-- [ ] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
+- [x] **RSS/news feed skill**: fetch and parse RSS/Atom feeds, return recent entries. No auth required. New sbt
   module. Tools: `rss.fetch` (URL → list of entries), `rss.list_saved` / `rss.save_feed` / `rss.remove_feed` (
   persist watched feeds in `server_settings`).
-- [ ] **Discord connector**
+- [x] **Discord connector**
 - [ ] **Discord oauth**
 - [ ] **Telegram Oauth**
 - [ ] **Slack connector**: Slack Bot API, message normalization, identity resolution

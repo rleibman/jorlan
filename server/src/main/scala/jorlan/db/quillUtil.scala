@@ -9,19 +9,18 @@ package jorlan.db
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import io.getquill.*
 import jorlan.*
-import jorlan.*
+import jorlan.db.repository.RepositoryError
 import just.semver.{ParseError, SemVer}
 import zio.http.MediaType
 import zio.json.*
 import zio.json.ast.Json
 
 import java.net.URI
-import java.security.{KeyFactory, PublicKey}
 import java.security.spec.X509EncodedKeySpec
+import java.security.{KeyFactory, PublicKey}
 import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.Base64
 import scala.language.unsafeNulls
-import jorlan.db.repository.RepositoryError
 
 /** Constructs an unmanaged [[HikariDataSource]] from [[DatabaseConfig]].
   *

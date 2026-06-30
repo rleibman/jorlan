@@ -24,11 +24,19 @@ Routes a text message to a user's preferred channel (Telegram preferred when con
 
 **Input:** `{ "message": "<text>", "userId": 42 }`
 
-Omit `userId` to notify the currently authenticated user. Use `contacts.find` to look up user IDs for other users.
+Omit `userId` to notify the currently authenticated user. Use `users.find` to look up user IDs for other users.
 
 ### `notify.channel`
 
-**Input:** `{ "message": "<text>", "channelType": "Telegram", "channelUserId": "123456789" }`
+Sends a message to a specific user on a given connector channel. Supported `channelType` values depend on which connectors are active.
+
+**Telegram example:**
+`{ "message": "<text>", "channelType": "Telegram", "channelUserId": "123456789" }`
+
+**Discord example:**
+`{ "message": "<text>", "channelType": "Discord", "channelUserId": "<discord-user-snowflake-id>" }`
+
+To notify via a Discord guild channel instead of a DM, use `discord.send_message` directly.
 
 ---
 

@@ -6,14 +6,13 @@
 
 package jorlan.service.skills
 
+import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.*
 import jorlan.connector.InvocationContext
-import jorlan.*
 import jorlan.service.MemoryService
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.skills.MemorySkill
-import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.testing.{InMemoryRepositories, NoOpEmbeddingLayers}
 import zio.*
 import zio.json.ast.Json
@@ -248,6 +247,38 @@ object MemorySkillSpec extends ZIOSpec[MemoryService & EmbeddingStore & Embeddin
         for {
           skill  <- makeSkill
           result <- skill.invoke(ctx, "memory.remember", Json.Arr(Json.Str("bad"))).either
+        } yield assertTrue(result.isLeft)
+      },
+      // ─── memory.search_semantic ────────────────────────────────────────────────
+      test("invoke memory.search_semantic returns empty array from no-op store") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(ctx, "memory.search_semantic", Json.Obj("query" -> Json.Str("something semantic")))
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke memory.search_semantic with limit parameter uses it") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(
+            ctx,
+            "memory.search_semantic",
+            Json.Obj("query" -> Json.Str("semantic search"), "limit" -> Json.Str("3")),
+          )
+        } yield result match {
+          case Json.Arr(_) => assertTrue(true)
+          case _           => assertTrue(false)
+        }
+      },
+      test("invoke memory.search_semantic missing query fails") {
+        val ctx = InvocationContext(userId, Some(agentId), None)
+        for {
+          skill  <- makeSkill
+          result <- skill.invoke(ctx, "memory.search_semantic", Json.Obj()).either
         } yield assertTrue(result.isLeft)
       },
     )

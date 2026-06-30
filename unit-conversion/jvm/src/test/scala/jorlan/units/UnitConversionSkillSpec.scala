@@ -582,6 +582,90 @@ object UnitConversionSkillSpec extends ZIOSpecDefault {
           result <- skill.invoke(dummyCtx, "units.convert", convertArgs(1.0, "km", "furlongs")).exit
         } yield assert(result)(failsWithA[ValidationError])
       },
+      // ─── Length: uncovered singular aliases ──────────────────────────────
+      test("'meter' alias works as fromUnit") {
+        for { result <- convert(1.0, "meter", "cm") } yield assertTrue(math.abs(result - 100.0) < 0.001)
+      },
+      test("'meter' alias works as toUnit") {
+        for { result <- convert(100.0, "cm", "meter") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      test("'kilometre' alias works as fromUnit") {
+        for { result <- convert(1.0, "kilometre", "m") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      test("'kilometre' alias works as toUnit") {
+        for { result <- convert(1000.0, "m", "kilometre") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      test("'centimetre' alias works as fromUnit") {
+        for { result <- convert(100.0, "centimetre", "m") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      test("'millimetre' alias works as fromUnit") {
+        for { result <- convert(1000.0, "millimetre", "m") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      // ─── Volume: uncovered plural UK aliases ─────────────────────────────
+      test("'millilitres' alias works as toUnit") {
+        for { result <- convert(1.0, "l", "millilitres") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      test("'millilitres' alias works as fromUnit") {
+        for { result <- convert(1000.0, "millilitres", "l") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      test("'milliliters' alias works as toUnit") {
+        for { result <- convert(1.0, "l", "milliliters") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      // ─── normalizeKey: superscript ² → 2 ────────────────────────────────
+      test("superscript ² in unit name is normalized to '2'") {
+        // "m²" normalizes to "m2" (area), "ft²" normalizes to "ft2"
+        for { result <- convert(1.0, "m²", "ft²") } yield assertTrue(result > 10.7 && result < 10.8)
+      },
+      // ─── normalizeKey: whitespace trimming ───────────────────────────────
+      test("leading/trailing whitespace in unit name is normalized") {
+        for { result <- convert(1.0, " km ", " m ") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      // ─── Mass: uncovered aliases as fromUnit ─────────────────────────────
+      test("'lbs' alias works as fromUnit") {
+        for { result <- convert(1.0, "lbs", "g") } yield assertTrue(result > 453.0 && result < 454.0)
+      },
+      test("'t' alias for tonne works as fromUnit") {
+        for { result <- convert(1.0, "t", "kg") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      // ─── Velocity: uncovered aliases as fromUnit ─────────────────────────
+      test("'kph' alias works as fromUnit") {
+        for { result <- convert(3.6, "kph", "m/s") } yield assertTrue(result > 0.99 && result < 1.01)
+      },
+      test("'kmh' alias works as fromUnit") {
+        for { result <- convert(3.6, "kmh", "mps") } yield assertTrue(result > 0.99 && result < 1.01)
+      },
+      // ─── Area: squarefoot/squaremeter aliases as fromUnit ─────────────────
+      test("'squarefoot' alias works as fromUnit") {
+        for { result <- convert(1.0, "squarefoot", "m2") } yield assertTrue(result > 0.092 && result < 0.093)
+      },
+      test("'squarefeet' alias works as fromUnit") {
+        for { result <- convert(10.764, "squarefeet", "m2") } yield assertTrue(result > 0.99 && result < 1.01)
+      },
+      // ─── Energy: calorie alias as fromUnit ────────────────────────────────
+      test("'calorie' alias works as fromUnit") {
+        for { result <- convert(1.0, "calorie", "j") } yield assertTrue(math.abs(result - 4.184) < 0.001)
+      },
+      test("'kilocalorie' alias works as fromUnit") {
+        for { result <- convert(1.0, "kilocalorie", "j") } yield assertTrue(math.abs(result - 4184.0) < 0.1)
+      },
+      // ─── Power: watt/kilowatt aliases as fromUnit ────────────────────────
+      test("'watt' alias works as fromUnit") {
+        for { result <- convert(1000.0, "watt", "kw") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      // ─── Time: 'days' alias works as fromUnit ────────────────────────────
+      test("'days' alias works as fromUnit") {
+        for { result <- convert(1.0, "days", "hours") } yield assertTrue(math.abs(result - 24.0) < 0.001)
+      },
+      test("'minutes' alias works as fromUnit") {
+        for { result <- convert(60.0, "minutes", "h") } yield assertTrue(math.abs(result - 1.0) < 0.001)
+      },
+      // ─── Digital Information: 'gigabytes'/'terabytes' as fromUnit ─────────
+      test("'gigabytes' alias works as fromUnit") {
+        for { result <- convert(1.0, "gigabytes", "mb") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
+      test("'terabytes' alias works as fromUnit") {
+        for { result <- convert(1.0, "terabytes", "gb") } yield assertTrue(math.abs(result - 1000.0) < 0.001)
+      },
     )
 
 }

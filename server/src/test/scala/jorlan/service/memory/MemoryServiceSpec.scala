@@ -209,14 +209,15 @@ object MemoryServiceSpec extends ZIOSpec[MemoryService] {
       },
       test("MemoryService companion: query delegates to implementation") {
         for {
-          result <- MemoryService.query(MemoryScope.User, userId, agentId)
+          svc    <- ZIO.service[MemoryService]
+          result <- svc.query(MemoryScope.User, userId, agentId)
         } yield assertTrue(result.isInstanceOf[List[?]])
       },
       test("MemoryService companion: forget delegates to implementation") {
         for {
           svc    <- ZIO.service[MemoryService]
           stored <- svc.store(makeRecord("to-forget", "delete me"))
-          result <- MemoryService.forget(stored.id, userId)
+          result <- svc.forget(stored.id, userId)
         } yield assertTrue(result)
       },
     ) @@ TestAspect.sequential) +

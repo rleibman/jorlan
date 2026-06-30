@@ -8,7 +8,6 @@ package jorlan.testing
 
 import jorlan.*
 import jorlan.db.repository.*
-import jorlan.*
 import jorlan.service.EventLogFilter
 import zio.*
 import zio.json.*
@@ -944,11 +943,14 @@ object InMemoryRepositories {
               name <- skills.get(v.skillId.value).map(_.name)
             } yield (v, name)
 
-        override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] = ???
+        override def getConnector(id: ConnectorInstanceId): RepositoryTask[Option[ConnectorInstance]] =
+          ZIO.succeed(None)
 
-        override def searchConnectors(s: ConnectorSearch): RepositoryTask[List[ConnectorInstance]] = ???
+        override def searchConnectors(s: ConnectorSearch): RepositoryTask[List[ConnectorInstance]] =
+          ZIO.succeed(List.empty)
 
-        override def upsertConnector(ci: ConnectorInstance): RepositoryTask[ConnectorInstance] = ???
+        override def upsertConnector(ci: ConnectorInstance): RepositoryTask[ConnectorInstance] =
+          ZIO.succeed(ci)
 
         override def getById(id: SkillId): RepositoryTask[Option[SkillRecord]] =
           store.get.map(_.get(id.value))

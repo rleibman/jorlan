@@ -208,13 +208,14 @@ class TriggerEngineImpl(
           // soft so that successful tool invocations (e.g. sending a Telegram message) are not
           // incorrectly reported as job failures.
           _ <- agentRunner
-            .processMessage(session.id, content, Some(job.userId))
+            .processMessage(session.id, content, Some(job.userId), withMemory = false)
             .tapError(err =>
               ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} processMessage soft error: ${err.msg}"),
             )
             .ignore
-          // Collect stream up to and including the sentinel. None means timed out.
+          // Collect stream up to and including the finished sentinel, then stop. None means timed out.
           result <- stream
+            .takeUntil(_.finished)
             .runFold(("", false)) { case ((acc, _), chunk) =>
               if (chunk.finished) {
                 val out = if (chunk.isError && chunk.content.nonEmpty) acc + chunk.content else acc
@@ -224,12 +225,17 @@ class TriggerEngineImpl(
             .timeout(zio.Duration.fromJava(jobTimeout))
           now <- Clock.instant
           _   <- result match {
-            case Some((output, _)) =>
-              repo.scheduler
-                .releaseJob(job.id, JobStatus.Succeeded, Some(output), now)
-                .mapError(JorlanError(_)) *>
-                logJobEvent(EventType.SchedulerJobCompleted, job) *>
-                advanceTriggers(job, cronCache, now)
+            case Some((output, isError)) =>
+              if (isError) {
+                scheduleRetryOrFail(job, now) *>
+                  logJobEvent(EventType.SchedulerJobFailed, job)
+              } else {
+                repo.scheduler
+                  .releaseJob(job.id, JobStatus.Succeeded, Some(output), now)
+                  .mapError(JorlanError(_)) *>
+                  logJobEvent(EventType.SchedulerJobCompleted, job) *>
+                  advanceTriggers(job, cronCache, now)
+              }
             case None =>
               ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} timed out after ${jobTimeout.getSeconds}s") *>
                 scheduleRetryOrFail(job, now) *>

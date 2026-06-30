@@ -8,7 +8,6 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.*
 import jorlan.service.NotificationRouter
 import just.semver.SemVer
 import zio.*
@@ -40,10 +39,29 @@ class NotifySkill(router: NotificationRouter) extends Skill {
       "inform",
       "tell user",
     ),
+    doc = Some(
+      """|## Notify Skill
+         |
+         |Sends notifications through registered connector channels (Telegram, Discord, etc.).
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `notify.user` | Send to user's preferred channel | `notify.send` |
+         || `notify.channel` | Send directly to a channel+ID pair | `notify.send` |
+         |
+         |### Setup
+         |At least one connector (e.g. Telegram or Discord) must be configured.
+         |Grant the `notify.send` capability to agents.
+         |
+         |### Notes
+         |`notify.user` resolves the user's preferred channel automatically.
+         |Use `user_mgmt.find` to get a numeric `userId` for other users.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "notify.user",
-        description = "Send a text message to a user's preferred communication channel (Telegram preferred). If userId is omitted the message is sent to the currently authenticated user. Use contacts.find to get a numeric userId for other users.",
+        description = "Send a text message to a user's preferred communication channel (Telegram preferred). If userId is omitted the message is sent to the currently authenticated user. Use user_mgmt.find to get a numeric userId for other users.",
         inputSchema = Json.decoder
           .decodeJson(
             """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to send to the current user"},"message":{"type":"string","description":"Message text to send"}},"required":["message"]}""",

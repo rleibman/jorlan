@@ -6,12 +6,15 @@
 
 package jorlan.service
 
-import jorlan.AgentSessionId
 import jorlan.*
 import zio.*
 import zio.stream.ZStream
 
-/** A single tool-lifecycle event published to subscribers during a ReAct turn. */
+/** A single tool-lifecycle event published to subscribers during a ReAct turn.
+  *
+  * @param sessionId
+  *   identifies the agent session that produced the event
+  */
 sealed trait ToolEvent {
 
   def sessionId: AgentSessionId
@@ -20,14 +23,32 @@ sealed trait ToolEvent {
 
 object ToolEvent {
 
-  /** Emitted when a skill tool is about to be invoked. */
+  /** Emitted just before a skill tool is invoked.
+    *
+    * @param sessionId
+    *   identifies the agent session
+    * @param toolName
+    *   fully-qualified tool name (e.g. `"telegram.send_message"`)
+    * @param argsJson
+    *   JSON-serialised tool arguments
+    */
   case class ToolInvokedEvent(
     sessionId: AgentSessionId,
     toolName:  String,
     argsJson:  String,
   ) extends ToolEvent
 
-  /** Emitted when a skill tool completes (success or failure). */
+  /** Emitted after a skill tool completes (success or failure).
+    *
+    * @param sessionId
+    *   identifies the agent session
+    * @param toolName
+    *   fully-qualified tool name
+    * @param resultJson
+    *   JSON-serialised tool result (or error message on failure)
+    * @param succeeded
+    *   `true` if the tool returned without error
+    */
   case class ToolResultEvent(
     sessionId:  AgentSessionId,
     toolName:   String,
@@ -39,40 +60,24 @@ object ToolEvent {
 
 /** Pub-sub hub for [[ToolEvent]]s, keyed by [[AgentSessionId]].
   *
-  * Mirrors the design of [[SessionHub]]: each subscriber receives its own bounded [[Queue]]; publishing is
-  * fire-and-forget with no drop semantics. Queues are cleaned up when the subscriber's stream terminates.
+  * Delegates subscriber management to [[KeyedPubSubHub]]. Each subscriber receives its own dropping [[Queue]] (capacity
+  * 256). Publishing never back-pressures the agent fiber — events are silently dropped for a slow subscriber when its
+  * queue is full. Queues are cleaned up via `ZStream.ensuring` when the subscriber's stream terminates.
   */
-class ToolEventHub private (subs: Ref[Map[AgentSessionId, List[Queue[ToolEvent]]]]) {
+class ToolEventHub private (hub: KeyedPubSubHub[AgentSessionId, ToolEvent]) {
 
   def subscribe(sessionId: AgentSessionId): UIO[ZStream[Any, Nothing, ToolEvent]] =
-    for {
-      queue <- Queue.bounded[ToolEvent](256)
-      _     <- subs.update { map =>
-        val existing = map.getOrElse(sessionId, List.empty)
-        map + (sessionId -> (queue :: existing))
-      }
-    } yield ZStream
-      .fromQueue(queue)
-      .ensuring(
-        queue.shutdown *>
-          subs.update { map =>
-            val updated = map.getOrElse(sessionId, List.empty).filterNot(_ eq queue)
-            if (updated.isEmpty) map - sessionId
-            else map + (sessionId -> updated)
-          },
-      )
+    hub.subscribe(sessionId)
 
   def publish(event: ToolEvent): UIO[Unit] =
-    subs.get.flatMap { map =>
-      ZIO.foreachParDiscard(map.getOrElse(event.sessionId, List.empty))(_.offer(event).unit)
-    }
+    hub.publish(event.sessionId, event)
 
 }
 
 object ToolEventHub {
 
   val make: UIO[ToolEventHub] =
-    Ref.make(Map.empty[AgentSessionId, List[Queue[ToolEvent]]]).map(ToolEventHub(_))
+    KeyedPubSubHub.make[AgentSessionId, ToolEvent].map(new ToolEventHub(_))
 
   val live: ULayer[ToolEventHub] = ZLayer.fromZIO(make)
 

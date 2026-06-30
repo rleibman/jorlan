@@ -37,6 +37,7 @@ object McpServersPage {
     url:       String = "",
     env:       List[EnvVarDraft] = List.empty,
     enabled:   Boolean = true,
+    keywords:  String = "",
   )
 
   case class State(
@@ -62,6 +63,7 @@ object McpServersPage {
       url = s.url.getOrElse(""),
       env = s.env.map(e => EnvVarDraft(e.key, e.value)),
       enabled = s.enabled,
+      keywords = s.keywords.mkString(", "),
     )
 
   val component =
@@ -91,9 +93,9 @@ object McpServersPage {
             AsyncCallbackRepositories.mcp
               .listMcpServers()
               .flatMap { servers =>
-                state.setState(state.value.copy(servers = servers, loading = false)).asAsyncCallback
+                state.modState(_.copy(servers = servers, loading = false)).asAsyncCallback
               }
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }
@@ -106,8 +108,8 @@ object McpServersPage {
             Callback {
               AsyncCallbackRepositories.mcp
                 .listMcpServers()
-                .flatMap(servers => state.setState(state.value.copy(servers = servers)).asAsyncCallback)
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .flatMap(servers => state.modState(_.copy(servers = servers)).asAsyncCallback)
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
@@ -135,9 +137,13 @@ object McpServersPage {
                   args =
                     if (f.transport == "Stdio") f.args.split("\n").map(_.trim).filter(_.nonEmpty).toList
                     else List.empty,
-                  url = if (f.transport == "Http" && f.url.trim.nonEmpty) Some(f.url.trim) else None,
+                  url =
+                    if ((f.transport == "Http" || f.transport == "HttpSse") && f.url.trim.nonEmpty)
+                      Some(f.url.trim)
+                    else None,
                   env = f.env.filter(e => e.key.trim.nonEmpty).map(e => McpEnvVarInfo(e.key.trim, e.value)),
                   enabled = f.enabled,
+                  keywords = f.keywords.split(",").map(_.trim).filter(_.nonEmpty).toList,
                 )
                 .flatMap { _ =>
                   val msg =
@@ -317,8 +323,8 @@ object McpServersPage {
                           TableCell()(server.transport),
                           TableCell()(
                             server.transport match {
-                              case "Http" => server.url.getOrElse("—")
-                              case _      =>
+                              case "Http" | "HttpSse" => server.url.getOrElse("—")
+                              case _                  =>
                                 server.command.map(c => (c :: server.args).mkString(" ")).getOrElse("—")
                             },
                           ),
@@ -366,11 +372,12 @@ object McpServersPage {
                   .fullWidth(true)
                   .sx(js.Dynamic.literal(mb = 2))
                   .onChange { e =>
-                    val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                    val v = e.target.value.asInstanceOf[String]
                     updateForm(f.copy(transport = v)).runNow()
                   }(
-                    MuiMenuItem.value("Stdio")("Stdio — local subprocess via stdin/stdout"): VdomNode,
-                    MuiMenuItem.value("Http")("Http — remote HTTP/SSE server"):              VdomNode,
+                    MuiMenuItem.value("Stdio")("Stdio — local subprocess via stdin/stdout"):            VdomNode,
+                    MuiMenuItem.value("Http")("Http — Streamable HTTP (MCP 2025-03-26)"):               VdomNode,
+                    MuiMenuItem.value("HttpSse")("HttpSse — HTTP+SSE (MCP 2024-11-05, legacy servers"): VdomNode,
                   ),
                 if (f.transport == "Stdio")
                   <.div(
@@ -460,6 +467,17 @@ object McpServersPage {
                     if (f.enabled) "Enabled" else "Disabled",
                   ),
                 ),
+                MuiTextField
+                  .label("Keywords (comma-separated)")
+                  .value(f.keywords)
+                  .fullWidth(true)
+                  .variant("outlined")
+                  .size("small")
+                  .sx(js.Dynamic.literal(mt = 2))
+                  .helperText(
+                    "Optional tags to help the AI find this server's tools (e.g. \"pubmed, research, medical\")",
+                  )
+                  .onChange(e => updateForm(f.copy(keywords = e.target.value.asInstanceOf[String])).runNow()),
               ),
               DialogActions()(
                 MuiButton.onClick(() => closeDialog().runNow())("Cancel"),

@@ -1775,6 +1775,7 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
 
 // ─── SkillIndex ────────────────────────────────────────────────────────────────
 
+// $COVERAGE-OFF$ — tested via integration tests with a real MariaDB container
 private class QuillSkillIndexRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOSkillIndexRepository {
 
   import JorlanSchema.*
@@ -1887,3 +1888,4 @@ private class QuillSkillIndexRepository(qc: QuillCtx) extends QuillRepoBase(qc) 
     }
 
 }
+// $COVERAGE-ON$

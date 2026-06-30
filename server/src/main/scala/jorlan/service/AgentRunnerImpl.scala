@@ -78,9 +78,10 @@ class AgentRunnerImpl(
   private val cachedAgentIds = runnerState.cachedAgentIds
 
   override def processMessage(
-    sessionId: AgentSessionId,
-    content:   String,
-    actorId:   Option[UserId],
+    sessionId:  AgentSessionId,
+    content:    String,
+    actorId:    Option[UserId],
+    withMemory: Boolean = true,
   ): IO[JorlanError, Unit] =
     for {
       errorRef    <- Ref.make(Option.empty[String])
@@ -96,7 +97,7 @@ class AgentRunnerImpl(
         for {
           _      <- ZIO.logDebug(s"[session:$sessionId] incoming message (${content.length} chars)")
           _      <- ConversationLogger.logUserMessage(sessionId, actorId, content)
-          memCtx <- buildMemoryContext(sessionId, actorId, agentId, content)
+          memCtx <- if (withMemory) buildMemoryContext(sessionId, actorId, agentId, content) else ZIO.succeed("")
           systemPrompt = Personality.buildSystemPrompt(personality) + memCtx
           _ <- ZIO.logDebug(
             s"[session:$sessionId] system prompt (${systemPrompt.length} chars):\n$systemPrompt",
@@ -348,13 +349,11 @@ class AgentRunnerImpl(
       }.flatMap { alreadySeeded =>
         loadConversationHistory(sessionId)
           .flatMap { messages =>
-            if (messages.isEmpty) ZIO.unit
-            else {
-              loadPersonality.flatMap { p =>
+            loadPersonality
+              .flatMap { p =>
                 val systemPrompt = Personality.buildSystemPrompt(p)
                 modelGateway.seedHistory(sessionId, messages, systemPrompt)
-              }
-            }
+              }.unless(messages.isEmpty)
           }.unless(alreadySeeded).unit
       }
 

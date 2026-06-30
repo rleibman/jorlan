@@ -58,11 +58,31 @@ class WeatherSkill(
     ),
     configKey = Some("skill.weather"),
     configJsModule = Some("jorlan-weather"),
+    doc = Some(
+      """|## Weather Skill
+         |
+         |Fetches weather data via the OpenWeatherMap API.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `weather.current` | Current conditions for a location | `weather.read` |
+         || `weather.forecast` | 5-day forecast for a location | `weather.read` |
+         || `weather.alerts` | Active weather alerts by lat/lon | `weather.read` |
+         |
+         |### Setup
+         |1. Obtain a free API key from OpenWeatherMap (https://openweathermap.org/api).
+         |2. Enable `weather` in Admin → Skills and add a `skill.weather` entry in Server Settings:
+         |   - `apiKey`: your OpenWeatherMap API key
+         |   - `defaultLocation`: default city name (e.g. `"London"`)
+         |   - `units`: `metric` | `imperial` | `standard` (default `metric`)
+         |3. Grant the `weather.read` capability to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "weather.current",
         description = "Fetch current weather conditions for a named location. Returns temperature, feels_like, humidity, description, wind_speed, and visibility.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'London' or 'New York,US'. Omit to use the configured default location."},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name to look up weather for, e.g. 'London' or 'Paris,FR'. If the user does not specify a city, OMIT this field entirely to use the server's configured default location."},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -74,7 +94,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.forecast",
         description = "Fetch a simplified multi-day weather forecast for a named location. Returns a list of forecast entries with date, temp_min, temp_max, and description.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name, e.g. 'Paris'. Omit to use the configured default location."},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name to get a forecast for, e.g. 'Paris' or 'Tokyo,JP'. If the user does not specify a city, OMIT this field entirely to use the server's configured default location."},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(

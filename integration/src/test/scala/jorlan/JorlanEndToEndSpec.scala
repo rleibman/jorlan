@@ -16,6 +16,7 @@ import jorlan.google.{GoogleCalendarSkill, GoogleDriveSkill}
 import jorlan.graphql.JorlanAPI
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.{EmailSkill, SkillRegistry}
 import jorlan.service.skills.declarative.SkillLifecycleService
@@ -222,6 +223,7 @@ object JorlanEndToEndSpec
       configLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -243,7 +245,9 @@ object JorlanEndToEndSpec
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      McpManager.live,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

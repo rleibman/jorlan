@@ -580,6 +580,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       env:       List[McpEnvVarInfo],
       url:       Option[String],
       enabled:   Boolean,
+      keywords:  List[String] = List.empty,
     ): AsyncCallback[Option[McpServerInfo]] =
       adapter
         .asyncCalibanCallWithAuth(
@@ -591,6 +592,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
             env = env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value)),
             url = url,
             enabled = enabled,
+            keywords = keywords,
           )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)),
         )
         .map(_.map(toMcpServerInfo))
@@ -996,6 +998,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       env = v.env.map(e => McpEnvVarInfo(e.key, e.value)),
       url = v.url,
       enabled = v.enabled,
+      keywords = v.keywords,
     )
 
   private def toSkillInfo(
@@ -1012,6 +1015,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       dashboardJsModule = v.dashboardJsModule,
       hasDashboardData = v.hasDashboardData,
       oauthProvider = v.oauthProvider.flatMap(p => OAuthProvider.values.find(_.toString == p.value)),
+      doc = v.doc,
     )
 
   private def toSkillVersionInfo(v: JorlanClient.SkillVersionView.SkillVersionViewView): SkillVersionInfo =

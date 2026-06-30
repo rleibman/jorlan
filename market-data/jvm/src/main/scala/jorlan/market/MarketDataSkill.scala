@@ -71,6 +71,26 @@ class MarketDataSkill(
     ),
     configKey = Some("skill.market"),
     configJsModule = Some("jorlan-market-data"),
+    doc = Some(
+      """|## Market Data Skill
+         |
+         |Fetches stock market data via the Alpha Vantage API.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `market.quote` | Real-time quote for a ticker | `market.read` |
+         || `market.search` | Symbol search by keyword | `market.read` |
+         || `market.news` | News sentiment for a ticker | `market.read` |
+         || `market.watchlist` | Quotes for configured watchlist | `market.read` |
+         |
+         |### Setup
+         |1. Obtain a free or premium API key from Alpha Vantage (https://www.alphavantage.co/).
+         |2. Enable `market` in Admin → Skills and add a `skill.market` entry in Server Settings:
+         |   - `apiKey`: your Alpha Vantage API key
+         |   - `preferredStocks`: list of ticker symbols for the watchlist (e.g. `["AAPL","MSFT","GOOG"]`)
+         |3. Grant the `market.read` capability to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "market.quote",

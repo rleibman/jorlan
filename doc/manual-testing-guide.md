@@ -333,7 +333,7 @@ is missing and what needs to be built.
 **Status: 🚧 Phase 12 — requires ReAct loop + SkillRegistry + ContactsSkill + NotificationRouter**
 
 **What needs to happen:**
-1. The LLM calls `contacts.find { "name": "Sarah" }` → receives
+1. The LLM calls `user_mgmt.find { "name": "Sarah" }` → receives
    `{ "channelType": "Telegram", "channelUserId": "123456789" }`.
 2. The LLM calls `telegram.send_message { "chatId": "123456789", "text": "Hello from Roberto." }`.
 3. The Telegram Bot API delivers the message to Sarah's DM.
@@ -346,7 +346,7 @@ is missing and what needs to be built.
 **How to verify once Phase 12 lands:**
 1. Insert Sarah's user + channel identity (SQL or GraphQL mutation).
 2. Start a session. Type the prompt above.
-3. Shell shows spinners: `⟳ calling contacts.find…` then `⟳ calling telegram.send_message…`
+3. Shell shows spinners: `⟳ calling user_mgmt.find…` then `⟳ calling telegram.send_message…`
    then the model's confirmation text.
 4. Confirm the Telegram DM arrives in Sarah's account.
 
@@ -359,7 +359,7 @@ is missing and what needs to be built.
 **Status: 🚧 Phase 12 — requires ReAct loop + ContactsSkill + SchedulerSkill + NotificationRouter**
 
 **What needs to happen:**
-1. The LLM calls `contacts.find { "name": "Roberto" }` → receives Roberto's Telegram chatId.
+1. The LLM calls `user_mgmt.find { "name": "Roberto" }` → receives Roberto's Telegram chatId.
 2. The LLM calls `scheduler.create_job` with:
    - `triggerType: "Cron"`, `expression: "0 10 * * *"`
    - `toolName: "telegram.send_message"`, `args: { "chatId": "<id>", "text": "Good morning!" }`
@@ -386,7 +386,7 @@ is missing and what needs to be built.
 **Status: 🚧 Phase 12+ — not testable today**
 
 **What would need to happen:**
-1. The LLM calls `contacts.find("Sarah")` and `contacts.find("Roberto")` — two separate calls.
+1. The LLM calls `user_mgmt.find("Sarah")` and `user_mgmt.find("Roberto")` — two separate calls.
 2. For each resolved `chatId`, the LLM calls `telegram.send_message`.
 3. Two DMs arrive, one to each recipient.
 

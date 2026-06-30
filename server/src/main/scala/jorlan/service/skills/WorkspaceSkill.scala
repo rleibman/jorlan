@@ -8,7 +8,6 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
-import jorlan.*
 import just.semver.SemVer
 import zio.*
 import zio.json.ast.Json
@@ -56,6 +55,30 @@ class WorkspaceSkill(
       "snapshot",
       "code",
       "text",
+    ),
+    doc = Some(
+      """|## Workspace Skill
+         |
+         |Reads and writes files in the configured workspace root directory.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `workspace.read` | Read a file | `workspace.read` |
+         || `workspace.write` | Write (overwrite) a file | `workspace.write` |
+         || `workspace.search` | List files matching a glob prefix | `workspace.read` |
+         || `workspace.delete` | Delete a file | `workspace.write` |
+         || `workspace.snapshot` | Zip all workspace files | `workspace.write` |
+         |
+         |### Setup
+         |1. Enable `workspace` in Admin → Skills and add a `skill.workspace` entry in Server Settings:
+         |   - `root`: workspace root directory (e.g. `"/home/jorlan/workspace"`)
+         |   - `maxFileSizeBytes`: maximum file size (default 5242880 = 5 MB)
+         |2. Grant `workspace.read` and/or `workspace.write` capabilities to agents.
+         |
+         |### Notes
+         |All paths are validated against path-traversal attacks.
+         |Attempts to escape the workspace root return an error.""".stripMargin,
     ),
     tools = List(
       ToolDescriptor(
@@ -288,9 +311,7 @@ class WorkspaceSkill(
           } finally stream.close()
         } finally zos.close()
         s"__snapshots/$zipName"
-      }
-      .mapError(e => JorlanError(s"workspace.snapshot: ${e.getMessage}"))
-      .map(Json.Str(_))
+      }.mapBoth(e => JorlanError(s"workspace.snapshot: ${e.getMessage}"), Json.Str(_))
   }
 
 }

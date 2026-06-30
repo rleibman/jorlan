@@ -44,7 +44,7 @@ enum SkillStatus derives JsonCodec {
 /** The external system a [[ConnectorInstance]] bridges to. */
 enum ConnectorType derives JsonCodec {
 
-  case Shell, GraphQL, Telegram, Slack, Email, WhatsApp, Sms, Lyrion, MarketData, WebSearch
+  case Shell, GraphQL, Telegram, Slack, Email, WhatsApp, Sms, Lyrion, MarketData, WebSearch, Discord
 
 }
 

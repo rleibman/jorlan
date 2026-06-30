@@ -16,7 +16,9 @@ import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
 import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
 import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
+import zio.Chunk
 import zio.json.*
+import zio.json.ast.Json
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
@@ -65,47 +67,81 @@ object CreateSkillWizard {
     onCreated: Callback,
   )
 
+  private def jObj(fields: (String, Json)*): Json = Json.Obj(Chunk.fromIterable(fields))
+  private def jArr(elems:  Json*):           Json = Json.Arr(Chunk.fromIterable(elems))
+  private def jStrs(xs:    Seq[String]):     Json = Json.Arr(Chunk.fromIterable(xs.map(Json.Str(_))))
+
+  /** Builds the declarative skill manifest as a JSON string. Only called on step 4 (review) and on submit. */
   private def buildManifestJson(s: WizardState): String = {
     val qualifiedToolName =
       if (s.toolName.startsWith(s.skillName + ".")) s.toolName
       else s.skillName + "." + s.toolName
 
-    val executor = if (s.executorType == "http_api") {
-      val headersMap = s.httpHeaders.linesIterator
-        .map(_.trim)
-        .filter(_.contains(":"))
+    val headers: Chunk[(String, Json)] = Chunk.fromIterable(
+      s.httpHeaders.linesIterator
+        .map(_.trim).filter(_.contains(":"))
         .map { line =>
           val idx = line.indexOf(':')
-          (line.take(idx).trim, line.drop(idx + 1).trim)
+          line.take(idx).trim -> (Json.Str(line.drop(idx + 1).trim): Json)
         }
-        .toMap
+        .toList,
+    )
 
-      s"""|{"HttpApi":{"config":{"method":${s.httpMethod.toJson},"url":${s.httpUrl.toJson},"headers":${headersMap.toJson},"bodyTemplate":${
-          if (s.httpBody.nonEmpty) s.httpBody.toJson + "" else "null"
-        },"responseJsonPath":null}}}"""
-    } else {
-      s"""|{"PromptTemplate":{"config":{"systemPrompt":${s.systemPrompt.toJson},"userPromptTemplate":${s.userPrompt.toJson}}}}"""
-    }
+    val executor: Json =
+      if (s.executorType == "http_api")
+        jObj(
+          "HttpApi" -> jObj(
+            "config" -> jObj(
+              "method"           -> Json.Str(s.httpMethod),
+              "url"              -> Json.Str(s.httpUrl),
+              "headers"          -> Json.Obj(headers),
+              "bodyTemplate"     -> (if (s.httpBody.nonEmpty) Json.Str(s.httpBody) else Json.Null),
+              "responseJsonPath" -> Json.Null,
+            ),
+          ),
+        )
+      else
+        jObj(
+          "PromptTemplate" -> jObj(
+            "config" -> jObj(
+              "systemPrompt"       -> Json.Str(s.systemPrompt),
+              "userPromptTemplate" -> Json.Str(s.userPrompt),
+            ),
+          ),
+        )
 
-    val caps = s.capabilities.split(",").map(_.trim).filter(_.nonEmpty)
-    val prompts = s.examplePrompts.split("\n").map(_.trim).filter(_.nonEmpty)
+    val caps = s.capabilities.split(",").map(_.trim).filter(_.nonEmpty).toSeq
+    val prompts = s.examplePrompts.split("\n").map(_.trim).filter(_.nonEmpty).toSeq
+    val keywords = s.keywords.split(",").map(_.trim).filter(_.nonEmpty).toSeq
 
-    s"""|{
-        |  "name": ${s.skillName.toJson},
-        |  "version": ${s.skillVersion.toJson},
-        |  "description": ${s.description.toJson},
-        |  "keywords": ${s.keywords.split(",").map(_.trim).filter(_.nonEmpty).toList.toJson},
-        |  "tools": [{
-        |    "name": ${qualifiedToolName.toJson},
-        |    "description": ${s.toolDescription.toJson},
-        |    "requiredCapabilities": ${caps.toList.toJson},
-        |    "examplePrompts": ${prompts.toList.toJson},
-        |    "inputSchema": {"type":"object","properties":{}},
-        |    "outputSchema": {"type":"string"},
-        |    "executor": $executor
-        |  }]
-        |}""".stripMargin
+    jObj(
+      "name"        -> Json.Str(s.skillName),
+      "version"     -> Json.Str(s.skillVersion),
+      "description" -> Json.Str(s.description),
+      "keywords"    -> jStrs(keywords),
+      "tools"       -> jArr(
+        jObj(
+          "name"                 -> Json.Str(qualifiedToolName),
+          "description"          -> Json.Str(s.toolDescription),
+          "requiredCapabilities" -> jStrs(caps),
+          "examplePrompts"       -> jStrs(prompts),
+          "inputSchema"          -> jObj("type" -> Json.Str("object"), "properties" -> jObj()),
+          "outputSchema"         -> jObj("type" -> Json.Str("string")),
+          "executor"             -> executor,
+        ),
+      ),
+    ).toJson
   }
+
+  private def columnFlex(children: VdomNode*): VdomElement =
+    Box.withProps(
+      BoxOwnProps[Theme]()
+        .setSx(
+          js.Dynamic
+            .literal(display = "flex", flexDirection = "column", gap = 2)
+            .asInstanceOf[SxProps[Theme]],
+        ).asInstanceOf[Box.Props],
+    )(children*)
 
   val component =
     ScalaFnComponent
@@ -227,14 +263,7 @@ object CreateSkillWizard {
 
               case 1 =>
                 <.div(
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(display = "flex", flexDirection = "column", gap = 2)
-                          .asInstanceOf[SxProps[Theme]],
-                      ).asInstanceOf[Box.Props],
-                  )(
+                  columnFlex(
                     MuiTextField
                       .label("Skill Name (lowercase, e.g. weather)")
                       .value(sv.skillName)
@@ -262,14 +291,7 @@ object CreateSkillWizard {
 
               case 2 =>
                 <.div(
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(display = "flex", flexDirection = "column", gap = 2)
-                          .asInstanceOf[SxProps[Theme]],
-                      ).asInstanceOf[Box.Props],
-                  )(
+                  columnFlex(
                     MuiTextField
                       .label(s"Tool Name (auto-prefixed with ${sv.skillName}.)")
                       .value(sv.toolName)
@@ -284,14 +306,7 @@ object CreateSkillWizard {
                       .onChange(e => setField(_.copy(toolDescription = e.target.value.toString)).runNow()),
                     if (sv.executorType == "http_api") {
                       <.div(
-                        Box.withProps(
-                          BoxOwnProps[Theme]()
-                            .setSx(
-                              js.Dynamic
-                                .literal(display = "flex", flexDirection = "column", gap = 2)
-                                .asInstanceOf[SxProps[Theme]],
-                            ).asInstanceOf[Box.Props],
-                        )(
+                        columnFlex(
                           MuiTextField
                             .label("HTTP Method (GET, POST, PUT, DELETE)")
                             .value(sv.httpMethod)
@@ -320,14 +335,7 @@ object CreateSkillWizard {
                       )
                     } else {
                       <.div(
-                        Box.withProps(
-                          BoxOwnProps[Theme]()
-                            .setSx(
-                              js.Dynamic
-                                .literal(display = "flex", flexDirection = "column", gap = 2)
-                                .asInstanceOf[SxProps[Theme]],
-                            ).asInstanceOf[Box.Props],
-                        )(
+                        columnFlex(
                           MuiTextField
                             .label("System Prompt")
                             .value(sv.systemPrompt)
@@ -350,14 +358,7 @@ object CreateSkillWizard {
 
               case 3 =>
                 <.div(
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(display = "flex", flexDirection = "column", gap = 2)
-                          .asInstanceOf[SxProps[Theme]],
-                      ).asInstanceOf[Box.Props],
-                  )(
+                  columnFlex(
                     MuiTextField
                       .label("Required Capabilities (comma-separated)")
                       .value(sv.capabilities)

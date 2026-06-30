@@ -67,6 +67,27 @@ class SearchSkill(
     ),
     configKey = Some("skill.search"),
     configJsModule = Some("jorlan-search"),
+    doc = Some(
+      """|## Search Skill
+         |
+         |Web search and text extraction via the Tavily API.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `search.web` | General web search | `search.read` |
+         || `search.news` | Recent news search | `search.read` |
+         || `search.extract` | Extract full text from URLs | `search.read` |
+         |
+         |### Setup
+         |1. Obtain an API key from Tavily (https://tavily.com/).
+         |2. Enable `search` in Admin → Skills and add a `skill.search` entry in Server Settings:
+         |   - `apiKey`: your Tavily API key
+         |3. Grant the `search.read` capability to agents.
+         |
+         |### Notes
+         |The skill is only registered when a `skill.search` entry is present in Server Settings.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "search.web",
@@ -162,8 +183,8 @@ class SearchSkill(
   private def webSearch(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
-      searchDepth = optStr(args, "searchDepth").getOrElse("basic")
+      maxResults = int(args, "maxResults").getOrElse(config.maxResults)
+      searchDepth = str(args, "searchDepth").getOrElse("basic")
       requestBody = Json.Obj(
         "api_key"      -> Json.Str(config.apiKey),
         "query"        -> Json.Str(query),
@@ -178,8 +199,8 @@ class SearchSkill(
   private def newsSearch(args: Json): IO[JorlanError, Json] =
     for {
       query <- field(args, "query")
-      maxResults = optInt(args, "maxResults").getOrElse(config.maxResults)
-      days = optInt(args, "days")
+      maxResults = int(args, "maxResults").getOrElse(config.maxResults)
+      days = int(args, "days")
       baseFields = List(
         "api_key"      -> Json.Str(config.apiKey),
         "query"        -> Json.Str(query),

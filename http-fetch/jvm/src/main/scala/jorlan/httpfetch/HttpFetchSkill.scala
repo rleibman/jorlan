@@ -64,6 +64,29 @@ class HttpFetchSkill(
     ),
     configKey = Some("skill.httpFetch"),
     configJsModule = Some("jorlan-http-fetch"),
+    doc = Some(
+      """|## HTTP Fetch Skill
+         |
+         |Lets agents make HTTP GET and POST requests to external URLs.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `http_fetch.get` | HTTP GET request | `http_fetch.call` |
+         || `http_fetch.post` | HTTP POST request | `http_fetch.call` |
+         |
+         |### Configuration
+         |1. Enable the `http_fetch` skill in Admin → Skills.
+         |2. Add a `skill.httpFetch` entry in Server Settings with:
+         |   - `allowedHosts`: permitted host patterns (e.g. `["api.example.com", "*.example.org"]`; use `["*"]` to allow all)
+         |   - `maxResponseBytes`: max response size in bytes (default 65536)
+         |   - `timeoutSeconds`: request timeout (default 10)
+         |3. Grant the `http_fetch.call` capability to agents.
+         |
+         |### Notes
+         |Requests to hosts not in the allowlist are rejected without making a network call.
+         |Supports wildcard host patterns (`*.example.com`).""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "http_fetch.get",
@@ -169,21 +192,6 @@ class HttpFetchSkill(
   }
 
   // ---------------------------------------------------------------------------
-  // Argument helpers
-  // ---------------------------------------------------------------------------
-
-  private def requireStr(
-    args: Json,
-    key:  String,
-  ): IO[JorlanError, String] =
-    args match {
-      case Json.Obj(fields) =>
-        fields
-          .collectFirst { case (`key`, Json.Str(v)) => v }
-          .fold(ZIO.fail(ValidationError(s"missing required argument '$key'")): IO[JorlanError, String])(ZIO.succeed(_))
-      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
-    }
-
   /** Extract optional headers from the `"headers"` field (object of string-string pairs). */
   private def extractHeaders(
     args: Json,
@@ -284,8 +292,8 @@ class HttpFetchSkill(
           ZIO.succeed(disallowedResponse(rawUrl))
         } else {
           val url = urlTransform(rawUrl)
-          val bodyStr = optStr(args, "body").getOrElse("")
-          val contentType = optStr(args, "contentType").getOrElse("application/json")
+          val bodyStr = str(args, "body").getOrElse("")
+          val contentType = str(args, "contentType").getOrElse("application/json")
           val extraHeaders = extractHeaders(args)
           val mediaType = MediaType
             .parseCustomMediaType(contentType)

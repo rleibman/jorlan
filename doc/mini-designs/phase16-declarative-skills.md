@@ -51,11 +51,14 @@ Both share the same manifest format and lifecycle; the difference is who creates
       },
       "outputSchema": { "type": "object" },
       "executor": {
-        "type": "http_api",
-        "method": "GET",
-        "url": "https://wttr.in/{{city}}?format=j1",
-        "headers": {},
-        "responseJsonPath": "$.current_condition[0].temp_C"
+        "HttpApi": {
+          "config": {
+            "method": "GET",
+            "url": "https://wttr.in/{{city}}?format=j1",
+            "headers": {},
+            "responseJsonPath": "current_condition.0.temp_C"
+          }
+        }
       }
     }
   ]
@@ -66,9 +69,12 @@ For prompt/template executor:
 ```json
 {
   "executor": {
-    "type": "prompt_template",
-    "systemPrompt": "You are a helpful summariser.",
-    "userPromptTemplate": "Summarise the following in {{style}} style:\n\n{{text}}"
+    "PromptTemplate": {
+      "config": {
+        "systemPrompt": "You are a helpful summariser.",
+        "userPromptTemplate": "Summarise the following in {{style}} style:\n\n{{text}}"
+      }
+    }
   }
 }
 ```
@@ -135,18 +141,15 @@ Implements `Skill`. Constructed from `DeclarativeSkillManifest` + injected `Clie
 - `invoke` dispatches to `HttpApiExecutor` or `PromptTemplateExecutor` based on tool's executor type
 
 #### `SkillLifecycleService.scala`
-ZIO service managing state transitions:
+ZIO service managing state transitions. The implementation uses a collapsed design with four public
+methods (not the eight originally sketched):
 
 ```scala
 trait SkillLifecycleService {
   def createDraft(manifest: Json, tier: SkillTier, createdBy: UserId): IO[JorlanError, SkillVersion]
-  def validate(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
-  def reviewPermissions(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
-  def sandboxTest(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
-  def submitForApproval(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
-  def approve(versionId: SkillVersionId, approvedBy: UserId): IO[JorlanError, Unit]
-  def reject(versionId: SkillVersionId, reason: String, rejectedBy: UserId): IO[JorlanError, Unit]
   def advance(versionId: SkillVersionId): IO[JorlanError, LifecycleResult]
+  def approve(versionId: SkillVersionId, approvedBy: UserId): IO[JorlanError, LifecycleResult]
+  def reject(versionId: SkillVersionId, reason: String, rejectedBy: UserId): IO[JorlanError, LifecycleResult]
 }
 
 case class LifecycleResult(
@@ -157,14 +160,17 @@ case class LifecycleResult(
 )
 ```
 
-State transitions:
-- `validate`: runs `ManifestValidator`; on success writes `status = Validated`
-- `reviewPermissions`: collects all `requiredCapabilities` from tools; writes `status = PermissionReviewed`, returns list in `info`
-- `sandboxTest`: for `http_api` makes one real invocation with schema-generated sample args; for `prompt_template` auto-passes in MVP; writes `status = SandboxTested`
-- `submitForApproval`: writes `status = AwaitingApproval`; creates an `ApprovalRequest` (uses `skill.promote` capability name) visible in the Approvals page
-- `approve`: parses manifest, calls `SkillRegistry.register(new DeclarativeSkill(...))`, sets `skill.currentVersion`, writes `status = Active`
+State transitions driven by `advance` (dispatches based on current status):
+- `Draft → Validated`: runs `ManifestValidator`; on success writes `status = Validated`
+- `Validated → PermissionReviewed`: collects all `requiredCapabilities` from tools; auto-approves in MVP
+  (MVP deviation: SRS specifies a human review gate here; this step auto-advances without one)
+- `PermissionReviewed → SandboxTested`: for all executor types auto-passes in MVP without a real invocation;
+  writes `status = SandboxTested`
+  (MVP deviation: SRS specifies a real HTTP probe for `http_api` tools)
+- `SandboxTested → AwaitingApproval`: writes `status = AwaitingApproval`; does NOT create an `ApprovalRequest`
+  — the human approval is handled through the admin `/custom-skills` UI, not the Approvals subsystem
+- `approve`: parses manifest, calls `SkillRegistry.register(new DeclarativeSkill(...))`, writes `status = Active`
 - `reject`: writes `status = Draft`, stores `reason` in `skillVersion.reviewNote`
-- `advance`: convenience dispatcher — calls the correct step based on current status
 
 ### `SkillAuthoringSkill.scala` (Tier 0 built-in)
 New built-in skill registered at startup alongside other built-ins:

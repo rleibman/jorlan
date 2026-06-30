@@ -14,25 +14,25 @@ import zio.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
-/** Built-in skill for user, role, and capability-grant management.
-  *
-  * All tools require elevated capabilities seeded by [[jorlan.init.InitService]] for admin users. No new capabilities
-  * are introduced — the skill reuses the existing `admin.user.list`, `user.create`, `user.update`, `role.create`,
-  * `role.assign`, `role.revoke`, `permission.grant`, and `permission.revoke` grants.
+/** Built-in skill for user discovery, channel-identity management, role, and capability-grant management.
   *
   * Tools:
-  *   - `user_mgmt.list_users` — list/search users
-  *   - `user_mgmt.get_user` — fetch a single user by ID
-  *   - `user_mgmt.create_user` — create a new user
-  *   - `user_mgmt.update_user` — update display name or email
-  *   - `user_mgmt.deactivate_user` — soft-delete a user
-  *   - `user_mgmt.list_roles` — list roles
-  *   - `user_mgmt.create_role` — create a role
-  *   - `user_mgmt.assign_role` — assign a role to a user
-  *   - `user_mgmt.revoke_role` — remove a role from a user
-  *   - `user_mgmt.list_grants` — list capability grants for a user
-  *   - `user_mgmt.grant_capability` — grant a capability to a user
-  *   - `user_mgmt.revoke_grant` — revoke a capability grant
+  *   - `user_mgmt.find` — fuzzy search users by display name (requires `users.read`)
+  *   - `user_mgmt.resolve_identity` — find user by channel type + ID (requires `users.read`)
+  *   - `user_mgmt.link_identity` — create/update a channel identity (requires `identity.manage`)
+  *   - `user_mgmt.list_identities` — list channel identities for a user (requires `users.read`)
+  *   - `user_mgmt.list_users` — list/search users (requires `admin.user.list`)
+  *   - `user_mgmt.get_user` — fetch a single user by ID (requires `admin.user.list`)
+  *   - `user_mgmt.create_user` — create a new user (requires `user.create`)
+  *   - `user_mgmt.update_user` — update display name or email (requires `user.update`)
+  *   - `user_mgmt.deactivate_user` — soft-delete a user (requires `user.update`)
+  *   - `user_mgmt.list_roles` — list roles (requires `admin.user.list`)
+  *   - `user_mgmt.create_role` — create a role (requires `role.create`)
+  *   - `user_mgmt.assign_role` — assign a role to a user (requires `role.assign`)
+  *   - `user_mgmt.revoke_role` — remove a role from a user (requires `role.revoke`)
+  *   - `user_mgmt.list_grants` — list capability grants for a user (requires `admin.user.list`)
+  *   - `user_mgmt.grant_capability` — grant a capability to a user (requires `permission.grant`)
+  *   - `user_mgmt.revoke_grant` — revoke a capability grant (requires `permission.revoke`)
   */
 class UserManagementSkill(repos: ZIORepositories) extends Skill {
 
@@ -58,7 +58,101 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       "identity",
       "capability",
     ),
+    doc = Some(
+      """|## User Management Skill
+         |
+         |User discovery, channel-identity management, and admin management of users, roles, and capability grants.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `user_mgmt.find` | Fuzzy search users by display name | `users.read` |
+         || `user_mgmt.resolve_identity` | Find user by channel type + ID | `users.read` |
+         || `user_mgmt.link_identity` | Create/update a channel identity | `identity.manage` |
+         || `user_mgmt.list_identities` | List channel identities for a user | `users.read` |
+         || `user_mgmt.list_users` | List/search users (admin) | `admin.user.list` |
+         || `user_mgmt.get_user` | Fetch user by ID (admin) | `admin.user.list` |
+         || `user_mgmt.create_user` | Create a new user | `user.create` |
+         || `user_mgmt.update_user` | Update display name or email | `user.update` |
+         || `user_mgmt.deactivate_user` | Soft-delete a user | `user.update` |
+         || `user_mgmt.list_roles` | List roles | `admin.user.list` |
+         || `user_mgmt.create_role` | Create a role | `role.create` |
+         || `user_mgmt.assign_role` | Assign role to a user | `role.assign` |
+         || `user_mgmt.revoke_role` | Remove role from a user | `role.revoke` |
+         || `user_mgmt.list_grants` | List capability grants for a user | `admin.user.list` |
+         || `user_mgmt.grant_capability` | Grant a capability to a user | `permission.grant` |
+         || `user_mgmt.revoke_grant` | Revoke a capability grant | `permission.revoke` |
+         |
+         |### Setup
+         |No external configuration required. The skill is always available.
+         |Admin capabilities are automatically seeded for admin users by the system.""".stripMargin,
+    ),
     tools = List(
+      ToolDescriptor(
+        name = "user_mgmt.find",
+        description = "Search users by display name with fuzzy/phonetic matching. 'Roberto' matches 'Robert Leibman'; 'Sara' matches 'Sarah Smith'. Omit 'name' to list all users. Also returns each user's channel identities (e.g. Telegram ID).",
+        inputSchema = Json.decoder
+          .decodeJson(
+            """|{"type":"object","properties":{"name":{"type":"string","description":"Name to search — supports partial names, phonetic variants, and minor spelling differences"}},"required":[]}""",
+          )
+          .getOrElse(Json.Obj()),
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("users.read")),
+        examplePrompts = List(
+          "Who is Alice?",
+          "Find a user named Roberto",
+          "Show me all users in the system",
+          "Look up Roberto's Telegram chat ID so I can send him a message",
+          "What is Dominique's Telegram user ID?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "user_mgmt.resolve_identity",
+        description = "Find the user linked to a specific channel identity (e.g. a Telegram chat ID).",
+        inputSchema = Json.decoder
+          .decodeJson(
+            """|{"type":"object","properties":{"channelType":{"type":"string","description":"Channel type: Telegram, Slack, Email, etc."},"channelUserId":{"type":"string","description":"Channel-native user identifier"}},"required":["channelType","channelUserId"]}""",
+          )
+          .getOrElse(Json.Obj()),
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("users.read")),
+        examplePrompts = List(
+          "Who has Telegram ID 123456?",
+          "Which user is associated with this Telegram handle?",
+        ),
+      ),
+      ToolDescriptor(
+        name = "user_mgmt.link_identity",
+        description = "Create or update a channel identity for a user. If userId is omitted, links to the currently authenticated user.",
+        inputSchema = Json.decoder
+          .decodeJson(
+            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to use the current user"},"channelType":{"type":"string","description":"Channel type: Telegram, Slack, Email, etc."},"channelUserId":{"type":"string","description":"Channel-native user identifier (e.g. Telegram numeric user ID)"}},"required":["channelType","channelUserId"]}""",
+          )
+          .getOrElse(Json.Obj()),
+        outputSchema = Json.Obj("type" -> Json.Str("object")),
+        requiredCapabilities = List(CapabilityName("identity.manage")),
+        examplePrompts = List(
+          "Link my Telegram account to user 7",
+          "Associate Telegram ID 987654 with my account",
+        ),
+      ),
+      ToolDescriptor(
+        name = "user_mgmt.list_identities",
+        description =
+          "List all registered channel identities for a user. If userId is omitted, lists for the current user.",
+        inputSchema = Json.decoder
+          .decodeJson(
+            """|{"type":"object","properties":{"userId":{"type":"string","description":"Numeric user ID — omit to use the current user"}},"required":[]}""",
+          )
+          .getOrElse(Json.Obj()),
+        outputSchema = Json.Obj("type" -> Json.Str("array")),
+        requiredCapabilities = List(CapabilityName("users.read")),
+        examplePrompts = List(
+          "What channels am I connected to?",
+          "List all identities for user 3",
+          "Show me my linked accounts",
+        ),
+      ),
       ToolDescriptor(
         name = "user_mgmt.list_users",
         description = "List or search users in the system. Supports optional filters for name substring, active status, and pagination.",
@@ -200,6 +294,10 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     args: Json,
   ): IO[JorlanError, Json] =
     tool match {
+      case "user_mgmt.find"             => find(args)
+      case "user_mgmt.resolve_identity" => resolveIdentity(args)
+      case "user_mgmt.link_identity"    => linkIdentity(ctx, args)
+      case "user_mgmt.list_identities"  => listIdentities(ctx, args)
       case "user_mgmt.list_users"       => listUsers(args)
       case "user_mgmt.get_user"         => getUser(args)
       case "user_mgmt.create_user"      => createUser(args)
@@ -214,6 +312,139 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       case "user_mgmt.revoke_grant"     => revokeGrant(args)
       case other                        => ZIO.fail(JorlanError(s"UserManagementSkill: unknown tool '$other'"))
     }
+
+  // ─── User discovery & channel-identity ──────────────────────────────────────
+
+  private def find(args: Json): IO[JorlanError, Json] = {
+    val nameOpt = str(args, "name")
+    for {
+      users <- repos.user.search(UserSearch(fuzzyName = nameOpt, active = Some(true))).mapError(JorlanError(_))
+      ranked = nameOpt.fold(users)(q => jorlan.service.FuzzyNameMatch.rank(users, q)(_.displayName))
+      results <- ZIO.foreachPar(ranked) { u =>
+        repos.user
+          .getChannelIdentities(u.id).mapBoth(
+            JorlanError(_),
+            { identities =>
+              val idJson = identities.map { ci =>
+                Json.Obj(
+                  "channelType"   -> Json.Str(ci.channelType.toString),
+                  "channelUserId" -> Json.Str(ci.channelUserId),
+                )
+              }
+              Json.Obj(
+                "userId"      -> Json.Str(u.id.value.toString),
+                "displayName" -> Json.Str(u.displayName),
+                "identities"  -> Json.Arr(idJson*),
+              )
+            },
+          )
+      }
+    } yield Json.Arr(results*)
+  }
+
+  private def resolveIdentity(args: Json): IO[JorlanError, Json] = {
+    val channelTypeStr = str(args, "channelType")
+    val channelUserId = str(args, "channelUserId")
+    (channelTypeStr, channelUserId) match {
+      case (None, _)              => ZIO.fail(JorlanError("user_mgmt.resolve_identity: channelType is required"))
+      case (_, None)              => ZIO.fail(JorlanError("user_mgmt.resolve_identity: channelUserId is required"))
+      case (Some(ct), Some(cuid)) =>
+        parseChannelType(ct) match {
+          case None         => ZIO.fail(JorlanError(s"user_mgmt.resolve_identity: unknown channelType '$ct'"))
+          case Some(chType) =>
+            repos.user
+              .userByChannelIdentity(chType, cuid).mapBoth(
+                JorlanError(_),
+                {
+                  case None    => Json.Obj("found" -> Json.Bool(false))
+                  case Some(u) =>
+                    Json.Obj(
+                      "found"       -> Json.Bool(true),
+                      "userId"      -> Json.Str(u.id.value.toString),
+                      "displayName" -> Json.Str(u.displayName),
+                      "email"       -> Json.Str(u.email),
+                    )
+                },
+              )
+        }
+    }
+  }
+
+  private def linkIdentity(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
+    val userIdRaw = str(args, "userId")
+    val channelTypeStr = str(args, "channelType")
+    val channelUserId = str(args, "channelUserId")
+    val resolvedUserId: Either[String, UserId] = userIdRaw match {
+      case None      => Right(ctx.actorId)
+      case Some(uid) =>
+        uid.toLongOption.map(UserId(_)).toRight(s"user_mgmt.link_identity: userId must be numeric, got '$uid'")
+    }
+    (resolvedUserId, channelTypeStr, channelUserId) match {
+      case (_, None, _)      => ZIO.fail(JorlanError("user_mgmt.link_identity: channelType is required"))
+      case (_, _, None)      => ZIO.fail(JorlanError("user_mgmt.link_identity: channelUserId is required"))
+      case (Left(err), _, _) => ZIO.fail(JorlanError(err))
+      case (Right(uid), Some(ct), Some(cuid)) =>
+        parseChannelType(ct) match {
+          case None         => ZIO.fail(JorlanError(s"user_mgmt.link_identity: unknown channelType '$ct'"))
+          case Some(chType) =>
+            Clock.instant.flatMap { now =>
+              val ci = ChannelIdentity(
+                id = ChannelIdentityId.empty,
+                userId = uid,
+                channelType = chType,
+                channelUserId = cuid,
+                verified = false,
+                providerData = None,
+                createdAt = now,
+              )
+              repos.user
+                .upsertChannelIdentity(ci).mapBoth(
+                  JorlanError(_),
+                  { saved =>
+                    Json.Obj(
+                      "channelIdentityId" -> Json.Str(saved.id.value.toString),
+                      "channelType"       -> Json.Str(saved.channelType.toString),
+                      "channelUserId"     -> Json.Str(saved.channelUserId),
+                    )
+                  },
+                )
+            }
+        }
+    }
+  }
+
+  private def listIdentities(
+    ctx:  InvocationContext,
+    args: Json,
+  ): IO[JorlanError, Json] = {
+    val resolvedId = str(args, "userId") match {
+      case None      => Right(ctx.actorId)
+      case Some(uid) =>
+        uid.toLongOption.map(UserId(_)).toRight(s"user_mgmt.list_identities: userId must be numeric, got '$uid'")
+    }
+    resolvedId match {
+      case Left(err) => ZIO.fail(JorlanError(err))
+      case Right(id) =>
+        repos.user
+          .getChannelIdentities(id).mapBoth(
+            JorlanError(_),
+            { identities =>
+              Json.Arr(
+                identities.map { ci =>
+                  Json.Obj(
+                    "channelType"   -> Json.Str(ci.channelType.toString),
+                    "channelUserId" -> Json.Str(ci.channelUserId),
+                    "verified"      -> Json.Bool(ci.verified),
+                  )
+                }*,
+              )
+            },
+          )
+    }
+  }
 
   // ─── User operations ─────────────────────────────────────────────────────────
 
@@ -236,12 +467,13 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def getUser(args: Json): IO[JorlanError, Json] = {
     requireLong(args, "get_user", "userId").flatMap { id =>
       repos.user
-        .getById(UserId(id))
-        .mapError(JorlanError(_))
-        .map {
-          case Some(u) => userJson(u)
-          case None    => Json.Obj()
-        }
+        .getById(UserId(id)).mapBoth(
+          JorlanError(_),
+          {
+            case Some(u) => userJson(u)
+            case None    => Json.Obj()
+          },
+        )
     }
   }
 
@@ -277,9 +509,7 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def deactivateUser(args: Json): IO[JorlanError, Json] = {
     requireLong(args, "deactivate_user", "userId").flatMap { id =>
       repos.user
-        .deactivate(UserId(id))
-        .mapError(JorlanError(_))
-        .map(count => Json.Obj("success" -> Json.Bool(count > 0)))
+        .deactivate(UserId(id)).mapBoth(JorlanError(_), count => Json.Obj("success" -> Json.Bool(count > 0)))
     }
   }
 
@@ -292,18 +522,17 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
     else if (pageSize <= 0) ZIO.fail(JorlanError("user_mgmt.list_roles: pageSize must be > 0"))
     else
       repos.permission
-        .searchRoles(RoleSearch(page = page, pageSize = pageSize))
-        .mapError(JorlanError(_))
-        .map(roles => Json.Arr(roles.map(roleJson)*))
+        .searchRoles(RoleSearch(page = page, pageSize = pageSize)).mapBoth(
+          JorlanError(_),
+          roles => Json.Arr(roles.map(roleJson)*),
+        )
   }
 
   private def createRole(args: Json): IO[JorlanError, Json] = {
     requireStr(args, "create_role", "name").flatMap { name =>
       val description = str(args, "description")
       repos.permission
-        .upsertRole(Role(RoleId.empty, name, description))
-        .mapError(JorlanError(_))
-        .map(roleJson)
+        .upsertRole(Role(RoleId.empty, name, description)).mapBoth(JorlanError(_), roleJson)
     }
   }
 
@@ -328,9 +557,10 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
   private def listGrants(args: Json): IO[JorlanError, Json] = {
     requireLong(args, "list_grants", "userId").flatMap { id =>
       repos.permission
-        .searchGrants(GrantSearch(userId = Some(UserId(id))))
-        .mapError(JorlanError(_))
-        .map(grants => Json.Arr(grants.map(grantJson)*))
+        .searchGrants(GrantSearch(userId = Some(UserId(id)))).mapBoth(
+          JorlanError(_),
+          grants => Json.Arr(grants.map(grantJson)*),
+        )
     }
   }
 
@@ -386,27 +616,10 @@ class UserManagementSkill(repos: ZIORepositories) extends Skill {
       case Json.Obj(fields) =>
         fields.collectFirst { case (`field`, Json.Num(n)) => n } match {
           case Some(n) =>
-            ZIO
-              .attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
-          case None =>
-            str(args, field) match {
-              case Some(s) =>
-                s.toLongOption match {
-                  case Some(n) => ZIO.succeed(n)
-                  case None    => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field must be numeric, got '$s'"))
-                }
-              case None => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
-            }
-        }
-      case _ =>
-        str(args, field) match {
-          case Some(s) =>
-            s.toLongOption match {
-              case Some(n) => ZIO.succeed(n)
-              case None    => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field must be numeric, got '$s'"))
-            }
+            ZIO.attempt(n.longValueExact).orElseFail(JorlanError(s"user_mgmt.$tool: $field must be a 64-bit integer"))
           case None => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
         }
+      case _ => ZIO.fail(JorlanError(s"user_mgmt.$tool: $field is required"))
     }
 
   private def parseApprovalMode(s: String): Option[ApprovalMode] =

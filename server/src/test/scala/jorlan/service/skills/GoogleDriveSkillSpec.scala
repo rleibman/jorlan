@@ -9,7 +9,6 @@ package jorlan.service.skills
 import jorlan.*
 import jorlan.connector.InvocationContext
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import jorlan.google.GoogleDriveSkill
 import jorlan.service.DriveProvider
 import jorlan.testing.InMemoryRepositories
@@ -26,18 +25,21 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
 
   private val ctx = InvocationContext(UserId(1L), None, None)
 
+  private val fileId1 = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+  private val fileId2 = "1C2xNVt1YSB6oGNLvCeDCajhnVVrquumct85PhWF3vnt"
+
   private val sampleFiles = List(
     DriveFile(
-      id = DriveFileId("file-1"),
+      id = DriveFileId(fileId1),
       name = "report.pdf",
       mimeType = "application/pdf",
       sizeBytes = Some(102400L),
       modifiedAt = Instant.parse("2026-06-01T10:00:00Z"),
       parents = List("folder-1"),
-      webViewLink = Some("https://drive.google.com/file/d/file-1"),
+      webViewLink = Some(s"https://drive.google.com/file/d/$fileId1"),
     ),
     DriveFile(
-      id = DriveFileId("file-2"),
+      id = DriveFileId(fileId2),
       name = "notes.txt",
       mimeType = "text/plain",
       sizeBytes = Some(512L),
@@ -48,7 +50,7 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
   )
 
   private val fileContent = Map(
-    "file-2" -> "This is the content of notes.txt".getBytes("UTF-8"),
+    fileId2 -> "This is the content of notes.txt".getBytes("UTF-8"),
   )
 
   private def makeProvider(
@@ -127,9 +129,9 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
-          result   <- skill.invoke(ctx, "drive.readFile", Json.Obj("fileId" -> Json.Str("file-2")))
+          result   <- skill.invoke(ctx, "drive.readFile", Json.Obj("fileId" -> Json.Str(fileId2)))
         } yield assertTrue(
-          strField(result, "fileId").contains("file-2"),
+          strField(result, "fileId").contains(fileId2),
           strField(result, "content").exists(_.contains("notes.txt")),
         )
       },
@@ -151,9 +153,9 @@ object GoogleDriveSkillSpec extends ZIOSpec[ZIORepositories] {
         for {
           provider <- makeProvider()
           skill    <- makeSkill(provider)
-          result   <- skill.invoke(ctx, "drive.downloadFile", Json.Obj("fileId" -> Json.Str("file-2")))
+          result   <- skill.invoke(ctx, "drive.downloadFile", Json.Obj("fileId" -> Json.Str(fileId2)))
         } yield assertTrue(
-          strField(result, "fileId").contains("file-2"),
+          strField(result, "fileId").contains(fileId2),
           strField(result, "content").isDefined,
           intField(result, "sizeBytes").isDefined,
         )

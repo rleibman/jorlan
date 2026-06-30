@@ -625,3 +625,18 @@ select {
 
 .bg-navy  { background-color: var(--bd-navy); color: var(--bd-cream); }
 .bg-cream { background-color: var(--bd-cream); }
+
+/* ============================================================
+ * Skill documentation rendered markdown
+ * ============================================================ */
+
+.skill-doc-content h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.5rem; }
+.skill-doc-content h3 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.4rem; color: var(--bd-steel); }
+.skill-doc-content p  { margin: 0.3rem 0; font-size: 0.9rem; }
+.skill-doc-content ul, .skill-doc-content ol { margin: 0.3rem 0 0.3rem 1.2rem; font-size: 0.9rem; }
+.skill-doc-content li { margin-bottom: 0.2rem; }
+.skill-doc-content code { font-family: var(--font-mono); background: rgba(0,0,0,0.06); border-radius: 3px; padding: 0 3px; font-size: 0.85em; }
+.skill-doc-content pre { background: rgba(0,0,0,0.06); border-radius: 4px; padding: 0.75rem; overflow-x: auto; }
+.skill-doc-content table { border-collapse: collapse; width: 100%; font-size: 0.875rem; margin: 0.5rem 0; }
+.skill-doc-content th { background: rgba(0,0,0,0.06); font-weight: 600; padding: 0.3rem 0.6rem; text-align: left; border: 1px solid rgba(0,0,0,0.12); }
+.skill-doc-content td { padding: 0.3rem 0.6rem; border: 1px solid rgba(0,0,0,0.12); vertical-align: top; }

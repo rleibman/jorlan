@@ -81,22 +81,26 @@ trait Skill {
       case _                => None
     }
 
-  final protected def optInt(
+  final protected def requireStr(
     args: Json,
-    name: String,
-  ): Option[Int] =
-    args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Num(n)) => n.intValue }
-      case _                => None
-    }
+    key:  String,
+  ): IO[JorlanError, String] =
+    str(args, key).fold(
+      ZIO.fail(ValidationError(s"missing required field '$key'")),
+    )(ZIO.succeed(_))
 
-  final protected def optStr(
+  final protected def requireLong(
     args: Json,
-    name: String,
-  ): Option[String] =
+    key:  String,
+  ): IO[JorlanError, Long] =
     args match {
-      case Json.Obj(fields) => fields.collectFirst { case (`name`, Json.Str(v)) => v }
-      case _                => None
+      case Json.Obj(fields) =>
+        fields
+          .collectFirst {
+            case (`key`, Json.Num(n)) => n.longValue
+            case (`key`, Json.Str(s)) => s.toLong
+          }.fold(ZIO.fail(ValidationError(s"missing or invalid field '$key'")): IO[JorlanError, Long])(ZIO.succeed(_))
+      case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }
 
   final protected def parseChannelType(s: String): Option[ChannelType] =
@@ -163,6 +167,7 @@ case class SkillDescriptor(
   configJsModule:    Option[String] = None,
   dashboardJsModule: Option[String] = None,
   oauthProvider:     Option[OAuthProvider] = None,
+  doc:               Option[String] = None,
 )
 
 /** Descriptor for a single tool within a [[Skill]] namespace.

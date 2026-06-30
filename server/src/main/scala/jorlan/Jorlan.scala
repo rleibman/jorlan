@@ -21,8 +21,9 @@ import jorlan.lyrion.*
 import jorlan.market.*
 import jorlan.routes.*
 import jorlan.search.{SearchConfig, SearchSkill}
+import jorlan.service.skills.SkillPluginLoader
 import jorlan.service.*
-import jorlan.service.mcp.McpManagerImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
 import jorlan.time.{TimeConfig, TimeSkill}
@@ -39,9 +40,10 @@ import java.util.concurrent.TimeUnit
 
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
-  ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
-  jorlan.service.skills.declarative.SkillLifecycleService
+  JobManager & ApprovalService & ApprovalHub & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
+  EventLogHub & ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
+  jorlan.service.skills.declarative.SkillLifecycleService & jorlan.service.OAuthReconnectService &
+  jorlan.service.mcp.McpManager
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
@@ -79,9 +81,9 @@ object Jorlan extends ZIOApp {
             AuthRoutes(authServer),
             JorlanRoutes,
             HealthRoutes,
-            StaticRoutes,
             StatusRoutes(startTime),
             oauthRoutes,
+            StaticRoutes, // must be last — its GET / trailing catch-all matches any path
           )
 
         override def api: ZIO[
@@ -181,10 +183,30 @@ object Jorlan extends ZIOApp {
       _ <- registry.register(CalculatorSkill())
       _ <- registry.register(MemorySkill(memService, embeddingStore, embeddingModel))
       _ <- registry.register(SchedulerSkill(jobManager))
-      _ <- registry.register(ContactsSkill(repos))
       _ <- registry.register(WorkspaceSkill(workRoot, workspaceCfg))
       _ <- registry.register(ShellSkill(shellCfg, repos))
       _ <- registry.register(NotifySkill(notifRouter))
+      // ── Plugin JARs: skills loaded dynamically from pluginsDir ───────────────
+      config       <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
+      pluginSkills <- SkillPluginLoader
+        .loadAll(
+          pluginsDir = new java.io.File(config.jorlan.pluginsDir),
+          client = httpClient,
+          getSetting = key =>
+            repos.setting
+              .get(key)
+              .tapError(e => ZIO.logWarning(s"Plugin getSetting('$key') failed: ${e.msg}"))
+              .orElseSucceed(None),
+          setSetting = (
+            key,
+            value,
+          ) =>
+            repos.setting
+              .set(key, value)
+              .tapError(e => ZIO.logWarning(s"Plugin setSetting('$key') failed: ${e.msg}"))
+              .orElseSucceed(()),
+        ).catchAll(e => ZIO.logError(s"Plugin loading failed: ${e.msg}").as(List.empty))
+      _ <- ZIO.foreach(pluginSkills)(registry.register)
       _ <- ZIO
         .attempt(java.time.ZoneId.systemDefault().getId)
         .orElseSucceed("UTC")
@@ -394,10 +416,7 @@ object Jorlan extends ZIOApp {
       lifecycleSvc <- ZIO.service[jorlan.service.skills.declarative.SkillLifecycleService]
       _            <- registry.register(SkillAuthoringSkill(lifecycleSvc))
       // ── MCP servers ───────────────────────────────────────────────────────────
-      _ <- ZIO
-        .scoped {
-          McpManagerImpl(registry, httpClient, repos.setting).loadAndRegister
-        }.mapError(e => new Throwable(e.msg))
+      _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
       // ── Apply explicit skill.disabled list from server_settings ───────────────
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {
         case Some(zio.json.ast.Json.Arr(elems)) =>

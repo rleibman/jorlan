@@ -69,6 +69,7 @@ object MuiTextField {
     inline def onKeyDown(value: js.Function1[js.Dynamic, Unit]): this.type =
       set("onKeyDown", value.asInstanceOf[js.Any])
     inline def sx(value:         js.Object): this.type = set("sx", value.asInstanceOf[js.Any])
+    inline def helperText(value: String):    this.type = set("helperText", value.asInstanceOf[js.Any])
     inline def inputProps(value: js.Object): this.type = set("inputProps", value.asInstanceOf[js.Any])
     inline def slotProps(value:  js.Object): this.type = set("slotProps", value.asInstanceOf[js.Any])
 

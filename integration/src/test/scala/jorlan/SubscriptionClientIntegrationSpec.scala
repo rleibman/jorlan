@@ -17,6 +17,7 @@ import jorlan.routes.JorlanRoutes
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
 import jorlan.service.skills.declarative.SkillLifecycleService
@@ -91,6 +92,7 @@ object SubscriptionClientIntegrationSpec
       configLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -112,7 +114,9 @@ object SubscriptionClientIntegrationSpec
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      McpManager.live,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

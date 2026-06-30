@@ -8,7 +8,6 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
-import jorlan.*
 import zio.*
 
 /** Evaluates a [[CapabilityRequest]] by querying the permission store in the prescribed priority order:
@@ -25,6 +24,8 @@ import zio.*
   * `shell.sudo.execute` → resource = `"shell"`, action = `"sudo.execute"`). If the name contains no `.`, the full name
   * is used as the resource with action `"use"`. Permission rows must be written with the same convention.
   */
+// Coupling note: accepts `ZIOPermissionRepository` directly (a type alias for `PermissionRepository[IO[RepositoryError,*]]`).
+// This is intentional at the server layer; InMemoryRepositories satisfies this trait for tests.
 private class CapabilityEvaluatorImpl(repo: ZIOPermissionRepository) extends CapabilityEvaluator {
 
   override def evaluate(request: CapabilityRequest): IO[JorlanError, EvaluationResult] = {

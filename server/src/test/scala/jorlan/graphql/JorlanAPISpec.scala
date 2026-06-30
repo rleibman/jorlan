@@ -6,6 +6,7 @@
 
 package jorlan.graphql
 
+import ai.{EmbeddingModel, EmbeddingStore}
 import auth.UnauthenticatedSession
 import caliban.GraphQLInterpreter
 import jorlan.*
@@ -15,8 +16,8 @@ import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
-import ai.{EmbeddingModel, EmbeddingStore}
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
 import zio.http.Client
@@ -29,7 +30,8 @@ import zio.test.*
   *   - All Mutations (createUser, updateUser, createRole, assignRole, revokeRole, grantPermission, revokePermission)
   *   - Authorization helpers: `actorIdFromSession` (unauthenticated → error), `requireCapability` (deny/allow)
   *   - Input validation: `grantPermission` must target exactly one of userId/roleId
-  *   - Subscription stubs: `approvalNotifications` and `eventLogTail` return empty streams
+  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalHub]]; `eventLogTail` returns an empty stream in
+  *     tests
   */
 object JorlanAPISpec extends ZIOSpecDefault {
 
@@ -188,18 +190,21 @@ object JorlanAPISpec extends ZIOSpecDefault {
               svc   <- ZIO.service[MemoryService]
               store <- ZIO.service[EmbeddingStore]
               model <- ZIO.service[EmbeddingModel]
-            } yield SkillRegistry.liveWith(new MemorySkill(svc, store, model))
+            } yield SkillRegistry.liveSecureWith(new MemorySkill(svc, store, model))
           }.flatten
         },
         FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
         approvalSvcLayer,
+        ApprovalHub.live,
         noOpNotificationRouter,
         oauthCredSvcLayer,
         DashboardService.live,
         Client.default.orDie,
+        ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
         SkillLifecycleService.live,
+        McpManager.live,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
       ).orDie
   }
@@ -236,6 +241,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
       invokeToolSuite,
       miscSuite,
       jobLifecycleSuite,
+      skillLifecycleSuite,
+      mcpServerSuite,
+      skillAdminSuite,
+      capabilityRoleSuite,
     )
 
   // ─── Query tests ──────────────────────────────────────────────────────────────
@@ -483,14 +492,15 @@ object JorlanAPISpec extends ZIOSpecDefault {
   // ─── Subscription stubs ───────────────────────────────────────────────────────
 
   private val subscriptionSuite = suite("Subscriptions")(
-    test("schema includes both subscription fields") {
+    test("schema includes all subscription fields") {
       val schema = JorlanAPI.api.render
       assertTrue(
         schema.contains("approvalNotifications"),
         schema.contains("eventLogTail"),
+        schema.contains("toolEvents"),
       )
     },
-    test("approvalNotifications stub returns an empty stream") {
+    test("approvalNotifications subscription yields no events without published requests") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.executeRequest(
@@ -499,11 +509,94 @@ object JorlanAPISpec extends ZIOSpecDefault {
           ),
         )
         events <- result.data match {
-          case caliban.ResponseValue.StreamValue(stream) => stream.take(10).runCollect.map(_.toList)
-          case _                                         => ZIO.succeed(List.empty)
+          case caliban.ResponseValue.StreamValue(stream) =>
+            stream.take(1).timeout(200.millis).runCollect.map(_.toList)
+          case _ => ZIO.succeed(List.empty)
         }
       } yield assertTrue(events.isEmpty)
-    }.provideLayer(makeAppLayer()),
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
+    test("approvalNotifications subscription receives event published through ApprovalHub") {
+      for {
+        hub    <- ZIO.service[ApprovalHub]
+        stream <- hub.subscribeToNewRequests
+        req = ApprovalRequest(
+          id = ApprovalRequestId(42L),
+          capability = CapabilityName("shell.execute"),
+          scopeJson = None,
+          agentId = None,
+          requestorUserId = UserId(1L),
+          sessionId = None,
+          riskClass = RiskClass.ExternalEffect,
+          status = ApprovalStatus.Pending,
+          createdAt = java.time.Instant.EPOCH,
+          expiresAt = None,
+        )
+        fiber  <- stream.take(1).runCollect.map(_.toList).fork
+        _      <- hub.notifyNewRequest(req)
+        events <- fiber.join
+      } yield assertTrue(
+        events.size == 1,
+        events.headOption.exists(_.capability == CapabilityName("shell.execute")),
+      )
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
+    test("toolEvents subscription yields no events before any tool is invoked") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.executeRequest(
+          caliban.GraphQLRequest(
+            query = Some("subscription { toolEvents(value: 1) { eventType toolName } }"),
+          ),
+        )
+        events <- result.data match {
+          case caliban.ResponseValue.StreamValue(stream) =>
+            stream.take(1).timeout(200.millis).runCollect.map(_.toList)
+          case _ => ZIO.succeed(List.empty)
+        }
+      } yield assertTrue(events.isEmpty)
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
+    test("toolEvents subscription receives ToolInvokedEvent published to matching session") {
+      for {
+        interp <- ZIO.service[Interp]
+        hub    <- ZIO.service[ToolEventHub]
+        // Subscribe directly to the hub to get a live stream, bypassing Caliban plumbing
+        rawStream <- hub.subscribe(AgentSessionId(42L))
+        fiber     <- rawStream.take(1).runCollect.map(_.toList).fork
+        _         <- hub.publish(ToolEvent.ToolInvokedEvent(AgentSessionId(42L), "weather.get_forecast", "{}"))
+        events    <- fiber.join
+        // Verify the schema includes toolEvents field
+        schema = JorlanAPI.api.render
+      } yield assertTrue(
+        events.nonEmpty,
+        events.headOption.exists {
+          case ToolEvent.ToolInvokedEvent(_, name, _) => name == "weather.get_forecast"; case _ => false
+        },
+        schema.contains("toolEvents"),
+      )
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
+    test("toolEvents subscription scopes by sessionId — other sessions do not bleed through") {
+      for {
+        interp <- ZIO.service[Interp]
+        hub    <- ZIO.service[ToolEventHub]
+        events <- interp
+          .executeRequest(
+            caliban.GraphQLRequest(
+              query = Some("subscription { toolEvents(value: 99) { eventType toolName } }"),
+            ),
+          )
+          .flatMap { case r =>
+            r.data match {
+              case caliban.ResponseValue.StreamValue(stream) =>
+                stream
+                  .take(1)
+                  .timeout(150.millis)
+                  .runCollect
+                  .map(_.toList)
+              case _ => ZIO.succeed(List.empty)
+            }
+          }
+          .zipLeft(hub.publish(ToolEvent.ToolInvokedEvent(AgentSessionId(1L), "other.tool", "{}")))
+      } yield assertTrue(events.isEmpty)
+    }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
   )
 
   // ─── Personality query / mutation ────────────────────────────────────────────
@@ -1397,6 +1490,332 @@ object JorlanAPISpec extends ZIOSpecDefault {
         !result.data.toString.contains("[]"),
       )
     }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── Skill manifest used in lifecycle tests ───────────────────────────────────
+
+  private val testManifestStr: String =
+    """{"name":"myskill","version":"1.0.0","description":"test","keywords":[],"tools":[{"name":"myskill.run","description":"run","requiredCapabilities":[],"examplePrompts":[],"inputSchema":{"type":"object"},"outputSchema":{"type":"string"},"executor":{"HttpApi":{"config":{"method":"GET","url":"https://ex.com","headers":{},"bodyTemplate":null,"responseJsonPath":null}}}}]}"""
+
+  // ─── Skill lifecycle tests ────────────────────────────────────────────────────
+
+  private val skillLifecycleSuite = suite("skill lifecycle")(
+    test("createSkillDraft succeeds with skill.create capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr
+              .replace("\"", "\\\"")}") { id skillId skillName version status } }""",
+        )
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("Draft"),
+        result.data.toString.contains("myskill"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("createSkillDraft fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("createSkillDraft fails when skill.create capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
+    test("advanceSkillLifecycle succeeds with skill.create capability") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+        versionId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { advanceSkillLifecycle(value: $versionId) { versionId newStatus errors info } }""",
+        )
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("Validated"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("approveSkillVersion fails when not AwaitingApproval") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+        versionId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { approveSkillVersion(value: $versionId) { versionId newStatus errors } }""",
+        )
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.nonEmpty,
+      )
+    }.provideLayer(makeAppLayer()),
+    test("rejectSkillVersion fails when not AwaitingApproval") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+        versionId = extractLong(createResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { rejectSkillVersion(versionId: $versionId, reason: "not ready") { versionId newStatus errors } }""",
+        )
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.nonEmpty,
+      )
+    }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── MCP server tests ─────────────────────────────────────────────────────────
+
+  private val mcpServerSuite = suite("mcp servers")(
+    test("mcpServers query returns empty list initially") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ mcpServers { name transport url command } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("mcpServers"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("upsertMcpServer mutation succeeds with admin.settings capability") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true) { name transport url } }""",
+        )
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("test-mcp"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("upsertMcpServer fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true) { name transport } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("deleteMcpServer succeeds after upsert") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { upsertMcpServer(name: "test-mcp2", transport: "HttpSse", url: "http://localhost:9998", args: [], env: [], keywords: [], enabled: true) { name } }""",
+        )
+        result <- interp.execute("""mutation { deleteMcpServer(value: "test-mcp2") }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("true"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("deleteMcpServer returns false for non-existent server") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""mutation { deleteMcpServer(value: "does-not-exist-xyz") }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("false"),
+      )
+    }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── Skill admin queries (skillVersions, pendingSkillVersions, allCustomSkills) ──
+
+  private val skillAdminSuite = suite("Skill admin queries")(
+    test("skillVersions fails for unknown skillId") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillVersions(value: 999999) { id version status } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("skillVersions returns versions after creating a draft") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr
+              .replace("\"", "\\\"")}") { id skillId version status } }""",
+        )
+        skillId = extractLong(createResult.data.toString, "skillId")
+        result <- interp.execute(s"""{ skillVersions(value: $skillId) { id version status } }""")
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("1.0.0"),
+        result.data.toString.contains("Draft"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("skillVersions fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillVersions(value: 1) { id status } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("pendingSkillVersions returns empty list initially") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ pendingSkillVersions { id version status } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
+    }.provideLayer(makeAppLayer()),
+    test("pendingSkillVersions returns version after advancing to AwaitingApproval") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id status } }""",
+        )
+        versionId = extractLong(createResult.data.toString, "id")
+        _ <- interp.execute(
+          s"""mutation { advanceSkillLifecycle(value: $versionId) { versionId newStatus } }""",
+        )
+        _ <- interp.execute(
+          s"""mutation { advanceSkillLifecycle(value: $versionId) { versionId newStatus } }""",
+        )
+        _ <- interp.execute(
+          s"""mutation { advanceSkillLifecycle(value: $versionId) { versionId newStatus } }""",
+        )
+        _ <- interp.execute(
+          s"""mutation { advanceSkillLifecycle(value: $versionId) { versionId newStatus } }""",
+        )
+        result <- interp.execute("""{ pendingSkillVersions { id version status } }""")
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("AwaitingApproval"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("allCustomSkills returns empty list when no declarative skills exist") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ allCustomSkills { id skillName version status } }""")
+      } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("[]"))
+    }.provideLayer(makeAppLayer()),
+    test("allCustomSkills returns skill after creating a draft") {
+      for {
+        interp       <- ZIO.service[Interp]
+        createResult <- interp.execute(
+          s"""mutation { createSkillDraft(value: "${testManifestStr.replace("\"", "\\\"")}") { id skillName } }""",
+        )
+        result <- interp.execute("""{ allCustomSkills { id skillName version status } }""")
+      } yield assertTrue(
+        createResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("myskill"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("allKnownCapabilities returns a list") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ allKnownCapabilities }""")
+      } yield assertTrue(result.errors.isEmpty)
+    }.provideLayer(makeAppLayer()),
+    test("skillValidate returns ok=true for existing skill without HasValidation") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillValidate(value: "memory") { ok message } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("true"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("skillValidate returns ok=false for unknown skill name") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillValidate(value: "no-such-skill-xyz") { ok message } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("false"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("skillValidate fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute("""{ skillValidate(value: "memory") { ok } }""")
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("mcpServers query includes server after upsert") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { upsertMcpServer(name: "admin-test-mcp", transport: "Stdio", command: "/bin/tool", args: [], env: [], keywords: ["k1"], enabled: true) { name } }""",
+        )
+        result <- interp.execute("""{ mcpServers { name transport enabled keywords } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("admin-test-mcp"),
+        result.data.toString.contains("k1"),
+      )
+    }.provideLayer(makeAppLayer()),
+  )
+
+  // ─── Role capability grant tests ──────────────────────────────────────────────
+
+  private val capabilityRoleSuite = suite("Role capability grants")(
+    test("grantCapabilityToRole grants a capability to a role") {
+      for {
+        interp     <- ZIO.service[Interp]
+        roleResult <- interp.execute("""mutation { createRole(name: "cap-role") { id } }""")
+        roleId = extractLong(roleResult.data.toString, "id")
+        result <- interp.execute(
+          s"""mutation { grantCapabilityToRole(roleId: $roleId, capability: "memory.read", approvalMode: Persistent) { id capability } }""",
+        )
+      } yield assertTrue(
+        roleResult.errors.isEmpty,
+        result.errors.isEmpty,
+        result.data.toString.contains("memory.read"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("roleCapabilityGrants returns grants after granting to role") {
+      for {
+        interp     <- ZIO.service[Interp]
+        roleResult <- interp.execute("""mutation { createRole(name: "grants-role") { id } }""")
+        roleId = extractLong(roleResult.data.toString, "id")
+        _ <- interp.execute(
+          s"""mutation { grantCapabilityToRole(roleId: $roleId, capability: "agent.message", approvalMode: Persistent) { id } }""",
+        )
+        result <- interp.execute(s"""{ roleCapabilityGrants(value: $roleId) { id capability } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("agent.message"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("roleCapabilityGrants returns empty list for role with no grants") {
+      for {
+        interp     <- ZIO.service[Interp]
+        roleResult <- interp.execute("""mutation { createRole(name: "empty-grants-role") { id } }""")
+        roleId = extractLong(roleResult.data.toString, "id")
+        result <- interp.execute(s"""{ roleCapabilityGrants(value: $roleId) { id capability } }""")
+      } yield assertTrue(
+        result.errors.isEmpty,
+        result.data.toString.contains("[]"),
+      )
+    }.provideLayer(makeAppLayer()),
+    test("grantCapabilityToRole fails when unauthenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { grantCapabilityToRole(roleId: 1, capability: "some.cap", approvalMode: Persistent) { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
+    test("grantCapabilityToRole fails when permission.grant capability is denied") {
+      for {
+        interp <- ZIO.service[Interp]
+        result <- interp.execute(
+          """mutation { grantCapabilityToRole(roleId: 1, capability: "some.cap", approvalMode: Persistent) { id } }""",
+        )
+      } yield assertTrue(result.errors.nonEmpty)
+    }.provideLayer(makeAppLayer(capEval = denyAll)),
   )
 
 }

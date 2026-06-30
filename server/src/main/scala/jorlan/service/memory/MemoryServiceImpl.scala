@@ -11,11 +11,9 @@ import dev.langchain4j.data.document.Metadata
 import dev.langchain4j.data.segment.TextSegment
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
-import jorlan.*
 import jorlan.service.*
 import zio.*
 import zio.json.*
-import zio.json.ast.Json
 
 import scala.jdk.CollectionConverters.*
 
@@ -187,8 +185,8 @@ class MemoryServiceImpl(
     queryText: String,
     limit:     Int,
   ): IO[JorlanError, List[MemoryRecord]] = {
-    import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
     import dev.langchain4j.store.embedding.EmbeddingSearchRequest
+    import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder
     ZIO
       .attemptBlocking {
         val queryEmbedding = embeddingModel.embed(queryText).content()
@@ -231,12 +229,13 @@ object MemoryServiceImpl {
         embeddingStore <- ZIO.service[EmbeddingStore]
         embeddingModel <- ZIO.service[EmbeddingModel]
         savedConfig    <- repo.setting
-          .get(CheckpointPolicyConfig.serverSettingsKey)
-          .mapError(JorlanError(_))
-          .map {
-            case Some(json) => json.as[CheckpointPolicyConfig].getOrElse(CheckpointPolicyConfig.default)
-            case None       => CheckpointPolicyConfig.default
-          }.orElseSucceed(CheckpointPolicyConfig.default)
+          .get(CheckpointPolicyConfig.serverSettingsKey).mapBoth(
+            JorlanError(_),
+            {
+              case Some(json) => json.as[CheckpointPolicyConfig].getOrElse(CheckpointPolicyConfig.default)
+              case None       => CheckpointPolicyConfig.default
+            },
+          ).orElseSucceed(CheckpointPolicyConfig.default)
         policyRef <- Ref.make(savedConfig)
       } yield MemoryServiceImpl(
         repo,

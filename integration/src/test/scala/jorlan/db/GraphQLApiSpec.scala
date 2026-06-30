@@ -13,6 +13,7 @@ import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.JobManagerImpl
 import jorlan.service.skills.SkillRegistry
 import jorlan.service.skills.declarative.SkillLifecycleService
@@ -84,6 +85,7 @@ object GraphQLApiSpec
       JorlanContainer.repositoryLayer,
       stubCapabilityEvaluator,
       stubApprovalService,
+      ApprovalHub.live,
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
       ToolEventHub.live,
@@ -101,7 +103,9 @@ object GraphQLApiSpec
       ZLayer.succeed(ConnectorManager.empty),
       stubOAuthCredentialService,
       Client.default.orDie,
+      McpManager.live,
       DashboardService.live,
+      ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
       SkillLifecycleService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

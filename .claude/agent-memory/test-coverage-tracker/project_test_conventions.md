@@ -23,4 +23,5 @@ Integration: RepositorySpec, SortingAndSortingSpec, SchedulerRepositorySpec, Art
 - `TestFixtures` in both unit and integration modules provides domain objects and event builders
 
 ## Coverage Tool
-Scoverage XML at: `/home/rleibman/projects/jorlan/target/scala-3.8.3/scoverage-report/scoverage.xml`
+Scoverage XML at: `/home/rleibman/projects/jorlan/target/scala-3.8.4/scoverage-report/scoverage.xml`
+(Path changed from scala-3.8.3 → scala-3.8.4 as of Sprint 3)

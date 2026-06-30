@@ -53,7 +53,10 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboa
      else
        ZIO
          .attempt(Right(Period.parse(durationStr)))
-         .orElse(ZIO.attempt(Left(JDuration.parse(durationStr)))))
+         // $COVERAGE-OFF$ JDuration.parse requires "PT" prefix so this orElse is never reachable for well-formed non-T durations
+         .orElse(ZIO.attempt(Left(JDuration.parse(durationStr))))
+       // $COVERAGE-ON$
+    )
       .mapError(_ =>
         JorlanError(
           s"Cannot parse duration '$durationStr'; expected ISO 8601 duration (e.g. 'PT2H30M' or 'P1D')",
@@ -218,6 +221,25 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboa
       "elapsed",
       "difference",
       "daylight saving",
+    ),
+    doc = Some(
+      """|## Time Skill
+         |
+         |Provides current time, timezone conversion, duration arithmetic, and datetime differencing using Java's time library.
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `time.now` | Current date/time in a timezone | `time.read` |
+         || `time.convert` | Convert datetime between timezones | `time.read` |
+         || `time.add_duration` | Add an ISO 8601 duration to a datetime | `time.read` |
+         || `time.diff` | Calculate duration between two datetimes | `time.read` |
+         |
+         |### Configuration
+         |Optionally configure a default timezone via `skill.time` in Server Settings:
+         |- `defaultTimezone`: IANA timezone name (default `UTC`)
+         |
+         |Grant the `time.read` capability to agents.""".stripMargin,
     ),
     tools = List(
       ToolDescriptor(

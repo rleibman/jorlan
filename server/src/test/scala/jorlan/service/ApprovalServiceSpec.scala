@@ -8,7 +8,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIOPermissionRepository, ZIORepositories}
-import jorlan.*
+import jorlan.service.{ApprovalHub, ApprovalServiceImpl, CapabilityEvaluatorImpl, EventLogHub}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.test.*
@@ -65,6 +65,7 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       InMemoryRepositories.live(),
       CapabilityEvaluatorImpl.live,
       EventLogHub.live,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
     )
 
@@ -76,7 +77,95 @@ object ApprovalServiceSpec extends ZIOSpecDefault {
       pendingApprovalSuite,
     )
 
+  private def makeApprovalRequest(
+    cap:    String,
+    userId: UserId = UserId(1L),
+  ): ApprovalRequest =
+    ApprovalRequest(
+      id = ApprovalRequestId.empty,
+      capability = CapabilityName(cap),
+      scopeJson = None,
+      agentId = None,
+      requestorUserId = userId,
+      sessionId = None,
+      riskClass = RiskClass.ReadOnly,
+      status = ApprovalStatus.Pending,
+      createdAt = T0,
+      expiresAt = None,
+    )
+
   private val recordDecisionSuite = suite("recordDecision")(
+    test("recordDecision with Cancelled status is recorded correctly") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        req  <- perm.createApprovalRequest(makeApprovalRequest("cancel.op"))
+        decision = ApprovalDecision(
+          id = ApprovalDecisionId.empty,
+          approvalRequestId = req.id,
+          decidedBy = UserId(99L),
+          decision = ApprovalStatus.Cancelled,
+          scopeOverride = None,
+          decidedAt = T0,
+        )
+        saved <- svc.recordDecision(decision)
+      } yield assertTrue(saved.decision == ApprovalStatus.Cancelled)
+    }.provide(testLayers),
+    test("recordDecision with Expired status is recorded correctly") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        req  <- perm.createApprovalRequest(makeApprovalRequest("expire.op"))
+        decision = ApprovalDecision(
+          id = ApprovalDecisionId.empty,
+          approvalRequestId = req.id,
+          decidedBy = UserId(99L),
+          decision = ApprovalStatus.Expired,
+          scopeOverride = None,
+          decidedAt = T0,
+        )
+        saved <- svc.recordDecision(decision)
+      } yield assertTrue(saved.decision == ApprovalStatus.Expired)
+    }.provide(testLayers),
+    test("Once grant: second authorize re-uses existing approved request without prompting") {
+      for {
+        perm <- ZIO.serviceWith[ZIORepositories](_.permission)
+        svc  <- ZIO.service[ApprovalService]
+        _    <- perm.upsertCapabilityGrant(
+          CapabilityGrant(
+            id = CapabilityGrantId.empty,
+            capability = CapabilityName("once.reuse"),
+            scopeJson = None,
+            granteeId = 1L,
+            granteeType = GranteeType.User,
+            grantorId = None,
+            approvalMode = ApprovalMode.Once,
+            expiresAt = None,
+            resourceConstraints = None,
+            createdAt = T0,
+          ),
+        )
+        // First authorize creates pending approval
+        result1 <- svc.authorize(capReq("once.reuse"))
+        // Approve it directly via repo
+        req <- perm.createApprovalRequest(makeApprovalRequest("once.reuse"))
+        _   <- perm.recordApprovalDecision(
+          ApprovalDecision(
+            id = ApprovalDecisionId.empty,
+            approvalRequestId = req.id,
+            decidedBy = UserId(99L),
+            decision = ApprovalStatus.Approved,
+            scopeOverride = None,
+            decidedAt = T0,
+          ),
+        )
+        // Second authorize should find the existing approved request and return Allowed
+        result2 <- svc.authorize(capReq("once.reuse"))
+      } yield assertTrue(
+        result1.isInstanceOf[AuthorizationResult.PendingApproval],
+        result2 == AuthorizationResult.Allowed,
+      )
+    }.provide(testLayers),
     test("recordDecision delegates to PermissionZIORepository and returns the saved decision") {
       for {
         permRepo <- ZIO.serviceWith[ZIORepositories](_.permission)

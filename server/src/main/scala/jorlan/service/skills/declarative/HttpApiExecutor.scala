@@ -22,7 +22,7 @@ object HttpApiExecutor {
     args:   Json,
     client: Client,
   ): IO[JorlanError, Json] = {
-    val url = substitute(config.url, args)
+    val url = DeclarativeArgSubstitution.substitute(config.url, args)
 
     val method = config.method.toUpperCase match {
       case "GET"    => Method.GET
@@ -34,7 +34,7 @@ object HttpApiExecutor {
     }
 
     val bodyContent: Body = config.bodyTemplate match {
-      case Some(tmpl) => Body.fromString(substitute(tmpl, args))
+      case Some(tmpl) => Body.fromString(DeclarativeArgSubstitution.substitute(tmpl, args))
       case None       => Body.empty
     }
 
@@ -51,31 +51,54 @@ object HttpApiExecutor {
       )
       client
         .batched(req)
+        .timeoutFail(JorlanError(s"HTTP request to $url timed out after 30 seconds"))(30.seconds)
         .flatMap { resp =>
-          resp.body.asString.map { bodyStr =>
-            bodyStr.fromJson[Json] match {
-              case Right(json) => json
-              case Left(_)     => Json.Str(bodyStr)
+          if (!resp.status.isSuccess) {
+            resp.body.asString
+              .mapError(e => JorlanError(s"HTTP request to $url failed with ${resp.status.code}: ${e.getMessage}"))
+              .flatMap { body =>
+                ZIO.fail(JorlanError(s"HTTP request to $url failed with status ${resp.status.code}: $body"))
+              }
+          } else {
+            resp.body.asString.map { bodyStr =>
+              config.responseJsonPath match {
+                case Some(path) =>
+                  bodyStr
+                    .fromJson[Json].toOption
+                    .flatMap(extractJsonPath(_, path))
+                    .getOrElse(Json.Str(bodyStr))
+                case None =>
+                  bodyStr.fromJson[Json] match {
+                    case Right(json) => json
+                    case Left(_)     => Json.Str(bodyStr)
+                  }
+              }
             }
           }
         }
-        .mapError(e => JorlanError(s"HTTP request to $url failed: ${Option(e.getMessage).getOrElse(e.toString)}"))
+        .mapError(e =>
+          e match {
+            case je: JorlanError => je
+            case _ => JorlanError(s"HTTP request to $url failed: ${Option(e.getMessage).getOrElse(e.toString)}")
+          },
+        )
     }
   }
 
-  private def substitute(
-    template: String,
-    args:     Json,
-  ): String =
-    args match {
-      case Json.Obj(fields) =>
-        fields.foldLeft(template) {
-          case (t, (key, Json.Str(v)))  => t.replace(s"{{$key}}", v)
-          case (t, (key, Json.Num(n)))  => t.replace(s"{{$key}}", n.toString)
-          case (t, (key, Json.Bool(b))) => t.replace(s"{{$key}}", b.toString)
-          case (t, _)                   => t
-        }
-      case _ => template
+  private def extractJsonPath(
+    json: Json,
+    path: String,
+  ): Option[Json] = {
+    val parts = path.split('.').filter(_.nonEmpty).toList
+    parts.foldLeft(Option(json)) { (cur, key) =>
+      cur.flatMap {
+        case Json.Obj(fields) =>
+          fields.collectFirst { case (`key`, v) => v }
+        case Json.Arr(items) =>
+          scala.util.Try(key.toInt).toOption.flatMap(i => items.toList.lift(i))
+        case _ => None
+      }
     }
+  }
 
 }

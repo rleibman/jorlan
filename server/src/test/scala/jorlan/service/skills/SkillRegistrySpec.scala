@@ -8,6 +8,7 @@ package jorlan.service.skills
 
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.service.{CapabilityEvaluator, ToolSpec}
 import jorlan.service.skills.SkillRegistry
 import just.semver.SemVer
 import zio.*

@@ -7,11 +7,10 @@
 package jorlan.service.skills
 
 import jorlan.*
-import jorlan.connector.{HasDashboardData, HasValidation, InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
+import jorlan.connector.*
 import jorlan.service.EmailProvider
 import just.semver.SemVer
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
@@ -62,6 +61,33 @@ class EmailSkill(
     ),
     configKey = Some("skill.email"),
     configJsModule = Some("jorlan-email"),
+    doc = Some(
+      """|## Email Skill
+         |
+         |Reads, sends, and manages email messages via Gmail (OAuth).
+         |
+         |### Tools
+         || Tool | Description | Capability |
+         ||------|-------------|------------|
+         || `email.list` | List recent messages | `email.read` |
+         || `email.read` | Read a specific message | `email.read` |
+         || `email.send` | Send a message | `email.send` |
+         || `email.draft` | Create a draft | `email.send` |
+         || `email.archive` | Archive a message | `email.write` |
+         || `email.delete` | Delete a message | `email.write` |
+         || `email.reply` | Reply to a message | `email.send` |
+         || `email.search` | Search messages | `email.read` |
+         || `email.move` | Move message to a folder | `email.write` |
+         || `email.flag` | Flag or mark as read/unread | `email.write` |
+         || `email.folders` | List available folders | `email.read` |
+         || `email.forward` | Forward a message | `email.send` |
+         |
+         |### Setup
+         |1. Configure Google OAuth credentials in Server Settings:
+         |   - `google.clientId`, `google.clientSecret`, `google.redirectUri`
+         |2. Users must connect their Google account via Admin → Integrations → Google.
+         |3. Grant email capabilities (`email.read`, `email.send`, `email.write`) to agents.""".stripMargin,
+    ),
     tools = List(
       ToolDescriptor(
         name = "email.list",

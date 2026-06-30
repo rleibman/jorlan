@@ -10,7 +10,14 @@ import zio.json.*
 
 enum McpTransport derives JsonCodec {
 
-  case Stdio, Http
+  /** Subprocess stdin/stdout (local MCP server). */
+  case Stdio
+
+  /** Streamable HTTP (MCP 2025-03-26): single POST endpoint, session via `mcp-session-id` header. */
+  case Http
+
+  /** HTTP+SSE (MCP 2024-11-05): GET establishes SSE stream, POST to messages endpoint. */
+  case HttpSse
 
 }
 
@@ -22,4 +29,5 @@ case class McpServerConfig(
   env:       Map[String, String] = Map.empty,
   url:       Option[String] = None,
   enabled:   Boolean = true,
+  keywords:  List[String] = List.empty,
 ) derives JsonCodec

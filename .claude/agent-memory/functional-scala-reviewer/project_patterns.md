@@ -184,6 +184,18 @@ type: project
 - `AgentRunnerReActSpec` correctly uses `ZIOSpec[ZIORepositories]` + `bootstrap` + `ZLayer.makeSome` via `provideSome` — consistent with the test patterns documented in Phase 9.
 - `NotificationRouter.notifyChannel` uses non-exhaustive pattern on `ChannelType` (only Telegram/Slack/Email covered; Shell/WhatsApp/Sms/GraphQL/Google/GitHub/Discord fall through to `None`) — sealed enum wildcard `_` silently handles future variants. This is intentional design (unknown channels return an error string) but the match structure in `channelTypeToConnectorType` should be documented.
 
+## Sprint 1–3 Discord / RSS / Approvals / Declarative Skills Patterns (reviewed 2026-06-29)
+
+- `DiscordApiClient.disconnect()` runs three synchronous side effects (`queue.clear()`, `queue.offer()`, `jdaRef.getAndSet()`) at definition-call time, not ZIO evaluation time. These lines precede the returned `ZIO.blocking(...)` in the method body. Critical purity violation — correct fix is `ZIO.succeed { ... }.flatMap { jda => ... }`.
+- `SkillLifecycleService.createDraft` (lines 91, 104) and `approve` (line 158) call `Instant.now()` directly inside for-comprehensions. Third module (after ContactsSkill phase 12, AgentRunnerImpl phase 12) to repeat this violation. Should use `Clock.instant` at for-comprehension top.
+- `HttpApiExecutor.execute` does not check `resp.status.isSuccess` — HTTP error responses (4xx/5xx) are returned to the calling agent as successful JSON. High practical risk for declarative skill correctness.
+- `HttpApiExecutorConfig.responseJsonPath` is defined but never read in `HttpApiExecutor`. Dead configuration field.
+- `RssFeedParser.nodeListToSeq` uses `mutable.ListBuffer` + `var i` — replace with `(0 until nl.getLength).map(nl.item(_)).toList`.
+- `RssFeedParser.parseRss/parseAtom` use `asInstanceOf[Element]` — should use `case el: Element =>` pattern matching, consistent with the `collectFirst { case e: Element => }` used in `parseAtom`'s link loop.
+- `ToolEventHub` and `ApprovalHub` use `Queue.bounded(256)` with back-pressuring `offer` calls. A slow/disconnected subscriber can suspend agent fibers. Should use `Queue.dropping` or `Queue.sliding` for UI event streaming.
+- `HumanApprovalNotifierImpl` has a stale "Phase 8 stub... wired in Phase 11" comment. Real approval delivery (Telegram/Discord push to approver) remains unimplemented through Sprint 3.
+- `ApprovalHub.subscribeToNewRequests` — queue leaks into `subscribers` list if returned `ZStream` is never consumed (same pattern as `SessionHub`, documented as accepted, but needs Scaladoc warning).
+
 ## Phase 15 Web Frontend Patterns (reviewed 2026-06-10)
 
 - Adapter construction (`ScalaJSClientAdapter(Uri.parse(...).fold(_ => throw new Exception("bad uri"), identity), ...)`) is copy-pasted verbatim in 8 page files and in `AppShell` — the `throw` path inside `fold` is the primary purity violation; should be extracted once into a helper returning `Either` or `AsyncCallback`.

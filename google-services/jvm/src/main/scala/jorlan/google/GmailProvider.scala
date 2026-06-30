@@ -13,11 +13,9 @@ import com.google.api.services.gmail.model.{Draft, Message, MessagePartHeader}
 import jorlan.*
 import jorlan.service.{EmailProvider, OAuthCredentialService}
 import zio.*
-import zio.json.*
-import zio.json.ast.Json
 
 import java.time.Instant
-import java.util.{Base64, Date}
+import java.util.Base64
 import scala.jdk.CollectionConverters.*
 import scala.language.unsafeNulls
 
@@ -214,14 +212,12 @@ class GmailProvider private (
     val removeLabels = scala.collection.mutable.ListBuffer.empty[String]
     flagged.foreach(f => if (f) addLabels += "STARRED" else removeLabels += "STARRED")
     read.foreach(r => if (r) removeLabels += "UNREAD" else addLabels += "UNREAD")
-    if (addLabels.isEmpty && removeLabels.isEmpty) ZIO.unit
-    else
-      withGmail(userId) { gmail =>
-        val req = new com.google.api.services.gmail.model.ModifyMessageRequest()
-          .setAddLabelIds(addLabels.toList.asJava)
-          .setRemoveLabelIds(removeLabels.toList.asJava)
-        gmail.users().messages().modify("me", messageId.value, req).nn.execute()
-      }.unit
+    withGmail(userId) { gmail =>
+      val req = new com.google.api.services.gmail.model.ModifyMessageRequest()
+        .setAddLabelIds(addLabels.toList.asJava)
+        .setRemoveLabelIds(removeLabels.toList.asJava)
+      gmail.users().messages().modify("me", messageId.value, req).nn.execute()
+    }.unit.unless(addLabels.isEmpty && removeLabels.isEmpty).unit
   }
 
   override def listFolders(userId: UserId): IO[JorlanError, List[EmailFolderInfo]] =

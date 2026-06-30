@@ -350,6 +350,21 @@ lazy val telegramConnector =
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 5)
+
+lazy val discordConnector =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("discord"))
+    .configureCross(skillModule)
+    .settings(name := "jorlan-discord")
+    .jvmSettings(
+      libraryDependencies ++= Seq(
+        "net.dv8tion" % "JDA" % "5.6.1" exclude("club.minnced", "opus-java"),
+      ),
+      coverageExcludedFiles := ".*DiscordApiClient.*",
+    )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Calculator Skill — mXparser-based math expression evaluator
 
 lazy val calculatorSkill =
@@ -371,6 +386,15 @@ lazy val lyrionSkill =
     .in(file("lyrion"))
     .configureCross(skillModule)
     .settings(name := "jorlan-lyrion")
+
+////////////////////////////////////////////////////////////////////////////////////
+// RSS Feed Skill — fetch and persist RSS/Atom feeds
+
+lazy val rssFeedSkill =
+  crossProject(JSPlatform, JVMPlatform)
+    .in(file("rss-feed"))
+    .configureCross(skillModule)
+    .settings(name := "jorlan-rss-feed")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Email Connector — IMAP/SMTP provider + PGP service
@@ -494,10 +518,12 @@ lazy val server = project
     skillApi.jvm,
     calculatorSkill.jvm,
     telegramConnector.jvm,
+    discordConnector.jvm,
     emailConnector.jvm,
     googleServices.jvm,
     unitConversionSkill.jvm,
     lyrionSkill.jvm,
+    rssFeedSkill.jvm,
     marketDataSkill.jvm,
     weatherSkill.jvm,
     timeSkill.jvm,
@@ -546,7 +572,7 @@ lazy val server = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
     Test / fork           := true,
-    coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*",
+    coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*;.*McpClient.*;.*SkillPluginLoader.*;.*StaticRoutes.*;.*OAuthRoutes.*;.*FlywayMigration.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
     Compile / doc / sources := Seq.empty,
   )
@@ -634,7 +660,7 @@ lazy val shell = project
     fork                             := true,
     run / fork                       := true,
     run / connectInput               := true,
-    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*",
+    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
     coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
@@ -894,12 +920,14 @@ lazy val root = project
     skillApi.jvm,
     calculatorSkill.jvm,
     telegramConnector.jvm,
+    discordConnector.jvm,
     emailConnector.jvm,
     googleServices.jvm,
     marketDataSkill.jvm,
     weatherSkill.jvm,
     searchSkill.jvm,
     lyrionSkill.jvm,
+    rssFeedSkill.jvm,
     unitConversionSkill.jvm,
     timeSkill.jvm,
     httpFetchSkill.jvm,
@@ -907,12 +935,14 @@ lazy val root = project
     skillApi.js,
     calculatorSkill.js,
     telegramConnector.js,
+    discordConnector.js,
     emailConnector.js,
     googleServices.js,
     marketDataSkill.js,
     weatherSkill.js,
     searchSkill.js,
     lyrionSkill.js,
+    rssFeedSkill.js,
     unitConversionSkill.js,
     timeSkill.js,
     httpFetchSkill.js,

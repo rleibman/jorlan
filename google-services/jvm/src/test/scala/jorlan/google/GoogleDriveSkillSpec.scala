@@ -25,21 +25,23 @@ object GoogleDriveSkillSpec extends ZIOSpecDefault {
     sessionId = None,
   )
 
+  private val sampleFileId = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+
   private val sampleFile: DriveFile = DriveFile(
-    id = DriveFileId("file-1"),
+    id = DriveFileId(sampleFileId),
     name = "My Document.pdf",
     mimeType = "application/pdf",
     sizeBytes = Some(1024L),
     modifiedAt = Instant.parse("2026-06-01T10:00:00Z"),
     parents = List("root"),
-    webViewLink = Some("https://drive.google.com/file/d/file-1"),
+    webViewLink = Some(s"https://drive.google.com/file/d/$sampleFileId"),
   )
 
   private val sampleContent: Array[Byte] = "Hello, Drive!".getBytes("UTF-8")
 
   private def makeSkill(
     files:   List[DriveFile] = List(sampleFile),
-    content: Map[String, Array[Byte]] = Map("file-1" -> sampleContent),
+    content: Map[String, Array[Byte]] = Map(sampleFileId -> sampleContent),
   ): ZIO[Any, Nothing, GoogleDriveSkill] =
     FakeDriveProvider.make(files, content).map(new GoogleDriveSkill(_))
 
@@ -120,11 +122,11 @@ object GoogleDriveSkillSpec extends ZIOSpecDefault {
       test("drive.readFile returns text content for valid fileId") {
         for {
           skill  <- makeSkill()
-          result <- skill.invoke(dummyCtx, "drive.readFile", Json.Obj("fileId" -> Json.Str("file-1")))
+          result <- skill.invoke(dummyCtx, "drive.readFile", Json.Obj("fileId" -> Json.Str(sampleFileId)))
         } yield result match {
           case Json.Obj(fields) =>
             val fieldMap = fields.toMap
-            assert(fieldMap.get("fileId"))(isSome(equalTo(Json.Str("file-1")))) &&
+            assert(fieldMap.get("fileId"))(isSome(equalTo(Json.Str(sampleFileId)))) &&
             assert(fieldMap.get("content"))(isSome(equalTo(Json.Str("Hello, Drive!"))))
           case _ => assert(false)(isTrue)
         }
@@ -144,12 +146,12 @@ object GoogleDriveSkillSpec extends ZIOSpecDefault {
       test("drive.downloadFile returns base64-encoded content") {
         for {
           skill  <- makeSkill()
-          result <- skill.invoke(dummyCtx, "drive.downloadFile", Json.Obj("fileId" -> Json.Str("file-1")))
+          result <- skill.invoke(dummyCtx, "drive.downloadFile", Json.Obj("fileId" -> Json.Str(sampleFileId)))
         } yield result match {
           case Json.Obj(fields) =>
             val fieldMap = fields.toMap
             val encoded = java.util.Base64.getEncoder.encodeToString(sampleContent)
-            assert(fieldMap.get("fileId"))(isSome(equalTo(Json.Str("file-1")))) &&
+            assert(fieldMap.get("fileId"))(isSome(equalTo(Json.Str(sampleFileId)))) &&
             assert(fieldMap.get("content"))(isSome(equalTo(Json.Str(encoded)))) &&
             assert(fieldMap.get("sizeBytes"))(isSome(equalTo(Json.Num(sampleContent.length))))
           case _ => assert(false)(isTrue)

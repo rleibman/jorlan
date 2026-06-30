@@ -33,9 +33,10 @@ trait AgentRunner {
     *   The authenticated user submitting the message; attached to event log entries.
     */
   def processMessage(
-    sessionId: AgentSessionId,
-    content:   String,
-    actorId:   Option[UserId],
+    sessionId:  AgentSessionId,
+    content:    String,
+    actorId:    Option[UserId],
+    withMemory: Boolean = true,
   ): IO[JorlanError, Unit]
 
   /** Eagerly registers a per-connection subscriber queue and returns a [[ZStream]] that drains it.

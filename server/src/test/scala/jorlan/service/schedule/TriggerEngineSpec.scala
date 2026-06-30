@@ -9,7 +9,6 @@ package jorlan.service.schedule
 import cron4s.expr.CronExpr
 import jorlan.*
 import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
-import jorlan.*
 import jorlan.service.schedule.{TriggerEngine, TriggerEngineImpl}
 import jorlan.service.{AgentRunner, AgentSessionManager, SessionHub}
 import jorlan.testing.InMemoryRepositories
@@ -109,14 +108,20 @@ object TriggerEngineSpec extends ZIOSpecDefault {
   ) extends AgentRunner {
 
     override def processMessage(
-      sessionId: AgentSessionId,
-      content:   String,
-      actorId:   Option[UserId],
+      sessionId:  AgentSessionId,
+      content:    String,
+      actorId:    Option[UserId],
+      withMemory: Boolean = true,
     ): IO[JorlanError, Unit] =
       for {
         _ <- invoked.update(_ :+ (sessionId, content))
         _ <- hub.publish(ResponseChunk(sessionId, "done", finished = false))
-        _ <- hub.publish(ResponseChunk(sessionId, "", finished = true))
+        _ <-
+          if (shouldSucceed) {
+            hub.publish(ResponseChunk(sessionId, "", finished = true))
+          } else {
+            hub.publish(ResponseChunk(sessionId, "simulated failure", finished = true, isError = true))
+          }
         _ <- ZIO.fail(JorlanError("simulated failure")).unless(shouldSucceed)
       } yield ()
 

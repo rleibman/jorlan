@@ -17,6 +17,7 @@ import jorlan.graphql.JorlanAPI
 import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.SkillRegistry
 import jorlan.service.skills.declarative.SkillLifecycleService
@@ -125,6 +126,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
   ): ZLayer[ZIORepositories & ConfigurationService, Throwable, FullEnv] =
     ZLayer.makeSome[ZIORepositories & ConfigurationService, FullEnv](
       stubCapabilityEvaluator,
+      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -146,7 +148,9 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       NotificationRouter.live,
       stubOAuthCredentialService,
       Client.default,
+      McpManager.live,
       DashboardService.live,
+      OAuthReconnectService.live,
       SkillLifecycleService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

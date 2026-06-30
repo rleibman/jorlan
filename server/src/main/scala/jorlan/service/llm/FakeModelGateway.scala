@@ -6,9 +6,8 @@
 
 package jorlan.service.llm
 
-import jorlan.{AgentSessionId, Message, ModelId}
-import jorlan.*
 import jorlan.service.*
+import jorlan.*
 import zio.*
 import zio.stream.ZStream
 

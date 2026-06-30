@@ -326,6 +326,7 @@ type McpServerView {
   env: [McpEnvVar!]!
   url: String
   enabled: Boolean!
+  keywords: [String!]!
 }
 
 type MemoryRecord {
@@ -390,7 +391,7 @@ type Mutations {
   requestCheckpoint(value: AgentSessionId!): Boolean
   updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
   reloadMcpServers(value: Unit!): Boolean
-  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!): McpServerView
+  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!, keywords: [String!]!): McpServerView
   deleteMcpServer(value: String!): Boolean
   enableSkill(value: String!): Boolean
   disableSkill(value: String!): Boolean
@@ -523,6 +524,7 @@ type SkillInfo {
   dashboardJsModule: String
   hasDashboardData: Boolean!
   oauthProvider: OAuthProvider
+  doc: String
 }
 
 type SkillLifecycleResultView {

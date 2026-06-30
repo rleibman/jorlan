@@ -58,6 +58,15 @@ type: project
 - Missing event log writes: `pauseJob`, `resumeJob`, `triggerNow`, `deleteJob`, `addTrigger` mutations in JorlanAPI have no `logEvent` call; `SchedulerJobPaused`/`SchedulerJobResumed`/`SchedulerJobDeleted` event types don't even exist in `EventType`
 - `decideApproval` mutation has no `requireCapability` guard — any authenticated user can approve/reject any approval request
 
+## Sprint 1-3 Findings (2026-06-29)
+- `approvalNotifications` GQL subscription (JorlanAPI.scala:2007) has no `requireCapability` guard and broadcasts ALL approval requests to ALL authenticated users — multi-user information disclosure; `eventLogTail` and `toolEvents` subscriptions have the same gap (pre-existing)
+- `HumanApprovalNotifier` is dead code: implemented, tested, but not wired in `EnvironmentBuilder` or `Jorlan.scala`; if wired in later would double-write `ApprovalRequested` events since `ApprovalServiceImpl.requestApproval` already writes this event
+- `SkillPluginLoader.loadJar` (SkillPluginLoader.scala:61) releases `URLClassLoader` with `_ => ZIO.unit` — file handles are never closed; also uses `ZIO.attempt` (not `ZIO.attemptBlockingIO`) for JAR class loading
+- `SkillLifecycleService` uses `Instant.now()` directly (3 occurrences, lines 93/103/158); writes no event log for lifecycle transitions; `runSandboxTest` auto-passes HTTP tools without real testing; version parse failure silently falls back to `1.0.0` via `unsafeParse`
+- `rss.save_feed` and `rss.remove_feed` tools gated on `rss.read` capability — write operations should require a distinct write capability
+- `ToolEventHub` and `ApprovalHub` are structurally identical (Ref[Map[K, List[Queue[V]]]] + scoped ZStream); no shared abstraction
+- `fieldStr`/`fieldIntOpt` in RssFeedSkill duplicates the `getStr` pattern from Phase 12 that was already recommended for extraction
+
 ## Phase 13 Findings (2026-06-12)
 - `logEvent` helper duplicated verbatim in EmailSkill, GoogleCalendarSkill, GoogleDriveSkill — each has an identical private method; extract to a shared trait or utility
 - `GoogleNetHttpTransport.newTrustedTransport()` + `GsonFactory.getDefaultInstance` called in constructor eager vals in all 3 Google providers — blocking JVM calls at construction time, not wrapped in ZIO.attemptBlocking; can throw at startup

@@ -6,10 +6,9 @@
 
 package jorlan.service
 
-import jorlan.{AgentId, AgentSessionId, EventLog, EventLogId, EventType, UserId}
-import jorlan.*
 import jorlan.service.EventLogFilter
 import jorlan.testing.InMemoryRepositories
+import jorlan.*
 import zio.*
 import zio.json.ast.Json
 import zio.test.*

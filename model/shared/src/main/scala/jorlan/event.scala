@@ -61,6 +61,12 @@ enum EventType derives JsonCodec {
   // ─── Drive ───────────────────────────────────────────────────────────────────
   case DriveFileRead, DriveFileListed
 
+  // ─── Google Contacts ─────────────────────────────────────────────────────────
+  case ContactRead
+
+  // ─── Declarative skill lifecycle ─────────────────────────────────────────────
+  case SkillDraftCreated, SkillLifecycleAdvanced, SkillApproved, SkillRejected
+
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert
   case ServerInitialized
