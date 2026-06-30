@@ -911,47 +911,52 @@ lazy val web: Project = project
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Root project
+// stLib ScalablyTyped facades are only published to the local Ivy cache (via stLib/publishLocal).
+// In CI (where GitHub Actions sets CI=true) those individual facade jars are not available
+// remotely, so we exclude the web module from the aggregate to avoid resolution failures.
+// The web frontend is verified separately via the build-packages CI job.
 lazy val root = project
   .in(file("."))
   .aggregate(
-    modelJVM,
-    modelJS,
+    (Seq[ProjectReference](
+      modelJVM,
+      modelJS,
 
-    skillApi.jvm,
-    calculatorSkill.jvm,
-    telegramConnector.jvm,
-    discordConnector.jvm,
-    emailConnector.jvm,
-    googleServices.jvm,
-    marketDataSkill.jvm,
-    weatherSkill.jvm,
-    searchSkill.jvm,
-    lyrionSkill.jvm,
-    rssFeedSkill.jvm,
-    unitConversionSkill.jvm,
-    timeSkill.jvm,
-    httpFetchSkill.jvm,
+      skillApi.jvm,
+      calculatorSkill.jvm,
+      telegramConnector.jvm,
+      discordConnector.jvm,
+      emailConnector.jvm,
+      googleServices.jvm,
+      marketDataSkill.jvm,
+      weatherSkill.jvm,
+      searchSkill.jvm,
+      lyrionSkill.jvm,
+      rssFeedSkill.jvm,
+      unitConversionSkill.jvm,
+      timeSkill.jvm,
+      httpFetchSkill.jvm,
 
-    skillApi.js,
-    calculatorSkill.js,
-    telegramConnector.js,
-    discordConnector.js,
-    emailConnector.js,
-    googleServices.js,
-    marketDataSkill.js,
-    weatherSkill.js,
-    searchSkill.js,
-    lyrionSkill.js,
-    rssFeedSkill.js,
-    unitConversionSkill.js,
-    timeSkill.js,
-    httpFetchSkill.js,
+      skillApi.js,
+      calculatorSkill.js,
+      telegramConnector.js,
+      discordConnector.js,
+      emailConnector.js,
+      googleServices.js,
+      marketDataSkill.js,
+      weatherSkill.js,
+      searchSkill.js,
+      lyrionSkill.js,
+      rssFeedSkill.js,
+      unitConversionSkill.js,
+      timeSkill.js,
+      httpFetchSkill.js,
 
-    ai,
-    server,
-    shell,
-    integration,
-    web,
+      ai,
+      server,
+      shell,
+      integration,
+    ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*
   )
   .settings(
     name           := "jorlan",
