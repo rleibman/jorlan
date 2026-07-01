@@ -7,6 +7,7 @@
 package jorlan
 
 import ai.{EmbeddingModel, EmbeddingStore}
+import jorlan.service.skills.ToolEmbeddingIndex
 import dev.langchain4j.data.embedding.Embedding
 import dev.langchain4j.data.segment.TextSegment
 import dev.langchain4j.model.embedding.{EmbeddingModel => JEmbeddingModel}
@@ -49,5 +50,7 @@ object NoOpEmbeddingLayers {
 
   val embeddingStoreLayer: ULayer[EmbeddingStore] =
     ZLayer.succeed(new NoOpEmbeddingStoreImpl(): EmbeddingStore)
+
+  val toolEmbeddingIndexLayer: ULayer[ToolEmbeddingIndex] = ToolEmbeddingIndex.noOp
 
 }

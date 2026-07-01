@@ -13,7 +13,7 @@ import zio.*
 import zio.json.ast.Json
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, Paths}
 
 /** Adapts an MCP server's tool list as a Jorlan [[Skill]].
   *
@@ -23,16 +23,17 @@ import java.nio.file.{Files, Path}
   *
   * `serverName` is sanitized to replace characters that are not `[A-Za-z0-9_.]` with `_`; dots are preserved.
   *
-  * When a tool result exceeds [[spillThresholdBytes]] and a [[spillDir]] is configured, the full content is written to
-  * a file in that directory and the LLM receives a compact descriptor instead. This prevents oversized results from
-  * filling the context window.
+  * When a tool result exceeds [[spillThresholdBytes]] and [[workspaceCfg]] is configured, the full content is written
+  * to a `mcp-spill/` subdirectory under the session-scoped workspace root and the LLM receives a compact descriptor
+  * instead. The relative path `mcp-spill/<filename>` is valid for `workspace.read` because the file is written inside
+  * the same scoped root that WorkspaceSkill uses. This prevents oversized results from filling the context window.
   */
 class McpSkillAdapter(
   serverName:          String,
   tools:               List[McpTool],
   client:              McpClient,
   serverKeywords:      List[String] = List.empty,
-  spillDir:            Option[Path] = None,
+  workspaceCfg:        Option[WorkspaceSettings] = None,
   spillThresholdBytes: Int = 4 * 1024,
 ) extends Skill {
 
@@ -67,32 +68,49 @@ class McpSkillAdapter(
       ZIO.fail(JorlanError(s"McpSkillAdapter: tool '$tool' is not in namespace '$namespace'"))
     else
       client.callTool(mcpToolName, args).flatMap { result =>
-        if (result.length <= spillThresholdBytes || spillDir.isEmpty)
+        if (result.length <= spillThresholdBytes || workspaceCfg.isEmpty)
           ZIO.succeed(Json.Str(result))
         else
-          spillToWorkspace(result, mcpToolName)
+          spillToWorkspace(ctx, result, mcpToolName)
       }
   }
 
+  /** Compute the workspace root scoped by session/user, mirroring WorkspaceSkill.scopedRoot. */
+  private def scopedRoot(
+    cfg: WorkspaceSettings,
+    ctx: InvocationContext,
+  ): Path = {
+    val base = Paths.get(cfg.root).toAbsolutePath.normalize()
+    cfg.defaultScope match {
+      case WorkspaceScope.Flat    => base
+      case WorkspaceScope.Session => ctx.sessionId.fold(base)(s => base.resolve(s"session-${s.value}"))
+      case WorkspaceScope.User    => base.resolve(s"user-${ctx.actorId.value}")
+    }
+  }
+
   private def spillToWorkspace(
+    ctx:         InvocationContext,
     result:      String,
     mcpToolName: String,
   ): IO[JorlanError, Json] = {
+    val cfg = workspaceCfg.get
     val safeTool = mcpToolName.replaceAll("[^A-Za-z0-9_]", "_")
     val fileName = s"mcp_${sanitizedName}_${safeTool}_${java.lang.System.currentTimeMillis()}.json"
-    val dir = spillDir.get
+    val relPath = s"mcp-spill/$fileName"
+    val dir = scopedRoot(cfg, ctx).resolve("mcp-spill")
     ZIO
       .attemptBlocking {
         Files.createDirectories(dir)
         Files.write(dir.resolve(fileName), result.getBytes(StandardCharsets.UTF_8))
-      }
-      .mapError(e => JorlanError(s"MCP spill: failed to write workspace file '$fileName': ${e.getMessage}"))
-      .as(
-        Json.Str(
-          s"[Result too large: ${result.length} bytes — inline limit is $spillThresholdBytes bytes]\n" +
-            s"Full content saved to workspace file: $fileName\n" +
-            s"Use workspace.read with path \"$fileName\" to access the data.",
-        ),
+      }.mapBoth(
+        e => JorlanError(s"MCP spill: failed to write workspace file '$relPath': ${e.getMessage}"),
+        { _ =>
+          Json.Str(
+            s"[Result too large: ${result.length} bytes — inline limit is $spillThresholdBytes bytes]\n" +
+              s"Full content saved to workspace file: $relPath\n" +
+              s"Use workspace.read with path \"$relPath\" to access the data.",
+          )
+        },
       )
   }
 

@@ -21,11 +21,11 @@ import jorlan.lyrion.*
 import jorlan.market.*
 import jorlan.routes.*
 import jorlan.search.{SearchConfig, SearchSkill}
-import jorlan.service.skills.SkillPluginLoader
 import jorlan.service.*
 import jorlan.service.mcp.McpManager
 import jorlan.service.schedule.TriggerEngine
 import jorlan.service.skills.*
+import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.time.{TimeConfig, TimeSkill}
 import jorlan.units.UnitConversionSkill
 import jorlan.weather.*
@@ -40,16 +40,13 @@ import java.util.concurrent.TimeUnit
 
 /** Subset of [[JorlanEnvironment]] required by the GraphQL API layer. */
 type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager & AgentRunner & MemoryService &
-  JobManager & ApprovalService & ApprovalHub & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub &
-  EventLogHub & ConfigurationService & jorlan.service.OAuthCredentialService & Client & DashboardService &
-  jorlan.service.skills.declarative.SkillLifecycleService & jorlan.service.OAuthReconnectService &
-  jorlan.service.mcp.McpManager
+  JobManager & ApprovalService & ModelGateway & SkillRegistry & NotificationRouter & ToolEventHub & EventLogHub &
+  ConfigurationService & OAuthCredentialService & Client & DashboardService & SkillLifecycleService & McpManager
 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
   JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
-    TriggerEngine & ConnectorManager & Client & jorlan.service.OAuthCredentialService & EventLogHub & EmbeddingStore &
-    EmbeddingModel
+    TriggerEngine & ConnectorManager & EmbeddingStore & EmbeddingModel
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -206,7 +203,7 @@ object Jorlan extends ZIOApp {
               .tapError(e => ZIO.logWarning(s"Plugin setSetting('$key') failed: ${e.msg}"))
               .orElseSucceed(()),
         ).catchAll(e => ZIO.logError(s"Plugin loading failed: ${e.msg}").as(List.empty))
-      _ <- ZIO.foreach(pluginSkills)(registry.register)
+      _ <- ZIO.foreachDiscard(pluginSkills)(registry.register)
       _ <- ZIO
         .attempt(java.time.ZoneId.systemDefault().getId)
         .orElseSucceed("UTC")

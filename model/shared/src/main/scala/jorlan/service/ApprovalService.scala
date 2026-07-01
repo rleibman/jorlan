@@ -7,8 +7,8 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.*
 import zio.*
+import zio.stream.ZStream
 
 /** Orchestrates the full capability authorization pipeline and manages the approval request lifecycle.
   *
@@ -37,6 +37,31 @@ trait ApprovalService {
     * periodic schedule.
     */
   def expireStaleRequests(): IO[JorlanError, Long]
+
+  /** Block the calling fiber until a human approves or denies `id`, or until `timeout` elapses.
+    *
+    * Returns `Some(true)` = approved, `Some(false)` = denied, `None` = timed out. Race-safe: the Promise is registered
+    * before checking pre-decisions, so a [[completeDecision]] that fires concurrently is never missed.
+    */
+  def awaitDecision(
+    id:      ApprovalRequestId,
+    timeout: Duration,
+  ): UIO[Option[Boolean]]
+
+  /** Complete a pending [[awaitDecision]] call, or stash the result for a future call (10-minute TTL). */
+  def completeDecision(
+    id:       ApprovalRequestId,
+    approved: Boolean,
+  ): UIO[Unit]
+
+  /** Publish a newly-persisted approval request to all active subscriptions. */
+  def notifyNewRequest(req: ApprovalRequest): UIO[Unit]
+
+  /** Remove stale pre-decision entries whose TTL has elapsed. */
+  def purgeExpiredPreDecisions(): UIO[Long]
+
+  /** Returns a new stream of [[ApprovalRequest]] objects; one independent subscription per call. */
+  def subscribeToNewRequests: UIO[ZStream[Any, Nothing, ApprovalRequest]]
 
 }
 

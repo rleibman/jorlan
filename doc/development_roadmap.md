@@ -173,8 +173,11 @@ remaining skills.
 
 - [x] **Vector-backed memory retrieval**: MariaDB vector index, embedding job (via `ai` module),
   `MemoryService.semanticSearch`
+- [x] **Tool-level embedding index**: `jorlan_tools` VECTOR table, `ToolEmbeddingIndex` service,
+  `filteredToolSpecs` replaced with cosine-similarity tool retrieval (top-12), FULLTEXT as fallback.
+  See `doc/mini-designs/phase16-tool-embedding-index.md`
 - [ ] Workspace memory snapshots (workspace-scoped memory linked to snapshot artifacts)
-- [ ] Shell parity
+- [x] Shell parity
 
 #### More Skills
 

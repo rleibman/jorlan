@@ -21,7 +21,7 @@ import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
-import jorlan.service.skills.SkillRegistry
+import jorlan.service.skills.{SkillRegistry, ToolEmbeddingIndex}
 import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill}
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
@@ -119,9 +119,12 @@ object EnvironmentBuilder {
               ZIO
                 .foreach(ranked.headOption) { user =>
                   repos.user
-                    .getChannelIdentities(user.id).mapError(JorlanError(_)).map { ids =>
-                      ids.find(_.channelType == ChannelType.Telegram).map(_.channelUserId)
-                    }
+                    .getChannelIdentities(user.id).mapBoth(
+                      JorlanError(_),
+                      { ids =>
+                        ids.find(_.channelType == ChannelType.Telegram).map(_.channelUserId)
+                      },
+                    )
                 }.map(_.flatten)
             }
         }
@@ -188,6 +191,8 @@ object EnvironmentBuilder {
           clientId = googleCfg.clientId,
           clientSecret = googleCfg.clientSecret,
           client = httpClient,
+          secret = config.jorlan.auth.secretKey.key,
+          redirectUri = googleCfg.redirectUri,
         )
       } yield oauthSvc
     }
@@ -201,7 +206,6 @@ object EnvironmentBuilder {
         QuillRepositories.live,
         dataSourceLayer,
         CapabilityEvaluatorImpl.live,
-        ApprovalHub.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
         oauthServiceLayer,
@@ -212,6 +216,7 @@ object EnvironmentBuilder {
         OllamaModelGateway.live,
         LangChainServiceBuilder.ollamaEmbeddingModelLayer,
         EmbeddingStore.mariadb("jorlan_memory"),
+        ToolEmbeddingIndex.live,
         AgentSessionManagerImpl.live,
         MemoryServiceImpl.live,
         NotificationRouter.live,
@@ -224,7 +229,6 @@ object EnvironmentBuilder {
         liveConnectorManagerLayer,
         oauthCredentialServiceLayer,
         Client.default,
-        OAuthReconnectService.live,
         SkillLifecycleService.live,
         McpManager.live,
       ).orDie

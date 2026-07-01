@@ -31,9 +31,20 @@ object OAuthCredentialServiceImplSpec extends ZIOSpecDefault {
     for {
       store      <- Ref.make(Map.empty[(UserId, String), ExternalCredential])
       tokenCache <- Ref.make(Map.empty[(UserId, String), (String, java.time.Instant)])
+      nonceStore <- Ref.make(Map.empty[String, Long])
     } yield {
       val fakeRepo = new InMemoryOAuthRepo(store)
-      new OAuthCredentialServiceImpl(fakeRepo, encryptor, "cid", "csec", null.asInstanceOf[zio.http.Client], tokenCache)
+      new OAuthCredentialServiceImpl(
+        fakeRepo,
+        encryptor,
+        "cid",
+        "csec",
+        null.asInstanceOf[zio.http.Client],
+        tokenCache,
+        "",
+        "",
+        nonceStore,
+      )
     }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =

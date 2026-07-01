@@ -15,12 +15,13 @@ import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
-import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import jorlan.service.skills.{MemorySkill, SkillRegistry, ToolEmbeddingIndex}
 import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
 import zio.*
 import zio.http.Client
+import zio.stream.ZStream
 import zio.test.*
 
 /** Unit tests for [[JorlanAPI]] using in-memory service stubs. No database required.
@@ -30,7 +31,7 @@ import zio.test.*
   *   - All Mutations (createUser, updateUser, createRole, assignRole, revokeRole, grantPermission, revokePermission)
   *   - Authorization helpers: `actorIdFromSession` (unauthenticated → error), `requireCapability` (deny/allow)
   *   - Input validation: `grantPermission` must target exactly one of userId/roleId
-  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalHub]]; `eventLogTail` returns an empty stream in
+  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalService]]; `eventLogTail` returns an empty stream in
   *     tests
   */
 object JorlanAPISpec extends ZIOSpecDefault {
@@ -91,6 +92,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
       userId:   UserId,
       provider: String,
     ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    override def buildAuthUrl(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.succeed("https://accounts.google.com/o/oauth2/v2/auth?test=1")
+    override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+      ZIO.fail(JorlanError("not implemented in test"))
   })
 
   private val connectedOAuthCredSvc: ULayer[OAuthCredentialService] = ZLayer.succeed(new OAuthCredentialService {
@@ -119,6 +127,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
       userId:   UserId,
       provider: String,
     ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    override def buildAuthUrl(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.succeed("https://accounts.google.com/o/oauth2/v2/auth?test=1")
+    override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+      ZIO.fail(JorlanError("not implemented in test"))
   })
 
   private def makeAppLayer(
@@ -148,15 +163,6 @@ object JorlanAPISpec extends ZIOSpecDefault {
       } yield repo).provide(repoLayer)
     }
 
-    val approvalSvcLayer: ULayer[ApprovalService] = ZLayer.succeed(
-      new ApprovalService {
-        override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
-          ZIO.succeed(AuthorizationResult.Allowed)
-        override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
-          ZIO.succeed(decision)
-        override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
-      }: ApprovalService,
-    )
     val noOpNotificationRouter: ULayer[NotificationRouter] = ZLayer.succeed(
       new NotificationRouter {
         override def notifyUser(
@@ -184,7 +190,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
         AgentSessionManagerImpl.live,
         memSvcLayer,
         NoOpEmbeddingLayers.embeddingStoreLayer,
-        NoOpEmbeddingLayers.embeddingModelLayer, {
+        NoOpEmbeddingLayers.embeddingModelLayer,
+        ToolEmbeddingIndex.noOp, {
           ZLayer.fromZIO {
             for {
               svc   <- ZIO.service[MemoryService]
@@ -196,13 +203,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
-        approvalSvcLayer,
-        ApprovalHub.live,
+        ApprovalServiceImpl.live,
         noOpNotificationRouter,
         oauthCredSvcLayer,
         DashboardService.live,
         Client.default.orDie,
-        ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
         SkillLifecycleService.live,
         McpManager.live,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
@@ -515,10 +520,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
         }
       } yield assertTrue(events.isEmpty)
     }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
-    test("approvalNotifications subscription receives event published through ApprovalHub") {
+    test("approvalNotifications subscription receives event published through ApprovalService") {
       for {
-        hub    <- ZIO.service[ApprovalHub]
-        stream <- hub.subscribeToNewRequests
+        svc    <- ZIO.service[ApprovalService]
+        stream <- svc.subscribeToNewRequests
         req = ApprovalRequest(
           id = ApprovalRequestId(42L),
           capability = CapabilityName("shell.execute"),
@@ -532,7 +537,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
           expiresAt = None,
         )
         fiber  <- stream.take(1).runCollect.map(_.toList).fork
-        _      <- hub.notifyNewRequest(req)
+        _      <- svc.notifyNewRequest(req)
         events <- fiber.join
       } yield assertTrue(
         events.size == 1,

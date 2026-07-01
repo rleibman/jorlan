@@ -10,7 +10,7 @@ import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, ToolDescriptor}
 import jorlan.db.repository.{RepositoryError, ZIORepositories, ZIOSkillIndexRepository, ZIOSkillRepository}
 import jorlan.service.skills.declarative.*
-import jorlan.service.{ApprovalHub, ApprovalService, CapabilityEvaluator, ModelGateway, ToolSpec}
+import jorlan.service.{ApprovalService, CapabilityEvaluator, ModelGateway, ToolSpec}
 import zio.*
 import zio.http.Client
 import zio.json.*
@@ -165,17 +165,17 @@ object SkillRegistry {
     * production use.
     */
   val liveSecure: URLayer[
-    CapabilityEvaluator & ApprovalService & ApprovalHub & ZIORepositories & Client & ModelGateway,
+    CapabilityEvaluator & ApprovalService & ZIORepositories & Client & ModelGateway & ToolEmbeddingIndex,
     SkillRegistry,
   ] =
     ZLayer.fromZIO(
       for {
         evaluator       <- ZIO.service[CapabilityEvaluator]
         approvalService <- ZIO.service[ApprovalService]
-        approvalHub     <- ZIO.service[ApprovalHub]
         repos           <- ZIO.service[ZIORepositories]
         client          <- ZIO.service[Client]
         gateway         <- ZIO.service[ModelGateway]
+        toolIdx         <- ZIO.service[ToolEmbeddingIndex]
         ref             <- Ref.make(Map.empty[String, Skill])
         cache           <- makeCache
         disabled        <- Ref.make(Set.empty[String])
@@ -193,7 +193,8 @@ object SkillRegistry {
         Some(client),
         Some(gateway),
         Some(approvalService),
-        Some(approvalHub),
+        Some(toolIdx),
+        12,
       ),
     )
 
@@ -201,17 +202,17 @@ object SkillRegistry {
     * deps for production use.
     */
   def liveSecureWith(skills: Skill*): URLayer[
-    CapabilityEvaluator & ApprovalService & ApprovalHub & ZIORepositories & Client & ModelGateway,
+    CapabilityEvaluator & ApprovalService & ZIORepositories & Client & ModelGateway & ToolEmbeddingIndex,
     SkillRegistry,
   ] =
     ZLayer.fromZIO(
       for {
         evaluator       <- ZIO.service[CapabilityEvaluator]
         approvalService <- ZIO.service[ApprovalService]
-        approvalHub     <- ZIO.service[ApprovalHub]
         repos           <- ZIO.service[ZIORepositories]
         client          <- ZIO.service[Client]
         gateway         <- ZIO.service[ModelGateway]
+        toolIdx         <- ZIO.service[ToolEmbeddingIndex]
         ref             <- Ref.make(Map.empty[String, Skill])
         cache           <- makeCache
         disabled        <- Ref.make(Set.empty[String])
@@ -229,7 +230,8 @@ object SkillRegistry {
           Some(client),
           Some(gateway),
           Some(approvalService),
-          Some(approvalHub),
+          Some(toolIdx),
+          12,
         )
         _ <- ZIO.foreachDiscard(skills)(registry.register)
       } yield registry: SkillRegistry,
@@ -260,19 +262,20 @@ object SkillRegistry {
 }
 
 class SkillRegistryLive(
-  skills:          Ref[Map[String, Skill]],
-  evaluator:       Option[CapabilityEvaluator],
-  toolSpecsCache:  Ref[Option[List[ToolSpec]]],
-  disabled:        Ref[Set[String]],
-  skillRepo:       Option[ZIOSkillRepository],
-  skillIndexRepo:  Option[ZIOSkillIndexRepository],
-  topN:            Int,
-  recentBoost:     Double,
-  skillFactories:  Ref[Map[String, String => IO[JorlanError, Skill]]],
-  httpClient:      Option[Client] = None,
-  modelGateway:    Option[ModelGateway] = None,
-  approvalService: Option[ApprovalService] = None,
-  approvalHub:     Option[ApprovalHub] = None,
+  skills:             Ref[Map[String, Skill]],
+  evaluator:          Option[CapabilityEvaluator],
+  toolSpecsCache:     Ref[Option[List[ToolSpec]]],
+  disabled:           Ref[Set[String]],
+  skillRepo:          Option[ZIOSkillRepository],
+  skillIndexRepo:     Option[ZIOSkillIndexRepository],
+  topN:               Int,
+  recentBoost:        Double,
+  skillFactories:     Ref[Map[String, String => IO[JorlanError, Skill]]],
+  httpClient:         Option[Client] = None,
+  modelGateway:       Option[ModelGateway] = None,
+  approvalService:    Option[ApprovalService] = None,
+  toolEmbeddingIndex: Option[ToolEmbeddingIndex] = None,
+  topKTools:          Int = 12,
 ) extends SkillRegistry {
 
   private def repoErr(e: RepositoryError): JorlanError = JorlanError(e.msg)
@@ -449,13 +452,23 @@ class SkillRegistryLive(
         .whenZIO(skills.get.map(_.contains(skill.descriptor.name)))
       _ <- ZIO.when(skill.descriptor.tools.size > 10)(
         ZIO.logWarning(
-          s"Skill '${skill.descriptor.name}' exposes ${skill.descriptor.tools.size} tools — consider splitting it to stay under the 10-tool guideline for local LLMs.",
+          s"Skill '${skill.descriptor.name}' exposes ${skill.descriptor.tools.size} tools — tool-level embedding index will narrow selection automatically.",
         ),
       )
       _ <- skills.update(m => m + (skill.descriptor.name -> skill))
       _ <- toolSpecsCache.set(None)
       _ <- indexSkill(skill)
+      _ <- indexToolEmbeddings(skill)
     } yield ()
+
+  private def indexToolEmbeddings(skill: Skill): UIO[Unit] =
+    toolEmbeddingIndex.fold(ZIO.unit) { idx =>
+      ZIO.foreachDiscard(skill.descriptor.tools) { td =>
+        val text =
+          s"${td.name}: ${td.description} ${td.examplePrompts.mkString(". ")} ${td.keywords.mkString(" ")}"
+        idx.indexTool(td.name, skill.descriptor.name, text)
+      }
+    }
 
   private def indexSkill(skill: Skill): UIO[Unit] =
     skillIndexRepo match {
@@ -542,6 +555,56 @@ class SkillRegistryLive(
     expertise:         String,
     recentToolNames:   List[String],
     prioritizedSkills: List[String],
+  ): UIO[List[ToolSpec]] =
+    toolEmbeddingIndex match {
+      case Some(idx) =>
+        embeddingFilteredToolSpecs(idx, prompt, expertise, recentToolNames, prioritizedSkills)
+      case None =>
+        fulltextFilteredToolSpecs(prompt, expertise, recentToolNames, prioritizedSkills)
+    }
+
+  private def embeddingFilteredToolSpecs(
+    idx:               ToolEmbeddingIndex,
+    prompt:            String,
+    expertise:         String,
+    recentToolNames:   List[String],
+    prioritizedSkills: List[String],
+  ): UIO[List[ToolSpec]] = {
+    for {
+      dis        <- disabled.get
+      allEnabled <- skills.get.map(_.filter { case (name, _) => !dis.contains(name) })
+      allToolsByName = allEnabled.values.flatMap(_.descriptor.tools).map(t => t.name -> t).toMap
+      // Prioritized skills → all their tools, always included
+      prioritizedValid = prioritizedSkills.filter(n => allEnabled.contains(n) && !dis.contains(n))
+      priorityToolNames = prioritizedValid.flatMap(n =>
+        allEnabled.get(n).toList.flatMap(_.descriptor.tools.map(_.name)),
+      )
+      // Embedding search for remaining tools
+      query = List(prompt, expertise).filter(_.nonEmpty).mkString(" ")
+      embeddingHits <- idx.searchTools(query, topKTools)
+      validHits = embeddingHits.filter(n => allToolsByName.contains(n) && !priorityToolNames.contains(n))
+      // Recent tool names are always included
+      recentValid = recentToolNames.filter(n => allToolsByName.contains(n))
+      selectedNames = (priorityToolNames ++ validHits ++ recentValid).distinct
+      // Fallback: if embedding returned nothing, defer to FULLTEXT skill selection
+      finalNames <-
+        if (selectedNames.nonEmpty) ZIO.succeed(selectedNames)
+        else
+          fulltextFilteredToolSpecs(prompt, expertise, recentToolNames, prioritizedSkills)
+            .map(_.map(_.name))
+      _ <- ZIO.logInfo(
+        s"filteredToolSpecs[embedding]: ${finalNames.size} tools (prio=${priorityToolNames.size} embed=${validHits.size} recent=${recentValid.size}) prompt='${prompt.take(80)}'",
+      )
+    } yield finalNames.flatMap(n =>
+      allToolsByName.get(n).map(t => ToolSpec(t.name, t.description, t.inputSchema.toString)),
+    )
+  }
+
+  private def fulltextFilteredToolSpecs(
+    prompt:            String,
+    expertise:         String,
+    recentToolNames:   List[String],
+    prioritizedSkills: List[String],
   ): UIO[List[ToolSpec]] = {
     skillIndexRepo match {
       case None =>
@@ -572,7 +635,7 @@ class SkillRegistryLive(
             else if (recentNames.nonEmpty) ZIO.succeed(recentNames.toList.take(topN))
             else skills.get.map(m => m.keys.filter(k => !dis.contains(k)).toList.sorted.take(topN))
           _ <- ZIO.logInfo(
-            s"filteredToolSpecs: selected [${finalSelected.mkString(", ")}] (db=${dbSkillNames.take(topN).mkString(", ")} recent=${recentNames.mkString(", ")} prio=${prioritizedValid.mkString(", ")}) prompt='${prompt.take(80)}'",
+            s"filteredToolSpecs[fulltext]: selected [${finalSelected.mkString(", ")}] (db=${dbSkillNames.take(topN).mkString(", ")} recent=${recentNames.mkString(", ")} prio=${prioritizedValid.mkString(", ")}) prompt='${prompt.take(80)}'",
           )
           tools = finalSelected.flatMap(name => allEnabled.get(name).toList.flatMap(_.descriptor.tools))
         } yield tools.map(t => ToolSpec(t.name, t.description, t.inputSchema.toString))
@@ -585,7 +648,8 @@ class SkillRegistryLive(
   override def unregister(name: String): UIO[Unit] =
     skills.update(_ - name) *>
       toolSpecsCache.set(None) *>
-      skillIndexRepo.fold(ZIO.unit)(_.removeBySkillName(name).ignore)
+      skillIndexRepo.fold(ZIO.unit)(_.removeBySkillName(name).ignore) *>
+      toolEmbeddingIndex.fold(ZIO.unit)(_.purgeBySkillName(name))
 
   override def unregisterWhere(pred: String => Boolean): UIO[Unit] =
     for {
@@ -685,8 +749,8 @@ class SkillRegistryLive(
     ctx:      InvocationContext,
     skill:    Skill,
   ): UIO[Option[String]] = {
-    (approvalService, approvalHub) match {
-      case (Some(svc), Some(hub)) =>
+    approvalService match {
+      case Some(svc) =>
         skill.descriptor.tools.find(_.name == toolName) match {
           case None                                            => ZIO.none
           case Some(tool) if tool.requiredCapabilities.isEmpty => ZIO.none
@@ -707,7 +771,7 @@ class SkillRegistryLive(
                         case AuthorizationResult.Denied(reason) =>
                           ZIO.succeed(Some(s"access denied: $reason for '${cap.value}'"))
                         case AuthorizationResult.PendingApproval(request, _) =>
-                          hub.awaitDecision(request.id, 10.minutes).map {
+                          svc.awaitDecision(request.id, 10.minutes).map {
                             case Some(true)  => None
                             case Some(false) => Some(s"access denied: user rejected approval for '${cap.value}'")
                             case None        => Some(s"access denied: approval request timed out for '${cap.value}'")

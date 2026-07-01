@@ -13,7 +13,12 @@ import zio.http.*
 import zio.json.*
 import zio.json.ast.Json
 
+import java.net.URLEncoder
+import java.security.SecureRandom
 import java.time.Instant
+import java.util.Base64
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /** Type alias for the concrete repository type used by this module. */
 type IOExternalCredentialRepository = ExternalCredentialRepository[[A] =>> IO[JorlanError, A]]
@@ -25,7 +30,98 @@ class OAuthCredentialServiceImpl(
   clientSecret: String,
   client:       Client,
   tokenCache:   Ref[Map[(UserId, String), (String, Instant)]],
+  secret:       String,
+  redirectUri:  String,
+  nonceStore:   Ref[Map[String, Long]],
 ) extends OAuthCredentialService {
+
+  private val GoogleScopes = List(
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+  )
+  private val GoogleAuthBase = "https://accounts.google.com/o/oauth2/v2/auth"
+  private val StateJwtTtlSeconds = 1800L
+
+  private case class StatePayload(
+    userId:   Long,
+    provider: String,
+    exp:      Long,
+    nonce:    String,
+  ) derives JsonCodec
+
+  private def generateNonce(): String = {
+    val bytes = new Array[Byte](16)
+    new SecureRandom().nextBytes(bytes)
+    Base64.getUrlEncoder.withoutPadding.encodeToString(bytes)
+  }
+
+  private def hmacSign(payload: String): String = {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"))
+    Base64.getUrlEncoder.withoutPadding.encodeToString(mac.doFinal(payload.getBytes("UTF-8")))
+  }
+
+  override def buildAuthUrl(
+    userId:   UserId,
+    provider: String,
+  ): IO[JorlanError, String] =
+    for {
+      _ <- ZIO.unless(provider.toLowerCase == "google")(
+        ZIO.fail(JorlanError(s"Unsupported OAuth provider: $provider. Supported: google")),
+      )
+      now <- Clock.instant
+      exp = now.getEpochSecond + StateJwtTtlSeconds
+      nonce = generateNonce()
+      payload = StatePayload(userId.value, provider, exp, nonce)
+      encoded = Base64.getUrlEncoder.withoutPadding.encodeToString(payload.toJson.getBytes("UTF-8"))
+      sig = hmacSign(encoded)
+      stateJwt = s"$encoded.$sig"
+      _ <- nonceStore.update(_ + (nonce -> exp))
+      scopes = GoogleScopes
+      scopeStr = URLEncoder.encode(scopes.mkString(" "), "UTF-8")
+      clientIdEnc = URLEncoder.encode(clientId, "UTF-8")
+      redirectEnc = URLEncoder.encode(redirectUri, "UTF-8")
+      stateEnc = URLEncoder.encode(stateJwt, "UTF-8")
+      authUrl =
+        s"$GoogleAuthBase" +
+          s"?response_type=code" +
+          s"&client_id=$clientIdEnc" +
+          s"&scope=$scopeStr" +
+          s"&redirect_uri=$redirectEnc" +
+          s"&state=$stateEnc" +
+          s"&access_type=offline" +
+          s"&prompt=consent"
+    } yield authUrl
+
+  override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] = {
+    val parts = state.split("\\.", 2)
+    if (parts.length != 2) {
+      ZIO.fail(JorlanError("Invalid OAuth state token format"))
+    } else {
+      val encoded = parts(0)
+      val sig = parts(1)
+      if (hmacSign(encoded) != sig) {
+        ZIO.fail(JorlanError("OAuth state token signature invalid"))
+      } else {
+        val payloadStr = new String(Base64.getUrlDecoder.decode(encoded), "UTF-8")
+        payloadStr.fromJson[StatePayload] match {
+          case Left(e)  => ZIO.fail(JorlanError(s"OAuth state token parse error: $e"))
+          case Right(p) =>
+            for {
+              now <- Clock.instant
+              _   <- ZIO.when(p.exp < now.getEpochSecond)(ZIO.fail(JorlanError("OAuth state token expired")))
+              ok  <- nonceStore.modify { store =>
+                if (store.contains(p.nonce)) (true, store - p.nonce)
+                else (false, store)
+              }
+              _ <- ZIO.unless(ok)(ZIO.fail(JorlanError("OAuth state token already used or unknown nonce")))
+            } yield (UserId(p.userId), p.provider)
+        }
+      }
+    }
+  }
 
   override def store(
     userId:    UserId,
@@ -248,9 +344,22 @@ object OAuthCredentialServiceImpl {
     clientId:     String,
     clientSecret: String,
     client:       Client,
+    secret:       String,
+    redirectUri:  String,
   ): UIO[OAuthCredentialService] =
-    Ref.make(Map.empty[(UserId, String), (String, Instant)]).map { cache =>
-      OAuthCredentialServiceImpl(repo, encryptor, clientId, clientSecret, client, cache)
-    }
+    for {
+      cache      <- Ref.make(Map.empty[(UserId, String), (String, Instant)])
+      nonceStore <- Ref.make(Map.empty[String, Long])
+    } yield OAuthCredentialServiceImpl(
+      repo,
+      encryptor,
+      clientId,
+      clientSecret,
+      client,
+      cache,
+      secret,
+      redirectUri,
+      nonceStore,
+    )
 
 }

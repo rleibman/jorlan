@@ -112,23 +112,33 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
           result <- adapter.invoke(dummyCtx, "mcp.myserver.read_file", Json.Obj())
         } yield assert(result)(equalTo(Json.Str(smallResult)))
       },
-      test("invoke returns inline result when result exceeds threshold but spillDir is None") {
+      test("invoke returns inline result when result exceeds threshold but workspaceCfg is None") {
         val bigResult = "x" * 10000
         val client = FakeMcpClient(sampleTools, bigResult)
-        val adapter = McpSkillAdapter("myserver", sampleTools, client, spillDir = None, spillThresholdBytes = 100)
+        val adapter = McpSkillAdapter("myserver", sampleTools, client, workspaceCfg = None, spillThresholdBytes = 100)
         for {
           result <- adapter.invoke(dummyCtx, "mcp.myserver.read_file", Json.Obj())
         } yield assert(result)(equalTo(Json.Str(bigResult)))
       },
-      test("invoke spills to workspace file when result exceeds threshold and spillDir is set") {
+      test("invoke spills to workspace file when result exceeds threshold and workspaceCfg is set") {
         val bigResult = """{"items": [""" + (1 to 1000).map(i => s"""{"id":$i}""").mkString(",") + "]}"
         val client = FakeMcpClient(sampleTools, bigResult)
         for {
           tmpDir <- ZIO.attempt(Files.createTempDirectory("mcp-spill-test")).orDie
-          adapter = McpSkillAdapter("myserver", sampleTools, client, spillDir = Some(tmpDir), spillThresholdBytes = 100)
+          cfg = WorkspaceSettings(root = tmpDir.toString, defaultScope = WorkspaceScope.Flat)
+          adapter = McpSkillAdapter(
+            "myserver",
+            sampleTools,
+            client,
+            workspaceCfg = Some(cfg),
+            spillThresholdBytes = 100,
+          )
           result <- adapter.invoke(dummyCtx, "mcp.myserver.read_file", Json.Obj())
-          _      <- ZIO.attempt(tmpDir.toFile.listFiles().foreach(_.delete())).orDie
-          _      <- ZIO.attempt(Files.delete(tmpDir)).orDie
+          spillDir = tmpDir.resolve("mcp-spill")
+          _ <- ZIO.attempt {
+            Option(spillDir.toFile.listFiles()).foreach(_.foreach(_.delete())); spillDir.toFile.delete();
+            tmpDir.toFile.delete()
+          }.orDie
         } yield {
           val desc = result match {
             case Json.Str(s) => s
@@ -138,6 +148,7 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
             desc.contains("Result too large"),
             desc.contains("mcp_myserver_read_file"),
             desc.contains("workspace.read"),
+            desc.contains("mcp-spill/"),
           )
         }
       },
@@ -146,16 +157,18 @@ object McpSkillAdapterSpec extends ZIOSpecDefault {
         val client = FakeMcpClient(sampleTools, bigResult)
         for {
           tmpDir <- ZIO.attempt(Files.createTempDirectory("mcp-spill-name-test")).orDie
+          cfg = WorkspaceSettings(root = tmpDir.toString, defaultScope = WorkspaceScope.Flat)
           adapter = McpSkillAdapter(
             "my-server",
             sampleTools,
             client,
-            spillDir = Some(tmpDir),
+            workspaceCfg = Some(cfg),
             spillThresholdBytes = 100,
           )
-          _     <- adapter.invoke(dummyCtx, "mcp.my_server.read_file", Json.Obj())
-          files <- ZIO.attempt(Option(tmpDir.toFile.listFiles()).toList.flatten).orDie
-          _     <- ZIO.attempt { files.foreach(_.delete()); Files.delete(tmpDir) }.orDie
+          _ <- adapter.invoke(dummyCtx, "mcp.my_server.read_file", Json.Obj())
+          spillDir = tmpDir.resolve("mcp-spill")
+          files <- ZIO.attempt(Option(spillDir.toFile.listFiles()).toList.flatten).orDie
+          _     <- ZIO.attempt { files.foreach(_.delete()); spillDir.toFile.delete(); tmpDir.toFile.delete() }.orDie
         } yield assertTrue(
           files.exists(f => f.getName.startsWith("mcp_") && f.getName.endsWith(".json")),
         )

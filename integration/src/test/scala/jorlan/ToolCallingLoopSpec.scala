@@ -90,6 +90,13 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
         userId:   UserId,
         provider: String,
       ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+      override def buildAuthUrl(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.succeed("https://accounts.google.com/test")
+      override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+        ZIO.fail(JorlanError("not implemented in test"))
     },
   )
 
@@ -126,7 +133,6 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
   ): ZLayer[ZIORepositories & ConfigurationService, Throwable, FullEnv] =
     ZLayer.makeSome[ZIORepositories & ConfigurationService, FullEnv](
       stubCapabilityEvaluator,
-      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -147,10 +153,10 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
       stubOAuthCredentialService,
+
       Client.default,
       McpManager.live,
       DashboardService.live,
-      OAuthReconnectService.live,
       SkillLifecycleService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),

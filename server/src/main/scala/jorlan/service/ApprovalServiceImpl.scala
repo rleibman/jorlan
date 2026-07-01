@@ -9,10 +9,11 @@ package jorlan.service
 import jorlan.*
 import jorlan.db.repository.ZIORepositories
 import zio.*
+import zio.stream.ZStream
 
 import java.time.Instant
 
-/** Orchestrates the full capability authorization pipeline.
+/** Orchestrates the full capability authorization pipeline and owns the in-process approval pub-sub.
   *
   * `authorize` pipeline:
   *   1. [[RiskClassifier.classify]] — pure
@@ -21,12 +22,18 @@ import java.time.Instant
   *   4. [[ApprovalPolicyEngine.decide]] — pure
   *   5. If `PendingApproval`: persist the [[ApprovalRequest]] and write `ApprovalRequested` event
   *   6. For direct `Allowed`/`Denied` results: write a `CapabilityAllowed`/`CapabilityDenied` audit event
+  *
+  * Hub state: [[awaitDecision]] / [[completeDecision]] / [[subscribeToNewRequests]] are entirely in-memory (no DB) and
+  * are race-safe: the Promise is registered before checking `preDecisions`, so a concurrent [[completeDecision]] is
+  * never missed.
   */
 private class ApprovalServiceImpl(
-  evaluator:   CapabilityEvaluator,
-  repo:        ZIORepositories,
-  eventLogHub: EventLogHub,
-  hub:         ApprovalHub,
+  evaluator:       CapabilityEvaluator,
+  repo:            ZIORepositories,
+  eventLogHub:     EventLogHub,
+  pendingPromises: Ref[Map[ApprovalRequestId, Promise[Nothing, Boolean]]],
+  preDecisions:    Ref[Map[ApprovalRequestId, (Boolean, Instant)]],
+  broadcastHub:    KeyedPubSubHub[Unit, ApprovalRequest],
 ) extends ApprovalService {
 
   override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
@@ -49,12 +56,9 @@ private class ApprovalServiceImpl(
 
   override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
     for {
-      now   <- Clock.instant
-      saved <- repo.permission.recordApprovalDecision(decision)
-      _     <- hub.completeDecision(
-        saved.approvalRequestId,
-        saved.decision == ApprovalStatus.Approved,
-      )
+      now       <- Clock.instant
+      saved     <- repo.permission.recordApprovalDecision(decision)
+      _         <- completeDecision(saved.approvalRequestId, saved.decision == ApprovalStatus.Approved)
       eventType <- saved.decision match {
         case ApprovalStatus.Approved => ZIO.succeed(EventType.ApprovalGranted)
         case ApprovalStatus.Rejected | ApprovalStatus.Expired | ApprovalStatus.Cancelled =>
@@ -78,7 +82,56 @@ private class ApprovalServiceImpl(
     } yield saved
 
   override def expireStaleRequests(): IO[JorlanError, Long] =
-    hub.purgeExpiredPreDecisions() *> repo.permission.expireAllStaleApprovalRequests()
+    purgeExpiredPreDecisions() *> repo.permission.expireAllStaleApprovalRequests()
+
+  override def awaitDecision(
+    id:      ApprovalRequestId,
+    timeout: Duration,
+  ): UIO[Option[Boolean]] =
+    for {
+      promise <- Promise.make[Nothing, Boolean]
+      _       <- pendingPromises.update(_.updated(id, promise))
+      _       <- preDecisions
+        .modify { pre =>
+          pre.get(id) match {
+            case Some((result, _)) => (Some(result), pre - id)
+            case None              => (None, pre)
+          }
+        }.flatMap {
+          case Some(result) => promise.succeed(result).unit
+          case None         => ZIO.unit
+        }
+      result <- promise.await.timeout(timeout)
+      _      <- pendingPromises.update(_ - id)
+    } yield result
+
+  override def completeDecision(
+    id:       ApprovalRequestId,
+    approved: Boolean,
+  ): UIO[Unit] =
+    pendingPromises.get.flatMap { map =>
+      map.get(id) match {
+        case Some(promise) => promise.succeed(approved).unit
+        case None          =>
+          Clock.instant.flatMap { now =>
+            preDecisions.update(_.updated(id, (approved, now.plusSeconds(600))))
+          }
+      }
+    }
+
+  override def notifyNewRequest(req: ApprovalRequest): UIO[Unit] =
+    broadcastHub.publish((), req)
+
+  override def purgeExpiredPreDecisions(): UIO[Long] =
+    Clock.instant.flatMap { now =>
+      preDecisions.modify { pre =>
+        val (stale, fresh) = pre.partition { case (_, (_, expiry)) => expiry.isBefore(now) }
+        (stale.size.toLong, fresh)
+      }
+    }
+
+  override def subscribeToNewRequests: UIO[ZStream[Any, Nothing, ApprovalRequest]] =
+    broadcastHub.subscribe(())
 
   private def requestApproval(
     req:     ApprovalRequest,
@@ -87,7 +140,7 @@ private class ApprovalServiceImpl(
     for {
       now      <- Clock.instant
       saved    <- repo.permission.createApprovalRequest(req)
-      _        <- hub.notifyNewRequest(saved)
+      _        <- notifyNewRequest(saved)
       logEntry <- repo.eventLog.append(
         EventLog(
           id = EventLogId.empty,
@@ -141,7 +194,16 @@ private class ApprovalServiceImpl(
 
 object ApprovalServiceImpl {
 
-  val live: URLayer[CapabilityEvaluator & ZIORepositories & EventLogHub & ApprovalHub, ApprovalService] =
-    ZLayer.fromFunction(ApprovalServiceImpl(_, _, _, _))
+  val live: URLayer[CapabilityEvaluator & ZIORepositories & EventLogHub, ApprovalService] =
+    ZLayer.fromZIO(
+      for {
+        evaluator    <- ZIO.service[CapabilityEvaluator]
+        repo         <- ZIO.service[ZIORepositories]
+        eventLogHub  <- ZIO.service[EventLogHub]
+        pending      <- Ref.make(Map.empty[ApprovalRequestId, Promise[Nothing, Boolean]])
+        pre          <- Ref.make(Map.empty[ApprovalRequestId, (Boolean, Instant)])
+        broadcastHub <- KeyedPubSubHub.make[Unit, ApprovalRequest]
+      } yield new ApprovalServiceImpl(evaluator, repo, eventLogHub, pending, pre, broadcastHub): ApprovalService,
+    )
 
 }

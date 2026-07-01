@@ -84,6 +84,13 @@ object SubscriptionClientIntegrationSpec
         userId:   UserId,
         provider: String,
       ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+      override def buildAuthUrl(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.succeed("https://accounts.google.com/test")
+      override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+        ZIO.fail(JorlanError("not implemented in test"))
     },
   )
 
@@ -92,7 +99,6 @@ object SubscriptionClientIntegrationSpec
       configLayer,
       QuillRepositories.live,
       stubCapabilityEvaluator,
-      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -116,7 +122,6 @@ object SubscriptionClientIntegrationSpec
       Client.default,
       McpManager.live,
       DashboardService.live,
-      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

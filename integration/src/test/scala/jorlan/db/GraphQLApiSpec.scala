@@ -20,6 +20,7 @@ import jorlan.service.skills.declarative.SkillLifecycleService
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json
+import zio.stream.ZStream
 import zio.test.*
 
 /** Integration tests for the Caliban GraphQL API.
@@ -67,6 +68,13 @@ object GraphQLApiSpec
         userId:   UserId,
         provider: String,
       ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+      override def buildAuthUrl(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.succeed("https://accounts.google.com/test")
+      override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+        ZIO.fail(JorlanError("not implemented in test"))
     },
   )
 
@@ -77,6 +85,18 @@ object GraphQLApiSpec
       override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
         ZIO.succeed(decision)
       override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+      override def awaitDecision(
+        id:      ApprovalRequestId,
+        timeout: Duration,
+      ): UIO[Option[Boolean]] = ZIO.succeed(None)
+      override def completeDecision(
+        id:       ApprovalRequestId,
+        approved: Boolean,
+      ):                                                   UIO[Unit] = ZIO.unit
+      override def notifyNewRequest(req: ApprovalRequest): UIO[Unit] = ZIO.unit
+      override def purgeExpiredPreDecisions():             UIO[Long] = ZIO.succeed(0L)
+      override def subscribeToNewRequests:                 UIO[ZStream[Any, Nothing, ApprovalRequest]] =
+        ZIO.succeed(ZStream.empty)
     }: ApprovalService,
   )
 
@@ -85,7 +105,6 @@ object GraphQLApiSpec
       JorlanContainer.repositoryLayer,
       stubCapabilityEvaluator,
       stubApprovalService,
-      ApprovalHub.live,
       ZLayer.succeed(JorlanSession.serverSession),
       SessionHub.live,
       ToolEventHub.live,
@@ -105,7 +124,6 @@ object GraphQLApiSpec
       Client.default.orDie,
       McpManager.live,
       DashboardService.live,
-      ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
       SkillLifecycleService.live,
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )

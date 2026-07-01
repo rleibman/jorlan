@@ -213,7 +213,7 @@ object HttpSseMcpClient {
         .mapError(e => JorlanError(s"MCP HTTP+SSE: invalid SSE URL '$sseUrl': $e"))
       messagesUrl <- ZIO.scoped {
         httpClient
-          .request(
+          .batched(
             Request
               .get(parsedUrl)
               .addHeader(Header.Accept(MediaType.text.`event-stream`)),
@@ -225,13 +225,15 @@ object HttpSseMcpClient {
               // Read at most 50 lines; the endpoint event should arrive immediately.
               .take(50)
               .runCollect
-              .timeout(10.seconds)
-              .mapError(e => JorlanError(s"MCP HTTP+SSE: error reading SSE stream: ${e.getMessage}", Some(e)))
-              .map(_.getOrElse(Chunk.empty))
+              .timeout(10.seconds).mapBoth(
+                e => JorlanError(s"MCP HTTP+SSE: error reading SSE stream: ${e.getMessage}", Some(e)),
+                _.getOrElse(Chunk.empty),
+              )
               .flatMap { lines =>
                 ZIO
-                  .fromOption(findEndpointPath(lines.toList))
-                  .mapError(_ => JorlanError(s"MCP HTTP+SSE: no 'event: endpoint' received from '$sseUrl'"))
+                  .fromOption(findEndpointPath(lines.toList)).orElseFail(
+                    JorlanError(s"MCP HTTP+SSE: no 'event: endpoint' received from '$sseUrl'"),
+                  )
               }
           }
       }

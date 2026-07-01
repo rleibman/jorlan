@@ -8,13 +8,14 @@ package jorlan.service.skills.declarative
 
 import jorlan.*
 import jorlan.service.llm.FakeModelGateway
-import jorlan.service.skills.SkillRegistry
-import jorlan.service.{ApprovalHub, ApprovalService, CapabilityEvaluator}
+import jorlan.service.skills.{SkillRegistry, ToolEmbeddingIndex}
+import jorlan.service.{ApprovalService, CapabilityEvaluator}
 import jorlan.testing.InMemoryRepositories
 import zio.*
 import zio.http.Client
 import zio.json.*
 import zio.json.ast.Json
+import zio.stream.ZStream
 import zio.test.*
 
 object LiveSkillLifecycleServiceSpec extends ZIOSpecDefault {
@@ -35,6 +36,18 @@ object LiveSkillLifecycleServiceSpec extends ZIOSpecDefault {
       override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
         ZIO.succeed(decision)
       override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
+      override def awaitDecision(
+        id:      ApprovalRequestId,
+        timeout: Duration,
+      ): UIO[Option[Boolean]] = ZIO.succeed(None)
+      override def completeDecision(
+        id:       ApprovalRequestId,
+        approved: Boolean,
+      ):                                                   UIO[Unit] = ZIO.unit
+      override def notifyNewRequest(req: ApprovalRequest): UIO[Unit] = ZIO.unit
+      override def purgeExpiredPreDecisions():             UIO[Long] = ZIO.succeed(0L)
+      override def subscribeToNewRequests:                 UIO[ZStream[Any, Nothing, ApprovalRequest]] =
+        ZIO.succeed(ZStream.empty)
     })
 
   private val baseLayer: ULayer[SkillLifecycleService] =
@@ -42,9 +55,9 @@ object LiveSkillLifecycleServiceSpec extends ZIOSpecDefault {
       InMemoryRepositories.live(),
       allowAll,
       noOpApprovalService,
-      ApprovalHub.live,
       FakeModelGateway.layer(List.empty),
       Client.default.orDie,
+      ToolEmbeddingIndex.noOp,
       SkillRegistry.liveSecure,
       SkillLifecycleService.live,
     )

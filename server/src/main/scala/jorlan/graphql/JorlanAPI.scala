@@ -1751,7 +1751,7 @@ object JorlanAPI {
           startOAuth = provider =>
             for {
               actorId <- actorIdFromSession
-              authUrl <- ZIO.serviceWithZIO[OAuthReconnectService](_.buildAuthUrl(actorId, provider))
+              authUrl <- ZIO.serviceWithZIO[OAuthCredentialService](_.buildAuthUrl(actorId, provider))
             } yield OAuthStartResult(authUrl = authUrl),
           revokeOAuth = provider =>
             for {
@@ -1997,7 +1997,7 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("approval.read", actorId)
-              stream  <- ZIO.serviceWithZIO[ApprovalHub](_.subscribeToNewRequests)
+              stream  <- ZIO.serviceWithZIO[ApprovalService](_.subscribeToNewRequests)
             } yield stream.filter(_.requestorUserId == actorId),
           ),
           eventLogTail = ZStream.unwrap(

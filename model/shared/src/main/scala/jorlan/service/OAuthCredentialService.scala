@@ -56,4 +56,13 @@ trait OAuthCredentialService {
     provider: String,
   ): IO[JorlanError, Option[Instant]]
 
+  /** Build the full authorization URL for a reconnect flow, embedding a signed state token. */
+  def buildAuthUrl(
+    userId:   UserId,
+    provider: String,
+  ): IO[JorlanError, String]
+
+  /** Verify and consume the state parameter from the OAuth callback. Returns `(userId, provider)`. */
+  def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)]
+
 }
