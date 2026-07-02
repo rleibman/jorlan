@@ -332,6 +332,113 @@ object TimeSkillSpec extends ZIOSpecDefault {
           exit <- skill.invoke(ctx, "time.add_duration", args).exit
         } yield assert(exit)(fails(isSubtype[JorlanError](anything)))
       },
+      test("time.find_timezone finds Las Vegas → America/Los_Angeles via curated map") {
+        for {
+          result <- skill.invoke(ctx, "time.find_timezone", Json.Obj("location" -> Json.Str("Las Vegas")))
+        } yield {
+          val found = result match {
+            case Json.Obj(fields) => fields.collectFirst { case ("found", Json.Bool(v)) => v }
+            case _                => None
+          }
+          val timezones = result match {
+            case Json.Obj(fields) =>
+              fields
+                .collectFirst { case ("matches", Json.Arr(ms)) =>
+                  ms.collect { case Json.Obj(mf) => mf.collectFirst { case ("timezone", Json.Str(v)) => v } }.flatten
+                }.getOrElse(Nil)
+            case _ => Nil
+          }
+          assertTrue(found.contains(true), timezones.contains("America/Los_Angeles"))
+        }
+      },
+      test("time.find_timezone finds Tokyo → Asia/Tokyo via IANA index") {
+        for {
+          result <- skill.invoke(ctx, "time.find_timezone", Json.Obj("location" -> Json.Str("Tokyo")))
+        } yield {
+          val found = result match {
+            case Json.Obj(fields) => fields.collectFirst { case ("found", Json.Bool(v)) => v }
+            case _                => None
+          }
+          val timezones = result match {
+            case Json.Obj(fields) =>
+              fields
+                .collectFirst { case ("matches", Json.Arr(ms)) =>
+                  ms.collect { case Json.Obj(mf) => mf.collectFirst { case ("timezone", Json.Str(v)) => v } }.flatten
+                }.getOrElse(Nil)
+            case _ => Nil
+          }
+          assertTrue(found.contains(true), timezones.contains("Asia/Tokyo"))
+        }
+      },
+      test("time.find_timezone returns found=false for unknown location") {
+        for {
+          result <- skill.invoke(ctx, "time.find_timezone", Json.Obj("location" -> Json.Str("Narnia")))
+        } yield {
+          val found = result match {
+            case Json.Obj(fields) => fields.collectFirst { case ("found", Json.Bool(v)) => v }
+            case _                => None
+          }
+          assertTrue(found.contains(false))
+        }
+      },
+      test("time.find_timezone missing location field fails with ValidationError") {
+        for {
+          exit <- skill.invoke(ctx, "time.find_timezone", Json.Obj()).exit
+        } yield assert(exit)(fails(isSubtype[ValidationError](anything)))
+      },
+      test("time.list_timezones without prefix returns regions") {
+        for {
+          result <- skill.invoke(ctx, "time.list_timezones", Json.Obj())
+        } yield {
+          val regions = result match {
+            case Json.Obj(fields) =>
+              fields
+                .collectFirst { case ("regions", Json.Arr(rs)) =>
+                  rs.collect { case Json.Str(v) => v }
+                }.getOrElse(Nil)
+            case _ => Nil
+          }
+          assertTrue(
+            regions.contains("America"),
+            regions.contains("Europe"),
+            regions.contains("Asia"),
+            regions.contains("Pacific"),
+          )
+        }
+      },
+      test("time.list_timezones with prefix America returns Los_Angeles and New_York") {
+        for {
+          result <- skill.invoke(ctx, "time.list_timezones", Json.Obj("prefix" -> Json.Str("America")))
+        } yield {
+          val timezones = result match {
+            case Json.Obj(fields) =>
+              fields
+                .collectFirst { case ("timezones", Json.Arr(ts)) =>
+                  ts.collect { case Json.Str(v) => v }
+                }.getOrElse(Nil)
+            case _ => Nil
+          }
+          assertTrue(
+            timezones.contains("America/Los_Angeles"),
+            timezones.contains("America/New_York"),
+            timezones.contains("America/Chicago"),
+          )
+        }
+      },
+      test("time.list_timezones with invalid prefix fails with JorlanError") {
+        for {
+          exit <- skill.invoke(ctx, "time.list_timezones", Json.Obj("prefix" -> Json.Str("Atlantis"))).exit
+        } yield assert(exit)(fails(isSubtype[JorlanError](anything)))
+      },
+      test("time.now with invalid timezone includes find_timezone hint") {
+        for {
+          exit <- skill.invoke(ctx, "time.now", Json.Obj("timezone" -> Json.Str("America/Las Vegas"))).exit
+        } yield assert(exit)(
+          fails(
+            isSubtype[JorlanError](hasField("getMessage", (_: JorlanError).getMessage, containsString("find_timezone"))),
+          ),
+        )
+      },
     )
 
 }

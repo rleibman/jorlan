@@ -54,7 +54,7 @@ object FlywayRepair extends ZIOAppDefault {
       )
       _      <- ZIO.logInfo("Running Flyway repair to fix schema history mismatches...")
       result <- ZIO.attempt(flyway.repair())
-      _ <- ZIO.logInfo(
+      _      <- ZIO.logInfo(
         s"Flyway repair completed successfully!\n" +
           s"  Removed failed migrations: ${result.migrationsRemoved.size()}\n" +
           s"  Deleted missing migrations: ${result.migrationsDeleted.size()}\n" +
@@ -62,7 +62,7 @@ object FlywayRepair extends ZIOAppDefault {
           s"\nYou can now start the application normally.",
       )
       _ <- ZIO.logInfo("\nRepair Details:")
-      _ <- ZIO.foreach(result.repairActions.asScala)(action => ZIO.logInfo(s"  - $action"))
+      _ <- ZIO.foreachDiscard(result.repairActions.asScala)(action => ZIO.logInfo(s"  - $action"))
     } yield ())
       .tapError(error =>
         ZIO.logError(s"Flyway repair failed: ${error.getMessage}") *>

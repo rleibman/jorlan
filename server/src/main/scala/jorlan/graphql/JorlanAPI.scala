@@ -1634,7 +1634,7 @@ object JorlanAPI {
                     .fromEither(Cron.parse(input.expression))
                     .mapError(e =>
                       JorlanError(
-                        s"Invalid cron expression '${input.expression}': ${e}. " +
+                        s"Invalid cron expression '${input.expression}': $e. " +
                           "cron4s requires 6 fields (sec min hr dom mon dow) and uses '?' for the unused dom/dow field. " +
                           "Examples: '0 0 18 ? * 6' = 18:00 every Saturday, '0 0 9 ? * 1-5' = 09:00 weekdays, " +
                           "'0 0 9 * * ?' = 09:00 every day",

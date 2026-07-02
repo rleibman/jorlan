@@ -65,10 +65,10 @@ object ChatPage {
         ),
       )
       .useRef(Option.empty[WebSocketHandler])
-      .useRef(List.empty[String])        // queueRef: FIFO queue readable from stale onData closures
-      .useRef(false)                     // ttsEnabledRef: mirror of ttsEnabled for stale onData closures
-      .useRef(Option.empty[js.Dynamic])  // recognitionRef: current SpeechRecognition instance
-      .useRef("")                        // streamBufferRef: mirror of streamBuffer for stale onData closures
+      .useRef(List.empty[String]) // queueRef: FIFO queue readable from stale onData closures
+      .useRef(false) // ttsEnabledRef: mirror of ttsEnabled for stale onData closures
+      .useRef(Option.empty[js.Dynamic]) // recognitionRef: current SpeechRecognition instance
+      .useRef("") // streamBufferRef: mirror of streamBuffer for stale onData closures
       .useEffectOnMountBy {
         (
           _,
@@ -76,7 +76,7 @@ object ChatPage {
           handlerRef,
           queueRef,
           ttsEnabledRef,
-          _,               // recognitionRef — not needed in effect
+          _, // recognitionRef — not needed in effect
           streamBufferRef,
         ) =>
           // Reconnect to an existing active session, or create a new one if none found
@@ -189,7 +189,7 @@ object ChatPage {
           queueRef,
           ttsEnabledRef,
           recognitionRef,
-          _,               // streamBufferRef — not needed in render
+          _, // streamBufferRef — not needed in render
         ) =>
           val hasSpeechRecognition: Boolean =
             !js.isUndefined(js.Dynamic.global.SpeechRecognition) ||
@@ -209,7 +209,8 @@ object ChatPage {
                 recognition.interimResults = false
                 recognition.continuous = false
                 recognition.onresult = (event: js.Dynamic) => {
-                  val transcript = event.results(0)(0).transcript.asInstanceOf[String]
+                  val results = event.results.asInstanceOf[js.Array[js.Array[js.Dynamic]]]
+                  val transcript = results(0)(0).transcript.asInstanceOf[String]
                   (state.modState(s =>
                     s.copy(
                       input = if (s.input.trim.isEmpty) transcript else s.input + " " + transcript,
@@ -217,10 +218,10 @@ object ChatPage {
                     ),
                   ) >> recognitionRef.set(None)).runNow()
                 }
-                recognition.onerror = (_: js.Dynamic) =>
-                  (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
-                recognition.onend = (_: js.Dynamic) =>
-                  (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
+                recognition.onerror =
+                  (_: js.Dynamic) => (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
+                recognition.onend =
+                  (_: js.Dynamic) => (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
                 recognitionRef.set(Some(recognition)).runNow()
                 recognition.start()
               }
@@ -366,7 +367,9 @@ object ChatPage {
             ),
             Box.withProps(
               BoxOwnProps[Theme]()
-                .setSx(js.Dynamic.literal(display = "flex", gap = 1, alignItems = "flex-start").asInstanceOf[SxProps[Theme]])
+                .setSx(
+                  js.Dynamic.literal(display = "flex", gap = 1, alignItems = "flex-start").asInstanceOf[SxProps[Theme]],
+                )
                 .asInstanceOf[Box.Props],
             )(
               MuiTextField

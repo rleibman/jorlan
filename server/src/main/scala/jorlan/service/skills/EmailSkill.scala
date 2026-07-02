@@ -91,10 +91,8 @@ class EmailSkill(
     tools = List(
       ToolDescriptor(
         name = "email.list",
-        description =
-          "List recent email messages from the inbox. Each result includes isRead (true = already read, false = unread).",
-        inputSchema =
-          json"""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of messages to return (default 10)"},"query":{"type":"string","description":"Optional search query to filter messages"},"since":{"type":"string","description":"ISO 8601 datetime — only return messages received after this time (e.g. 2026-07-01T10:00:00Z)"}},"required":[]}""",
+        description = "List recent email messages from the inbox. Each result includes isRead (true = already read, false = unread).",
+        inputSchema = json"""{"type":"object","properties":{"maxResults":{"type":"integer","description":"Maximum number of messages to return (default 10)"},"query":{"type":"string","description":"Optional search query to filter messages"},"since":{"type":"string","description":"ISO 8601 datetime — only return messages received after this time (e.g. 2026-07-01T10:00:00Z)"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("email.read")),
         examplePrompts = List(
@@ -284,13 +282,13 @@ class EmailSkill(
     args: Json,
   ): IO[JorlanError, Json] = {
     val maxResults = int(args, "maxResults").getOrElse(10)
-    val baseQuery  = str(args, "query")
+    val baseQuery = str(args, "query")
     val sinceQuery = str(args, "since").flatMap { s =>
       scala.util.Try(java.time.Instant.parse(s)).toOption.map(i => s"after:${i.getEpochSecond}")
     }
     val query = (baseQuery.toList ++ sinceQuery.toList).mkString(" ") match {
-      case ""  => None
-      case q   => Some(q)
+      case "" => None
+      case q  => Some(q)
     }
     for {
       msgs <- emailProvider.listMessages(ctx.actorId, maxResults, query)

@@ -10,7 +10,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.*
+import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField, *}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
@@ -350,30 +350,40 @@ object MemoryPage {
                       )
                       .runNow(),
                   ),
-                MuiTextField
-                  .label("Scope (optional)")
-                  .value(state.value.storeForm.scope.toString)
-                  .fullWidth(true)
-                  .variant("outlined")
-                  .size("small")
-                  .onChange(e =>
-                    state
-                      .setState(
-                        state.value
-                          .copy(storeForm =
-                            state.value.storeForm
-                              .copy(scope =
-                                MemoryScope.values
-                                  .find(
-                                    _.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim),
-                                  ).getOrElse(
-                                    MemoryScope.User,
-                                  ),
-                              ),
+                FormControl.withProps(
+                  js.Dynamic
+                    .literal(fullWidth = true, size = "small", sx = js.Dynamic.literal(mb = 2))
+                    .asInstanceOf[FormControl.Props],
+                )(
+                  InputLabel.withProps(
+                    js.Dynamic.literal(id = "scope-label").asInstanceOf[InputLabel.Props],
+                  )("Scope"),
+                  MuiSelect
+                    .value(state.value.storeForm.scope.toString)
+                    .label("Scope")
+                    .fullWidth(true)
+                    .size("small")
+                    .onChange(e =>
+                      state
+                        .setState(
+                          state.value.copy(
+                            storeForm = state.value.storeForm.copy(
+                              scope = MemoryScope.values
+                                .find(_.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim))
+                                .getOrElse(MemoryScope.User),
+                            ),
                           ),
-                      )
-                      .runNow(),
-                  ),
+                        )
+                        .runNow(),
+                    )(
+                      MuiMenuItem.value(MemoryScope.User.toString)("User (permanent — private to you)"),
+                      MuiMenuItem.value(MemoryScope.Shared.toString)("Shared (permanent — visible to all agents)"),
+                      MuiMenuItem.value(MemoryScope.Workspace.toString)("Workspace (permanent — this workspace only)"),
+                      MuiMenuItem.value(MemoryScope.Private.toString)(
+                        "Private (ephemeral — this agent session only)",
+                      ),
+                    ),
+                ),
               ),
               DialogActions()(
                 MuiButton.onClick(() => state.setState(state.value.copy(showStore = false)).runNow())("Cancel"),

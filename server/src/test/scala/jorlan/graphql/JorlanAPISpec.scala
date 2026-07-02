@@ -903,7 +903,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     }.provideLayer(makeAppLayer(capEval = denyAll)),
     test("createJob with real scheduler repo creates job in Pending state") {
       for {
-        interp <- ZIO.service[Interp]
+        interp        <- ZIO.service[Interp]
         sessionResult <- interp.execute("""mutation { createSession { id } }""")
         result        <- interp.execute(
           """mutation { createJob(name: "my-job", prompt: "Do your thing", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name status } }""",

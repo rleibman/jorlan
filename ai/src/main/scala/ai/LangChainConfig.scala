@@ -31,7 +31,7 @@ case class LangChainConfig(
   temperature:         Double = 0.2,
   topK:                Int = 20,
   topP:                Double = 0.8,
-  numCtx:              Int = 8000,
+  numCtx:              Int = 4000,
   maxMessages:         Int = 1000,
 )
 // $COVERAGE-ON$

@@ -70,12 +70,12 @@ private object AgentRunnerState {
   *   6. Evaluates [[CheckpointPolicy]] and runs the checkpoint pipeline when triggered.
   */
 class AgentRunnerImpl(
-  modelGateway:  ModelGateway,
-  sessionHub:    SessionHub,
-  toolEventHub:  ToolEventHub,
-  repo:          ZIORepositories,
-  memoryService: MemoryService,
-  skillRegistry: SkillRegistry,
+  modelGateway:       ModelGateway,
+  sessionHub:         SessionHub,
+  toolEventHub:       ToolEventHub,
+  repo:               ZIORepositories,
+  memoryService:      MemoryService,
+  skillRegistry:      SkillRegistry,
   runnerState:        AgentRunnerState,
   maxToolSteps:       Int,
   maxToolResultChars: Int = 2000,
