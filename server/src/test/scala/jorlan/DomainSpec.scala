@@ -477,7 +477,7 @@ object DomainSpec extends ZIOSpecDefault {
   private def baseJob: SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = AgentId(1L),
+      agentId = Some(AgentId(1L)),
       userId = UserId(1L),
       skillId = None,
       name = "test-job",

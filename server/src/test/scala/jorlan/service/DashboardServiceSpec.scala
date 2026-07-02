@@ -30,7 +30,7 @@ object DashboardServiceSpec extends ZIOSpecDefault {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = agentId,
+      agentId = Some(agentId),
       userId = userId,
       skillId = None,
       name = name,

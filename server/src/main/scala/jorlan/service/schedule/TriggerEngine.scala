@@ -79,7 +79,7 @@ class TriggerEngineImpl(
           EventLog.entry(
             eventType = eventType,
             actorId = Some(job.userId),
-            agentId = Some(job.agentId),
+            agentId = job.agentId,
             sessionId = None,
             resource = Some(s"schedulerJob:${job.id.value}"),
             now = now,
@@ -235,6 +235,11 @@ class TriggerEngineImpl(
                   .mapError(JorlanError(_)) *>
                   logJobEvent(EventType.SchedulerJobCompleted, job) *>
                   advanceTriggers(job, cronCache, now)
+                    .tapError(e =>
+                      ZIO.logWarning(
+                        s"[TriggerEngine] Job ${job.id.value} succeeded but trigger advance failed: ${e.msg}",
+                      ),
+                    ).ignore
               }
             case None =>
               ZIO.logWarning(s"[TriggerEngine] Job ${job.id.value} timed out after ${jobTimeout.getSeconds}s") *>

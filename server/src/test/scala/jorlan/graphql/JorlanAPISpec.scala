@@ -785,7 +785,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
     InMemorySchedulerRepo.make.flatMap { repo =>
       val foreignJob = SchedulerJob(
         id = SchedulerJobId.empty,
-        agentId = AgentId(1L),
+        agentId = Some(AgentId(1L)),
         userId = UserId(2L),
         skillId = None,
         name = "foreign-job",
@@ -875,7 +875,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { addTrigger(jobId: 1, triggerType: "Interval", expression: "PT1H") { id } }""",
+          """mutation { addTrigger(jobId: 1, triggerType: Interval, expression: "PT1H") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
@@ -885,13 +885,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ),
       ),
     ),
-    test("createJob fails when no active agent session (resolveAgentIdStrict)") {
+    test("createJob succeeds without an active agent session (uses AgentId.empty as fallback)") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
           """mutation { createJob(name: "x", prompt: "", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
-      } yield assertTrue(result.errors.nonEmpty)
+      } yield assertTrue(result.errors.isEmpty)
     }.provideLayer(makeAppLayer()),
     test("createJob fails when scheduler.manage capability is denied") {
       for {
@@ -904,7 +904,6 @@ object JorlanAPISpec extends ZIOSpecDefault {
     test("createJob with real scheduler repo creates job in Pending state") {
       for {
         interp <- ZIO.service[Interp]
-        // Create a session so resolveAgentIdStrict finds one
         sessionResult <- interp.execute("""mutation { createSession { id } }""")
         result        <- interp.execute(
           """mutation { createJob(name: "my-job", prompt: "Do your thing", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name status } }""",
@@ -1458,7 +1457,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id jobId } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id jobId } }""",
         )
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("jobId"))
     }.provideLayer(makeAppLayer()),
@@ -1471,7 +1470,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         )
         jobId = extractLong(createResult.data.toString, "id")
         triggerResult <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id } }""",
         )
         triggerId = extractLong(triggerResult.data.toString, "id")
         result <- interp.execute(s"""mutation { deleteTrigger(value: $triggerId) }""")
@@ -1486,7 +1485,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         )
         jobId = extractLong(createResult.data.toString, "id")
         addTrigResult <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id } }""",
         )
         result <- interp.execute(s"""{ triggers(value: $jobId) { id } }""")
       } yield assertTrue(

@@ -140,6 +140,11 @@ enum EventType {
   CalendarEventDeleted
   DriveFileRead
   DriveFileListed
+  ContactRead
+  SkillDraftCreated
+  SkillLifecycleAdvanced
+  SkillApproved
+  SkillRejected
   SystemAlert
   ServerInitialized
 }
@@ -483,7 +488,7 @@ type Role {
 
 type SchedulerJob {
   id: SchedulerJobId!
-  agentId: AgentId!
+  agentId: AgentId
   userId: UserId!
   skillId: SkillId
   name: String!

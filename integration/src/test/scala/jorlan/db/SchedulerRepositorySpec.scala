@@ -24,7 +24,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = agentId,
+      agentId = Some(agentId),
       userId = userId,
       skillId = None,
       name = name,
@@ -245,7 +245,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
           filtered   <- repo.listJobs(Some(aid))
         } yield assertTrue(
           all.size >= 2,
-          filtered.forall(_.agentId == aid),
+          filtered.forall(_.agentId.contains(aid)),
           filtered.exists(_.name == "agent1-only"),
           !filtered.exists(_.name == "agent2-only"),
         )

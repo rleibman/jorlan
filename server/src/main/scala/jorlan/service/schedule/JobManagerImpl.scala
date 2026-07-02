@@ -22,7 +22,7 @@ class JobManagerImpl(
 ) extends JobManager {
 
   override def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
     prompt:          String,

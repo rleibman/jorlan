@@ -493,3 +493,40 @@ Every month:
 * Analyze meeting patterns.
 * Identify inefficiencies.
 * Recommend improvements.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Read upcoming calendar events | `GoogleCalendarSkill` — `calendar.listEvents`, `calendar.getEvent` |
+| Lookup participant information | `GoogleContactsSkill` — `google_contacts.search_contacts` |
+| Search prior meeting notes | `memory.search_semantic` |
+| Store meeting notes and decisions | `memory.remember`, `workspace.write` |
+| Generate pre-meeting briefing trigger | `scheduler.create_job` (1 hour before each meeting) |
+| Email meeting summaries (with approval) | `email.draft`, `email.send` |
+| Telegram alerts for upcoming meetings | `TelegramConnectorSkill` — `telegram.send_message` |
+| Create follow-up calendar events | `GoogleCalendarSkill` — `calendar.createEvent` |
+| Weekly action item review | `scheduler.create_job` (cron: weekly) |
+
+### Declarative HTTP skills to define
+
+| Skill | API | Notes |
+|---|---|---|
+| `zoom_transcripts` | Zoom API v2 (`/meetings/{id}/recordings`) | Fetch transcripts when available; requires OAuth token |
+| `google_meet_transcripts` | Google Meet / Google Drive API | Transcripts appear in Drive after meetings; use `GoogleDriveSkill` to find them |
+
+### Agent configuration notes
+
+The pre-meeting briefing agent is most naturally triggered dynamically. One approach:
+1. A separate "calendar monitor" agent runs daily (`scheduler.create_job(cron="0 7 * * *")`)
+2. It calls `calendar.listEvents(today + tomorrow)` and creates one-shot scheduler jobs for each meeting:
+   `scheduler.create_job(runAt=<meetingStart - 1h>, agentId=<meeting-briefing-agent>, input={eventId})`
+3. The briefing agent then reads the event, searches memory, and sends a Telegram briefing.
+
+### What is not yet feasible
+
+- **Live audio recording and real-time transcription** — requires audio input; not currently supported
+- **Zoom/Teams/Meet bot integration** — requires vendor bot registration and audio pipeline
+- **Automatic external email distribution of summaries** — intentionally gated behind the approval system (per the automation policy in this use case)

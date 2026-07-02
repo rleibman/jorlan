@@ -354,7 +354,7 @@ object ModelSpec extends ZIOSpecDefault {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId(1L),
-      agentId = AgentId(1L),
+      agentId = Some(AgentId(1L)),
       userId = UserId(1L),
       skillId = None,
       name = "test-job",

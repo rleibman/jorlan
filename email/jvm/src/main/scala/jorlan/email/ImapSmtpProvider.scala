@@ -74,6 +74,7 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
         )
       }.toList,
       labels = mh.flags.map(_.toString).toList,
+      isRead = false, // emil Flag only exposes Flagged; IMAP Seen flag is not surfaced
       pgpSigned = false,
       pgpSignatureValid = None,
     )
@@ -109,14 +110,19 @@ class ImapSmtpProvider(config: EmailConfig) extends EmailProvider[[A] =>> IO[Jor
     maxResults: Int,
     query:      Option[String],
   ): IO[JorlanError, List[EmailMessage]] = {
-    val searchQuery = query match {
-      case Some(q) if q.startsWith("from:")    => SearchQuery.From(q.stripPrefix("from:").trim)
-      case Some(q) if q.startsWith("subject:") =>
-        SearchQuery.Subject(q.stripPrefix("subject:").trim)
-      case Some(q) if !q.startsWith("is:") =>
-        SearchQuery.Subject(q) || SearchQuery.From(q)
-      case _ => SearchQuery.All
+    val terms = query.map(_.split(' ').toList).getOrElse(List.empty)
+    val sinceQuery: Option[SearchQuery] = terms
+      .collectFirst { case t if t.startsWith("after:") => t.stripPrefix("after:").trim }
+      .flatMap(_.toLongOption)
+      .map(epoch => SearchQuery.ReceivedDate.greaterThan(java.time.Instant.ofEpochSecond(epoch)))
+    val textTerms = terms.filterNot(_.startsWith("after:")).filterNot(_.startsWith("is:")).mkString(" ")
+    val textQuery: SearchQuery = textTerms match {
+      case t if t.startsWith("from:")    => SearchQuery.From(t.stripPrefix("from:").trim)
+      case t if t.startsWith("subject:") => SearchQuery.Subject(t.stripPrefix("subject:").trim)
+      case t if t.nonEmpty               => SearchQuery.Subject(t) || SearchQuery.From(t)
+      case _                             => SearchQuery.All
     }
+    val searchQuery = sinceQuery.fold(textQuery)(sq => textQuery && sq)
     runImap {
       for {
         inbox  <- emilClient.access.getInbox

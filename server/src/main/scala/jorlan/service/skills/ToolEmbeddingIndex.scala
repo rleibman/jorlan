@@ -32,6 +32,11 @@ trait ToolEmbeddingIndex {
     text:      String,
   ):                                       UIO[Unit]
   def purgeBySkillName(skillName: String): UIO[Unit]
+
+  /** Remove every entry from the index regardless of skill or tool name. Used at startup to clear stale entries
+    * accumulated across server restarts before re-indexing the current skill set.
+    */
+  def purgeAll: UIO[Unit]
   def searchTools(
     query: String,
     limit: Int,
@@ -66,6 +71,9 @@ class ToolEmbeddingIndexLive(
       val filter = MetadataFilterBuilder.metadataKey("skillName").isEqualTo(skillName)
       store.removeAll(filter)
     }.ignore
+
+  override def purgeAll: UIO[Unit] =
+    ZIO.attemptBlocking(store.removeAll()).ignore
 
   override def searchTools(
     query: String,
@@ -117,6 +125,7 @@ object ToolEmbeddingIndex {
           text:      String,
         ):                                       UIO[Unit] = ZIO.unit
         def purgeBySkillName(skillName: String): UIO[Unit] = ZIO.unit
+        def purgeAll:                            UIO[Unit] = ZIO.unit
         def searchTools(
           query: String,
           limit: Int,

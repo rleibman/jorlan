@@ -168,14 +168,13 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
                   for {
                     config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
                     staticContentDir = config.jorlan.http.staticContentDir
-                    root = JPaths.get(staticContentDir).toAbsolutePath.normalize()
-                    // Resolve and normalize to block path traversal; any escape falls back to index.html
-                    resolved = root.resolve(somethingElse).normalize()
+                    // Sanitize path: strip leading slash, reject traversal sequences
+                    relative = somethingElse.stripPrefix("/")
                     result <-
-                      (if (!resolved.startsWith(root))
-                         ZIO.fail(NotFoundError(resolved, "Path traversal not allowed"))
+                      (if (relative.contains(".."))
+                         ZIO.fail(NotFoundError(JPaths.get(relative), "Path traversal not allowed"))
                        else
-                         file(resolved.toString))
+                         file(s"$staticContentDir/$relative"))
                         .orElse(file(s"$staticContentDir/index.html"))
                   } yield result
                 }.mapError(JorlanError(_))

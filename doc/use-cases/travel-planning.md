@@ -112,3 +112,42 @@ After travel, you should:
 * Telegram API
 * Natural Language Processing (NLP)
 * Document Generation
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Store trip details, preferences, lessons learned | `memory.remember`, `memory.search_semantic` |
+| Calendar — add travel events and reminders | `GoogleCalendarSkill` — `calendar.createEvent`, `calendar.listEvents` |
+| Email — track reservation confirmations | `email.list`, `email.read`, `email.search` |
+| Google Drive — store trip documents and receipts | `GoogleDriveSkill` — `drive.listFiles`, `drive.readFile` |
+| Contacts — find family/friends near destination | `GoogleContactsSkill` — `google_contacts.search_contacts` |
+| Weather for destination research | `weather` skill |
+| Web research (flights, hotels, restaurants, attractions) | `search.web`, `http_fetch.get` |
+| Telegram reminders for deadlines | `TelegramConnectorSkill` — `telegram.send_message` |
+| Scheduled pre-departure checklist | `scheduler.create_job` (countdown triggers) |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### Google Maps (recommended)
+- Package: `@modelcontextprotocol/server-google-maps` (official Anthropic MCP)
+- Transport: stdio
+- Provides: geocoding, directions, places search, distance matrix
+- Required: Google Maps API key (set as `GOOGLE_MAPS_API_KEY` env var)
+- Useful for: finding restaurants, attractions, local transport options near destinations
+
+### Declarative HTTP skills to define
+
+| Skill | API | Notes |
+|---|---|---|
+| `currency_exchange` | [Open Exchange Rates](https://openexchangerates.org/) (free tier) or `exchangerate.host` | `GET https://open.er-api.com/v6/latest/USD` |
+| `visa_requirements` | [Sherpa API](https://sherpa.travel/) or `iata-timatic` | Passport/visa check for destination countries |
+| `flight_search` | Google Flights via `search.web` + `http_fetch` scraping, or Amadeus API (free sandbox) | Flight options research (booking still manual) |
+
+### What is not yet feasible
+
+- **Direct flight/hotel booking** — requires partner API accounts (Amadeus, Booking.com, etc.); agent can research and present options but booking remains manual
+- **Real-time disruption monitoring** — requires flight status API (FlightAware, AeroDataBox); possible via `http_fetch` declarative skill
+- **Passport expiry tracking** — can be handled via `memory` (store expiry dates) + `scheduler` (reminder before expiry)

@@ -168,9 +168,8 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
         for {
           name     <- field("name")
           cronExpr <- field("cronExpression")
-          agentId = ctx.agentId.getOrElse(AgentId.empty)
           prompt = optField("prompt").getOrElse(optField("input").getOrElse(""))
-          job <- createJob(agentId, ctx.actorId, name, prompt, optField("input"))
+          job <- createJob(ctx.agentId, ctx.actorId, name, prompt, optField("input"))
           // Add the cron trigger after job creation
           now <- Clock.instant
           _   <- jobManager
@@ -245,7 +244,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
   }
 
   def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
     prompt:          String,

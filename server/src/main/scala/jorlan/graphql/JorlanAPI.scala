@@ -24,7 +24,8 @@ import zio.json.ast.Json
 import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
 import zio.stream.ZStream
 
-import java.time.Instant
+import cron4s.Cron
+import java.time.{Duration as JDuration, Instant}
 
 /** Caliban GraphQL schema for the Jorlan control-plane API. */
 @scala.annotation.nowarn("msg=IsUnionOf")
@@ -482,7 +483,7 @@ object JorlanAPI {
     }
 
   private given ArgBuilder[TriggerType] =
-    ArgBuilder.string.flatMap { s =>
+    ArgBuilder.enumString[TriggerType] { s =>
       TriggerType.values
         .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
     }
@@ -1606,11 +1607,10 @@ object JorlanAPI {
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("scheduler.manage", actorId)
-              agentId <- resolveAgentIdStrict(actorId)
               now     <- Clock.instant
               job     <- ZIO.serviceWithZIO[JobManager](
                 _.createJob(
-                  agentId,
+                  None,
                   actorId,
                   input.name,
                   input.prompt,
@@ -1628,6 +1628,36 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("scheduler.manage", actorId)
               _       <- assertJobOwnership(input.jobId, actorId)
+              _       <- input.triggerType match {
+                case TriggerType.Cron =>
+                  ZIO
+                    .fromEither(Cron.parse(input.expression))
+                    .mapError(e =>
+                      JorlanError(
+                        s"Invalid cron expression '${input.expression}': ${e}. " +
+                          "cron4s requires 6 fields (sec min hr dom mon dow) and uses '?' for the unused dom/dow field. " +
+                          "Examples: '0 0 18 ? * 6' = 18:00 every Saturday, '0 0 9 ? * 1-5' = 09:00 weekdays, " +
+                          "'0 0 9 * * ?' = 09:00 every day",
+                      ),
+                    ).unit
+                case TriggerType.Interval =>
+                  ZIO
+                    .attempt(JDuration.parse(input.expression))
+                    .mapError(_ =>
+                      JorlanError(
+                        s"Invalid interval '${input.expression}'. Use ISO 8601 duration format (e.g. PT1H, PT30M, P1D)",
+                      ),
+                    ).unit
+                case TriggerType.OneShot =>
+                  ZIO
+                    .attempt(Instant.parse(input.expression))
+                    .mapError(_ =>
+                      JorlanError(
+                        s"Invalid datetime '${input.expression}'. Use ISO 8601 format (e.g. 2026-07-01T09:00:00Z)",
+                      ),
+                    ).unit
+                case TriggerType.Event => ZIO.unit
+              }
               now     <- Clock.instant
               trigger <- ZIO.serviceWithZIO[JobManager](
                 _.addTrigger(

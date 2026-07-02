@@ -15,6 +15,9 @@ package ai
   *   Top-K sampling parameter (default 40).
   * @param topP
   *   Top-P (nucleus) sampling parameter (default 0.9).
+  * @param numCtx
+  *   Context window size passed to Ollama (num_ctx). Should be at most the model's native context length. Default 16384
+  *   gives qwen2.5:7b plenty of room for multi-tool conversations without exhausting GPU VRAM.
   * @param maxMessages
   *   Maximum number of messages to retain per session in the sliding chat memory window (default 1000).
   */
@@ -28,6 +31,7 @@ case class LangChainConfig(
   temperature:         Double = 0.2,
   topK:                Int = 20,
   topP:                Double = 0.8,
+  numCtx:              Int = 8000,
   maxMessages:         Int = 1000,
 )
 // $COVERAGE-ON$

@@ -171,3 +171,43 @@ Whenever Roberto requests practice:
 * Act as a native speaker.
 * Conduct a realistic conversation in the target language.
 * Track errors and learning opportunities for future lessons.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Store per-language learner profile | `memory.remember`, `memory.search_semantic` |
+| Daily practice trigger | `scheduler.create_job` (cron at configurable time) |
+| Deliver lessons via Telegram | `TelegramConnectorSkill` — `telegram.send_message` |
+| Spaced repetition scheduling | `scheduler.create_job` (dynamic intervals) + `memory` to track items and review dates |
+| Travel-mode detection | `GoogleCalendarSkill` — `calendar.listEvents` (detect trips) |
+| Web research for cultural topics | `search.web` |
+| Store generated flashcards / exercises | `workspace.write`, `workspace.read` |
+| Weekly progress reports | `scheduler.create_job` (Sunday trigger) |
+
+### Declarative HTTP skills to define
+
+| Skill | API | What it provides |
+|---|---|---|
+| `translation` | [DeepL API](https://www.deepl.com/en/docs-api/) (free tier available) or LibreTranslate | Translate text between languages; verify student translations |
+| `dictionary` | [Free Dictionary API](https://dictionaryapi.dev/) (completely free, no key required) | Word definitions, phonetics, examples, synonyms |
+| `forvo` | [Forvo API](https://api.forvo.com/) | Human-recorded pronunciation samples (paid, affordable) |
+
+Configure each as a declarative Jorlan skill using `http_fetch`-style manifests or register as HTTP MCP servers.
+
+### Simulating Spaced Repetition with existing tools
+
+Without a dedicated SRS engine, the agent can implement SM-2-style spaced repetition using:
+- `memory.remember("vocab:<word>:<lang> interval=<days> easeFactor=<ef> nextReview=<date> ...")` to store item state
+- `memory.search("vocab:* nextReview <= <today>")` to find items due for review
+- `scheduler.create_job(runAt=<nextReview>, ...)` to schedule the review session
+
+This is approximate but functional for MVP use.
+
+### What is not yet feasible
+
+- **Speech-to-text** — pronunciation practice and listening comprehension require audio input; not currently supported
+- **Text-to-speech** — hearing native pronunciation requires TTS output; not currently supported
+- **Grammar analysis engine** — the agent's own reasoning handles grammar correction without a dedicated engine

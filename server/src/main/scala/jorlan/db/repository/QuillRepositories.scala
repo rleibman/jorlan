@@ -913,7 +913,9 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
     agentId match {
       case Some(aid) =>
         exec(
-          qc.ctx.run(qSchedulerJobs.filter(_.agentId == lift(aid)).sortBy(_.createdAt)(Ord.desc).take(lift(limit))),
+          qc.ctx.run(
+            qSchedulerJobs.filter(_.agentId.contains(lift(aid))).sortBy(_.createdAt)(Ord.desc).take(lift(limit)),
+          ),
         )
       case None =>
         exec(qc.ctx.run(qSchedulerJobs.sortBy(_.createdAt)(Ord.desc).take(lift(limit))))

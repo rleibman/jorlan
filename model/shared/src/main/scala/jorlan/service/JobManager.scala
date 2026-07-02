@@ -48,7 +48,7 @@ trait JobManager {
     *   How to handle runs that were missed while the server was offline.
     */
   def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
     prompt:          String,

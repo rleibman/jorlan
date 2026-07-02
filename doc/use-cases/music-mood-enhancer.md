@@ -442,3 +442,49 @@ That would allow requests like:
 "Play something energetic that I probably haven't heard in a year."
 
 Those are exactly the kinds of requests traditional music software struggles with, but an agent-backed music manager could excel at.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| All Lyrion playback control (play, pause, stop, volume, next, previous, playlist, search, browse, queue) | `lyrion` skill — full tool suite already implemented |
+| Multi-room audio zone management | `lyrion.players`, `lyrion.play` (per player) |
+| Context-aware selection (calendar, weather) | `GoogleCalendarSkill` — `calendar.listEvents` + `weather` skill |
+| Music discovery web search | `search.web`, `search.news` |
+| Artist news and new release monitoring | `rss.fetch` + `search.news` |
+| Store listening history, favorites, semantic tags | `memory.remember`, `memory.search_semantic` |
+| Scheduled weekly/monthly/annual reviews | `scheduler.create_job` |
+| Telegram notifications for new releases | `TelegramConnectorSkill` — `telegram.send_message` |
+
+### Declarative HTTP skills to define
+
+| Skill | API | What it provides |
+|---|---|---|
+| `musicbrainz` | [MusicBrainz REST API](https://musicbrainz.org/doc/MusicBrainz_API) (free, no key) | Artist discography, release dates, similar artists, genre tags |
+| `lastfm` | [Last.fm API](https://www.last.fm/api) (free key) | Similar artists, top tracks, listening stats, new releases |
+| `discogs` | [Discogs API](https://www.discogs.com/developers/) (free key) | Collection management, pricing, release details |
+
+Configure each via `http_fetch`-style declarative skill manifests in Jorlan's skill authoring system.
+
+### Semantic tagging implementation
+
+This use case explicitly calls for semantic tagging (mood/energy/vibe attributes). Implement using the
+existing `memory` skill:
+
+```
+memory.remember("music-tag:Prince: energetic, funky, sexy, groove-oriented, party, 1980s, virtuoso")
+memory.remember("music-tag:Miles Davis - Kind of Blue: quiet, contemplative, late-night, jazz, sophisticated")
+memory.remember("music-tag:Steely Dan: intelligent, polished, groove-oriented, driving, musicianship")
+```
+
+Then use `memory.search_semantic("quiet but not depressing")` to find matching artists/albums. The agent
+can cross-reference these tags against the Lyrion library to build a queue.
+
+### This use case is largely satisfiable today
+
+The `lyrion` skill already covers all playback and library operations. The main additions needed are:
+1. The declarative HTTP skills for MusicBrainz, Last.fm, and Discogs
+2. Seeding the semantic tag memory
+3. Configuring scheduled discovery and monitoring jobs

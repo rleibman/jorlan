@@ -112,6 +112,7 @@ class GmailProvider private (
       date = date,
       attachments = attachments,
       labels = labels,
+      isRead = !labels.contains("UNREAD"),
       pgpSigned = false,
       pgpSignatureValid = None,
     )

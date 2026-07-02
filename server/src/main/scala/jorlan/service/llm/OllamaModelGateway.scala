@@ -201,17 +201,34 @@ private class OllamaModelGateway(
                 Unsafe.unsafe(implicit u => runtime.unsafe.run(tokenQueue.offer(Some(s)).unit))
 
               override def onCompleteResponse(response: ChatResponse): Unit = {
+                val hasTools = response.aiMessage().hasToolExecutionRequests
+                val finishReason = Option(response.finishReason()).map(_.name).getOrElse("null")
                 val effect = ToolSupport.extractToolCall(response) match {
                   case Some(call) =>
-                    tokenQueue.shutdown *>
+                    ZIO.logDebug(
+                      s"[llm] tool call: ${call.name} id=${call.id} finishReason=$finishReason",
+                    ) *>
+                      tokenQueue.shutdown *>
                       done.succeed(ToolCallRequested(call.id, call.name, call.argsJson))
                   case None =>
-                    // Offer a None sentinel to signal end-of-stream BEFORE resolving the promise.
-                    // We must NOT call tokenQueue.shutdown here: ZIO's UnboundedQueue checks the
-                    // shutdown flag before draining buffered items, so shutdown would silently
-                    // discard all tokens that onPartialResponse already offered.
-                    tokenQueue.offer(None).unit *>
-                      done.succeed(
+                    // When think=false, LangChain4j buffers all tokens to strip <think> blocks and
+                    // never calls onPartialResponse — the complete text only appears in aiMessage().text().
+                    // Detect this by checking whether the queue is still empty, and if so, inject the
+                    // full response text as a single chunk before the end-of-stream sentinel.
+                    for {
+                      qSize <- tokenQueue.size
+                      responseText = Option(response.aiMessage().text()).getOrElse("")
+                      _ <- ZIO.logDebug(
+                        s"[llm] final answer finishReason=$finishReason hasTools=$hasTools tokenCount=${response.tokenUsage().outputTokenCount()} qSize=$qSize textLen=${responseText.length}",
+                      )
+                      _ <- ZIO
+                        .when(qSize == 0 && responseText.nonEmpty)(tokenQueue.offer(Some(responseText)))
+                      // Offer a None sentinel to signal end-of-stream BEFORE resolving the promise.
+                      // We must NOT call tokenQueue.shutdown here: ZIO's UnboundedQueue checks the
+                      // shutdown flag before draining buffered items, so shutdown would silently
+                      // discard all tokens that onPartialResponse already offered.
+                      _ <- tokenQueue.offer(None)
+                      _ <- done.succeed(
                         FinalAnswer(
                           ZStream
                             .fromQueue(tokenQueue)
@@ -219,6 +236,7 @@ private class OllamaModelGateway(
                             .ensuring(tokenQueue.shutdown),
                         ),
                       )
+                    } yield ()
                 }
                 Unsafe.unsafe(implicit u => runtime.unsafe.run(effect))
               }
@@ -231,7 +249,11 @@ private class OllamaModelGateway(
                   case _                                                                       => ModelUnavailable(msg)
                 }
                 Unsafe.unsafe { implicit u =>
-                  runtime.unsafe.run(tokenQueue.shutdown *> done.fail(modelError))
+                  runtime.unsafe.run(
+                    ZIO.logWarning(s"[llm] model error: $msg (${e.getClass.getName})") *>
+                      tokenQueue.shutdown *>
+                      done.fail(modelError),
+                  )
                 }
               }
             },
@@ -337,8 +359,8 @@ object OllamaModelGateway {
                 .temperature(config.temperature)
                 .topK(config.topK)
                 .topP(config.topP)
-                .think(false) // TODO need to think this through
-                .numCtx(4096) // TODO add to config, need to think this through as well
+                .numCtx(config.numCtx)
+                .think(false)
                 .build,
             )
           }.mapError(JorlanError.apply)

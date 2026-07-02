@@ -724,7 +724,7 @@ object InMemoryRepositories {
     ): RepositoryTask[List[SchedulerJob]] =
       jobs.get.map { m =>
         val all = m.values.toList
-        agentId.fold(all)(aid => all.filter(_.agentId == aid)).take(limit)
+        agentId.fold(all)(aid => all.filter(_.agentId.contains(aid))).take(limit)
       }
 
     override def getPendingJobs: RepositoryTask[List[SchedulerJob]] =

@@ -467,3 +467,43 @@ Every year:
 * Generate comprehensive home maintenance report.
 * Review major assets.
 * Review replacement forecasts.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Store asset registry and maintenance records | `memory.remember`, `memory.search_semantic`, `workspace.write` |
+| Scheduled reminders (weekly, seasonal, annual) | `scheduler.create_job` |
+| Telegram chore reminders and alerts | `TelegramConnectorSkill` — `telegram.send_message` |
+| Calendar integration for seasonal plans | `GoogleCalendarSkill` — `calendar.createEvent`, `calendar.listEvents` |
+| Email for contractor communications | `email.list`, `email.read`, `email.send` |
+| Document storage for manuals and warranties | `workspace.write`, `workspace.read`, `workspace.search` |
+| Notify on urgent issues | `notify.user` |
+
+### New native skill needed: `chore`
+
+The "first-class Chore concept" described in this use case requires a dedicated Jorlan skill backed by a
+database table. The `memory` skill alone cannot enforce the scheduling rules (completion-based next-due dates,
+grace periods, status FSM).
+
+**Proposed `chore` skill tools:**
+- `chore.create(name, description, frequency, gracePeriod, priority)` — register a new chore
+- `chore.complete(id, completedAt)` — mark done; automatically calculates next due date from `completedAt + frequency`
+- `chore.list(status?)` — list chores filtered by status (Upcoming/Due Soon/Due/Overdue)
+- `chore.skip(id, reason)` — mark skipped without affecting next-due logic
+- `chore.defer(id, deferUntil)` — postpone without marking complete
+- `chore.history(id)` — completion history for trend analysis
+
+**Database table required:** `chores` with columns: id, name, description, frequency_days, grace_period_days,
+priority, last_completed_at, next_due_at, status, created_at.
+
+Until this skill is built, chores can be approximated using `memory` to store chore definitions and
+`scheduler` to trigger reminders — but without the completion-based rescheduling logic.
+
+### What is not yet feasible
+
+- **OCR for warranty documents and receipts** — use `shell.run("tesseract ...")` if Tesseract is available, or configure an OCR cloud API as a declarative HTTP skill
+- **Automatic supply reorder** — requires purchasing integration (Amazon, etc.); not planned; alert-only is possible with `notify.user`
+- **Photo storage for home documentation** — use `GoogleDriveSkill` to store photos in Google Drive

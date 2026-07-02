@@ -23,6 +23,7 @@ import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
+import scala.scalajs.js.timers.*
 
 object SchedulerPage {
 
@@ -136,6 +137,32 @@ object SchedulerPage {
                 .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
                 .runNow()
             }
+
+          // Poll every 2 s until the job leaves Pending/Running (max 60 attempts = 2 min).
+          def pollJobStatus(
+            jobId:        SchedulerJobId,
+            attemptsLeft: Int = 60,
+          ): Callback =
+            if (attemptsLeft <= 0) Callback.empty
+            else
+              Callback {
+                AsyncCallbackRepositories.scheduler
+                  .listJobs(None, 200)
+                  .flatMap { jobs =>
+                    state.setState(state.value.copy(jobs = jobs)).asAsyncCallback.flatMap { _ =>
+                      val active = jobs.exists(j =>
+                        j.id == jobId && (j.status == JobStatus.Running || j.status == JobStatus.Pending),
+                      )
+                      if (active)
+                        AsyncCallback.fromCallback(
+                          Callback(setTimeout(2000)(pollJobStatus(jobId, attemptsLeft - 1).runNow())),
+                        )
+                      else AsyncCallback.unit
+                    }
+                  }
+                  .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                  .runNow()
+              }
 
           def loadTriggers(jobId: SchedulerJobId): Callback =
             if (state.value.triggers.contains(jobId)) Callback.empty
@@ -410,7 +437,7 @@ object SchedulerPage {
                       val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
                       state.setState(state.value.copy(createForm = f.copy(triggerType = tt))).runNow()
                     }(
-                      MuiMenuItem.value("Cron")("Cron — schedule with a cron expression (e.g. 0 9 * * 1-5)"): VdomNode,
+                      MuiMenuItem.value("Cron")("Cron — schedule with a cron expression (e.g. 0 0 9 ? * 1-5)"): VdomNode,
                       MuiMenuItem
                         .value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
                       MuiMenuItem.value("OneShot")(
@@ -422,7 +449,7 @@ object SchedulerPage {
                   MuiTextField
                     .label(
                       f.triggerType match {
-                        case TriggerType.Cron     => "Cron Expression (optional, e.g. 0 9 * * 1-5)"
+                        case TriggerType.Cron     => "Cron Expression (optional, e.g. 0 0 9 ? * 1-5 — 6 fields, use ? for unused dom or dow)"
                         case TriggerType.Interval => "Interval (optional, ISO 8601 duration, e.g. PT1H)"
                         case TriggerType.OneShot  => "Run At (optional, ISO 8601 datetime, e.g. 2026-07-01T09:00:00Z)"
                         case TriggerType.Event    => "Event Name (optional, e.g. agent.completed)"
@@ -571,7 +598,7 @@ object SchedulerPage {
                         val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
                         state.setState(state.value.copy(addTriggerForm = Some(af.copy(triggerType = tt)))).runNow()
                       }(
-                        MuiMenuItem.value("Cron")("Cron — cron expression (e.g. 0 9 * * 1-5)"):          VdomNode,
+                        MuiMenuItem.value("Cron")("Cron — cron expression (e.g. 0 0 9 ? * 1-5)"):         VdomNode,
                         MuiMenuItem.value("Interval")("Interval — ISO 8601 duration (e.g. PT1H)"):       VdomNode,
                         MuiMenuItem.value("OneShot")("One Shot — datetime (e.g. 2026-07-01T09:00:00Z)"): VdomNode,
                         MuiMenuItem.value("Event")("Event — system event name (e.g. agent.completed)"):  VdomNode,
@@ -579,7 +606,7 @@ object SchedulerPage {
                     MuiTextField
                       .label(
                         af.triggerType match {
-                          case TriggerType.Cron     => "Cron Expression (e.g. 0 9 * * 1-5)"
+                          case TriggerType.Cron     => "Cron Expression (e.g. 0 0 9 ? * 1-5 — 6 fields, use ? for unused dom or dow)"
                           case TriggerType.Interval => "Interval (ISO 8601, e.g. PT1H)"
                           case TriggerType.OneShot  => "Run At (ISO 8601, e.g. 2026-07-01T09:00:00Z)"
                           case TriggerType.Event    => "Event Name (e.g. agent.completed)"
@@ -735,14 +762,14 @@ object SchedulerPage {
                                     .size("small")
                                     .variant("outlined")
                                     .onClick(() =>
-                                      jobAction(
+                                      (jobAction(
                                         AsyncCallbackRepositories.scheduler.triggerNow(job.id),
                                         s =>
                                           s.copy(jobs =
                                             s.jobs
                                               .map(j => if (j.id == job.id) j.copy(status = JobStatus.Running) else j),
                                           ),
-                                      ).runNow(),
+                                      ) >> pollJobStatus(job.id)).runNow(),
                                     )("Run Now"),
                                   MuiButton
                                     .size("small")

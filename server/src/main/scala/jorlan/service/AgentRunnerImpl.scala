@@ -14,15 +14,22 @@ import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
-/** Immutable environment threaded through the [[AgentRunnerImpl.reactLoop]] without changing across recursive calls. */
+/** Immutable environment threaded through the [[AgentRunnerImpl.reactLoop]].
+  *
+  * `tools` is refreshed at each step via [[AgentRunnerImpl.skillRegistry]] so the LLM gains access to new skills as the
+  * conversation evolves (e.g. after an email tool call exposes a need for telegram tools).
+  */
 private case class ReactLoopEnv(
-  sessionId: AgentSessionId,
-  tools:     List[ToolSpec],
-  actorId:   Option[UserId],
-  agentId:   AgentId,
-  ctx:       InvocationContext,
-  errorRef:  Ref[Option[String]],
-  chunksRef: Ref[Vector[String]],
+  sessionId:         AgentSessionId,
+  tools:             List[ToolSpec],
+  actorId:           Option[UserId],
+  agentId:           AgentId,
+  ctx:               InvocationContext,
+  errorRef:          Ref[Option[String]],
+  chunksRef:         Ref[Vector[String]],
+  prompt:            String,
+  expertise:         String,
+  prioritizedSkills: List[String],
 )
 
 /** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, cached personality,
@@ -69,8 +76,9 @@ class AgentRunnerImpl(
   repo:          ZIORepositories,
   memoryService: MemoryService,
   skillRegistry: SkillRegistry,
-  runnerState:   AgentRunnerState,
-  maxToolSteps:  Int,
+  runnerState:        AgentRunnerState,
+  maxToolSteps:       Int,
+  maxToolResultChars: Int = 2000,
 ) extends AgentRunner {
 
   private val seeded = runnerState.seeded
@@ -115,7 +123,18 @@ class AgentRunnerImpl(
             agentId = Option.when(agentId != AgentId.empty)(agentId),
             sessionId = Some(sessionId),
           )
-          env = ReactLoopEnv(sessionId, tools, actorId, agentId, ctx, errorRef, chunksRef)
+          env = ReactLoopEnv(
+            sessionId = sessionId,
+            tools = tools,
+            actorId = actorId,
+            agentId = agentId,
+            ctx = ctx,
+            errorRef = errorRef,
+            chunksRef = chunksRef,
+            prompt = content,
+            expertise = agent.flatMap(_.description).getOrElse(""),
+            prioritizedSkills = agent.map(_.prioritizedSkills).getOrElse(List.empty),
+          )
           _ <- reactLoop(env, initialMessages, stepsLeft = maxToolSteps)
         } yield ()
       _ <- work
@@ -215,11 +234,23 @@ class AgentRunnerImpl(
                     logEvent(sessionId, specificType, actorId, agentId)
                   }
                 }
+                // Truncate large results so the LLM context stays manageable for local models.
+                truncatedResult =
+                  if (resultJsonStr.length > maxToolResultChars)
+                    resultJsonStr.take(maxToolResultChars) + s"""...[truncated, ${resultJsonStr.length} chars total]"""
+                  else resultJsonStr
                 newMessages = messages ++ List(
                   ToolCallMsg(id, name, argsJson),
-                  ToolResultMsg(id, name, resultJsonStr),
+                  ToolResultMsg(id, name, truncatedResult),
                 )
-                _ <- reactLoop(env, newMessages, stepsLeft - 1)
+                calledNames = newMessages.collect { case ToolCallMsg(_, n, _) => n }.distinct
+                newTools <- skillRegistry.filteredToolSpecs(
+                  prompt = env.prompt,
+                  expertise = env.expertise,
+                  recentToolNames = calledNames,
+                  prioritizedSkills = env.prioritizedSkills,
+                )
+                _ <- reactLoop(env.copy(tools = newTools), newMessages, stepsLeft - 1)
               } yield ()
           }
     }
@@ -286,18 +317,24 @@ class AgentRunnerImpl(
       errMsg <- errorRef.get
       chunks <- chunksRef.get
       fullResponse = chunks.mkString
-      sentinel = errMsg match {
+      effectiveError = errMsg.orElse(
+        Option.when(fullResponse.isEmpty)("LLM returned an empty response — the model may be overloaded or confused"),
+      )
+      sentinel = effectiveError match {
         case Some(msg) => ResponseChunk(sessionId, msg, finished = true, isError = true)
         case None      => ResponseChunk(sessionId, "", finished = true)
       }
       _ <- ZIO.logDebug(
-        s"[session:$sessionId] response finished${errMsg.map(e => s" with error: $e").getOrElse("")}",
+        s"[session:$sessionId] response finished${effectiveError.map(e => s" with error: $e").getOrElse("")}",
       )
       _ <- ZIO.logDebug(s"[session:$sessionId] full LLM response (${fullResponse.length} chars):\n$fullResponse")
+      _ <- ZIO.when(fullResponse.isEmpty && errMsg.isEmpty)(
+        ZIO.logWarning(s"[session:$sessionId] LLM returned an empty response after tool calls"),
+      )
       _ <- sessionHub.publish(sentinel)
-      _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = errMsg.isDefined)
-      _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, errMsg)
-      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, errMsg).forkDaemon
+      _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = effectiveError.isDefined)
+      _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, effectiveError)
+      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, effectiveError).forkDaemon
       _ <- logEvent(sessionId, EventType.AgentResponseCompleted, actorId)
     } yield ()
 

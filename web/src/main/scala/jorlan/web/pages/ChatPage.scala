@@ -39,6 +39,8 @@ object ChatPage {
     wsHandler:    Option[WebSocketHandler],
     error:        Option[String],
     pendingQueue: List[String],
+    micActive:    Boolean,
+    ttsEnabled:   Boolean,
   ) {
 
     def sessionId: Option[AgentSessionId] = session.map(_.id)
@@ -49,16 +51,33 @@ object ChatPage {
     ScalaFnComponent
       .withHooks[User]
       .useState(
-        State(session = None, "", List.empty, streaming = false, "", None, error = None, pendingQueue = List.empty),
+        State(
+          session = None,
+          input = "",
+          messages = List.empty,
+          streaming = false,
+          streamBuffer = "",
+          wsHandler = None,
+          error = None,
+          pendingQueue = List.empty,
+          micActive = false,
+          ttsEnabled = false,
+        ),
       )
       .useRef(Option.empty[WebSocketHandler])
-      .useRef(List.empty[String]) // queueRef: FIFO queue readable from stale onData closures
+      .useRef(List.empty[String])        // queueRef: FIFO queue readable from stale onData closures
+      .useRef(false)                     // ttsEnabledRef: mirror of ttsEnabled for stale onData closures
+      .useRef(Option.empty[js.Dynamic])  // recognitionRef: current SpeechRecognition instance
+      .useRef("")                        // streamBufferRef: mirror of streamBuffer for stale onData closures
       .useEffectOnMountBy {
         (
           _,
           state,
           handlerRef,
           queueRef,
+          ttsEnabledRef,
+          _,               // recognitionRef — not needed in effect
+          streamBufferRef,
         ) =>
           // Reconnect to an existing active session, or create a new one if none found
           Callback {
@@ -90,10 +109,11 @@ object ChatPage {
                               ex => state.modState(_.copy(streaming = false, error = Some(ex.getMessage))),
                             onData = { chunk =>
                               if (chunk.finished) {
-                                // Pop the next queued message before updating state
+                                val fullText = streamBufferRef.value + chunk.content
                                 val nextMsgOpt = queueRef.value.headOption
                                 val popRef = nextMsgOpt.fold(Callback.empty)(_ => queueRef.mod(_.tail))
-                                popRef >>
+                                streamBufferRef.set("") >>
+                                  popRef >>
                                   state.modState { s =>
                                     s.copy(
                                       messages = s.messages :+
@@ -117,11 +137,25 @@ object ChatPage {
                                         )
                                         .runNow()
                                     }
+                                  } >> Callback {
+                                    if (!chunk.isError && ttsEnabledRef.value && fullText.nonEmpty) {
+                                      js.Dynamic.global.speechSynthesis
+                                        .asInstanceOf[js.UndefOr[js.Dynamic]]
+                                        .foreach { synth =>
+                                          synth.cancel()
+                                          val utterance =
+                                            js.Dynamic.newInstance(js.Dynamic.global.SpeechSynthesisUtterance)(
+                                              fullText,
+                                            )
+                                          synth.speak(utterance)
+                                        }
+                                    }
                                   }
                               } else {
-                                state.modState(s =>
-                                  s.copy(streaming = true, streamBuffer = s.streamBuffer + chunk.content),
-                                )
+                                streamBufferRef.mod(_ + chunk.content) >>
+                                  state.modState(s =>
+                                    s.copy(streaming = true, streamBuffer = s.streamBuffer + chunk.content),
+                                  )
                               }
                             },
                           )
@@ -153,7 +187,66 @@ object ChatPage {
           state,
           _,
           queueRef,
+          ttsEnabledRef,
+          recognitionRef,
+          _,               // streamBufferRef — not needed in render
         ) =>
+          val hasSpeechRecognition: Boolean =
+            !js.isUndefined(js.Dynamic.global.SpeechRecognition) ||
+              !js.isUndefined(js.Dynamic.global.webkitSpeechRecognition)
+
+          val hasSpeechSynthesis: Boolean =
+            !js.isUndefined(js.Dynamic.global.speechSynthesis)
+
+          def startListening(): Callback =
+            state.modState(_.copy(micActive = true)) >> Callback {
+              val ctor = js.Dynamic.global.SpeechRecognition
+                .asInstanceOf[js.UndefOr[js.Dynamic]]
+                .orElse(js.Dynamic.global.webkitSpeechRecognition.asInstanceOf[js.UndefOr[js.Dynamic]])
+              ctor.foreach { SpeechRecognition =>
+                val recognition = js.Dynamic.newInstance(SpeechRecognition)()
+                recognition.lang = "en-US"
+                recognition.interimResults = false
+                recognition.continuous = false
+                recognition.onresult = (event: js.Dynamic) => {
+                  val transcript = event.results(0)(0).transcript.asInstanceOf[String]
+                  (state.modState(s =>
+                    s.copy(
+                      input = if (s.input.trim.isEmpty) transcript else s.input + " " + transcript,
+                      micActive = false,
+                    ),
+                  ) >> recognitionRef.set(None)).runNow()
+                }
+                recognition.onerror = (_: js.Dynamic) =>
+                  (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
+                recognition.onend = (_: js.Dynamic) =>
+                  (state.modState(_.copy(micActive = false)) >> recognitionRef.set(None)).runNow()
+                recognitionRef.set(Some(recognition)).runNow()
+                recognition.start()
+              }
+            }
+
+          def stopListening(): Callback =
+            Callback(recognitionRef.value.foreach(_.stop())) >>
+              recognitionRef.set(None) >>
+              state.modState(_.copy(micActive = false))
+
+          def toggleMic(): Callback =
+            if (state.value.micActive) stopListening() else startListening()
+
+          def toggleTts(): Callback = {
+            val next = !state.value.ttsEnabled
+            ttsEnabledRef.set(next) >>
+              state.modState(_.copy(ttsEnabled = next)) >>
+              Callback {
+                // Cancel any in-progress speech when TTS is disabled
+                if (!next)
+                  js.Dynamic.global.speechSynthesis
+                    .asInstanceOf[js.UndefOr[js.Dynamic]]
+                    .foreach(_.cancel())
+              }
+          }
+
           def sendMessage(): Callback = {
             val text = state.value.input.trim
             if (text.isEmpty || state.value.sessionId.isEmpty) Callback.empty
@@ -273,9 +366,8 @@ object ChatPage {
             ),
             Box.withProps(
               BoxOwnProps[Theme]()
-                .setSx(js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Theme]]).asInstanceOf[
-                  Box.Props,
-                ],
+                .setSx(js.Dynamic.literal(display = "flex", gap = 1, alignItems = "flex-start").asInstanceOf[SxProps[Theme]])
+                .asInstanceOf[Box.Props],
             )(
               MuiTextField
                 .value(state.value.input)
@@ -288,6 +380,34 @@ object ChatPage {
                 .onChange(e => state.modState(_.copy(input = e.target.value.asInstanceOf[String])).runNow())
                 .onKeyDown(handleKeyDown)
                 .disabled(state.value.sessionId.isEmpty),
+              if (hasSpeechRecognition)
+                Tooltip.withProps(
+                  js.Dynamic
+                    .literal(title = if (state.value.micActive) "Stop listening" else "Dictate message")
+                    .asInstanceOf[Tooltip.Props],
+                )(
+                  MuiButton
+                    .variant(if (state.value.micActive) "contained" else "outlined")
+                    .size("small")
+                    .onClick(() => toggleMic().runNow())(
+                      if (state.value.micActive) "⏹" else "🎤",
+                    ),
+                )
+              else EmptyVdom,
+              if (hasSpeechSynthesis)
+                Tooltip.withProps(
+                  js.Dynamic
+                    .literal(title = if (state.value.ttsEnabled) "Mute responses" else "Read responses aloud")
+                    .asInstanceOf[Tooltip.Props],
+                )(
+                  MuiButton
+                    .variant(if (state.value.ttsEnabled) "contained" else "outlined")
+                    .size("small")
+                    .onClick(() => toggleTts().runNow())(
+                      if (state.value.ttsEnabled) "🔊" else "🔇",
+                    ),
+                )
+              else EmptyVdom,
               MuiButton
                 .variant("contained")
                 .disabled(state.value.input.trim.isEmpty || state.value.sessionId.isEmpty)

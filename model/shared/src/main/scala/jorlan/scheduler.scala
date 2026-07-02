@@ -113,7 +113,7 @@ enum RetryBackoffPolicy derives JsonCodec {
   */
 case class SchedulerJob(
   id:              SchedulerJobId,
-  agentId:         AgentId,
+  agentId:         Option[AgentId],
   userId:          UserId,
   skillId:         Option[SkillId],
   name:            String,

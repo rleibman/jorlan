@@ -440,3 +440,52 @@ When goals or milestones are reached:
 * Celebrate achievement.
 * Record accomplishment.
 * Establish next objectives.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Store health profile, weight log, exercise sessions | `memory.remember`, `memory.search_semantic` |
+| Daily check-in and weekly review triggers | `scheduler.create_job` |
+| Telegram reminders and progress reports | `TelegramConnectorSkill` — `telegram.send_message` |
+| Calendar for workout scheduling | `GoogleCalendarSkill` — `calendar.createEvent`, `calendar.listEvents` |
+| Detect travel (adjust workout plans) | `GoogleCalendarSkill` — `calendar.listEvents` |
+| Food calendar integration (nutrition awareness) | `memory.search_semantic` (read meal plan from shared memory) |
+| Store exercise plans and progress notes | `workspace.write`, `workspace.read` |
+
+### New native skill recommended: `health`
+
+A structured `health` skill backed by a database table would provide better querying and trend analysis
+than the `memory` skill alone:
+
+**Proposed `health` skill tools:**
+- `health.log_weight(date, value, unit)` — record a weigh-in
+- `health.log_exercise(date, type, duration, distance?, sets?, reps?, weight?, notes?)` — record a session
+- `health.get_weight_trend(days)` — return weight data points for trend analysis
+- `health.get_exercise_history(type?, days?)` — return exercise sessions
+- `health.get_personal_records(type?)` — strength training PRs
+- `health.log_measurement(date, bodyPart, value, unit)` — body measurements
+
+Until this skill is built, use `memory.remember` with structured keys:
+```
+memory.remember("health:weight:2026-07-01: 185.2 lbs")
+memory.remember("health:exercise:2026-07-01: walking 45min 3.2km")
+```
+And `memory.search("health:weight:")` to retrieve the log.
+
+### Device integration via MCPs
+
+| Device | MCP / approach |
+|---|---|
+| Withings scale | Withings Health Mate API via `http_fetch` declarative skill (OAuth required) |
+| Fitbit / Google Fit | Google Fit REST API via `http_fetch` + OAuth credential in Jorlan's OAuth store |
+| Apple Health / Garmin | No direct API; export to CSV and process via `workspace.write` + `shell` |
+| Generic Bluetooth scale | No direct integration; manual logging via Telegram bot command |
+
+### What is not yet feasible
+
+- **Automatic smart watch sync** — requires device-specific OAuth integrations; use manual Telegram logging as a workaround
+- **Data visualization / graphs** — `workspace.write` can generate CSV data; actual chart rendering requires a visualization library or external service
+- **Sleep tracking integration** — same device integration challenge; manual log via `memory` if no device API

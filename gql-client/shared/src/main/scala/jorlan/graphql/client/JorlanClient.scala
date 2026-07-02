@@ -485,7 +485,7 @@ def view: ViewSelection = (id ~ name ~ description).map { case (id, name, descri
 type SchedulerJob
 object SchedulerJob {
   
-final case class SchedulerJobView(id: jorlan.SchedulerJobId, agentId: jorlan.AgentId, userId: jorlan.UserId, skillId: scala.Option[jorlan.SkillId], name: String, prompt: String, inputJson: scala.Option[String], status: jorlan.JobStatus, scheduledAt: java.time.Instant, startedAt: scala.Option[java.time.Instant], finishedAt: scala.Option[java.time.Instant], resultJson: scala.Option[String], maxRetries: Int, retryCount: Int, backoffSeconds: Int, backoffPolicy: jorlan.RetryBackoffPolicy, missedRunPolicy: jorlan.MissedRunPolicy, leasedAt: scala.Option[java.time.Instant], leasedBy: scala.Option[String], createdAt: java.time.Instant)
+final case class SchedulerJobView(id: jorlan.SchedulerJobId, agentId: scala.Option[jorlan.AgentId], userId: jorlan.UserId, skillId: scala.Option[jorlan.SkillId], name: String, prompt: String, inputJson: scala.Option[String], status: jorlan.JobStatus, scheduledAt: java.time.Instant, startedAt: scala.Option[java.time.Instant], finishedAt: scala.Option[java.time.Instant], resultJson: scala.Option[String], maxRetries: Int, retryCount: Int, backoffSeconds: Int, backoffPolicy: jorlan.RetryBackoffPolicy, missedRunPolicy: jorlan.MissedRunPolicy, leasedAt: scala.Option[java.time.Instant], leasedBy: scala.Option[String], createdAt: java.time.Instant)
 
 
 
@@ -495,7 +495,7 @@ type ViewSelection = SelectionBuilder[SchedulerJob, SchedulerJobView]
 def view: ViewSelection = (id ~ agentId ~ userId ~ skillId ~ name ~ prompt ~ inputJson ~ status ~ scheduledAt ~ startedAt ~ finishedAt ~ resultJson ~ maxRetries ~ retryCount ~ backoffSeconds ~ backoffPolicy ~ missedRunPolicy ~ leasedAt ~ leasedBy ~ createdAt).map { case (id, agentId, userId, skillId, name, prompt, inputJson, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) => SchedulerJobView(id, agentId, userId, skillId, name, prompt, inputJson, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) }
 
   def id: SelectionBuilder[SchedulerJob, jorlan.SchedulerJobId] = _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
-  def agentId: SelectionBuilder[SchedulerJob, jorlan.AgentId] = _root_.caliban.client.SelectionBuilder.Field("agentId", Scalar())
+  def agentId: SelectionBuilder[SchedulerJob, scala.Option[jorlan.AgentId]] = _root_.caliban.client.SelectionBuilder.Field("agentId", OptionOf(Scalar()))
   def userId: SelectionBuilder[SchedulerJob, jorlan.UserId] = _root_.caliban.client.SelectionBuilder.Field("userId", Scalar())
   def skillId: SelectionBuilder[SchedulerJob, scala.Option[jorlan.SkillId]] = _root_.caliban.client.SelectionBuilder.Field("skillId", OptionOf(Scalar()))
   def name: SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
