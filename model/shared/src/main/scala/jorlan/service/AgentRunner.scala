@@ -7,7 +7,6 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.*
 import zio.*
 import zio.stream.ZStream
 
@@ -37,6 +36,27 @@ trait AgentRunner {
     content:    String,
     actorId:    Option[UserId],
     withMemory: Boolean = true,
+  ): IO[JorlanError, Unit]
+
+  /** Submit a message to the agent for the given session using a single LLM call — no tool loop.
+    *
+    * Suitable for pure-reasoning pipeline steps (`StepMode.SingleCall`) where tools are not needed. Streams the model
+    * response token-by-token through [[SessionHub]], then publishes a `finished=true` sentinel.
+    *
+    * @param sessionId
+    *   The session to route the message to.
+    * @param systemPrompt
+    *   Overrides the normal personality system prompt for this call.
+    * @param content
+    *   The user message.
+    * @param actorId
+    *   The authenticated user; attached to event log entries.
+    */
+  def processMessageSingleCall(
+    sessionId:    AgentSessionId,
+    systemPrompt: String,
+    content:      String,
+    actorId:      Option[UserId],
   ): IO[JorlanError, Unit]
 
   /** Eagerly registers a per-connection subscriber queue and returns a [[ZStream]] that drains it.

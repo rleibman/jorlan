@@ -6,12 +6,9 @@
 
 package jorlan.routes
 
-import _root_.auth.{AuthConfig, AuthServer}
 import jorlan.*
-import jorlan.graphql.JorlanAPI
 import zio.*
 import zio.http.*
-import zio.nio.file.Files
 
 object HealthRoutes extends AppRoutes[Any, Any, Nothing] {
 

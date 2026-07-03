@@ -68,11 +68,11 @@ object CustomSkillsPage {
                 ) => (p, a)
               }
               .flatMap { case (p, a) =>
-                state.setState(state.value.copy(pending = p, allCustom = a, loading = false)).asAsyncCallback
+                state.modState(_.copy(pending = p, allCustom = a, loading = false)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -94,7 +94,7 @@ object CustomSkillsPage {
                   ) => (p, a)
                 }
                 .flatMap { case (p, a) =>
-                  state.setState(state.value.copy(pending = p, allCustom = a)).asAsyncCallback
+                  state.modState(_.copy(pending = p, allCustom = a)).asAsyncCallback
                 }
                 .completeWith { case _ => Callback.empty }
                 .runNow()
@@ -102,13 +102,13 @@ object CustomSkillsPage {
 
           def approve(versionId: Long): Callback =
             Callback {
-              state.setState(state.value.copy(approving = Some(versionId))).runNow()
+              state.modState(_.copy(approving = Some(versionId))).runNow()
               AsyncCallbackRepositories.skillLifecycle
                 .approveSkillVersion(versionId)
                 .flatMap { _ =>
                   state
-                    .setState(
-                      state.value.copy(
+                    .modState(
+                      _.copy(
                         approving = None,
                         toast = Some(ToastMessage("Skill approved and activated.", ToastSeverity.Success)),
                       ),
@@ -117,7 +117,7 @@ object CustomSkillsPage {
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
-                    state.setState(state.value.copy(approving = None, error = Some(ex.getMessage)))
+                    state.modState(_.copy(approving = None, error = Some(ex.getMessage)))
                   case _ => Callback.empty
                 }
                 .runNow()
@@ -126,13 +126,13 @@ object CustomSkillsPage {
           def reject(): Callback =
             state.value.rejectTarget.fold(Callback.empty) { versionId =>
               Callback {
-                state.setState(state.value.copy(rejecting = true)).runNow()
+                state.modState(_.copy(rejecting = true)).runNow()
                 AsyncCallbackRepositories.skillLifecycle
                   .rejectSkillVersion(versionId, state.value.rejectReason)
                   .flatMap { _ =>
                     state
-                      .setState(
-                        state.value.copy(
+                      .modState(
+                        _.copy(
                           rejecting = false,
                           rejectTarget = None,
                           rejectReason = "",
@@ -143,7 +143,7 @@ object CustomSkillsPage {
                   }
                   .completeWith {
                     case scala.util.Failure(ex) =>
-                      state.setState(state.value.copy(rejecting = false, error = Some(ex.getMessage)))
+                      state.modState(_.copy(rejecting = false, error = Some(ex.getMessage)))
                     case _ => Callback.empty
                   }
                   .runNow()
@@ -175,7 +175,7 @@ object CustomSkillsPage {
               ),
               MuiButton
                 .variant("contained")
-                .onClick(() => state.setState(state.value.copy(showWizard = true)).runNow())(
+                .onClick(() => state.modState(_.copy(showWizard = true)).runNow())(
                   "+ Create Custom Skill",
                 ),
             ),
@@ -228,8 +228,8 @@ object CustomSkillsPage {
                                     .size("small")
                                     .onClick(() =>
                                       state
-                                        .setState(
-                                          state.value.copy(rejectTarget = Some(sv.id), rejectReason = ""),
+                                        .modState(
+                                          _.copy(rejectTarget = Some(sv.id), rejectReason = ""),
                                         )
                                         .runNow(),
                                     )("Reject"),
@@ -292,12 +292,11 @@ object CustomSkillsPage {
                   .fullWidth(true)
                   .multiline(true)
                   .rows(3)
-                  .onChange(e => state.setState(state.value.copy(rejectReason = e.target.value.toString)).runNow()),
+                  .onChange(e => state.modState(_.copy(rejectReason = e.target.value.toString)).runNow()),
               ),
               DialogActions()(
-                MuiButton.onClick(() =>
-                  state.setState(state.value.copy(rejectTarget = None, rejectReason = "")).runNow(),
-                )("Cancel"),
+                MuiButton
+                  .onClick(() => state.modState(_.copy(rejectTarget = None, rejectReason = "")).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .color("error")

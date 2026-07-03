@@ -13,7 +13,7 @@ import zio.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
-import java.time.{LocalDateTime, Period, ZoneId, ZonedDateTime, Duration as JDuration}
+import java.time.{Duration as JDuration, LocalDateTime, Period, ZoneId, ZonedDateTime}
 import java.time.format.DateTimeFormatter
 import scala.jdk.CollectionConverters.*
 import scala.language.{postfixOps, unsafeNulls}
@@ -211,13 +211,13 @@ class TimeSkill(config: TimeConfig = TimeConfig()) extends Skill with HasDashboa
   /** Parse an ISO 8601 duration string (`PT…` or `P…`), using Period for pure date-durations (no `T`). */
   private def parseDuration(durationStr: String): IO[JorlanError, Either[JDuration, Period]] =
     (if (durationStr.contains("T")) ZIO.attempt(Left(JDuration.parse(durationStr)))
-    else
-      ZIO
-        .attempt(Right(Period.parse(durationStr)))
-        // $COVERAGE-OFF$ JDuration.parse requires "PT" prefix so this orElse is never reachable for well-formed non-T durations
-        .orElse(ZIO.attempt(Left(JDuration.parse(durationStr))))
-      // $COVERAGE-ON$
-      ).orElseFail {
+     else
+       ZIO
+         .attempt(Right(Period.parse(durationStr)))
+         // $COVERAGE-OFF$ JDuration.parse requires "PT" prefix so this orElse is never reachable for well-formed non-T durations
+         .orElse(ZIO.attempt(Left(JDuration.parse(durationStr))))
+       // $COVERAGE-ON$
+    ).orElseFail {
       JorlanError(
         s"Cannot parse duration '$durationStr'; expected ISO 8601 duration (e.g. 'PT2H30M' or 'P1D')",
       )

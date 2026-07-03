@@ -11,7 +11,6 @@ import jorlan.connector.{HasValidation, InvocationContext, Skill, SkillDescripto
 import just.semver.SemVer
 import zio.*
 import zio.http.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 

@@ -9,7 +9,7 @@ package jorlan.auth
 import auth.*
 import auth.oauth.OAuthUserInfo
 import jorlan.*
-import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOUserRepository}
+import jorlan.db.repository.ZIORepositories
 import zio.*
 import zio.json.ast.Json
 

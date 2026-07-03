@@ -21,6 +21,10 @@ object JobManagerSpec extends ZIOSpecDefault {
   private val agentId2 = AgentId(2L)
   private val userId = UserId(1L)
 
+  private val testPipeline: Pipeline = Pipeline(
+    steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+  )
+
   private def mkJob(
     name:        String,
     maxRetries:  Int = 0,
@@ -30,7 +34,7 @@ object JobManagerSpec extends ZIOSpecDefault {
   )(
     mgr: JobManager,
   ): IO[JorlanError, SchedulerJob] =
-    mgr.createJob(Some(agentId), userId, name, "", None, maxRetries, backoffSecs, backoffPol, missedPol)
+    mgr.createJob(Some(agentId), userId, name, testPipeline, maxRetries, backoffSecs, backoffPol, missedPol)
 
   private def makeManager = ZIO.serviceWith[ZIORepositories](JobManagerImpl(_))
 
@@ -56,8 +60,7 @@ object JobManagerSpec extends ZIOSpecDefault {
               Some(agentId),
               userId,
               "retry-job",
-              "",
-              Some("""{"key":"value"}"""),
+              testPipeline,
               maxRetries = 3,
               backoffSeconds = 120,
               backoffPolicy = RetryBackoffPolicy.Exponential,
@@ -68,7 +71,6 @@ object JobManagerSpec extends ZIOSpecDefault {
             job.backoffSeconds == 120,
             job.backoffPolicy == RetryBackoffPolicy.Exponential,
             job.missedRunPolicy == MissedRunPolicy.RunOnce,
-            job.inputJson.contains("""{"key":"value"}"""),
           )
         },
         test("pauseJob sets status to Paused") {
@@ -187,8 +189,7 @@ object JobManagerSpec extends ZIOSpecDefault {
               Some(agentId),
               userId,
               "agent1-job",
-              "",
-              None,
+              testPipeline,
               0,
               60,
               RetryBackoffPolicy.Fixed,
@@ -199,8 +200,7 @@ object JobManagerSpec extends ZIOSpecDefault {
               Some(agentId2),
               userId,
               "agent2-job",
-              "",
-              None,
+              testPipeline,
               0,
               60,
               RetryBackoffPolicy.Fixed,

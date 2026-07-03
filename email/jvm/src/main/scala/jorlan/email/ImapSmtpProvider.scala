@@ -12,7 +12,7 @@ import emil.javamail.JavaMailEmil
 import jorlan.*
 import jorlan.service.EmailProvider
 import zio.*
-import zio.interop.catz.{*, given}
+import zio.interop.catz.*
 
 import java.time.Instant
 import scala.language.unsafeNulls

@@ -556,6 +556,48 @@ class AgentRunnerImpl(
       }
     }
 
+  override def processMessageSingleCall(
+    sessionId:    AgentSessionId,
+    systemPrompt: String,
+    content:      String,
+    actorId:      Option[UserId],
+  ): IO[JorlanError, Unit] =
+    for {
+      errorRef  <- Ref.make(Option.empty[String])
+      chunksRef <- Ref.make(Vector.empty[String])
+      agentId   <- resolveAgentId(sessionId)
+      _         <- ensureSeeded(sessionId, actorId, agentId)
+      convId    <- getOrCreateConversation(sessionId)
+      personality = Personality.default
+      work =
+        for {
+          _ <- ZIO.logDebug(s"[session:$sessionId] single-call incoming message (${content.length} chars)")
+          _ <- ConversationLogger.logUserMessage(sessionId, actorId, content)
+          _ <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
+          messages = List(SystemMsg(systemPrompt), UserMsg(content))
+          _ <- modelGateway
+            .chatStep(sessionId, messages, List.empty)
+            .mapError(e => JorlanError(e.msg, Some(e)))
+            .flatMap {
+              case FinalAnswer(stream) =>
+                ZIO.scoped {
+                  stream
+                    .mapError(e => JorlanError(e.msg, Some(e)))
+                    .tapError(e => errorRef.set(Some(e.getMessage)))
+                    .foreach { chunk =>
+                      chunksRef.update(_ :+ chunk) *>
+                        sessionHub.publish(ResponseChunk(sessionId, chunk, finished = false))
+                    }
+                }
+              case other =>
+                ZIO.logWarning(s"[session:$sessionId] single-call got unexpected ChatStep: $other") *> ZIO.unit
+            }
+        } yield ()
+      _ <- work
+        .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
+        .ensuring(finaliseResponse(convId, sessionId, content, actorId, agentId, personality, errorRef, chunksRef))
+    } yield ()
+
   private val loadPersonality: ZIO[Any, RepositoryError, Personality] =
     runnerState.cachedPersonality.get.flatMap {
       case Some(p) => ZIO.succeed(p)

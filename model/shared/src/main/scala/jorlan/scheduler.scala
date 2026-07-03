@@ -10,6 +10,107 @@ import zio.json.{JsonCodec, JsonDecoder, JsonEncoder}
 
 import java.time.Instant
 
+/** Whether a [[PipelineStep]] runs the full ReAct tool-calling loop or makes a single LLM call. */
+enum StepMode derives JsonCodec {
+
+  /** Full ReAct loop: model may call tools in multiple rounds before producing output. */
+  case ReactLoop
+
+  /** Single LLM call: no tools, used for pure-reasoning steps. Cheaper and faster. */
+  case SingleCall
+
+}
+
+/** One step in an ordered [[Pipeline]] execution.
+  *
+  * @param name
+  *   Human-readable label used as the output variable key (e.g. `"gather-context"`).
+  * @param systemPrompt
+  *   Instructions specific to this step's responsibility.
+  * @param userPrompt
+  *   The message sent to the LLM; may reference `{{invariants.KEY}}`, `{{steps.NAME.output}}`, `{{now}}`, etc.
+  * @param tools
+  *   Tool namespace allowlist (e.g. `List("calendar", "weather")`). Empty means no tools.
+  * @param mode
+  *   `ReactLoop` for tool-using steps; `SingleCall` for pure-reasoning steps.
+  * @param outputVar
+  *   Key under which this step's final output is stored in the pipeline context map.
+  * @param retryOnFail
+  *   Number of automatic retries before halting the pipeline. 0 = no retry.
+  */
+case class PipelineStep(
+  name:         String,
+  systemPrompt: String,
+  userPrompt:   String,
+  tools:        List[String] = List.empty,
+  mode:         StepMode = StepMode.ReactLoop,
+  outputVar:    String,
+  retryOnFail:  Int = 0,
+) derives JsonCodec
+
+/** An ordered sequence of [[PipelineStep]]s that constitutes a scheduled job.
+  *
+  * @param steps
+  *   Ordered list of steps; executed sequentially.
+  * @param invariants
+  *   Pipeline-level key-value facts injected into every step. Override agent-level invariants with the same key.
+  * @param personality
+  *   Optional named accuracy personality. `None` activates accuracy mode (minimal, instruction-following system
+  *   prompt).
+  */
+case class Pipeline(
+  steps:       List[PipelineStep],
+  invariants:  Map[String, String] = Map.empty,
+  personality: Option[String] = None,
+) derives JsonCodec
+
+/** Lifecycle status of a [[PipelineRun]]. */
+enum PipelineRunStatus derives JsonCodec {
+
+  /** The pipeline is currently executing. */
+  case Running
+
+  /** All steps completed successfully. */
+  case Succeeded
+
+  /** A step failed and retries were exhausted; subsequent steps did not run. */
+  case FailedAtStep
+
+  /** The run was explicitly cancelled. */
+  case Cancelled
+
+}
+
+/** A single execution instance of a pipeline job.
+  *
+  * @param id
+  *   Auto-assigned on insert; use [[PipelineRunId.empty]] for new records.
+  * @param jobId
+  *   The [[SchedulerJob]] that owns this run.
+  * @param status
+  *   Lifecycle state of the run.
+  * @param runContext
+  *   Optional free-form text provided at manual trigger time. Available as `{{run.context}}` in every step.
+  * @param contextJson
+  *   JSON snapshot of the accumulated step-output context map at the time of last update.
+  * @param failedStep
+  *   Name of the step that caused the run to fail, if `status == FailedAtStep`.
+  * @param startedAt
+  *   Wall-clock time the run began.
+  * @param finishedAt
+  *   Populated when the run reaches a terminal state.
+  */
+case class PipelineRun(
+  id:          PipelineRunId,
+  jobId:       SchedulerJobId,
+  status:      PipelineRunStatus,
+  runContext:  Option[String],
+  contextJson: Option[String],
+  failedStep:  Option[String],
+  startedAt:   Instant,
+  finishedAt:  Option[Instant],
+) derives JsonCodec
+
 /** Lifecycle state of a [[SchedulerJob]] execution run. */
 enum JobStatus derives JsonCodec {
 
@@ -80,10 +181,9 @@ enum RetryBackoffPolicy derives JsonCodec {
   *   Reserved for Phase 12 skill-registry integration; always `None` for now.
   * @param name
   *   Human-readable unique label for this job.
-  * @param prompt
-  *   The message sent to the LLM when the job fires. This is the primary input to the agent on each trigger.
-  * @param inputJson
-  *   JSON payload passed to the agent when the job fires; `None` means no input.
+  * @param pipeline
+  *   The ordered sequence of steps this job executes on each trigger. Every job is a pipeline; a single-step pipeline
+  *   is the equivalent of a traditional single-prompt job.
   * @param status
   *   Current lifecycle state; see [[JobStatus]].
   * @param scheduledAt
@@ -117,8 +217,7 @@ case class SchedulerJob(
   userId:          UserId,
   skillId:         Option[SkillId],
   name:            String,
-  prompt:          String,
-  inputJson:       Option[String],
+  pipeline:        Pipeline,
   status:          JobStatus,
   scheduledAt:     Instant,
   startedAt:       Option[Instant],

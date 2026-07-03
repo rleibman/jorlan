@@ -46,12 +46,12 @@ object ApprovalsPage {
               .listApprovals()
               .flatMap { approvals =>
                 state
-                  .setState(state.value.copy(approvals = approvals, loading = false))
+                  .modState(_.copy(approvals = approvals, loading = false))
                   .asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -60,10 +60,10 @@ object ApprovalsPage {
               onData = { newApproval =>
                 val existing = state.value.approvals
                 if (existing.exists(_.id == newApproval.id)) Callback.empty
-                else state.setState(state.value.copy(approvals = existing :+ newApproval))
+                else state.modState(_.copy(approvals = existing :+ newApproval))
               },
             )
-            state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            state.modState(_.copy(wsHandler = Some(handler))).runNow()
             // cleanup: close the subscription when the component unmounts
             handler.close()
           }
@@ -83,8 +83,8 @@ object ApprovalsPage {
                 .flatMap { result =>
                   if (result)
                     state
-                      .setState(
-                        state.value.copy(approvals = state.value.approvals.filterNot(_.id == id)),
+                      .modState(
+                        _.copy(approvals = state.value.approvals.filterNot(_.id == id)),
                       )
                       .asAsyncCallback
                   else
@@ -92,7 +92,7 @@ object ApprovalsPage {
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
-                    state.setState(state.value.copy(error = Some(ex.getMessage)))
+                    state.modState(_.copy(error = Some(ex.getMessage)))
                   case _ => Callback.empty
                 }
                 .runNow()

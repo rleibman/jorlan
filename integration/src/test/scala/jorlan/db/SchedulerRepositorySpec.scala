@@ -6,7 +6,6 @@
 
 package jorlan.db
 
-import jorlan.*
 import jorlan.db.TestFixtures.*
 import jorlan.db.repository.*
 import jorlan.*
@@ -28,8 +27,9 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
       userId = userId,
       skillId = None,
       name = name,
-      prompt = "",
-      inputJson = None,
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+      ),
       status = JobStatus.Pending,
       scheduledAt = T0,
       startedAt = None,

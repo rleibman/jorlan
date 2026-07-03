@@ -73,8 +73,8 @@ object RolesPage {
           Callback {
             AsyncCallbackRepositories.permission
               .searchRoles(RoleSearch())
-              .flatMap(roles => state.setState(state.value.copy(roles = roles, loading = false)).asAsyncCallback)
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .flatMap(roles => state.modState(_.copy(roles = roles, loading = false)).asAsyncCallback)
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }
@@ -87,14 +87,14 @@ object RolesPage {
             Callback {
               AsyncCallbackRepositories.permission
                 .searchRoles(RoleSearch())
-                .flatMap(roles => state.setState(state.value.copy(roles = roles)).asAsyncCallback)
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .flatMap(roles => state.modState(_.copy(roles = roles)).asAsyncCallback)
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def saveCreate(): Callback =
             Callback {
-              state.setState(state.value.copy(saving = true)).runNow()
+              state.modState(_.copy(saving = true)).runNow()
               AsyncCallbackRepositories.permission
                 .upsertRole(
                   Role(RoleId.empty, state.value.createName.trim, Some(state.value.createDesc.trim).filter(_.nonEmpty)),
@@ -108,7 +108,7 @@ object RolesPage {
                     )
                     .asAsyncCallback,
                 )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(saving = false, error = err))))
                 .runNow()
             }
 
@@ -117,19 +117,19 @@ object RolesPage {
               case None       => Callback.empty
               case Some(role) =>
                 Callback {
-                  state.setState(state.value.copy(saving = true)).runNow()
+                  state.modState(_.copy(saving = true)).runNow()
                   AsyncCallbackRepositories.permission
                     .upsertRole(
                       Role(role.id, state.value.editName.trim, Some(state.value.editDesc.trim).filter(_.nonEmpty)),
                     )
                     .flatMap(_ =>
                       state
-                        .setState(state.value.copy(saving = false, editRole = None))
+                        .modState(_.copy(saving = false, editRole = None))
                         .asAsyncCallback
                         .flatMap(_ => reload().asAsyncCallback),
                     )
                     .completeWith(
-                      PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))),
+                      PageUtils.onError(err => state.modState(_.copy(saving = false, error = err))),
                     )
                     .runNow()
                 }
@@ -137,16 +137,16 @@ object RolesPage {
 
           def deleteRole(role: Role): Callback =
             Callback {
-              state.setState(state.value.copy(deleting = true)).runNow()
+              state.modState(_.copy(deleting = true)).runNow()
               AsyncCallbackRepositories.permission
                 .deleteRole(role.id)
                 .flatMap(_ =>
                   state
-                    .setState(state.value.copy(deleting = false, deleteTarget = None))
+                    .modState(_.copy(deleting = false, deleteTarget = None))
                     .asAsyncCallback
                     .flatMap(_ => reload().asAsyncCallback),
                 )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(deleting = false, error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(deleting = false, error = err))))
                 .runNow()
             }
 
@@ -156,8 +156,8 @@ object RolesPage {
                 AsyncCallbackRepositories.allKnownCapabilities())
                 .flatMap { case (grants, caps) =>
                   state
-                    .setState(
-                      state.value.copy(
+                    .modState(
+                      _.copy(
                         capRole = Some(role),
                         roleGrants = grants,
                         allKnownCapabilities = caps,
@@ -166,12 +166,12 @@ object RolesPage {
                     )
                     .asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def closeCaps(): Callback =
-            state.setState(state.value.copy(capRole = None, roleGrants = List.empty))
+            state.modState(_.copy(capRole = None, roleGrants = List.empty))
 
           def grantCapability(capName: CapabilityName): Callback =
             state.value.capRole match {
@@ -199,9 +199,9 @@ object RolesPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
                         .searchGrants(GrantSearch(roleId = Some(role.id)))
-                        .flatMap(grants => state.setState(state.value.copy(roleGrants = grants)).asAsyncCallback),
+                        .flatMap(grants => state.modState(_.copy(roleGrants = grants)).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -216,9 +216,9 @@ object RolesPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
                         .searchGrants(GrantSearch(roleId = Some(role.id)))
-                        .flatMap(grants => state.setState(state.value.copy(roleGrants = grants)).asAsyncCallback),
+                        .flatMap(grants => state.modState(_.copy(roleGrants = grants)).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -237,8 +237,8 @@ object RolesPage {
                 .variant("contained")
                 .onClick(() =>
                   state
-                    .setState(
-                      state.value.copy(showCreate = true, createName = "", createDesc = "", error = None),
+                    .modState(
+                      _.copy(showCreate = true, createName = "", createDesc = "", error = None),
                     ).runNow(),
                 )(
                   "+ New Role",
@@ -274,8 +274,8 @@ object RolesPage {
                           .size("small")
                           .onClick(() =>
                             state
-                              .setState(
-                                state.value.copy(
+                              .modState(
+                                _.copy(
                                   editRole = Some(r),
                                   editName = r.name,
                                   editDesc = r.description.getOrElse(""),
@@ -289,7 +289,7 @@ object RolesPage {
                         MuiButton
                           .size("small")
                           .color("error")
-                          .onClick(() => state.setState(state.value.copy(deleteTarget = Some(r))).runNow())("Delete"),
+                          .onClick(() => state.modState(_.copy(deleteTarget = Some(r))).runNow())("Delete"),
                       ),
                     )
                   }*,
@@ -306,21 +306,17 @@ object RolesPage {
                   .fullWidth(true)
                   .variant("outlined")
                   .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e =>
-                    state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String])).runNow()),
                 MuiTextField
                   .label("Description")
                   .value(state.value.createDesc)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e =>
-                    state.setState(state.value.copy(createDesc = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(createDesc = e.target.value.asInstanceOf[String])).runNow()),
               ),
               DialogActions()(
                 MuiButton
-                  .variant("text").onClick(() => state.setState(state.value.copy(showCreate = false)).runNow())(
+                  .variant("text").onClick(() => state.modState(_.copy(showCreate = false)).runNow())(
                     "Cancel",
                   ),
                 MuiButton
@@ -339,21 +335,17 @@ object RolesPage {
                   .fullWidth(true)
                   .variant("outlined")
                   .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e =>
-                    state.setState(state.value.copy(editName = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(editName = e.target.value.asInstanceOf[String])).runNow()),
                 MuiTextField
                   .label("Description")
                   .value(state.value.editDesc)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e =>
-                    state.setState(state.value.copy(editDesc = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(editDesc = e.target.value.asInstanceOf[String])).runNow()),
               ),
               DialogActions()(
                 MuiButton
-                  .variant("text").onClick(() => state.setState(state.value.copy(editRole = None)).runNow())("Cancel"),
+                  .variant("text").onClick(() => state.modState(_.copy(editRole = None)).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .disabled(state.value.saving || state.value.editName.trim.isEmpty)
@@ -369,7 +361,7 @@ object RolesPage {
               ),
               DialogActions()(
                 MuiButton
-                  .variant("text").onClick(() => state.setState(state.value.copy(deleteTarget = None)).runNow())(
+                  .variant("text").onClick(() => state.modState(_.copy(deleteTarget = None)).runNow())(
                     "Cancel",
                   ),
                 MuiButton
@@ -437,8 +429,8 @@ object RolesPage {
                     .size("small")
                     .onChange { e =>
                       state
-                        .setState(
-                          state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                        .modState(
+                          _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
                         ).runNow()
                     }(
                       ApprovalMode.values

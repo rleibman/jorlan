@@ -54,7 +54,6 @@ object JsonLiteralMacros {
     replacements: Seq[Replacement],
   )(using q:      Quotes,
   ): Expr[Json] = {
-    import q.reflect.*
     json match {
       case Json.Null    => '{ Json.Null }
       case Json.Bool(b) =>

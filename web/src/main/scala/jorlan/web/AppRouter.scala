@@ -44,6 +44,7 @@ enum AppPage(
   case McpServers extends AppPage("#/mcp", "MCP Servers", "hub")
   case Users extends AppPage("#/users", "Users", "group")
   case Roles extends AppPage("#/roles", "Roles", "badge")
+  case Agents extends AppPage("#/agents", "Agents", "smart_toy")
   case Settings extends AppPage("#/settings", "Settings", "settings")
   case OAuth extends AppPage("#/oauth", "Connected Accounts", "link")
 
@@ -120,6 +121,7 @@ object AppRouter {
                 case AppPage.McpServers   => McpServersPage(user)
                 case AppPage.Users        => UsersPage(user)
                 case AppPage.Roles        => RolesPage(user)
+                case AppPage.Agents       => AgentsPage(user)
                 case AppPage.Settings     => SettingsPage(user)
                 case AppPage.OAuth        => OAuthManagementPage(user)
               }

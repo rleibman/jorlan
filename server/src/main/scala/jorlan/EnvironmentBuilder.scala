@@ -20,9 +20,10 @@ import jorlan.service.llm.OllamaModelGateway
 import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.JobManager
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
 import jorlan.service.skills.{SkillRegistry, ToolEmbeddingIndex}
-import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill}
+import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill, TelegramRunCommandHandler}
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
 
@@ -84,13 +85,30 @@ object EnvironmentBuilder {
       ).flatten
 
   private val liveConnectorManagerLayer
-    : ZLayer[ZIORepositories & MessageIngress & Client, JorlanError, ConnectorManager] =
+    : ZLayer[ZIORepositories & MessageIngress & Client & JobManager, JorlanError, ConnectorManager] =
     ZLayer.fromZIO {
       for {
         repos <- ZIO.service[ZIORepositories]
         skillRepo = repos.skill
         ingress    <- ZIO.service[MessageIngress]
         httpClient <- ZIO.service[Client]
+        jobManager <- ZIO.service[JobManager]
+        runHandler: TelegramRunCommandHandler = {
+          (
+            jobName,
+            runContext,
+            _,
+          ) =>
+            jobManager.listJobs(None).flatMap { jobs =>
+              jobs.find(j => j.name.equalsIgnoreCase(jobName)) match {
+                case None      => ZIO.fail(JorlanError(s"No job named '$jobName' found."))
+                case Some(job) =>
+                  jobManager.triggerPipeline(job.id, runContext).map { runId =>
+                    s"Pipeline '${job.name}' triggered (run #${runId.value}). Check the Scheduler page for progress."
+                  }
+              }
+            }
+        }
         connectors <- skillRepo
           .searchConnectors(ConnectorSearch())
         telegramInstances = connectors.filter(_.connectorType == ConnectorType.Telegram)
@@ -136,6 +154,7 @@ object EnvironmentBuilder {
               TelegramApiClientLive(cfg, httpClient),
               ingress,
               telegramNameResolver,
+              Some(runHandler),
             )
         }
         discordInstances = connectors.filter(_.connectorType == ConnectorType.Discord)

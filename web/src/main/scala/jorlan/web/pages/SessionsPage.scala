@@ -61,12 +61,10 @@ object SessionsPage {
           Callback {
             AsyncCallbackRepositories.agent
               .searchSessions(AgentSessionSearch())
-              .flatMap(sessions =>
-                state.setState(state.value.copy(sessions = sessions, loading = false)).asAsyncCallback,
-              )
+              .flatMap(sessions => state.modState(_.copy(sessions = sessions, loading = false)).asAsyncCallback)
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -81,10 +79,8 @@ object SessionsPage {
             Callback {
               AsyncCallbackRepositories.agent
                 .searchSessions(AgentSessionSearch())
-                .flatMap(sessions =>
-                  state.setState(state.value.copy(sessions = sessions, loading = false)).asAsyncCallback,
-                )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+                .flatMap(sessions => state.modState(_.copy(sessions = sessions, loading = false)).asAsyncCallback)
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
                 .runNow()
             }
 
@@ -96,13 +92,13 @@ object SessionsPage {
                   val newSessions = state.value.sessions.filterNot(_.id == sessionId)
                   val maxPage = math.max(0, (newSessions.size - 1) / state.value.rowsPerPage)
                   state
-                    .setState(
-                      state.value.copy(sessions = newSessions, page = math.min(state.value.page, maxPage)),
+                    .modState(
+                      _.copy(sessions = newSessions, page = math.min(state.value.page, maxPage)),
                     )
                     .asAsyncCallback
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -113,10 +109,10 @@ object SessionsPage {
               AsyncCallbackRepositories.agent
                 .availableModels()
                 .flatMap { models =>
-                  state.setState(state.value.copy(models = models, showCreate = true)).asAsyncCallback
+                  state.modState(_.copy(models = models, showCreate = true)).asAsyncCallback
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -129,8 +125,8 @@ object SessionsPage {
                 .flatMap { sessionOpt =>
                   sessionOpt.fold(AsyncCallback.unit) { session =>
                     state
-                      .setState(
-                        state.value.copy(
+                      .modState(
+                        _.copy(
                           sessions = state.value.sessions :+ session,
                           showCreate = false,
                           selectedModelId = None,
@@ -140,7 +136,7 @@ object SessionsPage {
                   }
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -222,11 +218,11 @@ object SessionsPage {
                     (
                       _,
                       p,
-                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                    ) => state.modState(_.copy(page = p)).runNow(),
                   )
                   .onRowsPerPageChange(e =>
                     state
-                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
                       .runNow(),
                   )(),
               ),
@@ -246,7 +242,7 @@ object SessionsPage {
                   ^.onChange ==> { e =>
                     val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
                     val sel: Option[ModelId] = if (v.isEmpty) None else Some(ModelId(v))
-                    state.setState(state.value.copy(selectedModelId = sel))
+                    state.modState(_.copy(selectedModelId = sel))
                   },
                   React.Fragment(
                     (<.option(^.value := "")("(default)") +: state.value.models.map { m =>
@@ -256,7 +252,7 @@ object SessionsPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.onClick(() => state.setState(state.value.copy(showCreate = false)).runNow())("Cancel"),
+                MuiButton.onClick(() => state.modState(_.copy(showCreate = false)).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .onClick(() => createSession().runNow())("Create"),

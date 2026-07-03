@@ -23,30 +23,8 @@ import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import scala.scalajs.js.timers.*
 
 object SchedulerPage {
-
-  case class CreateJobForm(
-    name:            String,
-    prompt:          String,
-    maxRetries:      Int,
-    backoffSeconds:  Int,
-    backoffPolicy:   RetryBackoffPolicy,
-    missedRunPolicy: MissedRunPolicy,
-    triggerExpr:     String,
-    triggerType:     TriggerType,
-  )
-
-  case class EditJobForm(
-    id:              SchedulerJobId,
-    name:            String,
-    prompt:          String,
-    maxRetries:      Int,
-    backoffSeconds:  Int,
-    backoffPolicy:   RetryBackoffPolicy,
-    missedRunPolicy: MissedRunPolicy,
-  )
 
   case class AddTriggerForm(
     jobId:       SchedulerJobId,
@@ -54,29 +32,24 @@ object SchedulerPage {
     expression:  String,
   )
 
-  case class State(
-    jobs:           scala.List[SchedulerJob],
-    triggers:       Map[SchedulerJobId, scala.List[SchedulerTrigger]],
-    expanded:       Set[SchedulerJobId],
-    loading:        Boolean,
-    error:          Option[String],
-    page:           Int,
-    rowsPerPage:    Int,
-    showCreate:     Boolean,
-    createForm:     CreateJobForm,
-    editForm:       Option[EditJobForm],
-    addTriggerForm: Option[AddTriggerForm],
+  case class RunNowForm(
+    jobId:      SchedulerJobId,
+    runContext: String,
   )
 
-  private val defaultForm = CreateJobForm(
-    name = "",
-    prompt = "",
-    maxRetries = 0,
-    backoffSeconds = 60,
-    backoffPolicy = RetryBackoffPolicy.Fixed,
-    missedRunPolicy = MissedRunPolicy.Skip,
-    triggerExpr = "",
-    triggerType = TriggerType.Cron,
+  case class State(
+    jobs:             scala.List[SchedulerJob],
+    triggers:         Map[SchedulerJobId, scala.List[SchedulerTrigger]],
+    pipelineRuns:     Map[SchedulerJobId, scala.List[PipelineRun]],
+    expanded:         Set[SchedulerJobId],
+    loading:          Boolean,
+    error:            Option[String],
+    page:             Int,
+    rowsPerPage:      Int,
+    showCreateWizard: Boolean,
+    editingJob:       Option[SchedulerJob],
+    addTriggerForm:   Option[AddTriggerForm],
+    runNowForm:       Option[RunNowForm],
   )
 
   private def statusColor(s: JobStatus): String =
@@ -96,15 +69,16 @@ object SchedulerPage {
         State(
           List.empty,
           Map.empty,
+          Map.empty,
           Set.empty,
           loading = true,
           error = None,
           page = 0,
           rowsPerPage = 10,
-          showCreate = false,
-          createForm = defaultForm,
-          editForm = None,
+          showCreateWizard = false,
+          editingJob = None,
           addTriggerForm = None,
+          runNowForm = None,
         ),
       )
       .useEffectOnMountBy {
@@ -116,15 +90,15 @@ object SchedulerPage {
             AsyncCallbackRepositories.scheduler
               .listJobs(None, 200)
               .flatMap { jobs =>
-                state.setState(state.value.copy(jobs = jobs, loading = false, page = 0)).asAsyncCallback
+                state.modState(_.copy(jobs = jobs, loading = false, page = 0)).asAsyncCallback
               }
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }
       .render {
         (
-          _,
+          user,
           state,
         ) =>
           def loadJobs(): Callback =
@@ -132,36 +106,11 @@ object SchedulerPage {
               AsyncCallbackRepositories.scheduler
                 .listJobs(None, 200)
                 .flatMap { jobs =>
-                  state.setState(state.value.copy(jobs = jobs, loading = false, page = 0)).asAsyncCallback
+                  state.modState(_.copy(jobs = jobs, loading = false, page = 0)).asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
                 .runNow()
             }
-
-          // Poll every 2 s until the job leaves Pending/Running (max 60 attempts = 2 min).
-          def pollJobStatus(
-            jobId:        SchedulerJobId,
-            attemptsLeft: Int = 60,
-          ): Callback =
-            if (attemptsLeft <= 0) Callback.empty
-            else
-              Callback {
-                AsyncCallbackRepositories.scheduler
-                  .listJobs(None, 200)
-                  .flatMap { jobs =>
-                    state.setState(state.value.copy(jobs = jobs)).asAsyncCallback.flatMap { _ =>
-                      val active = jobs
-                        .exists(j => j.id == jobId && (j.status == JobStatus.Running || j.status == JobStatus.Pending))
-                      if (active)
-                        AsyncCallback.fromCallback(
-                          Callback(setTimeout(2000)(pollJobStatus(jobId, attemptsLeft - 1).runNow())),
-                        )
-                      else AsyncCallback.unit
-                    }
-                  }
-                  .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
-                  .runNow()
-              }
 
           def loadTriggers(jobId: SchedulerJobId): Callback =
             if (state.value.triggers.contains(jobId)) Callback.empty
@@ -171,20 +120,33 @@ object SchedulerPage {
                   .searchTriggers(TriggerSearch(jobId))
                   .flatMap { ts =>
                     state
-                      .setState(
-                        state.value.copy(triggers = state.value.triggers + (jobId -> ts)),
-                      )
+                      .modState(s => s.copy(triggers = s.triggers + (jobId -> ts)))
                       .asAsyncCallback
                   }
-                  .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                  .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                   .runNow()
               }
 
+          def loadPipelineRuns(jobId: SchedulerJobId): Callback =
+            Callback {
+              AsyncCallbackRepositories.scheduler
+                .listPipelineRuns(jobId)
+                .flatMap { runs =>
+                  state
+                    .modState(s => s.copy(pipelineRuns = s.pipelineRuns + (jobId -> runs)))
+                    .asAsyncCallback
+                }
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
+                .runNow()
+            }
+
           def toggleExpand(jobId: SchedulerJobId): Callback =
             if (state.value.expanded.contains(jobId))
-              state.setState(state.value.copy(expanded = state.value.expanded - jobId))
+              state.modState(s => s.copy(expanded = s.expanded - jobId))
             else
-              state.setState(state.value.copy(expanded = state.value.expanded + jobId)) >> loadTriggers(jobId)
+              state.modState(s => s.copy(expanded = s.expanded + jobId)) >> loadTriggers(
+                jobId,
+              ) >> loadPipelineRuns(jobId)
 
           def jobAction(
             call:        AsyncCallback[Boolean],
@@ -192,108 +154,29 @@ object SchedulerPage {
           ): Callback =
             Callback {
               call
-                .flatMap(_ => state.setState(updateState(state.value)).asAsyncCallback)
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .flatMap(_ => state.modState(updateState).asAsyncCallback)
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
-
-          def createJob(): Callback = {
-            val f = state.value.createForm
-            Callback {
-              val jobAC = AsyncCallbackRepositories.createJob(
-                name = f.name,
-                prompt = f.prompt,
-                maxRetries = f.maxRetries,
-                backoffSeconds = f.backoffSeconds,
-                backoffPolicy = f.backoffPolicy,
-                missedRunPolicy = f.missedRunPolicy,
-              )
-              val full: AsyncCallback[Unit] =
-                if (f.triggerExpr.trim.nonEmpty) {
-                  jobAC.flatMap { job =>
-                    AsyncCallbackRepositories
-                      .addTrigger(job.id, f.triggerType, f.triggerExpr.trim)
-                      .flatMap { trigger =>
-                        val updatedTriggers = state.value.triggers + (job.id -> scala.List(trigger))
-                        state
-                          .setState(
-                            state.value.copy(
-                              jobs = state.value.jobs :+ job,
-                              triggers = updatedTriggers,
-                              showCreate = false,
-                              createForm = defaultForm,
-                            ),
-                          )
-                          .asAsyncCallback
-                      }
-                  }
-                } else {
-                  jobAC.flatMap { job =>
-                    state
-                      .setState(
-                        state.value.copy(
-                          jobs = state.value.jobs :+ job,
-                          showCreate = false,
-                          createForm = defaultForm,
-                        ),
-                      )
-                      .asAsyncCallback
-                  }
-                }
-              full
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
-                .runNow()
-            }
-          }
 
           def deleteJob(jobId: SchedulerJobId): Callback =
             Callback {
               AsyncCallbackRepositories.scheduler
                 .deleteJob(jobId)
                 .flatMap { _ =>
-                  val newJobs = state.value.jobs.filterNot(_.id == jobId)
-                  val maxPage = math.max(0, (newJobs.size - 1) / state.value.rowsPerPage)
-                  state
-                    .setState(
-                      state.value.copy(
-                        jobs = newJobs,
-                        triggers = state.value.triggers - jobId,
-                        expanded = state.value.expanded - jobId,
-                        page = math.min(state.value.page, maxPage),
-                      ),
+                  state.modState { s =>
+                    val newJobs = s.jobs.filterNot(_.id == jobId)
+                    val maxPage = math.max(0, (newJobs.size - 1) / s.rowsPerPage)
+                    s.copy(
+                      jobs = newJobs,
+                      triggers = s.triggers - jobId,
+                      expanded = s.expanded - jobId,
+                      page = math.min(s.page, maxPage),
                     )
-                    .asAsyncCallback
+                  }.asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
-            }
-
-          def saveEdit(): Callback =
-            state.value.editForm.fold(Callback.empty) { ef =>
-              Callback {
-                AsyncCallbackRepositories
-                  .updateJob(
-                    id = ef.id,
-                    name = ef.name,
-                    prompt = ef.prompt,
-                    maxRetries = ef.maxRetries,
-                    backoffSeconds = ef.backoffSeconds,
-                    backoffPolicy = ef.backoffPolicy,
-                    missedRunPolicy = ef.missedRunPolicy,
-                  )
-                  .flatMap { updated =>
-                    state
-                      .setState(
-                        state.value.copy(
-                          jobs = state.value.jobs.map(j => if (j.id == updated.id) updated else j),
-                          editForm = None,
-                        ),
-                      )
-                      .asAsyncCallback
-                  }
-                  .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
-                  .runNow()
-              }
             }
 
           def doAddTrigger(): Callback =
@@ -302,17 +185,17 @@ object SchedulerPage {
                 AsyncCallbackRepositories
                   .addTrigger(af.jobId, af.triggerType, af.expression.trim)
                   .flatMap { trigger =>
-                    val existing = state.value.triggers.getOrElse(af.jobId, scala.List.empty)
                     state
-                      .setState(
-                        state.value.copy(
-                          triggers = state.value.triggers + (af.jobId -> (existing :+ trigger)),
+                      .modState(s =>
+                        s.copy(
+                          triggers =
+                            s.triggers + (af.jobId -> (s.triggers.getOrElse(af.jobId, scala.List.empty) :+ trigger)),
                           addTriggerForm = None,
                         ),
                       )
                       .asAsyncCallback
                   }
-                  .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                  .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                   .runNow()
               }
             }
@@ -325,256 +208,65 @@ object SchedulerPage {
               AsyncCallbackRepositories.scheduler
                 .deleteTrigger(triggerId)
                 .flatMap { _ =>
-                  val remaining = state.value.triggers.getOrElse(jobId, scala.List.empty).filterNot(_.id == triggerId)
                   state
-                    .setState(state.value.copy(triggers = state.value.triggers + (jobId -> remaining)))
+                    .modState(s =>
+                      s.copy(triggers =
+                        s.triggers + (jobId -> s.triggers
+                          .getOrElse(jobId, scala.List.empty).filterNot(
+                            _.id == triggerId,
+                          )),
+                      ),
+                    )
                     .asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
+            }
+
+          def doRunNow(): Callback =
+            state.value.runNowForm.fold(Callback.empty) { rf =>
+              Callback {
+                val ctx = Option(rf.runContext.trim).filter(_.nonEmpty)
+                AsyncCallbackRepositories
+                  .triggerPipeline(rf.jobId, ctx)
+                  .flatMap { _ =>
+                    state
+                      .modState(s =>
+                        s.copy(
+                          runNowForm = None,
+                          jobs = s.jobs.map(j => if (j.id == rf.jobId) j.copy(status = JobStatus.Pending) else j),
+                          pipelineRuns = s.pipelineRuns - rf.jobId,
+                        ),
+                      )
+                      .asAsyncCallback
+                      .flatMap(_ => loadPipelineRuns(rf.jobId).asAsyncCallback)
+                  }
+                  .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
+                  .runNow()
+              }
             }
 
           val pageJobs = state.value.jobs
             .slice(state.value.page * state.value.rowsPerPage, (state.value.page + 1) * state.value.rowsPerPage)
 
-          val f = state.value.createForm
-
           <.div(
-            Dialog(state.value.showCreate)(
-              DialogTitle()("New Scheduler Job"),
-              DialogContent()(
-                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic
-                        .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
-                          Theme,
-                        ]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  MuiTextField
-                    .label("Job Name")
-                    .value(f.name)
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      state.setState(state.value.copy(createForm = f.copy(name = v))).runNow()
-                    }(),
-                  MuiTextField
-                    .label("Prompt (sent to LLM on each trigger)")
-                    .value(f.prompt)
-                    .fullWidth(true)
-                    .multiline(true)
-                    .rows(3)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      state.setState(state.value.copy(createForm = f.copy(prompt = v))).runNow()
-                    }(),
-                  MuiTextField
-                    .label("Max Retries")
-                    .value(f.maxRetries.toString)
-                    .`type`("number")
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      state
-                        .setState(state.value.copy(createForm = f.copy(maxRetries = v.toIntOption.getOrElse(0))))
-                        .runNow()
-                    }(),
-                  MuiTextField
-                    .label("Backoff (seconds)")
-                    .value(f.backoffSeconds.toString)
-                    .`type`("number")
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      state
-                        .setState(state.value.copy(createForm = f.copy(backoffSeconds = v.toIntOption.getOrElse(60))))
-                        .runNow()
-                    }(),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Backoff Policy",
+            if (state.value.showCreateWizard || state.value.editingJob.isDefined)
+              CreateSchedulerJobWizard(
+                user = user,
+                editingJob = state.value.editingJob,
+                onClose = state.modState(_.copy(showCreateWizard = false, editingJob = None)),
+                onSaved = job =>
+                  state.modState(s =>
+                    s.copy(
+                      showCreateWizard = false,
+                      editingJob = None,
+                      jobs =
+                        if (s.jobs.exists(_.id == job.id)) s.jobs.map(j => if (j.id == job.id) job else j)
+                        else s.jobs :+ job,
+                    ),
                   ),
-                  MuiSelect
-                    .value(f.backoffPolicy.toString)
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val policy = RetryBackoffPolicy.values.find(_.toString == v).getOrElse(RetryBackoffPolicy.Fixed)
-                      state.setState(state.value.copy(createForm = f.copy(backoffPolicy = policy))).runNow()
-                    }(
-                      MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
-                      MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
-                    ),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Missed Run Policy",
-                  ),
-                  MuiSelect
-                    .value(f.missedRunPolicy.toString)
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
-                      state.setState(state.value.copy(createForm = f.copy(missedRunPolicy = policy))).runNow()
-                    }(
-                      MuiMenuItem
-                        .value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
-                      MuiMenuItem
-                        .value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
-                      MuiMenuItem
-                        .value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
-                    ),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Trigger Type",
-                  ),
-                  MuiSelect
-                    .value(f.triggerType.toString)
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
-                      state.setState(state.value.copy(createForm = f.copy(triggerType = tt))).runNow()
-                    }(
-                      MuiMenuItem
-                        .value("Cron")("Cron — schedule with a cron expression (e.g. 0 0 9 ? * 1-5)"): VdomNode,
-                      MuiMenuItem
-                        .value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
-                      MuiMenuItem.value("OneShot")(
-                        "One Shot — run once at a specific datetime (e.g. 2026-07-01T09:00:00Z)",
-                      ): VdomNode,
-                      MuiMenuItem
-                        .value("Event")("Event — fire on a named system event (e.g. agent.completed)"): VdomNode,
-                    ),
-                  MuiTextField
-                    .label(
-                      f.triggerType match {
-                        case TriggerType.Cron =>
-                          "Cron Expression (optional, e.g. 0 0 9 ? * 1-5 — 6 fields, use ? for unused dom or dow)"
-                        case TriggerType.Interval => "Interval (optional, ISO 8601 duration, e.g. PT1H)"
-                        case TriggerType.OneShot  => "Run At (optional, ISO 8601 datetime, e.g. 2026-07-01T09:00:00Z)"
-                        case TriggerType.Event    => "Event Name (optional, e.g. agent.completed)"
-                      },
-                    )
-                    .value(f.triggerExpr)
-                    .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      state.setState(state.value.copy(createForm = f.copy(triggerExpr = v))).runNow()
-                    }(),
-                ),
-              ),
-              DialogActions()(
-                MuiButton
-                  .onClick(() =>
-                    state.setState(state.value.copy(showCreate = false, createForm = defaultForm)).runNow(),
-                  )("Cancel"),
-                MuiButton
-                  .variant("contained")
-                  .onClick(() => createJob().runNow())("Create"),
-              ),
-            ),
-            state.value.editForm.fold(EmptyVdom) { ef =>
-              Dialog(true)(
-                DialogTitle()("Edit Scheduler Job"),
-                DialogContent()(
-                  state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
-                            Theme,
-                          ]],
-                      ).asInstanceOf[Box.Props],
-                  )(
-                    MuiTextField
-                      .label("Job Name")
-                      .value(ef.name)
-                      .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state.setState(state.value.copy(editForm = Some(ef.copy(name = v)))).runNow()
-                      }(),
-                    MuiTextField
-                      .label("Prompt (sent to LLM on each trigger)")
-                      .value(ef.prompt)
-                      .fullWidth(true)
-                      .multiline(true)
-                      .rows(3)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state.setState(state.value.copy(editForm = Some(ef.copy(prompt = v)))).runNow()
-                      }(),
-                    MuiTextField
-                      .label("Max Retries")
-                      .value(ef.maxRetries.toString)
-                      .`type`("number")
-                      .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state
-                          .setState(
-                            state.value.copy(editForm = Some(ef.copy(maxRetries = v.toIntOption.getOrElse(0)))),
-                          )
-                          .runNow()
-                      }(),
-                    MuiTextField
-                      .label("Backoff (seconds)")
-                      .value(ef.backoffSeconds.toString)
-                      .`type`("number")
-                      .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state
-                          .setState(
-                            state.value.copy(editForm = Some(ef.copy(backoffSeconds = v.toIntOption.getOrElse(60)))),
-                          )
-                          .runNow()
-                      }(),
-                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                      "Backoff Policy",
-                    ),
-                    MuiSelect
-                      .value(ef.backoffPolicy.toString)
-                      .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                        val policy = RetryBackoffPolicy.values.find(_.toString == v).getOrElse(RetryBackoffPolicy.Fixed)
-                        state.setState(state.value.copy(editForm = Some(ef.copy(backoffPolicy = policy)))).runNow()
-                      }(
-                        MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
-                        MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
-                      ),
-                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                      "Missed Run Policy",
-                    ),
-                    MuiSelect
-                      .value(ef.missedRunPolicy.toString)
-                      .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                        val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
-                        state.setState(state.value.copy(editForm = Some(ef.copy(missedRunPolicy = policy)))).runNow()
-                      }(
-                        MuiMenuItem
-                          .value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
-                        MuiMenuItem
-                          .value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
-                        MuiMenuItem
-                          .value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
-                      ),
-                  ),
-                ),
-                DialogActions()(
-                  MuiButton
-                    .onClick(() => state.setState(state.value.copy(editForm = None)).runNow())("Cancel"),
-                  MuiButton
-                    .variant("contained")
-                    .onClick(() => saveEdit().runNow())("Save"),
-                ),
               )
-            },
+            else EmptyVdom,
             state.value.addTriggerForm.fold(EmptyVdom) { af =>
               Dialog(true)(
                 DialogTitle()("Add Trigger"),
@@ -597,7 +289,7 @@ object SchedulerPage {
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
                         val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
-                        state.setState(state.value.copy(addTriggerForm = Some(af.copy(triggerType = tt)))).runNow()
+                        state.modState(_.copy(addTriggerForm = Some(af.copy(triggerType = tt)))).runNow()
                       }(
                         MuiMenuItem.value("Cron")("Cron — cron expression (e.g. 0 0 9 ? * 1-5)"):        VdomNode,
                         MuiMenuItem.value("Interval")("Interval — ISO 8601 duration (e.g. PT1H)"):       VdomNode,
@@ -618,16 +310,53 @@ object SchedulerPage {
                       .fullWidth(true)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state.setState(state.value.copy(addTriggerForm = Some(af.copy(expression = v)))).runNow()
+                        state.modState(_.copy(addTriggerForm = Some(af.copy(expression = v)))).runNow()
                       }(),
                   ),
                 ),
                 DialogActions()(
                   MuiButton
-                    .onClick(() => state.setState(state.value.copy(addTriggerForm = None)).runNow())("Cancel"),
+                    .onClick(() => state.modState(_.copy(addTriggerForm = None)).runNow())("Cancel"),
                   MuiButton
                     .variant("contained")
                     .onClick(() => doAddTrigger().runNow())("Add"),
+                ),
+              )
+            },
+            state.value.runNowForm.fold(EmptyVdom) { rf =>
+              Dialog(true)(
+                DialogTitle()("Run Now"),
+                DialogContent()(
+                  Box.withProps(
+                    BoxOwnProps[Theme]()
+                      .setSx(
+                        js.Dynamic
+                          .literal(display = "flex", flexDirection = "column", gap = 2, pt = 1).asInstanceOf[SxProps[
+                            Theme,
+                          ]],
+                      ).asInstanceOf[Box.Props],
+                  )(
+                    Typography.withProps(
+                      TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                    )("Optionally provide run context instructions (passed to the agent for this run only):"),
+                    MuiTextField
+                      .label("Run Context (optional)")
+                      .value(rf.runContext)
+                      .fullWidth(true)
+                      .multiline(true)
+                      .rows(4)
+                      .onChange { e =>
+                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
+                        state.modState(_.copy(runNowForm = Some(rf.copy(runContext = v)))).runNow()
+                      }(),
+                  ),
+                ),
+                DialogActions()(
+                  MuiButton
+                    .onClick(() => state.modState(_.copy(runNowForm = None)).runNow())("Cancel"),
+                  MuiButton
+                    .variant("contained")
+                    .onClick(() => doRunNow().runNow())("Run"),
                 ),
               )
             },
@@ -642,7 +371,7 @@ object SchedulerPage {
               MuiButton
                 .variant("contained")
                 .size("small")
-                .onClick(() => state.setState(state.value.copy(showCreate = true, error = None)).runNow())("+ New Job"),
+                .onClick(() => state.modState(_.copy(showCreateWizard = true, error = None)).runNow())("+ New Job"),
               MuiButton
                 .variant("outlined")
                 .size("small")
@@ -652,8 +381,8 @@ object SchedulerPage {
                       .listJobs(None, 200)
                       .flatMap { jobs =>
                         state
-                          .setState(
-                            state.value.copy(
+                          .modState(
+                            _.copy(
                               jobs = jobs,
                               loading = false,
                             ),
@@ -764,36 +493,21 @@ object SchedulerPage {
                                     .size("small")
                                     .variant("outlined")
                                     .onClick(() =>
-                                      (jobAction(
-                                        AsyncCallbackRepositories.scheduler.triggerNow(job.id),
-                                        s =>
-                                          s.copy(jobs =
-                                            s.jobs
-                                              .map(j => if (j.id == job.id) j.copy(status = JobStatus.Running) else j),
+                                      state
+                                        .modState(
+                                          _.copy(
+                                            error = None,
+                                            runNowForm = Some(RunNowForm(job.id, "")),
                                           ),
-                                      ) >> pollJobStatus(job.id)).runNow(),
+                                        )
+                                        .runNow(),
                                     )("Run Now"),
                                   MuiButton
                                     .size("small")
                                     .variant("outlined")
                                     .onClick(() =>
                                       state
-                                        .setState(
-                                          state.value.copy(
-                                            error = None,
-                                            editForm = Some(
-                                              EditJobForm(
-                                                id = job.id,
-                                                name = job.name,
-                                                prompt = job.prompt,
-                                                maxRetries = job.maxRetries,
-                                                backoffSeconds = job.backoffSeconds,
-                                                backoffPolicy = job.backoffPolicy,
-                                                missedRunPolicy = job.missedRunPolicy,
-                                              ),
-                                            ),
-                                          ),
-                                        )
+                                        .modState(_.copy(error = None, editingJob = Some(job)))
                                         .runNow(),
                                     )("Edit"),
                                   MuiButton
@@ -821,26 +535,6 @@ object SchedulerPage {
                                               js.Dynamic.literal(pl = 4, pt = 1, pb = 1).asInstanceOf[SxProps[Theme]],
                                             ).asInstanceOf[Box.Props],
                                         )(
-                                          if (job.prompt.nonEmpty)
-                                            Box.withProps(
-                                              BoxOwnProps[Theme]()
-                                                .setSx(
-                                                  js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
-                                                ).asInstanceOf[Box.Props],
-                                            )(
-                                              Typography.withProps(
-                                                TypographyOwnProps()
-                                                  .setVariant("subtitle2").asInstanceOf[Typography.Props],
-                                              )("Prompt"),
-                                              Typography.withProps(
-                                                TypographyOwnProps()
-                                                  .setVariant("body2").setSx(
-                                                    js.Dynamic
-                                                      .literal(fontStyle = "italic").asInstanceOf[SxProps[Theme]],
-                                                  ).asInstanceOf[Typography.Props],
-                                              )(job.prompt),
-                                            )
-                                          else EmptyVdom,
                                           job.resultJson.fold(EmptyVdom) { r =>
                                             val color =
                                               if (job.status == JobStatus.Failed) "error.main" else "text.secondary"
@@ -893,15 +587,15 @@ object SchedulerPage {
                                               .variant("outlined")
                                               .onClick(() =>
                                                 state
-                                                  .setState(
-                                                    state.value.copy(
+                                                  .modState(s =>
+                                                    s.copy(
                                                       addTriggerForm = Some(
                                                         AddTriggerForm(job.id, TriggerType.Cron, ""),
                                                       ),
                                                       triggers =
-                                                        if (!state.value.triggers.contains(job.id))
-                                                          state.value.triggers + (job.id -> scala.List.empty)
-                                                        else state.value.triggers,
+                                                        if (!s.triggers.contains(job.id))
+                                                          s.triggers + (job.id -> scala.List.empty)
+                                                        else s.triggers,
                                                     ),
                                                   )
                                                   .runNow(),
@@ -943,7 +637,73 @@ object SchedulerPage {
                                       ),
                                     ).build,
                                 )
-                              } else scala.List.empty)
+                              } else scala.List.empty) ++ (if (isExpanded) {
+                                                             val runs = state.value.pipelineRuns
+                                                               .getOrElse(job.id, scala.List.empty)
+                                                             scala.List[VdomElement](
+                                                               TableRow
+                                                                 .withKey(s"${job.id.value}-pipeline-runs")(
+                                                                   TableCell.colSpan(6)(
+                                                                     Box.withProps(
+                                                                       BoxOwnProps[Theme]()
+                                                                         .setSx(
+                                                                           js.Dynamic
+                                                                             .literal(pl = 4, pt = 1, pb = 1)
+                                                                             .asInstanceOf[SxProps[Theme]],
+                                                                         ).asInstanceOf[Box.Props],
+                                                                     )(
+                                                                       Typography.withProps(
+                                                                         TypographyOwnProps()
+                                                                           .setVariant("subtitle2")
+                                                                           .setSx(
+                                                                             js.Dynamic
+                                                                               .literal(mb = 1)
+                                                                               .asInstanceOf[SxProps[Theme]],
+                                                                           ).asInstanceOf[
+                                                                             Typography.Props,
+                                                                           ],
+                                                                       )("Pipeline Runs"),
+                                                                       if (runs.isEmpty)
+                                                                         <.span("No pipeline runs yet.")
+                                                                       else
+                                                                         Table.withProps(
+                                                                           TableOwnProps()
+                                                                             .setSize("small").asInstanceOf[Table.Props],
+                                                                         )(
+                                                                           TableHead()(
+                                                                             TableRow()(
+                                                                               TableCell()("Run ID"),
+                                                                               TableCell()("Status"),
+                                                                               TableCell()("Started"),
+                                                                               TableCell()("Finished"),
+                                                                               TableCell()("Failed Step"),
+                                                                             ),
+                                                                           ),
+                                                                           TableBody()(
+                                                                             runs.map { run =>
+                                                                               TableRow
+                                                                                 .withKey(run.id.value.toString)(
+                                                                                   TableCell()(run.id.value.toString),
+                                                                                   TableCell()(run.status.toString),
+                                                                                   TableCell()(
+                                                                                     run.startedAt.toString.take(19),
+                                                                                   ),
+                                                                                   TableCell()(
+                                                                                     run.finishedAt
+                                                                                       .fold("-")(_.toString.take(19)),
+                                                                                   ),
+                                                                                   TableCell()(
+                                                                                     run.failedStep.getOrElse("-"),
+                                                                                   ),
+                                                                                 ).build
+                                                                             }*,
+                                                                           ),
+                                                                         ),
+                                                                     ),
+                                                                   ),
+                                                                 ).build,
+                                                             )
+                                                           } else scala.List.empty)
                       }*,
                     ),
                   ),
@@ -958,11 +718,11 @@ object SchedulerPage {
                     (
                       _,
                       p,
-                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                    ) => state.modState(_.copy(page = p)).runNow(),
                   )
                   .onRowsPerPageChange(e =>
                     state
-                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
                       .runNow(),
                   )(),
               ),

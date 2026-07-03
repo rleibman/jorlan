@@ -41,6 +41,7 @@ case class Agent(
   defaultModel:      Option[ModelId],
   trustLevel:        Int = 0,
   prioritizedSkills: List[String] = List.empty,
+  invariants:        Map[String, String] = Map.empty,
   createdAt:         Instant,
 ) derives JsonCodec
 

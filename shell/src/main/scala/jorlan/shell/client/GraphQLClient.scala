@@ -6,7 +6,7 @@
 
 package jorlan.shell.client
 
-import caliban.client.{Operations, SelectionBuilder}
+import caliban.client.SelectionBuilder
 import caliban.client.Operations.IsOperation
 import jorlan.shell.ShellConfig
 import sttp.client4.*

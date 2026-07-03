@@ -6,13 +6,11 @@
 
 package jorlan.routes
 
-import _root_.auth.{AuthConfig, AuthServer}
 import caliban.*
 import jorlan.*
 import jorlan.graphql.JorlanAPI
 import zio.*
 import zio.http.*
-import zio.nio.file.Files
 
 /** Mounts the Jorlan GraphQL API on `/api/jorlan`.
   *

@@ -25,8 +25,7 @@ class JobManagerImpl(
     agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
-    prompt:          String,
-    inputJson:       Option[String],
+    pipeline:        Pipeline,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -42,8 +41,7 @@ class JobManagerImpl(
             userId = userId,
             skillId = None,
             name = name,
-            prompt = prompt,
-            inputJson = inputJson,
+            pipeline = pipeline,
             status = JobStatus.Pending,
             scheduledAt = now,
             startedAt = None,
@@ -124,14 +122,13 @@ class JobManagerImpl(
   override def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
   ): IO[JorlanError, SchedulerJob] =
     repo.scheduler
-      .updateJobConfig(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
+      .updateJobConfig(id, name, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
       .mapError(JorlanError(_))
       .flatMap { updated =>
         if (updated) getJob(id)
@@ -140,6 +137,35 @@ class JobManagerImpl(
 
   override def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit] =
     repo.scheduler.deleteTrigger(id).mapError(JorlanError(_)).unit
+
+  override def triggerPipeline(
+    jobId:      SchedulerJobId,
+    runContext: Option[String],
+  ): IO[JorlanError, PipelineRunId] =
+    for {
+      now <- Clock.instant
+      job <- getJob(jobId)
+      run <- repo.scheduler
+        .insertPipelineRun(
+          PipelineRun(
+            id = PipelineRunId.empty,
+            jobId = jobId,
+            status = PipelineRunStatus.Running,
+            runContext = runContext,
+            contextJson = None,
+            failedStep = None,
+            startedAt = now,
+            finishedAt = None,
+          ),
+        )
+        .mapError(JorlanError(_))
+      _ <- repo.scheduler
+        .upsertJob(job.released(JobStatus.Pending, now))
+        .mapError(JorlanError(_))
+    } yield run.id
+
+  override def pipelineRuns(jobId: SchedulerJobId): IO[JorlanError, List[PipelineRun]] =
+    repo.scheduler.listPipelineRuns(jobId).mapError(JorlanError(_))
 
 }
 

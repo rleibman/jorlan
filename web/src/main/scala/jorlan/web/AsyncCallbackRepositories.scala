@@ -13,6 +13,7 @@ import jorlan.*
 import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.service.EventLogFilter
+import zio.json.*
 import zio.json.ast.Json
 
 import java.time.Instant
@@ -309,7 +310,6 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def updateJobConfig(
       id:              SchedulerJobId,
       name:            String,
-      prompt:          String,
       maxRetries:      Int,
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
@@ -346,11 +346,32 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     ):                                             AsyncCallback[Unit] = AsyncCallback.pure(())
     override def expireLeases(olderThan: Instant): AsyncCallback[Long] = AsyncCallback.pure(0L)
 
+    override def insertPipelineRun(run: PipelineRun): AsyncCallback[PipelineRun] =
+      AsyncCallback.throwException(new UnsupportedOperationException("insertPipelineRun not available on web client"))
+    override def updatePipelineRun(run: PipelineRun): AsyncCallback[Unit] =
+      AsyncCallback.throwException(new UnsupportedOperationException("updatePipelineRun not available on web client"))
+    override def listPipelineRuns(jobId: SchedulerJobId): AsyncCallback[List[PipelineRun]] =
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Queries.pipelineRuns(jobId)(JorlanClient.PipelineRun.view))
+        .map(
+          _.getOrElse(List.empty)
+            .map(summon[Conversion[JorlanClient.PipelineRun.PipelineRunView, PipelineRun]]),
+        )
+    override def getPipelineRun(id: PipelineRunId): AsyncCallback[Option[PipelineRun]] =
+      AsyncCallback.pure(None)
+    override def updateJobPipeline(
+      id:       SchedulerJobId,
+      pipeline: Pipeline,
+    ): AsyncCallback[Boolean] =
+      AsyncCallback.throwException(
+        new UnsupportedOperationException("updateJobPipeline not available on web client"),
+      )
+
   }
 
   def createJob(
     name:            String,
-    prompt:          String,
+    pipeline:        Pipeline,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -360,7 +381,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       .asyncCalibanCallWithAuth(
         JorlanClient.Mutations.createJob(
           name = name,
-          prompt = prompt,
+          pipelineJson = pipeline.toJson,
           maxRetries = maxRetries,
           backoffSeconds = backoffSeconds,
           backoffPolicy = backoffPolicy,
@@ -393,7 +414,6 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
   def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -404,7 +424,6 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         JorlanClient.Mutations.updateJob(
           id = id,
           name = name,
-          prompt = prompt,
           maxRetries = maxRetries,
           backoffSeconds = backoffSeconds,
           backoffPolicy = backoffPolicy,
@@ -415,6 +434,62 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         case Some(v) =>
           AsyncCallback.pure(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v))
         case None => AsyncCallback.throwException(new RuntimeException("updateJob returned no job"))
+      }
+
+  def triggerPipeline(
+    jobId:      SchedulerJobId,
+    runContext: Option[String],
+  ): AsyncCallback[PipelineRunId] =
+    adapter
+      .asyncCalibanCallWithAuth(JorlanClient.Mutations.triggerPipeline(jobId, runContext))
+      .flatMap {
+        case Some(id) => AsyncCallback.pure(id)
+        case None     => AsyncCallback.throwException(new RuntimeException("triggerPipeline returned no run id"))
+      }
+
+  def listAgents(): AsyncCallback[List[Agent]] =
+    adapter
+      .asyncCalibanCallWithAuth(JorlanClient.Queries.agents(JorlanClient.Agent.view))
+      .map(_.getOrElse(List.empty).map(summon[Conversion[JorlanClient.Agent.AgentView, Agent]]))
+
+  def getAgent(id: AgentId): AsyncCallback[Option[Agent]] =
+    adapter
+      .asyncCalibanCallWithAuth(JorlanClient.Queries.agent(id)(JorlanClient.Agent.view))
+      .map(_.map(summon[Conversion[JorlanClient.Agent.AgentView, Agent]]))
+
+  def upsertAgent(a: Agent): AsyncCallback[Agent] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Mutations.upsertAgent(
+          id = a.id,
+          name = a.name,
+          description = a.description,
+          defaultModel = a.defaultModel,
+          trustLevel = a.trustLevel,
+          prioritizedSkills = a.prioritizedSkills,
+          invariantsJson = a.invariants.toJson,
+        )(JorlanClient.Agent.view),
+      )
+      .flatMap {
+        case Some(v) => AsyncCallback.pure(summon[Conversion[JorlanClient.Agent.AgentView, Agent]](v))
+        case None    => AsyncCallback.throwException(new RuntimeException("upsertAgent returned nothing"))
+      }
+
+  def updateJobPipeline(
+    jobId:    SchedulerJobId,
+    pipeline: Pipeline,
+  ): AsyncCallback[SchedulerJob] =
+    adapter
+      .asyncCalibanCallWithAuth(
+        JorlanClient.Mutations.updateJobPipeline(
+          id = jobId,
+          pipelineJson = pipeline.toJson,
+        )(JorlanClient.SchedulerJob.view),
+      )
+      .flatMap {
+        case Some(v) =>
+          AsyncCallback.pure(summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v))
+        case None => AsyncCallback.throwException(new RuntimeException("updateJobPipeline returned nothing"))
       }
 
   // ── Sub-repo: User ─────────────────────────────────────────────────────────

@@ -114,6 +114,13 @@ object MessageIngressSpec extends ZIOSpecDefault {
       withMemory: Boolean = true,
     ): IO[JorlanError, Unit] =
       dispatched.update(_ :+ (sessionId, content))
+    override def processMessageSingleCall(
+      sessionId:    AgentSessionId,
+      systemPrompt: String,
+      content:      String,
+      actorId:      Option[UserId],
+    ): IO[JorlanError, Unit] = ZIO.unit
+
     override def subscribeToSession(
       sessionId:    AgentSessionId,
       connectionId: ConnectionId,

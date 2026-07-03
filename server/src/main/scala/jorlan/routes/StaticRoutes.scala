@@ -6,12 +6,9 @@
 
 package jorlan.routes
 
-import auth.*
 import jorlan.*
-import jorlan.routes.StaticRoutes.file
 import zio.*
 import zio.http.*
-import zio.stream.ZStream
 
 import java.nio.file.{Files, Paths as JPaths}
 

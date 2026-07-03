@@ -8,10 +8,9 @@ package jorlan.db.repository
 
 import io.getquill.*
 import io.getquill.extras.InstantOps
-import io.getquill.jdbczio.Quill
 import jorlan.db.{*, given}
 import jorlan.service.{EventLogFilter, EventLogOrder}
-import jorlan.{*, given}
+import jorlan.*
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -77,6 +76,8 @@ object JorlanSchema {
   inline def qSchedulerJobs = quote(querySchema[SchedulerJob]("schedulerJob"))
 
   inline def qSchedulerTriggers = quote(querySchema[SchedulerTrigger]("schedulerTrigger"))
+
+  inline def qPipelineRuns = quote(querySchema[PipelineRun]("pipelineRun"))
 
   inline def qArtifacts = quote(querySchema[Artifact]("artifact"))
 
@@ -386,6 +387,10 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
                 t,
                 e,
               ) => t.prioritizedSkills -> e.prioritizedSkills,
+              (
+                t,
+                e,
+              ) => t.invariants -> e.invariants,
             )
             .returningGenerated(_.id),
         ).map(id => agent.copy(id = id)),
@@ -935,7 +940,7 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
     } yield result
 
   // Partial-update contract: UPDATE only touches runtime-state fields (status, timestamps, lease, result, retryCount,
-  // scheduledAt). Configuration fields (name, inputJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy,
+  // scheduledAt). Configuration fields (name, pipeline, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy,
   // userId, agentId, skillId) are immutable after creation and are never overwritten by the UPDATE path.
   override def upsertJob(job: SchedulerJob): RepositoryTask[SchedulerJob] =
     if (job.id.value == 0L) {
@@ -965,7 +970,6 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
   override def updateJobConfig(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -977,8 +981,6 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
           .filter(_.id == lift(id))
           .update(
             _.name            -> lift(name),
-            _.prompt          -> lift(prompt),
-            _.inputJson       -> lift(Option.empty[String]),
             _.maxRetries      -> lift(maxRetries),
             _.backoffSeconds  -> lift(backoffSeconds),
             _.backoffPolicy   -> lift(backoffPolicy),
@@ -1098,6 +1100,44 @@ private class QuillSchedulerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
 
   override def deleteTrigger(id: SchedulerTriggerId): RepositoryTask[Long] =
     exec(qc.ctx.run(qSchedulerTriggers.filter(_.id == lift(id)).delete))
+
+  override def insertPipelineRun(run: PipelineRun): RepositoryTask[PipelineRun] =
+    exec(
+      qc.ctx.run(qPipelineRuns.insertValue(lift(run)).returningGenerated(_.id)).map(id => run.copy(id = id)),
+    )
+
+  override def updatePipelineRun(run: PipelineRun): RepositoryTask[Unit] =
+    exec(
+      qc.ctx
+        .run(
+          qPipelineRuns
+            .filter(_.id == lift(run.id))
+            .update(
+              _.status      -> lift(run.status),
+              _.contextJson -> lift(run.contextJson),
+              _.failedStep  -> lift(run.failedStep),
+              _.finishedAt  -> lift(run.finishedAt),
+            ),
+        ).unit,
+    )
+
+  override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
+    exec(qc.ctx.run(qPipelineRuns.filter(_.jobId == lift(jobId)).sortBy(_.startedAt)(Ord.desc)))
+
+  override def getPipelineRun(id: PipelineRunId): RepositoryTask[Option[PipelineRun]] =
+    exec(qc.ctx.run(qPipelineRuns.filter(_.id == lift(id))).map(_.headOption))
+
+  override def updateJobPipeline(
+    id:       SchedulerJobId,
+    pipeline: Pipeline,
+  ): RepositoryTask[Boolean] =
+    exec(
+      qc.ctx.run(
+        qSchedulerJobs
+          .filter(_.id == lift(id))
+          .update(_.pipeline -> lift(pipeline)),
+      ),
+    ).map(_ > 0L)
 
 }
 
@@ -1623,7 +1663,7 @@ private[repository] case class ServerSettingRow(
 private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOServerSettingsRepository {
 
   import JorlanSchema.*
-  import qc.ctx.{*, given}
+  import qc.ctx.*
 
   override def get(key: String): IO[RepositoryError, Option[Json]] =
     exec(
@@ -1676,7 +1716,7 @@ private class QuillExternalCredentialRepository(qc: QuillCtx)
     extends QuillRepoBase(qc) with ZIOExternalCredentialRepository {
 
   import JorlanSchema.*
-  import qc.ctx.{*, given}
+  import qc.ctx.*
 
   private def rowToCredential(row: ExternalCredentialRow): ExternalCredential =
     ExternalCredential(

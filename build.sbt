@@ -101,28 +101,28 @@ val bouncyCastleVersion = "1.84"
 val googleApiClientVersion = "2.9.0"
 val googleApisGmailVersion = "v1-rev20260525-2.0.0"
 val googleApisCalendarVersion = "v3-rev20260614-2.0.0"
-val googleApisDriveVersion = "v3-rev20260428-2.0.0"
+val googleApisDriveVersion = "v3-rev20260624-2.0.0"
 val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
 val telegramiumVersion = "10.1000.0"
-val calibanClientVersion = "3.1.2"
-val calibanVersion = "3.1.2"
+val calibanClientVersion = "3.1.4"
+val calibanVersion = "3.1.4"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val cron4sVersion = "0.8.2"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "12.9.0"
+val flywayVersion = "12.10.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
 val jsoniterVersion = "2.38.16"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.16.3"
-val langchainCoreVersion = "1.16.3"
-val langchainLibrariesVersion = "1.16.3-beta26"
+val langchain4jOllamaVersion = "1.17.1"
+val langchainCoreVersion = "1.17.1"
+val langchainLibrariesVersion = "1.17.1-beta27"
 val lanternaVersion = "3.1.5"
-val logbackVersion = "1.5.34"
+val logbackVersion = "1.5.37"
 val mariadbVersion = "3.5.9"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
@@ -139,7 +139,7 @@ val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.6"
 val zioCacheVersion = "0.2.8"
 val zioConfigVersion = "4.0.7"
-val zioHttpVersion = "3.11.2"
+val zioHttpVersion = "3.11.3"
 val zioJsonVersion = "0.9.2"
 val zioLoggingSlf4j2Version = "2.5.3"
 val zioNioVersion = "2.0.2"
@@ -350,7 +350,7 @@ lazy val telegramConnector =
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
-// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 5)
+// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 6)
 
 lazy val discordConnector =
   crossProject(JSPlatform, JVMPlatform)
@@ -359,7 +359,7 @@ lazy val discordConnector =
     .settings(name := "jorlan-discord")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "net.dv8tion" % "JDA" % "5.6.1" exclude("club.minnced", "opus-java"),
+        "net.dv8tion" % "JDA" % "6.4.2" exclude("club.minnced", "opus-java"),
       ),
       coverageExcludedFiles := ".*DiscordApiClient.*",
     )

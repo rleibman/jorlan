@@ -668,7 +668,6 @@ object InMemoryRepositories {
     override def updateJobConfig(
       id:              SchedulerJobId,
       name:            String,
-      prompt:          String,
       maxRetries:      Int,
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
@@ -698,6 +697,16 @@ object InMemoryRepositories {
       ZIO.unit
     override def expireLeases(olderThan: Instant): RepositoryTask[Long] = ZIO.succeed(0L)
 
+    override def insertPipelineRun(run: PipelineRun):     RepositoryTask[PipelineRun] = ZIO.succeed(run)
+    override def updatePipelineRun(run: PipelineRun):     RepositoryTask[Unit] = ZIO.unit
+    override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
+      ZIO.succeed(List.empty)
+    override def getPipelineRun(id: PipelineRunId): RepositoryTask[Option[PipelineRun]] = ZIO.none
+    override def updateJobPipeline(
+      id:       SchedulerJobId,
+      pipeline: Pipeline,
+    ): RepositoryTask[Boolean] = ZIO.succeed(true)
+
   }
 
   object NoOpSchedulerRepo {
@@ -709,10 +718,12 @@ object InMemoryRepositories {
   // ─── Scheduler (stateful in-memory, for JobManager and TriggerEngine tests) ──
 
   class InMemorySchedulerRepo(
-    jobIdGen:  Ref[Long],
-    jobs:      Ref[Map[SchedulerJobId, SchedulerJob]],
-    trigIdGen: Ref[Long],
-    triggers:  Ref[Map[SchedulerTriggerId, SchedulerTrigger]],
+    jobIdGen:    Ref[Long],
+    jobs:        Ref[Map[SchedulerJobId, SchedulerJob]],
+    trigIdGen:   Ref[Long],
+    triggers:    Ref[Map[SchedulerTriggerId, SchedulerTrigger]],
+    runIdGen:    Ref[Long],
+    pipelineRun: Ref[Map[PipelineRunId, PipelineRun]],
   ) extends ZIOSchedulerRepository {
 
     override def getJob(id: SchedulerJobId): RepositoryTask[Option[SchedulerJob]] =
@@ -748,7 +759,6 @@ object InMemoryRepositories {
     override def updateJobConfig(
       id:              SchedulerJobId,
       name:            String,
-      prompt:          String,
       maxRetries:      Int,
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
@@ -762,8 +772,6 @@ object InMemoryRepositories {
               id,
               j.copy(
                 name = name,
-                prompt = prompt,
-                inputJson = None,
                 maxRetries = maxRetries,
                 backoffSeconds = backoffSeconds,
                 backoffPolicy = backoffPolicy,
@@ -874,17 +882,56 @@ object InMemoryRepositories {
         (stale.size.toLong, reset)
       }
 
+    override def insertPipelineRun(run: PipelineRun): RepositoryTask[PipelineRun] =
+      runIdGen.updateAndGet(_ + 1).flatMap { id =>
+        val saved = run.copy(id = PipelineRunId(id))
+        pipelineRun.update(_.updated(saved.id, saved)).as(saved)
+      }
+
+    override def updatePipelineRun(run: PipelineRun): RepositoryTask[Unit] =
+      pipelineRun.update(m =>
+        m.get(run.id).fold(m) { _ =>
+          m.updated(
+            run.id,
+            run.copy(
+              status = run.status,
+              contextJson = run.contextJson,
+              failedStep = run.failedStep,
+              finishedAt = run.finishedAt,
+            ),
+          )
+        },
+      )
+
+    override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
+      pipelineRun.get.map(_.values.toList.filter(_.jobId == jobId).sortBy(_.startedAt).reverse)
+
+    override def getPipelineRun(id: PipelineRunId): RepositoryTask[Option[PipelineRun]] =
+      pipelineRun.get.map(_.get(id))
+
+    override def updateJobPipeline(
+      id:       SchedulerJobId,
+      pipeline: Pipeline,
+    ): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id).fold((false, m)) { j =>
+          (true, m.updated(id, j.copy(pipeline = pipeline)))
+        }
+      }
+
   }
 
   object InMemorySchedulerRepo {
 
     def make: UIO[InMemorySchedulerRepo] =
       for {
-        jobIdGen  <- Ref.make(0L)
-        jobs      <- Ref.make(Map.empty[SchedulerJobId, SchedulerJob])
-        trigIdGen <- Ref.make(0L)
-        triggers  <- Ref.make(Map.empty[SchedulerTriggerId, SchedulerTrigger])
-      } yield InMemorySchedulerRepo(jobIdGen, jobs, trigIdGen, triggers)
+        jobIdGen    <- Ref.make(0L)
+        jobs        <- Ref.make(Map.empty[SchedulerJobId, SchedulerJob])
+        trigIdGen   <- Ref.make(0L)
+        triggers    <- Ref.make(Map.empty[SchedulerTriggerId, SchedulerTrigger])
+        runIdGen    <- Ref.make(0L)
+        pipelineRun <- Ref.make(Map.empty[PipelineRunId, PipelineRun])
+      } yield InMemorySchedulerRepo(jobIdGen, jobs, trigIdGen, triggers, runIdGen, pipelineRun)
 
     val layer: ULayer[ZIOSchedulerRepository] = ZLayer(make.map(r => r: ZIOSchedulerRepository))
 

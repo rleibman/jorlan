@@ -76,11 +76,11 @@ object MemoryPage {
             AsyncCallbackRepositories.memory
               .search(MemorySearch(MemoryScope.User))
               .flatMap { memories =>
-                state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
+                state.modState(_.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -97,11 +97,11 @@ object MemoryPage {
               AsyncCallbackRepositories.memory
                 .search(MemorySearch(MemoryScope.User, textSearch = search))
                 .flatMap { memories =>
-                  state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
+                  state.modState(_.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
-                    state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                    state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                   case _ => Callback.empty
                 }
                 .runNow()
@@ -115,12 +115,12 @@ object MemoryPage {
                   val newMems = state.value.memories.filter(_.id != id)
                   val maxPage = math.max(0, (newMems.size - 1) / state.value.rowsPerPage)
                   state
-                    .setState(
-                      state.value.copy(memories = newMems, page = math.min(state.value.page, maxPage)),
+                    .modState(
+                      _.copy(memories = newMems, page = math.min(state.value.page, maxPage)),
                     )
                     .asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
@@ -131,8 +131,8 @@ object MemoryPage {
                 .flatMap { count =>
                   if (count > 0L)
                     state
-                      .setState(
-                        state.value.copy(
+                      .modState(
+                        _.copy(
                           memories =
                             state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Shared) else m),
                         ),
@@ -141,7 +141,7 @@ object MemoryPage {
                   else AsyncCallback.unit
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -154,8 +154,8 @@ object MemoryPage {
                 .flatMap { count =>
                   if (count > 0L)
                     state
-                      .setState(
-                        state.value.copy(
+                      .modState(
+                        _.copy(
                           memories =
                             state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Private) else m),
                         ),
@@ -164,7 +164,7 @@ object MemoryPage {
                   else AsyncCallback.unit
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -190,8 +190,8 @@ object MemoryPage {
                 )
                 .flatMap { stored =>
                   state
-                    .setState(
-                      state.value.copy(
+                    .modState(
+                      _.copy(
                         memories = state.value.memories :+ stored,
                         showStore = false,
                         storeForm = StoreForm("", "", MemoryScope.User),
@@ -200,7 +200,7 @@ object MemoryPage {
                     .asAsyncCallback
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -222,7 +222,7 @@ object MemoryPage {
               MuiButton
                 .variant("contained")
                 .size("small")
-                .onClick(() => state.setState(state.value.copy(showStore = true)).runNow())("+ Remember"),
+                .onClick(() => state.modState(_.copy(showStore = true)).runNow())("+ Remember"),
             ),
             state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             MuiTextField
@@ -233,7 +233,7 @@ object MemoryPage {
               .sx(js.Dynamic.literal(mb = 2, width = 300))
               .onChange(e => {
                 val q = e.target.value.asInstanceOf[String]
-                (state.setState(state.value.copy(search = q, loading = true)) >> runSearch(q)).runNow()
+                (state.modState(_.copy(search = q, loading = true)) >> runSearch(q)).runNow()
               }),
             if (state.value.loading) CircularProgress()
             else if (state.value.memories.isEmpty)
@@ -306,11 +306,11 @@ object MemoryPage {
                     (
                       _,
                       p,
-                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                    ) => state.modState(_.copy(page = p)).runNow(),
                   )
                   .onRowsPerPageChange(e =>
                     state
-                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
                       .runNow(),
                   )(),
               ),
@@ -365,8 +365,8 @@ object MemoryPage {
                     .size("small")
                     .onChange(e =>
                       state
-                        .setState(
-                          state.value.copy(
+                        .modState(
+                          _.copy(
                             storeForm = state.value.storeForm.copy(
                               scope = MemoryScope.values
                                 .find(_.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim))
@@ -386,7 +386,7 @@ object MemoryPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.onClick(() => state.setState(state.value.copy(showStore = false)).runNow())("Cancel"),
+                MuiButton.onClick(() => state.modState(_.copy(showStore = false)).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .disabled(state.value.storeForm.key.trim.isEmpty || state.value.storeForm.text.trim.isEmpty)

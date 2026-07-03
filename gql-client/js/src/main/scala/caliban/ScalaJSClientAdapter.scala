@@ -14,14 +14,11 @@ import caliban.client.*
 import caliban.client.CalibanClientError.{DecodingError, ServerError}
 import caliban.client.GraphQLResponseError.Location
 import caliban.client.Operations.{IsOperation, RootSubscription}
-import com.github.plokhotnyuk.jsoniter_scala.core.*
 import japgolly.scalajs.react.extra.TimerSupport
 import japgolly.scalajs.react.{AsyncCallback, Callback}
-import jorlan.ConnectionId
 import jorlan.web.ClientConfiguration
 import jorlan.web.util.ApiClientSttp4
 import org.scalajs.dom.WebSocket
-import sttp.client4.*
 import sttp.model.Uri
 import zio.json.*
 import zio.json.ast.*

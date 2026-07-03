@@ -114,15 +114,15 @@ object McpServersPage {
             }
 
           def openAdd(): Callback =
-            state.setState(state.value.copy(showDialog = true, editingName = None, form = ServerForm()))
+            state.modState(_.copy(showDialog = true, editingName = None, form = ServerForm()))
 
           def openEdit(server: McpServerInfo): Callback =
-            state.setState(
-              state.value.copy(showDialog = true, editingName = Some(server.name), form = formFromServer(server)),
+            state.modState(
+              _.copy(showDialog = true, editingName = Some(server.name), form = formFromServer(server)),
             )
 
           def closeDialog(): Callback =
-            state.setState(state.value.copy(showDialog = false, editingName = None, form = ServerForm()))
+            state.modState(_.copy(showDialog = false, editingName = None, form = ServerForm()))
 
           def saveServer(): Callback =
             Callback {
@@ -176,10 +176,10 @@ object McpServersPage {
             }
 
           def confirmDelete(name: String): Callback =
-            state.setState(state.value.copy(deleteTarget = Some(name)))
+            state.modState(_.copy(deleteTarget = Some(name)))
 
           def cancelDelete(): Callback =
-            state.setState(state.value.copy(deleteTarget = None))
+            state.modState(_.copy(deleteTarget = None))
 
           def doDelete(name: String): Callback =
             Callback {

@@ -358,8 +358,9 @@ object ModelSpec extends ZIOSpecDefault {
       userId = UserId(1L),
       skillId = None,
       name = "test-job",
-      prompt = "do something",
-      inputJson = None,
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "do something", outputVar = "result")),
+      ),
       status = JobStatus.Pending,
       scheduledAt = now,
       startedAt = None,

@@ -90,11 +90,11 @@ object SkillsPage {
                     }.map(_.toMap)
                 checkProviders.flatMap { connected =>
                   state
-                    .setState(state.value.copy(skills = skills, loading = false, oauthConnected = connected))
+                    .modState(_.copy(skills = skills, loading = false, oauthConnected = connected))
                     .asAsyncCallback
                 }
               }
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }
@@ -105,9 +105,9 @@ object SkillsPage {
         ) =>
           def toggleExpand(name: String): Callback =
             if (state.value.expanded.contains(name))
-              state.setState(state.value.copy(expanded = state.value.expanded - name))
+              state.modState(_.copy(expanded = state.value.expanded - name))
             else
-              state.setState(state.value.copy(expanded = state.value.expanded + name))
+              state.modState(_.copy(expanded = state.value.expanded + name))
 
           def toggleEnabled(skill: SkillInfo): Callback =
             Callback {

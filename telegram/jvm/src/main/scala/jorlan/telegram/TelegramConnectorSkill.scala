@@ -8,12 +8,10 @@ package jorlan.telegram
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.*
 import just.semver.SemVer
 import telegramium.bots.Update
 import telegramium.bots.Message as TgMessage
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
@@ -77,6 +75,12 @@ object TelegramMessageNormalizer {
   */
 type TelegramNameResolver = String => IO[JorlanError, Option[String]]
 
+/** Handles a `/run <jobName> [context]` command from Telegram. Returns a reply message string. Injected at server
+  * startup so the connector module stays free of JobManager/DB dependencies.
+  */
+type TelegramRunCommandHandler =
+  (jobName: String, runContext: Option[String], channelUserId: String) => IO[JorlanError, String]
+
 class TelegramConnectorSkill(
   config:         TelegramConfig,
   val instanceId: ConnectorInstanceId,
@@ -84,6 +88,7 @@ class TelegramConnectorSkill(
   ingress:        MessageIngress,
   pollingFiber:   Ref[Option[Fiber[Nothing, Unit]]],
   nameResolver:   TelegramNameResolver = _ => ZIO.none,
+  runHandler:     Option[TelegramRunCommandHandler] = None,
 ) extends ConnectorSkill {
 
   override val connectorType:       ConnectorType = ConnectorType.Telegram
@@ -286,6 +291,45 @@ class TelegramConnectorSkill(
       )
       .flatMap(pollLoop)
 
+  private def handleRunCommand(
+    chatId:      String,
+    text:        String,
+    channelUser: String,
+  ): IO[JorlanError, Unit] =
+    runHandler match {
+      case None =>
+        apiClient
+          .sendMessage(chatId, "Pipeline trigger not configured.")
+          .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+          .ignore
+      case Some(handler) =>
+        val parts = text.stripPrefix("/run").trim.split(" ", 2)
+        val jobName = parts.headOption.map(_.trim).filter(_.nonEmpty).getOrElse("")
+        val runContext = if (parts.length > 1) Some(parts(1).trim).filter(_.nonEmpty) else None
+        if (jobName.isEmpty) {
+          apiClient
+            .sendMessage(chatId, "Usage: /run <job-name> [optional context for this run]")
+            .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+            .ignore
+        } else {
+          handler(jobName, runContext, channelUser)
+            .foldZIO(
+              err =>
+                apiClient
+                  .sendMessage(chatId, s"Error: ${err.msg}")
+                  .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+                  .ignore,
+              reply =>
+                apiClient
+                  .sendMessage(chatId, reply)
+                  .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+                  .ignore,
+            )
+        }
+    }
+
+  private val RunCommandPrefix = "/run"
+
   private def pollStep(offset: Long): IO[JorlanError, Long] =
     apiClient
       .getUpdates(offset, timeoutSeconds = config.longPollTimeoutSeconds).flatMap { updates =>
@@ -297,19 +341,32 @@ class TelegramConnectorSkill(
                 case None      => ZIO.unit
                 case Some(msg) =>
                   val chatId = msg.chatRef
-                  ingress
-                    .receive(
-                      msg,
-                      config.unrecognizedPolicy,
-                      onResponse = Some(text =>
-                        apiClient
-                          .sendMessage(chatId, text)
-                          .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
-                          .ignore,
-                      ),
-                    )
-                    .tapError(e => ZIO.logWarning(s"[telegram] ingress error for update ${update.updateId}: ${e.msg}"))
-                    .ignore
+                  val text = msg.content.trim
+                  if (
+                    text.startsWith(RunCommandPrefix) && (text.length == RunCommandPrefix.length || text.charAt(
+                      RunCommandPrefix.length,
+                    ) == ' ')
+                  ) {
+                    handleRunCommand(chatId, text, msg.channelUserId)
+                      .tapError(e => ZIO.logWarning(s"[telegram] /run error for update ${update.updateId}: ${e.msg}"))
+                      .ignore
+                  } else {
+                    ingress
+                      .receive(
+                        msg,
+                        config.unrecognizedPolicy,
+                        onResponse = Some(text =>
+                          apiClient
+                            .sendMessage(chatId, text)
+                            .tapError(e => ZIO.logWarning(s"[telegram] reply failed for chat $chatId: ${e.msg}"))
+                            .ignore,
+                        ),
+                      )
+                      .tapError(e =>
+                        ZIO.logWarning(s"[telegram] ingress error for update ${update.updateId}: ${e.msg}"),
+                      )
+                      .ignore
+                  }
               }
             }
           }
@@ -361,9 +418,10 @@ object TelegramConnectorSkill {
     apiClient:    TelegramApiClient,
     ingress:      MessageIngress,
     nameResolver: TelegramNameResolver = _ => ZIO.none,
+    runHandler:   Option[TelegramRunCommandHandler] = None,
   ): UIO[TelegramConnectorSkill] =
     Ref.make(Option.empty[Fiber[Nothing, Unit]]).map { fiberRef =>
-      TelegramConnectorSkill(config, instanceId, apiClient, ingress, fiberRef, nameResolver)
+      TelegramConnectorSkill(config, instanceId, apiClient, ingress, fiberRef, nameResolver, runHandler)
     }
 
 }

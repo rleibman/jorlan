@@ -97,11 +97,11 @@ object UsersPage {
               .search(UserSearch())
               .flatMap(users =>
                 state
-                  .setState(
-                    state.value.copy(users = users, loading = false, error = None, page = 0),
+                  .modState(
+                    _.copy(users = users, loading = false, error = None, page = 0),
                   ).asAsyncCallback,
               )
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }
@@ -119,10 +119,10 @@ object UsersPage {
                 .search(UserSearch())
                 .flatMap(users =>
                   state
-                    .setState(state.value.copy(users = users, error = None, editingUser = None, editState = None))
+                    .modState(_.copy(users = users, error = None, editingUser = None, editState = None))
                     .asAsyncCallback,
                 )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
@@ -134,10 +134,10 @@ object UsersPage {
                   if (count > 0) reload().asAsyncCallback
                   else
                     state
-                      .setState(state.value.copy(error = Some(s"Could not deactivate ${user.displayName}")))
+                      .modState(_.copy(error = Some(s"Could not deactivate ${user.displayName}")))
                       .asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
@@ -146,36 +146,36 @@ object UsersPage {
               AsyncCallbackRepositories.user
                 .upsert(user.copy(active = true))
                 .flatMap(_ => reload().asAsyncCallback)
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def openEdit(user: User): Callback =
-            state.setState(
-              state.value.copy(
+            state.modState(
+              _.copy(
                 editingUser = Some(user),
                 editState = Some(EditState(user.displayName, user.email)),
               ),
             )
 
           def closeEdit(): Callback =
-            state.setState(state.value.copy(editingUser = None, editState = None))
+            state.modState(_.copy(editingUser = None, editState = None))
 
           def saveEdit(): Callback =
             (state.value.editingUser, state.value.editState) match {
               case (Some(user), Some(es)) =>
                 Callback {
-                  state.setState(state.value.copy(saving = true)).runNow()
+                  state.modState(_.copy(saving = true)).runNow()
                   AsyncCallbackRepositories.user
                     .upsert(user.copy(displayName = es.displayName, email = es.email))
                     .flatMap(_ =>
                       state
-                        .setState(state.value.copy(saving = false, editingUser = None, editState = None))
+                        .modState(_.copy(saving = false, editingUser = None, editState = None))
                         .asAsyncCallback
                         .flatMap(_ => reload().asAsyncCallback),
                     )
                     .completeWith(
-                      PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))),
+                      PageUtils.onError(err => state.modState(_.copy(saving = false, error = err))),
                     )
                     .runNow()
                 }
@@ -183,15 +183,15 @@ object UsersPage {
             }
 
           def openCreate(): Callback =
-            state.setState(state.value.copy(createOpen = true, createName = "", createEmail = ""))
+            state.modState(_.copy(createOpen = true, createName = "", createEmail = ""))
 
           def closeCreate(): Callback =
-            state.setState(state.value.copy(createOpen = false))
+            state.modState(_.copy(createOpen = false))
 
           def saveCreate(): Callback =
             Callback {
               import java.time.Instant
-              state.setState(state.value.copy(saving = true)).runNow()
+              state.modState(_.copy(saving = true)).runNow()
               AsyncCallbackRepositories.user
                 .upsert(
                   User(
@@ -205,11 +205,11 @@ object UsersPage {
                 )
                 .flatMap(_ =>
                   state
-                    .setState(state.value.copy(saving = false, createOpen = false))
+                    .modState(_.copy(saving = false, createOpen = false))
                     .asAsyncCallback
                     .flatMap(_ => reload().asAsyncCallback),
                 )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(saving = false, error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(saving = false, error = err))))
                 .runNow()
             }
 
@@ -219,8 +219,8 @@ object UsersPage {
                 AsyncCallbackRepositories.allKnownCapabilities())
                 .flatMap { case (grants, caps) =>
                   state
-                    .setState(
-                      state.value.copy(
+                    .modState(
+                      _.copy(
                         permsUser = Some(user),
                         grants = grants,
                         allKnownCapabilities = caps,
@@ -228,12 +228,12 @@ object UsersPage {
                       ),
                     ).asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def closePerms(): Callback =
-            state.setState(state.value.copy(permsUser = None, grants = List.empty))
+            state.modState(_.copy(permsUser = None, grants = List.empty))
 
           def grantCapability(capName: CapabilityName): Callback =
             state.value.permsUser match {
@@ -263,12 +263,12 @@ object UsersPage {
                         .searchGrants(GrantSearch(userId = Some(user.id)))
                         .flatMap(grants =>
                           state
-                            .setState(
-                              state.value.copy(grants = grants, newMode = "Persistent"),
+                            .modState(
+                              _.copy(grants = grants, newMode = "Persistent"),
                             ).asAsyncCallback,
                         ),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -283,9 +283,9 @@ object UsersPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
                         .searchGrants(GrantSearch(userId = Some(user.id)))
-                        .flatMap(grants => state.setState(state.value.copy(grants = grants)).asAsyncCallback),
+                        .flatMap(grants => state.modState(_.copy(grants = grants)).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -302,12 +302,12 @@ object UsersPage {
                       .copy(rolesUser = Some(user), userRoles = userRoles, allRoles = allRoles, assignRoleId = ""),
                   ).asAsyncCallback
               }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def closeRoles(): Callback =
-            state.setState(state.value.copy(rolesUser = None, userRoles = List.empty, allRoles = List.empty))
+            state.modState(_.copy(rolesUser = None, userRoles = List.empty, allRoles = List.empty))
 
           def assignRole(): Callback =
             (state.value.rolesUser, state.value.assignRoleId.toLongOption) match {
@@ -318,11 +318,9 @@ object UsersPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
                         .searchRoles(RoleSearch(userId = Some(user.id)))
-                        .flatMap(roles =>
-                          state.setState(state.value.copy(userRoles = roles, assignRoleId = "")).asAsyncCallback,
-                        ),
+                        .flatMap(roles => state.modState(_.copy(userRoles = roles, assignRoleId = "")).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
               case _ => Callback.empty
@@ -338,9 +336,9 @@ object UsersPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.permission
                         .searchRoles(RoleSearch(userId = Some(user.id)))
-                        .flatMap(roles => state.setState(state.value.copy(userRoles = roles)).asAsyncCallback),
+                        .flatMap(roles => state.modState(_.copy(userRoles = roles)).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -351,8 +349,8 @@ object UsersPage {
                 .getChannelIdentities(user.id)
                 .flatMap(identities =>
                   state
-                    .setState(
-                      state.value.copy(
+                    .modState(
+                      _.copy(
                         identsUser = Some(user),
                         identities = identities,
                         newChType = "Telegram",
@@ -361,12 +359,12 @@ object UsersPage {
                       ),
                     ).asAsyncCallback,
                 )
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
           def closeIdentities(): Callback =
-            state.setState(state.value.copy(identsUser = None, identities = List.empty))
+            state.modState(_.copy(identsUser = None, identities = List.empty))
 
           def linkIdentity(): Callback =
             state.value.identsUser match {
@@ -393,12 +391,12 @@ object UsersPage {
                           .getChannelIdentities(user.id)
                           .flatMap(ids =>
                             state
-                              .setState(
-                                state.value.copy(identities = ids, newChType = "Telegram", newChUserId = ""),
+                              .modState(
+                                _.copy(identities = ids, newChType = "Telegram", newChUserId = ""),
                               ).asAsyncCallback,
                           ),
                       )
-                      .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                      .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                       .runNow()
                   }
                 }
@@ -414,9 +412,9 @@ object UsersPage {
                     .flatMap(_ =>
                       AsyncCallbackRepositories.user
                         .getChannelIdentities(user.id)
-                        .flatMap(ids => state.setState(state.value.copy(identities = ids)).asAsyncCallback),
+                        .flatMap(ids => state.modState(_.copy(identities = ids)).asAsyncCallback),
                     )
-                    .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                    .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                     .runNow()
                 }
             }
@@ -520,11 +518,11 @@ object UsersPage {
                     (
                       _,
                       p,
-                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                    ) => state.modState(_.copy(page = p)).runNow(),
                   )
                   .onRowsPerPageChange(e =>
                     state
-                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
                       .runNow(),
                   )(),
               ),
@@ -538,8 +536,8 @@ object UsersPage {
                   .variant("outlined")
                   .onChange(e =>
                     state
-                      .setState(
-                        state.value.copy(editState = Some(EditState(e.target.value.asInstanceOf[String], editEmail))),
+                      .modState(
+                        _.copy(editState = Some(EditState(e.target.value.asInstanceOf[String], editEmail))),
                       )
                       .runNow(),
                   ),
@@ -550,8 +548,8 @@ object UsersPage {
                   .variant("outlined")
                   .onChange(e =>
                     state
-                      .setState(
-                        state.value.copy(
+                      .modState(
+                        _.copy(
                           editState = Some(EditState(editDisplayName, e.target.value.asInstanceOf[String])),
                         ),
                       )
@@ -574,17 +572,13 @@ object UsersPage {
                   .value(state.value.createName)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e =>
-                    state.setState(state.value.copy(createName = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String])).runNow()),
                 MuiTextField
                   .label("Email")
                   .value(state.value.createEmail)
                   .fullWidth(true)
                   .variant("outlined")
-                  .onChange(e =>
-                    state.setState(state.value.copy(createEmail = e.target.value.asInstanceOf[String])).runNow(),
-                  ),
+                  .onChange(e => state.modState(_.copy(createEmail = e.target.value.asInstanceOf[String])).runNow()),
               ),
               DialogActions()(
                 MuiButton.variant("text").onClick(() => closeCreate().runNow())("Cancel"),
@@ -655,8 +649,8 @@ object UsersPage {
                     .size("small")
                     .onChange { e =>
                       state
-                        .setState(
-                          state.value.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                        .modState(
+                          _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
                         ).runNow()
                     }(
                       ApprovalMode.values
@@ -755,8 +749,8 @@ object UsersPage {
                       .displayEmpty(true)
                       .onChange { e =>
                         state
-                          .setState(
-                            state.value.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                          .modState(
+                            _.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
                           ).runNow()
                       }(
                         ((MuiMenuItem.value("")("— Select a role —"): VdomNode) ::
@@ -841,7 +835,7 @@ object UsersPage {
                     <.select(
                       ^.value := state.value.newChType,
                       ^.onChange ==> { (e: ReactEventFromInput) =>
-                        state.setState(state.value.copy(newChType = e.target.value))
+                        state.modState(_.copy(newChType = e.target.value))
                       },
                       chTypeOpts,
                     ),
@@ -850,7 +844,7 @@ object UsersPage {
                       .value(state.value.newChUserId)
                       .size("small")
                       .onChange(e =>
-                        state.setState(state.value.copy(newChUserId = e.target.value.asInstanceOf[String])).runNow(),
+                        state.modState(_.copy(newChUserId = e.target.value.asInstanceOf[String])).runNow(),
                       ),
                     MuiButton
                       .variant("contained")

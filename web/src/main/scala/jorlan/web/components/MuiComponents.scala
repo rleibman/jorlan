@@ -7,11 +7,9 @@
 package jorlan.web.components
 
 import net.leibman.jorlan.StBuildingComponent
-import net.leibman.jorlan.StBuildingComponent.Default
-import org.scalablytyped.runtime.StObject
 
 import scala.scalajs.js
-import scala.scalajs.js.annotation.{JSImport, JSName}
+import scala.scalajs.js.annotation.JSImport
 
 /** Thin wrappers for MUI v9 components not present in stLib's `components/` package.
   *

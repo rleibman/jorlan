@@ -14,8 +14,11 @@ import caliban.client.CalibanClientError.DecodingError
 import caliban.client.__Value.{__NumberValue, __StringValue}
 import caliban.client.{ArgEncoder, ScalarDecoder}
 import jorlan.*
+import jorlan.graphql.client.JorlanClient.Agent.AgentView
+import jorlan.graphql.client.JorlanClient.PipelineRun.PipelineRunView
 import jorlan.graphql.client.JorlanClient.SchedulerJob.SchedulerJobView
 import jorlan.graphql.client.JorlanClient.SchedulerTrigger.SchedulerTriggerView
+import zio.json.*
 
 import scala.util.Try
 
@@ -56,6 +59,7 @@ object JorlanClientDecoders {
   given ScalarDecoder[CapabilityGrantId] = longDecoder(CapabilityGrantId(_), "CapabilityGrantId")
   given ScalarDecoder[SchedulerJobId] = longDecoder(SchedulerJobId(_), "SchedulerJobId")
   given ScalarDecoder[SchedulerTriggerId] = longDecoder(SchedulerTriggerId(_), "SchedulerTriggerId")
+  given ScalarDecoder[PipelineRunId] = longDecoder(PipelineRunId(_), "PipelineRunId")
   given ScalarDecoder[SkillId] = longDecoder(SkillId(_), "SkillId")
 
   given ScalarDecoder[ModelId] = {
@@ -79,6 +83,7 @@ object JorlanClientDecoders {
   given ArgEncoder[CapabilityGrantId] = longEncoder(_.value)
   given ArgEncoder[SchedulerJobId] = longEncoder(_.value)
   given ArgEncoder[SchedulerTriggerId] = longEncoder(_.value)
+  given ArgEncoder[PipelineRunId] = longEncoder(_.value)
   given ArgEncoder[SkillId] = longEncoder(_.value)
   given ArgEncoder[ModelId] = (id: ModelId) => ArgEncoder.string.encode(id.value)
   given ArgEncoder[CapabilityName] = (cn: CapabilityName) => ArgEncoder.string.encode(cn.value)
@@ -136,8 +141,9 @@ object JorlanClientDecoders {
         userId = j.userId,
         skillId = j.skillId,
         name = j.name,
-        prompt = j.prompt,
-        inputJson = j.inputJson,
+        pipeline = j.pipeline.fromJson[Pipeline].getOrElse(
+          throw new RuntimeException(s"Server returned an unparseable pipeline for job ${j.id.value}"),
+        ),
         status = j.status,
         scheduledAt = j.scheduledAt,
         startedAt = j.startedAt,
@@ -162,6 +168,32 @@ object JorlanClientDecoders {
         expression = t.expression,
         enabled = t.enabled,
         createdAt = t.createdAt,
+      )
+
+  given Conversion[AgentView, Agent] =
+    (a: AgentView) =>
+      Agent(
+        id = a.id,
+        name = a.name,
+        description = a.description,
+        defaultModel = a.defaultModel,
+        trustLevel = a.trustLevel,
+        prioritizedSkills = a.prioritizedSkills,
+        invariants = a.invariants.fromJson[Map[String, String]].getOrElse(Map.empty),
+        createdAt = a.createdAt,
+      )
+
+  given Conversion[PipelineRunView, PipelineRun] =
+    (r: PipelineRunView) =>
+      PipelineRun(
+        id = r.id,
+        jobId = r.jobId,
+        status = PipelineRunStatus.valueOf(r.status.value),
+        runContext = r.runContext,
+        contextJson = r.contextJson,
+        failedStep = r.failedStep,
+        startedAt = r.startedAt,
+        finishedAt = r.finishedAt,
       )
 
 }

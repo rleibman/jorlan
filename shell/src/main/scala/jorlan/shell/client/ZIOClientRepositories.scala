@@ -272,7 +272,6 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def updateJobConfig(
       id:              SchedulerJobId,
       name:            String,
-      prompt:          String,
       maxRetries:      Int,
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
@@ -304,6 +303,15 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       finishedAt: Instant,
     ):                                             IO[String, Unit] = ZIO.unit
     override def expireLeases(olderThan: Instant): IO[String, Long] = ZIO.succeed(0L)
+
+    override def insertPipelineRun(run:  PipelineRun):    IO[String, PipelineRun] = ZIO.fail("not implemented")
+    override def updatePipelineRun(run:  PipelineRun):    IO[String, Unit] = ZIO.unit
+    override def listPipelineRuns(jobId: SchedulerJobId): IO[String, List[PipelineRun]] = ZIO.succeed(List.empty)
+    override def getPipelineRun(id:      PipelineRunId):  IO[String, Option[PipelineRun]] = ZIO.succeed(None)
+    override def updateJobPipeline(
+      id:       SchedulerJobId,
+      pipeline: Pipeline,
+    ): IO[String, Boolean] = ZIO.fail("not implemented")
 
   }
 
@@ -645,28 +653,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     )
 
   private def toSchedulerJob(v: JorlanClient.SchedulerJob.SchedulerJobView): SchedulerJob =
-    SchedulerJob(
-      id = v.id,
-      agentId = v.agentId,
-      userId = v.userId,
-      skillId = v.skillId,
-      name = v.name,
-      prompt = v.prompt,
-      inputJson = v.inputJson,
-      status = v.status,
-      scheduledAt = v.scheduledAt,
-      startedAt = v.startedAt,
-      finishedAt = v.finishedAt,
-      resultJson = v.resultJson,
-      maxRetries = v.maxRetries,
-      retryCount = v.retryCount,
-      backoffSeconds = v.backoffSeconds,
-      backoffPolicy = v.backoffPolicy,
-      missedRunPolicy = v.missedRunPolicy,
-      leasedAt = v.leasedAt,
-      leasedBy = v.leasedBy,
-      createdAt = v.createdAt,
-    )
+    summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v)
 
   private def toSchedulerTrigger(v: JorlanClient.SchedulerTrigger.SchedulerTriggerView): SchedulerTrigger =
     SchedulerTrigger(
