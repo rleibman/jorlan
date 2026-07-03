@@ -24,6 +24,8 @@ object SubscriptionClientSpec extends ZIOSpecDefault {
     ): ZStream[Scope, String, jorlan.graphql.client.JorlanClient.ToolEventResult.ToolEventResultView] =
       ZStream.empty
 
+    override def eventLogTail: ZStream[Scope, String, EventLogEntry] = ZStream.empty
+
   }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
