@@ -11,6 +11,7 @@ import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.service.{CheckpointPolicyConfig, EventLogFilter}
 import zio.*
+import zio.json.*
 import zio.json.ast.Json
 
 import java.time.Instant
@@ -82,7 +83,6 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
   def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -835,21 +835,24 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
-  ): IO[String, SchedulerJob] =
+  ): IO[String, SchedulerJob] = {
+    val pipeline = Pipeline(
+      steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = prompt, outputVar = "result")),
+    )
     gqlClient
       .run(
         JorlanClient.Mutations
-          .createJob(name, prompt, None, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
+          .createJob(name, pipeline.toJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
             JorlanClient.SchedulerJob.view,
           ),
       )
       .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
       .map(toSchedulerJob)
+  }
 
   override def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -857,7 +860,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   ): IO[String, SchedulerJob] =
     gqlClient
       .run(
-        JorlanClient.Mutations.updateJob(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
+        JorlanClient.Mutations.updateJob(id, name, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
           JorlanClient.SchedulerJob.view,
         ),
       )

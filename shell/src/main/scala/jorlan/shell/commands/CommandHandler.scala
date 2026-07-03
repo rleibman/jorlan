@@ -233,7 +233,7 @@ object CommandHandler {
       "/scheduler list                      List all scheduler jobs with status and results",
       "/scheduler result <id>               Show full result/error for a scheduler job",
       "/scheduler create <name> <prompt>    Create a new scheduler job (defaults: 3 retries, 60s backoff)",
-      "/scheduler update <id> <field> <v>   Update a job field (name|prompt|maxRetries|backoffSeconds|backoffPolicy|missedRunPolicy)",
+      "/scheduler update <id> <field> <v>   Update a job field (name|maxRetries|backoffSeconds|backoffPolicy|missedRunPolicy)",
       "/scheduler delete <id>               Delete a scheduler job",
       "/scheduler pause <id>                Pause a scheduler job",
       "/scheduler resume <id>               Resume a paused scheduler job",
@@ -1379,7 +1379,7 @@ object CommandHandler {
     )
 
   private val validSchedulerFields: Set[String] =
-    Set("name", "prompt", "maxRetries", "backoffSeconds", "backoffPolicy", "missedRunPolicy")
+    Set("name", "maxRetries", "backoffSeconds", "backoffPolicy", "missedRunPolicy")
 
   private def updateSchedulerJob(
     id:    SchedulerJobId,
@@ -1396,7 +1396,6 @@ object CommandHandler {
           case Some(job) =>
             val updated = field match {
               case "name"       => job.copy(name = value)
-              case "prompt"     => job.copy(prompt = value)
               case "maxRetries" =>
                 value.toIntOption
                   .map(n => job.copy(maxRetries = n))
@@ -1419,7 +1418,6 @@ object CommandHandler {
               _.updateJob(
                 id,
                 updated.name,
-                updated.prompt,
                 updated.maxRetries,
                 updated.backoffSeconds,
                 updated.backoffPolicy,
