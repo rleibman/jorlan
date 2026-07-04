@@ -4,7 +4,7 @@ lazy val SCALA = "3.8.4"
 
 val scalajsReactVersion = "4.0.0"
 
-version := "1.4.0"
+version := "1.5.0"
 
 enablePlugins(ScalablyTypedConverterExternalNpmPlugin)
 

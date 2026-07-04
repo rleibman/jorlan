@@ -83,6 +83,11 @@ jobs:
     - name: Setup sbt
       uses: sbt/setup-sbt@v1
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
     - name: Cache npm dependencies (esbuild)
       uses: actions/cache@v4
       with:
@@ -90,6 +95,19 @@ jobs:
         key: ${{ runner.os }}-npm-esbuild-${{ hashFiles('web/esbuild/package.json') }}
         restore-keys: |
           ${{ runner.os }}-npm-esbuild-
+
+    - name: Cache stLib node_modules and generated ivy artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          stLib/node_modules
+          ~/.ivy2/local/org.scalablytyped.net.leibman.jorlan
+        key: ${{ runner.os }}-stlib-${{ hashFiles('stLib/package-lock.json', 'stLib/build.sbt') }}
+        restore-keys: |
+          ${{ runner.os }}-stlib-
+
+    - name: Generate and publish stLib facades locally
+      run: ./stLib/publish-all.sh
 
     - name: Build Debian packages (includes web frontend via web/dist)
       env:
