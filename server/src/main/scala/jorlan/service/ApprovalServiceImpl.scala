@@ -101,8 +101,7 @@ private class ApprovalServiceImpl(
           case Some(result) => promise.succeed(result).unit
           case None         => ZIO.unit
         }
-      result <- promise.await.timeout(timeout)
-      _      <- pendingPromises.update(_ - id)
+      result <- promise.await.timeout(timeout).ensuring(pendingPromises.update(_ - id))
     } yield result
 
   override def completeDecision(
