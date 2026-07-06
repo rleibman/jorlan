@@ -14,8 +14,7 @@ import zio.stream.ZStream
   */
 sealed trait ToolEvent {
 
-  /** * sessionId identifies the agent session that produced the event
-    */
+  /** Session ID identifying the agent session that produced the event. */
   def sessionId: AgentSessionId
 
 }
