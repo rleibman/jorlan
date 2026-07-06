@@ -23,7 +23,7 @@ package ai
   */
 case class LangChainConfig(
   ollamaBaseUrl:       String = "http://localhost:11434",
-  ollamaModel:         String = "qwen3:8b", // TODO this should be required
+  ollamaModel:         String = "qwen3:4b", // TODO this should be required
   embeddingModel:      String = "nomic-embed-text",
   embeddingDimensions: Int = 768,
   qdrantHost:          String = "localhost",

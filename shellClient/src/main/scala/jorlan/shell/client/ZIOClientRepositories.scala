@@ -80,6 +80,21 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
   ): IO[String, SchedulerJob]
+
+  /** Creates a job from a fully-specified [[Pipeline]] (multi-step, real per-step system prompts) and an optional
+    * owning agent. Used by tooling that builds pipelines directly (e.g. the use-case manifest importer) rather than the
+    * simple single-prompt path above (used by the `/scheduler create` shell command).
+    */
+  def createJobWithPipeline(
+    name:            String,
+    pipeline:        Pipeline,
+    agentId:         Option[AgentId],
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob]
+
   def updateJob(
     id:              SchedulerJobId,
     name:            String,
@@ -127,9 +142,31 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         .run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))
         .map(_.getOrElse(List.empty).map(toAgentSession))
 
-    override def getById(id:            AgentId):         IO[String, Option[Agent]] = ZIO.succeed(None)
-    override def search(s:              AgentSearch):     IO[String, List[Agent]] = ZIO.succeed(List.empty)
-    override def upsert(a:              Agent):           IO[String, Agent] = ZIO.fail("not implemented")
+    override def search(s: AgentSearch): IO[String, List[Agent]] =
+      gqlClient
+        .run(JorlanClient.Queries.agents(JorlanClient.Agent.view))
+        .map(_.getOrElse(List.empty).map(toAgent))
+
+    override def getById(id: AgentId): IO[String, Option[Agent]] =
+      search(AgentSearch()).map(_.find(_.id == id))
+
+    override def upsert(a: Agent): IO[String, Agent] =
+      gqlClient
+        .run(
+          JorlanClient.Mutations
+            .upsertAgent(
+              id = a.id,
+              name = a.name,
+              description = a.description,
+              defaultModel = a.defaultModel,
+              trustLevel = a.trustLevel,
+              prioritizedSkills = a.prioritizedSkills,
+              invariantsJson = a.invariants.toJson,
+            )(JorlanClient.Agent.view),
+        )
+        .flatMap(r => ZIO.fromOption(r).orElseFail("upsertAgent returned nothing"))
+        .map(toAgent)
+
     override def delete(id:             AgentId):         IO[String, Long] = ZIO.fail("not implemented")
     override def getSession(id:         AgentSessionId):  IO[String, Option[AgentSession]] = ZIO.succeed(None)
     override def upsertSession(session: AgentSession):    IO[String, AgentSession] = ZIO.fail("not implemented")
@@ -387,7 +424,10 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def updateJobPipeline(
       id:       SchedulerJobId,
       pipeline: Pipeline,
-    ): IO[String, Boolean] = ZIO.fail("not implemented")
+    ): IO[String, Boolean] =
+      gqlClient
+        .run(JorlanClient.Mutations.updateJobPipeline(id, pipeline.toJson)(JorlanClient.SchedulerJob.view))
+        .map(_.isDefined)
 
   }
 
@@ -444,7 +484,8 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       email:    String,
       password: String,
     ):                                       IO[String, Option[User]] = ZIO.succeed(None)
-    override def userByEmail(email: String): IO[String, Option[User]] = ZIO.succeed(None)
+    override def userByEmail(email: String): IO[String, Option[User]] =
+      search(UserSearch(pageSize = 500)).map(_.find(_.email.equalsIgnoreCase(email)))
     override def changePassword(
       id:          UserId,
       newPassword: String,
@@ -707,6 +748,18 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   private def toRole(v: JorlanClient.Role.RoleView): Role =
     Role(id = v.id, name = v.name, description = v.description)
 
+  private def toAgent(v: JorlanClient.Agent.AgentView): Agent =
+    Agent(
+      id = v.id,
+      name = v.name,
+      description = v.description,
+      defaultModel = v.defaultModel,
+      trustLevel = v.trustLevel,
+      prioritizedSkills = v.prioritizedSkills,
+      invariants = v.invariants.fromJson[Map[String, String]].getOrElse(Map.empty),
+      createdAt = v.createdAt,
+    )
+
   private def toChannelIdentity(v: JorlanClient.ChannelIdentity.ChannelIdentityView): ChannelIdentity =
     ChannelIdentity(
       id = ChannelIdentityId(v.id.toLong),
@@ -842,13 +895,43 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     gqlClient
       .run(
         JorlanClient.Mutations
-          .createJob(name, pipeline.toJson, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
-            JorlanClient.SchedulerJob.view,
-          ),
+          .createJob(
+            name = name,
+            pipelineJson = pipeline.toJson,
+            maxRetries = maxRetries,
+            backoffSeconds = backoffSeconds,
+            backoffPolicy = backoffPolicy,
+            missedRunPolicy = missedRunPolicy,
+          )(JorlanClient.SchedulerJob.view),
       )
       .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
       .map(toSchedulerJob)
   }
+
+  override def createJobWithPipeline(
+    name:            String,
+    pipeline:        Pipeline,
+    agentId:         Option[AgentId],
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob] =
+    gqlClient
+      .run(
+        JorlanClient.Mutations
+          .createJob(
+            name = name,
+            pipelineJson = pipeline.toJson,
+            agentId = agentId,
+            maxRetries = maxRetries,
+            backoffSeconds = backoffSeconds,
+            backoffPolicy = backoffPolicy,
+            missedRunPolicy = missedRunPolicy,
+          )(JorlanClient.SchedulerJob.view),
+      )
+      .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
+      .map(toSchedulerJob)
 
   override def updateJob(
     id:              SchedulerJobId,

@@ -5,6 +5,10 @@ be added, what new native skills need to be built, and what remains out of scope
 
 Each use case file contains a full `## Implementation in Jorlan` section with detailed instructions.
 
+Machine-readable manifests for provisioning a use case into a running server live in
+`doc/use-cases/manifests/`, translated per the schema in `manifest-schema.md` and applied via
+`UseCaseImporterApp`. See `HOW-TO-IMPLEMENT-A-USE-CASE.md` for the step-by-step process.
+
 ---
 
 ## Status Legend

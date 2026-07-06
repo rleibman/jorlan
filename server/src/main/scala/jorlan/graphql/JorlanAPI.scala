@@ -751,6 +751,7 @@ object JorlanAPI {
   case class CreateJobInput(
     name:            String,
     pipelineJson:    String,
+    agentId:         Option[AgentId] = None,
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
     backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
@@ -1719,7 +1720,7 @@ object JorlanAPI {
               now <- Clock.instant
               job <- ZIO.serviceWithZIO[JobManager](
                 _.createJob(
-                  None,
+                  input.agentId,
                   actorId,
                   input.name,
                   pipeline,

@@ -1,0 +1,142 @@
+{
+  "useCaseName": "food_calendar",
+  "sourceDoc": "doc/use-cases/food_calendar.md",
+  "role": {
+    "name": "food-calendar-agent-role",
+    "description": "Capabilities needed by the weekly food calendar / meal planning agent",
+    "capabilities": [
+      { "capability": "calendar.listCalendars" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "calendar.createEvent" },
+      { "capability": "weather.forecast" },
+      { "capability": "search.web" },
+      { "capability": "http_fetch.get" },
+      { "capability": "telegram.send_message" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "scheduler.create_job" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "food-calendar-agent",
+    "description": "Weekly meal-planning agent: builds a 7-day dinner plan, adds it to Google Calendar, generates a shopping list, and sends prep reminders.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["calendar", "weather", "search", "http_fetch", "telegram", "memory", "scheduler"],
+    "invariants": {
+      "role": "expert executive chef and meal planner"
+    }
+  },
+  "memorySeeds": [
+    {
+      "key": "food_calendar.dietary_rules",
+      "text": "Dietary rules: Sarah cannot eat cruciferous vegetables (cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy). We try to limit red meat to once a week maximum. We enjoy variety across cuisines.",
+      "scope": "User"
+    },
+    {
+      "key": "food_calendar.preferred_sites",
+      "text": "Preferred recipe websites: seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com",
+      "scope": "User"
+    },
+    {
+      "key": "food_calendar.shopping_schedule",
+      "text": "Shopping schedule: We go grocery shopping Thursday evening. Thursday dinner should be simple (30 minutes or less).",
+      "scope": "User"
+    },
+    {
+      "key": "food_calendar.weekend_cooking",
+      "text": "Weekend cooking: Fridays and weekends are when we cook more complex recipes. Weeknight dinners (Mon-Thu) should be 45 minutes or under unless it is a slow cooker or overnight prep.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "ourgroceries",
+      "transport": "Stdio",
+      "command": "node",
+      "args": ["/opt/jorlan-mcp/ourgroceries-mcp/index.js"],
+      "env": [
+        { "key": "OURGROCERIES_EMAIL", "value": "CHANGE_ME" },
+        { "key": "OURGROCERIES_PASSWORD", "value": "CHANGE_ME" }
+      ],
+      "enabled": false,
+      "keywords": ["groceries", "shopping list", "ourgroceries"]
+    }
+  ],
+  "declarativeSkills": [],
+  "job": {
+    "name": "food-calendar-weekly-plan",
+    "steps": [
+      {
+        "name": "gather-context",
+        "systemPrompt": "You gather planning context for next week's dinners. Check the calendar for the next 7 days to find evening events, vacation days, and confirm which day is Thursday (grocery night). Check the weather forecast for the week. Recall recent meal history and dietary preferences from memory. Summarize your findings clearly: for each of the next 7 days, note the date, day of week, any evening event, vacation status, and weather/season notes, plus a short summary of recently-eaten meals to avoid repeating.",
+        "userPrompt": "{{now}} -- Gather this week's planning context using calendar.listEvents (next 7 days), weather.forecast, and memory.search (recent meal history and dietary preferences).",
+        "tools": ["calendar", "weather", "memory"],
+        "mode": "ReactLoop",
+        "outputVar": "context",
+        "retryOnFail": 1
+      },
+      {
+        "name": "plan-meals",
+        "systemPrompt": "You are an expert executive chef and meal planner. Using the planning context and these household rules -- {{invariants.dietary_rules}} {{invariants.schedule_rules}} {{invariants.seasonal_hints}} -- decide on one dinner for each of the next 7 days. For each day, state the day, a dish idea (cuisine + main ingredient), and its complexity level (simple/30-min, moderate, or complex). Skip vacation days entirely. Give variety in cuisine and meal type across the week.",
+        "userPrompt": "Planning context:\n{{steps.gather-context.output}}\n\nPropose a dinner plan for the week following the household rules.",
+        "tools": [],
+        "mode": "SingleCall",
+        "outputVar": "meal_plan",
+        "retryOnFail": 0
+      },
+      {
+        "name": "research-recipes",
+        "systemPrompt": "You find and fetch specific recipes for a planned meal list. For each day's dish idea, search the web (prefer these sites: {{invariants.preferred_sites}}) and fetch a matching recipe page. Record, per day: the recipe title, source URL, a short ingredient list, and an estimated prep/cook time, noting explicitly if it requires overnight marinating or slow-cooking (long prep).",
+        "userPrompt": "Meal plan:\n{{steps.plan-meals.output}}\n\nFind and fetch a real recipe for each day's dish.",
+        "tools": ["search", "http_fetch"],
+        "mode": "ReactLoop",
+        "outputVar": "recipes",
+        "retryOnFail": 1
+      },
+      {
+        "name": "update-calendar",
+        "systemPrompt": "You add planned dinners to the household's Google Calendar. For each recipe below, create a calendar event on the dinner calendar for that evening, with the dish name as the title and the recipe URL plus a brief ingredient summary as the description.",
+        "userPrompt": "Recipes to add:\n{{steps.research-recipes.output}}\n\nAdd each one to the dinner calendar.",
+        "tools": ["calendar"],
+        "mode": "ReactLoop",
+        "outputVar": "calendar_result",
+        "retryOnFail": 1
+      },
+      {
+        "name": "shopping-list",
+        "systemPrompt": "You build a consolidated grocery list. Combine the ingredients from all of this week's recipes into one shopping list, removing duplicates and combining quantities where sensible. Add the list to the Ourgroceries app. If Ourgroceries is unavailable, note that a manual fallback is needed.",
+        "userPrompt": "Recipes:\n{{steps.research-recipes.output}}\n\nBuild and add the consolidated shopping list.",
+        "tools": ["ourgroceries"],
+        "mode": "ReactLoop",
+        "outputVar": "shopping_list",
+        "retryOnFail": 1
+      },
+      {
+        "name": "notify-and-schedule",
+        "systemPrompt": "You wrap up the week's meal planning. Remember this week's meal plan for future reference. For any recipe that needs long prep (overnight marinating or slow cooking), schedule a one-shot reminder job for the evening before, so a Telegram message goes out reminding to start prep. Finally, send a Telegram message summarizing the week's dinner plan.",
+        "userPrompt": "Recipes:\n{{steps.research-recipes.output}}\n\nRemember the plan, schedule any needed long-prep reminders, and send the weekly summary.",
+        "tools": ["memory", "scheduler", "telegram"],
+        "mode": "ReactLoop",
+        "outputVar": "summary",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {
+      "dietary_rules": "Sarah cannot eat cruciferous vegetables (cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy). Limit red meat to once a week maximum. Enjoy variety across cuisines.",
+      "schedule_rules": "Thursday is grocery night: keep Thursday dinner to 30 minutes or less. Fridays and weekends can be more complex/adventurous. Weeknight dinners (Mon-Thu) should be 45 minutes or under unless it's a slow cooker or overnight prep. If there's an evening calendar event with no other dinner plan, keep that day's meal to 30 minutes or less. Skip days we're on vacation.",
+      "seasonal_hints": "In summer, favor ceviches and gazpacho. In winter, favor hearty soups and stews.",
+      "preferred_sites": "seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com"
+    },
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "RunOnce",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 9 ? * 3"
+    }
+  }
+}

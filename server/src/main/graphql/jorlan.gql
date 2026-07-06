@@ -393,7 +393,7 @@ type Mutations {
   forgetMemory(value: MemoryRecordId!): Boolean
   markMemoryShared(value: MemoryRecordId!): MemoryRecord
   markMemoryPrivate(value: MemoryRecordId!): MemoryRecord
-  createJob(name: String!, pipelineJson: String!, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
+  createJob(name: String!, pipelineJson: String!, agentId: AgentId, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
   addTrigger(jobId: SchedulerJobId!, triggerType: TriggerType!, expression: String!): SchedulerTrigger
   pauseJob(value: SchedulerJobId!): Boolean
   resumeJob(value: SchedulerJobId!): Boolean

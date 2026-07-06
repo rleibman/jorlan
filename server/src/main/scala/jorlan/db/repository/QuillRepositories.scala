@@ -360,41 +360,31 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
     exec(qc.ctx.run(sorted))
   }
 
+  // NOTE: previously implemented as insertValue(...).onConflictUpdate(...).returningGenerated(_.id).
+  // MariaDB's INSERT ... ON DUPLICATE KEY UPDATE still advances the auto-increment counter even when
+  // the UPDATE branch fires, so returningGenerated (backed by LAST_INSERT_ID()) returned a bogus,
+  // never-persisted id instead of the existing row's real id whenever an update-by-id occurred --
+  // silently creating a second, duplicate row on every "update" call. Branching explicitly on whether
+  // an id was provided avoids the ON DUPLICATE KEY / LAST_INSERT_ID() ambiguity entirely.
   override def upsert(agent: Agent): RepositoryTask[Agent] =
-    exec(
-      qc.ctx
-        .run(
-          qAgents
-            .insertValue(lift(agent))
-            .onConflictUpdate(
-              (
-                t,
-                e,
-              ) => t.name -> e.name,
-              (
-                t,
-                e,
-              ) => t.description -> e.description,
-              (
-                t,
-                e,
-              ) => t.defaultModel -> e.defaultModel,
-              (
-                t,
-                e,
-              ) => t.trustLevel -> e.trustLevel,
-              (
-                t,
-                e,
-              ) => t.prioritizedSkills -> e.prioritizedSkills,
-              (
-                t,
-                e,
-              ) => t.invariants -> e.invariants,
-            )
-            .returningGenerated(_.id),
-        ).map(id => agent.copy(id = id)),
-    )
+    if (agent.id == AgentId.empty)
+      exec(qc.ctx.run(qAgents.insertValue(lift(agent)).returningGenerated(_.id))).map(id => agent.copy(id = id))
+    else
+      exec(
+        qc.ctx
+          .run(
+            qAgents
+              .filter(_.id == lift(agent.id))
+              .update(
+                _.name              -> lift(agent.name),
+                _.description       -> lift(agent.description),
+                _.defaultModel      -> lift(agent.defaultModel),
+                _.trustLevel        -> lift(agent.trustLevel),
+                _.prioritizedSkills -> lift(agent.prioritizedSkills),
+                _.invariants        -> lift(agent.invariants),
+              ),
+          ),
+      ).as(agent)
 
   override def delete(id: AgentId): RepositoryTask[Long] = exec(qc.ctx.run(qAgents.filter(_.id == lift(id)).delete))
 

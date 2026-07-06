@@ -24,8 +24,8 @@ object LangChainConfigSpec extends ZIOSpecDefault {
       test("default ollamaBaseUrl is localhost:11434") {
         assertTrue(LangChainConfig().ollamaBaseUrl == "http://localhost:11434")
       },
-      test("default ollamaModel is qwen3:8b") {
-        assertTrue(LangChainConfig().ollamaModel == "qwen3:8b")
+      test("default ollamaModel is qwen3:4b") {
+        assertTrue(LangChainConfig().ollamaModel == "qwen3:4b")
       },
       test("default maxMessages is 1000") {
         assertTrue(LangChainConfig().maxMessages == 1000)

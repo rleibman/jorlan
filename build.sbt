@@ -621,10 +621,64 @@ lazy val integration = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Shell client — GraphQL/HTTP plumbing shared by the interactive shell and headless
+// tools (e.g. UseCaseImporterApp) that need to talk to a Jorlan server without
+// pulling in the Lanterna TUI.
+
+lazy val shellClient = project
+  .dependsOn(gqlClient.jvm, modelJVM)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-shell-client",
+    libraryDependencies ++= Seq(
+      "dev.zio"                       %% "zio"                 % zioVersion withSources (),
+      "dev.zio"                       %% "zio-config"          % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-json"            % zioJsonVersion withSources (),
+      "com.github.ghostdogpr"         %% "caliban-client"      % calibanClientVersion withSources (),
+      "com.softwaremill.sttp.client4" %% "core"                % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio"                 % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio-json"            % sttpClient4Version withSources (),
+      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
+      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    coverageExcludedFiles := ".*JorlanClient.*;.*ZIOClientRepositories.*;.*AuthClient.*",
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Use-case manifest importer — headless tool that provisions a doc/use-cases
+// manifest (role, agent, memory seeds, MCP servers, declarative skills, scheduled
+// job) into a running server. See doc/mini-designs/use-case-manifest-importer.md.
+
+lazy val useCaseImporter = project
+  .in(file("useCaseImporter"))
+  .dependsOn(shellClient, modelJVM)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name                := "jorlan-use-case-importer",
+    Compile / mainClass := Some("jorlan.shell.UseCaseImporterApp"),
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio"                % zioVersion withSources (),
+      "dev.zio" %% "zio-json"           % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
+      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
+    ),
+    fork                  := true,
+    run / fork            := true,
+    run / baseDirectory   := (ThisBuild / baseDirectory).value,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Shell — CLI client (connects to server via GraphQL)
 
 lazy val shell = project
-  .dependsOn(gqlClient.jvm)
+  .dependsOn(gqlClient.jvm, shellClient)
   .enablePlugins(
     AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
@@ -954,7 +1008,9 @@ lazy val root = project
 
       ai,
       server,
+      shellClient,
       shell,
+      useCaseImporter,
       integration,
     ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*
   )
