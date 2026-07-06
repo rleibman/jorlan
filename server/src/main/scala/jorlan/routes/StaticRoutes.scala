@@ -167,11 +167,12 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
                     staticContentDir = config.jorlan.http.staticContentDir
                     // Sanitize path: strip leading slash, reject traversal sequences
                     relative = somethingElse.stripPrefix("/")
+                    normalized = JPaths.get(relative).normalize()
                     result <-
-                      (if (relative.contains(".."))
-                         ZIO.fail(NotFoundError(JPaths.get(relative), "Path traversal not allowed"))
+                      (if (normalized.isAbsolute || normalized.startsWith(".."))
+                         ZIO.fail(NotFoundError(normalized, "Path traversal not allowed"))
                        else
-                         file(s"$staticContentDir/$relative"))
+                         file(s"$staticContentDir/${normalized.toString}"))
                         .orElse(file(s"$staticContentDir/index.html"))
                   } yield result
                 }.mapError(JorlanError(_))
