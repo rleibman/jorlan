@@ -16,7 +16,7 @@ import scala.language.unsafeNulls
   * Recognized template variables:
   *   - `{{invariants.KEY}}` — value from the merged invariants map
   *   - `{{steps.NAME.output}}` — output of the step whose `outputVar == NAME`
-  *   - `{{steps.NAME.status}}` — status of that step (`"success"` | `"failed"` | `"skipped"`)
+  *   - `{{steps.NAME.status}}` — status of that step (`"success"` | `"not_run"`)
   *   - `{{pipeline.run_id}}` — the `PipelineRunId` as a string
   *   - `{{now}}` — current ISO-8601 timestamp
   *   - `{{run.context}}` — the free-form run context provided at trigger time
