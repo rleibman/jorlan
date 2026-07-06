@@ -102,7 +102,7 @@ class OAuthCredentialServiceImpl(
     } else {
       val encoded = parts(0)
       val sig = parts(1)
-      if (hmacSign(encoded) != sig) {
+      if (!java.security.MessageDigest.isEqual(hmacSign(encoded).getBytes("UTF-8"), sig.getBytes("UTF-8"))) {
         ZIO.fail(JorlanError("OAuth state token signature invalid"))
       } else {
         val payloadStr = new String(Base64.getUrlDecoder.decode(encoded), "UTF-8")
