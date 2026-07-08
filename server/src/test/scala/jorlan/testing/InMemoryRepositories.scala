@@ -697,6 +697,12 @@ object InMemoryRepositories {
       ZIO.unit
     override def expireLeases(olderThan: Instant): RepositoryTask[Long] = ZIO.succeed(0L)
 
+    override def renewLease(
+      id:       SchedulerJobId,
+      workerId: String,
+      now:      Instant,
+    ): RepositoryTask[Boolean] = ZIO.succeed(false)
+
     override def insertPipelineRun(run: PipelineRun):     RepositoryTask[PipelineRun] = ZIO.succeed(run)
     override def updatePipelineRun(run: PipelineRun):     RepositoryTask[Unit] = ZIO.unit
     override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
@@ -880,6 +886,19 @@ object InMemoryRepositories {
             acc.updated(j.id, j.copy(status = JobStatus.Pending, leasedAt = None, leasedBy = None))
         }
         (stale.size.toLong, reset)
+      }
+
+    override def renewLease(
+      id:       SchedulerJobId,
+      workerId: String,
+      now:      Instant,
+    ): RepositoryTask[Boolean] =
+      jobs.modify { m =>
+        m.get(id) match {
+          case Some(j) if j.status == JobStatus.Running && j.leasedBy.contains(workerId) =>
+            (true, m.updated(id, j.copy(leasedAt = Some(now))))
+          case _ => (false, m)
+        }
       }
 
     override def insertPipelineRun(run: PipelineRun): RepositoryTask[PipelineRun] =

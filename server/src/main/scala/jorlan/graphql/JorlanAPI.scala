@@ -652,6 +652,22 @@ object JorlanAPI {
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `allRoles` — supports an optional exact-name filter so callers (e.g. the use-case manifest importer) can
+    * look up a role by name without fetching and client-side-filtering a whole page.
+    */
+  case class RolesInput(
+    name:     Option[String] = None,
+    page:     Option[Int] = None,
+    pageSize: Option[Int] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `agents` — supports an optional exact-name filter, same rationale as [[RolesInput]]. */
+  case class AgentsInput(
+    name:     Option[String] = None,
+    page:     Option[Int] = None,
+    pageSize: Option[Int] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `users` admin list query. */
   case class ListUsersInput(
     active:       Option[Boolean] = None,
@@ -915,12 +931,12 @@ object JorlanAPI {
     roleCapabilityGrants: RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
     /** Returns channel identities for a specific user. Requires `admin.user.manage`. */
     userChannelIdentities: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ChannelIdentity]],
-    /** Returns all roles in the system. Requires `admin.user.manage`. */
-    allRoles: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
+    /** Returns all roles in the system, optionally filtered by exact name. Requires `admin.user.manage`. */
+    allRoles: RolesInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     /** Returns the current checkpoint policy configuration. */
     checkpointPolicy: ZIO[JorlanApiEnv & JorlanSession, JorlanError, CheckpointPolicyConfig],
-    /** Returns all agent definitions. Requires `admin.agent.manage`. */
-    agents: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Agent]],
+    /** Returns all agent definitions, optionally filtered by exact name. Requires `admin.agent.manage`. */
+    agents: AgentsInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Agent]],
     /** Returns a single agent definition by ID. Requires `admin.agent.manage`. */
     agent: AgentId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Agent]],
     /** Returns aggregated system metrics for the dashboard. */
@@ -1370,7 +1386,12 @@ object JorlanAPI {
               _       <- requireCapability("admin.user.manage", actorId)
               roles   <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.searchRoles(
-                  RoleSearch(userId = None, page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(50)),
+                  RoleSearch(
+                    userId = None,
+                    name = input.name,
+                    page = input.page.getOrElse(0),
+                    pageSize = input.pageSize.getOrElse(50),
+                  ),
                 ),
               )
             } yield roles,
@@ -1380,12 +1401,20 @@ object JorlanAPI {
               _       <- requireCapability("memory.read", actorId)
               config  <- ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
             } yield config,
-          agents =
+          agents = input =>
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("admin.agent.manage", actorId)
               result  <- ZIO
-                .serviceWithZIO[ZIORepositories](_.agent.search(AgentSearch(pageSize = 200)))
+                .serviceWithZIO[ZIORepositories](
+                  _.agent.search(
+                    AgentSearch(
+                      name = input.name,
+                      page = input.page.getOrElse(0),
+                      pageSize = input.pageSize.getOrElse(200),
+                    ),
+                  ),
+                )
                 .mapError(JorlanError(_))
             } yield result,
           agent = id =>
@@ -1587,6 +1616,8 @@ object JorlanAPI {
               role    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.upsertRole(Role(RoleId.empty, input.name, input.description)),
               )
+              now <- Clock.instant
+              _   <- logEvent(EventType.RoleCreated, Some(actorId), None, now)
             } yield role,
           updateRole = input =>
             for {
@@ -1595,6 +1626,8 @@ object JorlanAPI {
               role    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.upsertRole(Role(input.id, input.name, input.description)),
               )
+              now <- Clock.instant
+              _   <- logEvent(EventType.RoleUpdated, Some(actorId), None, now)
             } yield role,
           deleteRole = id =>
             for {
@@ -2040,7 +2073,9 @@ object JorlanAPI {
               _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
-              _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
+              _   <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
+              now <- Clock.instant
+              _   <- logEvent(EventType.McpServerUpserted, Some(actorId), None, now)
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
@@ -2105,6 +2140,8 @@ object JorlanAPI {
                 .serviceWithZIO[ZIORepositories](
                   _.skill.getVersionWithSkillName(version.id),
                 ).mapError(JorlanError(_))
+              now <- Clock.instant
+              _   <- logEvent(EventType.SkillDraftCreated, Some(actorId), None, now)
             } yield result match {
               case Some((v, name)) => toSkillVersionView(v, name, SkillTier.Declarative)
               case None            => toSkillVersionView(version, "", SkillTier.Declarative)
@@ -2170,6 +2207,12 @@ object JorlanAPI {
                   invariants = invs,
                 )
               saved <- ZIO.serviceWithZIO[ZIORepositories](_.agent.upsert(agent)).mapError(JorlanError(_))
+              _     <- logEvent(
+                if (existing.isDefined) EventType.AgentDefinitionUpdated else EventType.AgentDefinitionCreated,
+                Some(actorId),
+                None,
+                now,
+              )
             } yield saved,
           updateJobPipeline = input =>
             for {
@@ -2186,6 +2229,8 @@ object JorlanAPI {
               _   <- ZIO
                 .serviceWithZIO[ZIORepositories](_.scheduler.updateJobPipeline(input.id, pipeline))
                 .mapError(JorlanError(_))
+              now <- Clock.instant
+              _   <- logEvent(EventType.SchedulerJobUpdated, Some(actorId), None, now)
             } yield job.copy(pipeline = pipeline),
         ),
         Subscriptions(

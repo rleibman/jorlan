@@ -1,7 +1,7 @@
 # Use-Case Manifest Schema
 
 A machine-readable translation of a use-case doc's `## Implementation in Jorlan` section, consumed by
-`UseCaseImporterApp` (`shell/src/main/scala/jorlan/shell/UseCaseImporterApp.scala`) to provision a role,
+`UseCaseImporterApp` (`useCaseImporter/src/main/scala/jorlan/shell/UseCaseImporterApp.scala`) to provision a role,
 agent, memory seeds, MCP servers, declarative skills, and a scheduled pipeline job into a running Jorlan
 server.
 
@@ -71,7 +71,7 @@ Always lands in `Draft` state — never auto-approved by the importer.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string | — | Job name; must be unique among jobs owned by this agent |
+| `name` | string | — | Job name; must be unique per user (not per agent — the DB enforces `UNIQUE(userId, name)`) |
 | `steps` | `ManifestPipelineStep[]` | — | See below; at least one step |
 | `invariants` | map<string,string> | `{}` | Pipeline-level invariants (override agent-level ones with the same key) |
 | `personality` | string? | none | Named personality; `None` = accuracy mode |
@@ -84,6 +84,12 @@ Always lands in `Draft` state — never auto-approved by the importer.
 `ManifestPipelineStep` mirrors `PipelineStep` exactly: `name`, `systemPrompt`, `userPrompt`,
 `tools` (namespace allowlist, e.g. `["calendar", "weather"]`), `mode` (`ReactLoop | SingleCall`,
 default `ReactLoop`), `outputVar`, `retryOnFail` (default 0).
+
+**`tools` is enforced at execution time**: a ReactLoop step's model sees *only* the tools whose names
+match one of the declared namespace prefixes (e.g. `"calendar"` exposes `calendar.listEvents`,
+`calendar.createEvent`, …). Keep the list minimal — a small local model given three relevant tools is
+dramatically faster and more accurate than one given the agent's full tool catalog. An empty list means
+no tools (fine for pure-reasoning steps; consider `SingleCall` mode for those instead).
 
 `ManifestTrigger`: `triggerType` (`Cron | Interval | OneShot | Event`) + `expression`.
 

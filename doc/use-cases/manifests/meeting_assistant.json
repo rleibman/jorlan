@@ -1,0 +1,64 @@
+{
+  "useCaseName": "meeting_assistant",
+  "sourceDoc": "doc/use-cases/meeting-assistant.md",
+  "role": {
+    "name": "meeting-assistant-agent-role",
+    "description": "Capabilities for the daily meeting briefing assistant",
+    "capabilities": [
+      { "capability": "calendar.listEvents" },
+      { "capability": "calendar.getEvent" },
+      { "capability": "calendar.createEvent" },
+      { "capability": "google_contacts.search_contacts" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "email.read" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "meeting-assistant-agent",
+    "description": "Meeting assistant: sends a morning digest of today's meetings with participant context and relevant notes from prior meetings; stores decisions and action items in memory when asked.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["calendar", "google_contacts", "memory", "email", "scheduler"],
+    "invariants": { "role": "discreet, well-prepared executive assistant" }
+  },
+  "memorySeeds": [],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "meeting-morning-digest",
+    "steps": [
+      {
+        "name": "gather-meetings",
+        "systemPrompt": "You gather today's meetings. Call calendar.listEvents once covering today from now until midnight (timeMin/timeMax as ISO 8601 with trailing Z). For each meeting with attendees, also call memory.search once with the meeting title to find prior notes.\n\nOutput format -- one block per meeting, nothing else:\nHH:MM <title> | attendees: <names or 'none listed'> | prior notes: <one line, or 'none'>\nOr exactly 'No meetings today.'",
+        "userPrompt": "{{now}} -- Gather today's meetings now.",
+        "tools": ["calendar.listEvents", "memory.search"],
+        "mode": "ReactLoop",
+        "outputVar": "meetings",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-digest",
+        "systemPrompt": "You deliver the morning meeting digest. Call notify.user exactly once, passing only 'message' (never userId): a short digest titled 'Today's meetings' listing each meeting with time, title, attendees, and any prior-notes hint. If there are no meetings, send 'No meetings today -- enjoy the focus time.'\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Meetings:\n{{steps.meetings.output}}\n\nSend the digest now.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 30 14 ? * 1-5"
+    }
+  }
+}

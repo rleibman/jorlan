@@ -68,6 +68,9 @@ case class ModelUnavailable(override val msg: String) extends ModelError(msg)
 /** The model call exceeded the configured timeout. */
 case class ModelTimeout(override val msg: String) extends ModelError(msg, isTransient = true)
 
+/** The provider rejected the call because a rate limit was hit; retry after a pause. */
+case class ModelRateLimited(override val msg: String) extends ModelError(msg, isTransient = true)
+
 /** The model returned a response that could not be parsed into the expected format. */
 case class ModelResponseMalformed(override val msg: String) extends ModelError(msg)
 

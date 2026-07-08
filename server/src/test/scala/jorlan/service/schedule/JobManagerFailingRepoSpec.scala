@@ -104,9 +104,14 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
         resultJson: Option[String],
         finishedAt: Instant,
       ): RepositoryTask[Unit] = releaseJobFn(id, status, resultJson, finishedAt)
-      override def expireLeases(olderThan: Instant):        RepositoryTask[Long] = alwaysFail
-      override def insertPipelineRun(run:  PipelineRun):    RepositoryTask[PipelineRun] = ZIO.succeed(run)
-      override def updatePipelineRun(run:  PipelineRun):    RepositoryTask[Unit] = ZIO.unit
+      override def expireLeases(olderThan: Instant): RepositoryTask[Long] = alwaysFail
+      override def renewLease(
+        id:       SchedulerJobId,
+        workerId: String,
+        now:      Instant,
+      ):                                                    RepositoryTask[Boolean] = alwaysFail
+      override def insertPipelineRun(run: PipelineRun):     RepositoryTask[PipelineRun] = ZIO.succeed(run)
+      override def updatePipelineRun(run: PipelineRun):     RepositoryTask[Unit] = ZIO.unit
       override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
         ZIO.succeed(List.empty)
       override def getPipelineRun(id: PipelineRunId): RepositoryTask[Option[PipelineRun]] = ZIO.none

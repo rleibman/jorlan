@@ -1,0 +1,69 @@
+{
+  "useCaseName": "inbox_briefing",
+  "sourceDoc": "doc/use-cases/inbox-management.md",
+  "role": {
+    "name": "inbox-briefing-agent-role",
+    "description": "Capabilities needed by the daily morning inbox briefing agent (read-only email scan + Telegram digest)",
+    "capabilities": [
+      {
+        "capability": "email.read"
+      },
+      {
+        "capability": "notify.send"
+      }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "inbox-briefing-agent",
+    "description": "Daily inbox briefing agent: scans recent email each morning and sends a prioritized digest to Telegram. Read-only -- never sends, archives, or deletes email.",
+    "trustLevel": 0,
+    "prioritizedSkills": [
+      "email",
+      "telegram"
+    ],
+    "invariants": {
+      "role": "efficient executive assistant"
+    }
+  },
+  "memorySeeds": [],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "inbox-morning-briefing",
+    "steps": [
+      {
+        "name": "scan-inbox",
+        "systemPrompt": "You scan the inbox for a morning briefing. Make exactly ONE email.list call with maxResults 20 and since = the ISO 8601 datetime exactly 24 hours before the current time (e.g. if now is 2026-07-09T07:00:00Z, pass since '2026-07-08T07:00:00Z' -- never pass words like 'yesterday'). Classify each message (Urgent / Requires response / Informational / Newsletter-Marketing) using the sender and subject.\n\nOutput format -- one line per message, most important first, nothing else:\n<category>: <sender> -- <subject> -- <one-line gist>\nIf there are no messages, output exactly: No new messages in the last 24 hours.",
+        "userPrompt": "{{now}} -- Scan the inbox now and produce the briefing list.",
+        "tools": [
+          "email.list"
+        ],
+        "mode": "ReactLoop",
+        "outputVar": "inbox_summary",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-briefing",
+        "systemPrompt": "You deliver the morning inbox briefing. Call notify.user exactly once: pass only 'message' (plain text, no JSON wrapper) -- 'Morning inbox briefing' followed by the summary list verbatim. Do NOT pass userId; it defaults to the right person.\n\nOutput: one line confirming the message was sent (or the error).",
+        "userPrompt": "Inbox summary:\n{{steps.inbox_summary.output}}\n\nSend the briefing now.",
+        "tools": [
+          "notify.user"
+        ],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 120,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 14 ? * *"
+    }
+  }
+}

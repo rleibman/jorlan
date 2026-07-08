@@ -98,6 +98,7 @@ object SubscriptionClientIntegrationSpec
     ZLayer.make[JorlanEnvironment](
       configLayer,
       QuillRepositories.live,
+      EnvironmentBuilder.dataSourceLayer,
       stubCapabilityEvaluator,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,

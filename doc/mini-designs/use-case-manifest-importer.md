@@ -106,13 +106,13 @@ wraps it with `ModelId(_)` when constructing the `Agent`.
 
 ## Importer tool
 
-`shell/src/main/scala/jorlan/shell/UseCaseImporterApp.scala`, modeled on `EndToEndTestApp.scala`: same
+`useCaseImporter/src/main/scala/jorlan/shell/UseCaseImporterApp.scala`, modeled on `EndToEndTestApp.scala`: same
 environment stack minus `SubscriptionClient`/`LiveSession`/`ShellState` (no chat session needed —
 `ShellConfig & AuthClient & GraphQLClient & ZIOClientRepositories`).
 
 Run with:
 ```
-sbtn "shell/runMain jorlan.shell.UseCaseImporterApp doc/use-cases/manifests/food_calendar.json \
+sbt "useCaseImporter/runMain jorlan.shell.UseCaseImporterApp doc/use-cases/manifests/food_calendar.json \
   --server-url http://localhost:8080 --email roberto@leibman.net --password ..."
 ```
 (or configure `~/.jorlan/jorlan-shell.json` and omit the flags — `ShellConfig.applyArgs` folds in CLI

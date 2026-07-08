@@ -1,0 +1,86 @@
+{
+  "useCaseName": "community_manager",
+  "sourceDoc": "doc/use-cases/community-manager.md",
+  "role": {
+    "name": "community-manager-agent-role",
+    "description": "Capabilities for the community manager agent",
+    "capabilities": [
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "email.read" },
+      { "capability": "email.draft" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "calendar.createEvent" },
+      { "capability": "google_contacts.search_contacts" },
+      { "capability": "workspace.read" },
+      { "capability": "workspace.write" },
+      { "capability": "search.web" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "community-manager-agent",
+    "description": "Community manager: tracks member records and follow-ups in memory, drafts (never sends) member communications, and produces a monthly community health digest.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["memory", "email", "calendar", "google_contacts", "workspace", "search", "scheduler"],
+    "invariants": { "role": "warm, organized community coordinator; drafts email for review, never sends without approval" }
+  },
+  "memorySeeds": [
+    {
+      "key": "community.profile",
+      "text": "Community profile: EDIT ME -- community name, purpose, meeting cadence, key member roles, communication channels.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "slack",
+      "transport": "Stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": [
+        { "key": "SLACK_BOT_TOKEN", "value": "CHANGE_ME" },
+        { "key": "SLACK_TEAM_ID", "value": "CHANGE_ME" }
+      ],
+      "enabled": false,
+      "keywords": ["slack", "channel", "community", "post"]
+    }
+  ],
+  "declarativeSkills": [],
+  "job": {
+    "name": "community-monthly-digest",
+    "steps": [
+      {
+        "name": "review-community",
+        "systemPrompt": "You review community activity. Call memory.search once with query 'community' for member notes, pending follow-ups, and recent decisions, then calendar.listEvents once for the next 30 days (community events).\n\nOutput format:\nPending follow-ups: <one line each, or 'none'>\nUpcoming events: <one line each with date, or 'none'>\nMember notes needing attention: <one line each, or 'none'>",
+        "userPrompt": "{{now}} -- Review community state now.",
+        "tools": ["memory.search", "calendar.listEvents"],
+        "mode": "ReactLoop",
+        "outputVar": "community_state",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-community-digest",
+        "systemPrompt": "You deliver the monthly community digest. Call notify.user exactly once, passing only 'message' (never userId), titled 'Community monthly review' with the follow-ups, events, and attention items.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "State:\n{{steps.community_state.output}}\n\nSend the digest now.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 16 1 * ?"
+    }
+  }
+}

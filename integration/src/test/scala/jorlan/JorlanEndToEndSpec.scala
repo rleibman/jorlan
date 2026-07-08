@@ -229,6 +229,7 @@ object JorlanEndToEndSpec
     ZLayer.make[JorlanEnvironment](
       configLayer,
       QuillRepositories.live,
+      EnvironmentBuilder.dataSourceLayer,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,

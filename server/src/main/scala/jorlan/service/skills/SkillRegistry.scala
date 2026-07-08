@@ -596,7 +596,7 @@ class SkillRegistryLive(
                     case None         =>
                       skill
                         .invoke(ctx, toolName, args)
-                        .tapError(e => ZIO.logWarning(s"Skill '$toolName' failed: ${e.msg} (args: $argsJson)"))
+                        .tapError(e => ZIO.logError(s"Skill '$toolName' failed: ${e.msg} (args: $argsJson)"))
                         .fold(
                           e => Json.Str(s"Error: ${e.msg}"),
                           identity,

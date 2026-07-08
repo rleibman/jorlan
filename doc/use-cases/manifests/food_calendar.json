@@ -5,17 +5,42 @@
     "name": "food-calendar-agent-role",
     "description": "Capabilities needed by the weekly food calendar / meal planning agent",
     "capabilities": [
-      { "capability": "calendar.listCalendars" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "calendar.createEvent" },
-      { "capability": "weather.forecast" },
-      { "capability": "search.web" },
-      { "capability": "http_fetch.get" },
-      { "capability": "telegram.send_message" },
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "scheduler.create_job" }
+      {
+        "capability": "calendar.listCalendars"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "calendar.createEvent"
+      },
+      {
+        "capability": "weather.forecast"
+      },
+      {
+        "capability": "search.web"
+      },
+      {
+        "capability": "http_fetch.get"
+      },
+      {
+        "capability": "telegram.send_message"
+      },
+      {
+        "capability": "notify.send"
+      },
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "scheduler.create_job"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -23,12 +48,25 @@
     "name": "food-calendar-agent",
     "description": "Weekly meal-planning agent: builds a 7-day dinner plan, adds it to Google Calendar, generates a shopping list, and sends prep reminders.",
     "trustLevel": 0,
-    "prioritizedSkills": ["calendar", "weather", "search", "http_fetch", "telegram", "memory", "scheduler"],
+    "prioritizedSkills": [
+      "calendar",
+      "weather",
+      "search",
+      "http_fetch",
+      "telegram",
+      "memory",
+      "scheduler"
+    ],
     "invariants": {
       "role": "expert executive chef and meal planner"
     }
   },
   "memorySeeds": [
+    {
+      "key": "calendar",
+      "text" : "We store meal items in the calendar called \"Dinner Meals\" (gfmac24kt66m1un7432ausem3o@group.calendar.google.com)",
+      "scope": "User"
+    },
     {
       "key": "food_calendar.dietary_rules",
       "text": "Dietary rules: Sarah cannot eat cruciferous vegetables (cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy). We try to limit red meat to once a week maximum. We enjoy variety across cuisines.",
@@ -36,7 +74,7 @@
     },
     {
       "key": "food_calendar.preferred_sites",
-      "text": "Preferred recipe websites: seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com",
+      "text": "Preferred recipe websites: delicious.com, seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com",
       "scope": "User"
     },
     {
@@ -55,13 +93,25 @@
       "name": "ourgroceries",
       "transport": "Stdio",
       "command": "node",
-      "args": ["/opt/jorlan-mcp/ourgroceries-mcp/index.js"],
+      "args": [
+        "/opt/jorlan-mcp/ourgroceries-mcp/index.js"
+      ],
       "env": [
-        { "key": "OURGROCERIES_EMAIL", "value": "CHANGE_ME" },
-        { "key": "OURGROCERIES_PASSWORD", "value": "CHANGE_ME" }
+        {
+          "key": "OURGROCERIES_EMAIL",
+          "value": "CHANGE_ME"
+        },
+        {
+          "key": "OURGROCERIES_PASSWORD",
+          "value": "CHANGE_ME"
+        }
       ],
       "enabled": false,
-      "keywords": ["groceries", "shopping list", "ourgroceries"]
+      "keywords": [
+        "groceries",
+        "shopping list",
+        "ourgroceries"
+      ]
     }
   ],
   "declarativeSkills": [],
@@ -70,17 +120,20 @@
     "steps": [
       {
         "name": "gather-context",
-        "systemPrompt": "You gather planning context for next week's dinners. Check the calendar for the next 7 days to find evening events, vacation days, and confirm which day is Thursday (grocery night). Check the weather forecast for the week. Recall recent meal history and dietary preferences from memory. Summarize your findings clearly: for each of the next 7 days, note the date, day of week, any evening event, vacation status, and weather/season notes, plus a short summary of recently-eaten meals to avoid repeating.",
-        "userPrompt": "{{now}} -- Gather this week's planning context using calendar.listEvents (next 7 days), weather.forecast, and memory.search (recent meal history and dietary preferences).",
-        "tools": ["calendar", "weather", "memory"],
+        "systemPrompt": "You gather planning context for next week's dinners. Make exactly two tool calls: ONE calendar.listEvents call covering the past 7 days through the next 7 days (a single 14-day window), and ONE weather.forecast call with NO location parameter (the server default is our home). Use calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com'.\n\nOutput format -- one line per day for the next 7 days, then two extra lines:\nYYYY-MM-DD (Weekday): evening event: <title or 'none'>; vacation: <yes/no>\nRecent meals: <dish names from the past 7 days, or 'none found'>\nWeather: <one sentence>",
+        "userPrompt": "{{now}} -- Gather this week's planning context now.",
+        "tools": [
+          "calendar.listEvents",
+          "weather.forecast"
+        ],
         "mode": "ReactLoop",
         "outputVar": "context",
         "retryOnFail": 1
       },
       {
         "name": "plan-meals",
-        "systemPrompt": "You are an expert executive chef and meal planner. Using the planning context and these household rules -- {{invariants.dietary_rules}} {{invariants.schedule_rules}} {{invariants.seasonal_hints}} -- decide on one dinner for each of the next 7 days. For each day, state the day, a dish idea (cuisine + main ingredient), and its complexity level (simple/30-min, moderate, or complex). Skip vacation days entirely. Give variety in cuisine and meal type across the week.",
-        "userPrompt": "Planning context:\n{{steps.gather-context.output}}\n\nPropose a dinner plan for the week following the household rules.",
+        "systemPrompt": "You are an expert executive chef and meal planner. Using the planning context and these household rules -- {{invariants.dietary_rules}} {{invariants.schedule_rules}} {{invariants.seasonal_hints}} -- decide on one dinner for each of the next 7 days. Skip vacation days entirely. Give variety in cuisine and meal type across the week, and avoid repeating the recent meals listed in the context.\n\nOutput format -- exactly one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish name> | <cuisine> | <main ingredient> | <simple-30min / moderate / complex>",
+        "userPrompt": "Planning context:\n{{steps.context.output}}\n\nPropose the week's dinner plan now, following the household rules and the output format exactly.",
         "tools": [],
         "mode": "SingleCall",
         "outputVar": "meal_plan",
@@ -88,36 +141,45 @@
       },
       {
         "name": "research-recipes",
-        "systemPrompt": "You find and fetch specific recipes for a planned meal list. For each day's dish idea, search the web (prefer these sites: {{invariants.preferred_sites}}) and fetch a matching recipe page. Record, per day: the recipe title, source URL, a short ingredient list, and an estimated prep/cook time, noting explicitly if it requires overnight marinating or slow-cooking (long prep).",
-        "userPrompt": "Meal plan:\n{{steps.plan-meals.output}}\n\nFind and fetch a real recipe for each day's dish.",
-        "tools": ["search", "http_fetch"],
+        "systemPrompt": "You find a real recipe for each planned dish. Per day, make exactly ONE search.web call, e.g. '<dish name> recipe' (prefer results from: {{invariants.preferred_sites}}). Use only titles and URLs that appeared in the search results -- never fabricate a URL. List the dish's key ingredients from your own culinary knowledge. Mark 'LONG PREP' only for dishes needing overnight marinating or slow cooking.\n\nOutput format -- one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish> | <recipe title> | <URL> | ingredients: <5-10 items> | <total time>[ | LONG PREP]",
+        "userPrompt": "Meal plan:\n{{steps.meal_plan.output}}\n\nFind a recipe for each day's dish now: one search per dish, then produce the output list.",
+        "tools": [
+          "search.web"
+        ],
         "mode": "ReactLoop",
         "outputVar": "recipes",
         "retryOnFail": 1
       },
       {
         "name": "update-calendar",
-        "systemPrompt": "You add planned dinners to the household's Google Calendar. For each recipe below, create a calendar event on the dinner calendar for that evening, with the dish name as the title and the recipe URL plus a brief ingredient summary as the description.",
-        "userPrompt": "Recipes to add:\n{{steps.research-recipes.output}}\n\nAdd each one to the dinner calendar.",
-        "tools": ["calendar"],
+        "systemPrompt": "You add planned dinners to the household's Google Calendar. For each line in the recipe list, call calendar.createEvent once: calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com', summary = the dish name, description = the recipe URL and ingredients, start = that date at 6 PM, end = 7 PM.\n\nWhen done, output one line per event: YYYY-MM-DD: <dish name> -- created (or the error).",
+        "userPrompt": "Recipes to add:\n{{steps.recipes.output}}\n\nCreate one calendar event per line now.",
+        "tools": [
+          "calendar.createEvent"
+        ],
         "mode": "ReactLoop",
         "outputVar": "calendar_result",
         "retryOnFail": 1
       },
       {
         "name": "shopping-list",
-        "systemPrompt": "You build a consolidated grocery list. Combine the ingredients from all of this week's recipes into one shopping list, removing duplicates and combining quantities where sensible. Add the list to the Ourgroceries app. If Ourgroceries is unavailable, note that a manual fallback is needed.",
-        "userPrompt": "Recipes:\n{{steps.research-recipes.output}}\n\nBuild and add the consolidated shopping list.",
-        "tools": ["ourgroceries"],
+        "systemPrompt": "You build a consolidated grocery list from the week's recipe ingredients. Combine duplicates, then group items under: Produce, Meat & Seafood, Dairy, Pantry, Other. If an Ourgroceries tool is available, add the items to it; if not, just output the list -- it is sent to the user in the next step.\n\nOutput: the grouped list only, one item per line.",
+        "userPrompt": "Recipes:\n{{steps.recipes.output}}\n\nBuild the consolidated shopping list now.",
+        "tools": [
+          "ourgroceries"
+        ],
         "mode": "ReactLoop",
         "outputVar": "shopping_list",
         "retryOnFail": 1
       },
       {
         "name": "notify-and-schedule",
-        "systemPrompt": "You wrap up the week's meal planning. Remember this week's meal plan for future reference. For any recipe that needs long prep (overnight marinating or slow cooking), schedule a one-shot reminder job for the evening before, so a Telegram message goes out reminding to start prep. Finally, send a Telegram message summarizing the week's dinner plan.",
-        "userPrompt": "Recipes:\n{{steps.research-recipes.output}}\n\nRemember the plan, schedule any needed long-prep reminders, and send the weekly summary.",
-        "tools": ["memory", "scheduler", "telegram"],
+        "systemPrompt": "You wrap up the week's meal planning. FIRST call notify.user once: pass only 'message' (plain text) with the full weekly summary -- the day-by-day dinner plan with recipe URLs, then the shopping list. Do NOT pass userId. THEN, only for lines marked LONG PREP (if any), call scheduler.create_job to schedule a one-shot reminder for the evening before that dinner. If a reminder fails, note it and move on.\n\nOutput: one line confirming the summary was sent, plus one line per reminder (or 'no long-prep reminders needed').",
+        "userPrompt": "Dinner plan with recipes:\n{{steps.recipes.output}}\n\nShopping list:\n{{steps.shopping_list.output}}\n\nSend the weekly summary now, then schedule any LONG PREP reminders.",
+        "tools": [
+          "notify.user",
+          "scheduler.create_job"
+        ],
         "mode": "ReactLoop",
         "outputVar": "summary",
         "retryOnFail": 1
@@ -127,7 +189,7 @@
       "dietary_rules": "Sarah cannot eat cruciferous vegetables (cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy). Limit red meat to once a week maximum. Enjoy variety across cuisines.",
       "schedule_rules": "Thursday is grocery night: keep Thursday dinner to 30 minutes or less. Fridays and weekends can be more complex/adventurous. Weeknight dinners (Mon-Thu) should be 45 minutes or under unless it's a slow cooker or overnight prep. If there's an evening calendar event with no other dinner plan, keep that day's meal to 30 minutes or less. Skip days we're on vacation.",
       "seasonal_hints": "In summer, favor ceviches and gazpacho. In winter, favor hearty soups and stews.",
-      "preferred_sites": "seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com"
+      "preferred_sites": "delicious.com, seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com"
     },
     "personality": null,
     "maxRetries": 1,
@@ -136,7 +198,7 @@
     "missedRunPolicy": "RunOnce",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 9 ? * 3"
+      "expression": "0 0 16 ? * 3"
     }
   }
 }

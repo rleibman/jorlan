@@ -59,7 +59,7 @@ JSON manifest (schema: `doc/use-cases/manifest-schema.md`) and a standalone impo
 
 5. **Run the importer against a live server.**
    ```
-   sbtn "shell/runMain jorlan.shell.UseCaseImporterApp doc/use-cases/manifests/<name>.json \
+   sbt "useCaseImporter/runMain jorlan.shell.UseCaseImporterApp doc/use-cases/manifests/<name>.json \
      --server-url http://localhost:8080 --email <user-email> --password <password>"
    ```
    (or omit the flags if `~/.jorlan/jorlan-shell.json` already has valid credentials for the target

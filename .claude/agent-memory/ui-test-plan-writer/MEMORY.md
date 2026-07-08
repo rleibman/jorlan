@@ -4,3 +4,4 @@
 - [Phase 11 Telegram Connector](phase11_telegram.md) — Connector architecture, ingress/egress paths, key test surfaces
 - [Phase 13 Web Gaps](phase13_web_gaps.md) — OAuth/invokeTool/toolEvents all absent from web JorlanClient; oauth callback redirect unhandled
 - [Sprint 1/2/3 Screens](sprint1_2_3_screens.md) — Landing page, CreateSkillWizard, CustomSkillsPage, SkillsPage, McpServersPage, ApprovalsPage; gaps PS123-001 to PS123-005
+- [Sprint 4 UC Importer](sprint4_uc_importer.md) — headless importer, agent-upsert-dup fix, event-log-is-live-tail-not-paginated, routes for Roles/Agents/Memory/MCP/Scheduler/Users, scheduler UI has no step-list display

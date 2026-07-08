@@ -401,10 +401,11 @@ case class ScalaJSClientAdapter(serverUri: Uri) extends TimerSupport {
                             java.time.Duration.between(lastKA, now()).toMillis.milliseconds
                           if (timeFromLastKA > timeout) {
                             if (reconnect && connectionState.reconnectCount <= reconnectionAttempts) {
-                              connectionState =
-                                connectionState.copy(reconnectCount = connectionState.reconnectCount + 1)
-                              onReconnecting(id.getOrElse("")).runNow()
-                              doConnect()
+                              // The keep-alive is stale: the server likely died without a clean TCP close, so
+                              // ws.onclose/onerror may never fire on this socket. Re-sending on the same dead
+                              // socket (the old behavior here) is a no-op — force a fresh socket via the same
+                              // path used for a detected close/error.
+                              attemptReconnect()
                             } else if (connectionState.reconnectCount > reconnectionAttempts)
                               println("Maximum number of connection retries exceeded")
                           }

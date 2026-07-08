@@ -872,6 +872,7 @@ lazy val ai = project
       "dev.langchain4j"    % "langchain4j-core"     % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j"          % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j-ollama"   % langchain4jOllamaVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-open-ai"  % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j-easy-rag" % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-qdrant"   % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-mariadb"  % langchainLibrariesVersion withSources (),

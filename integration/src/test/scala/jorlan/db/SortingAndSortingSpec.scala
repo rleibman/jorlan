@@ -170,6 +170,29 @@ object SortingAndSortingSpec extends ZIOSpec[ZIORepositories] {
         times = res.map(_.createdAt)
       } yield assertTrue(times == times.sorted.reverse)
     },
+    test("search with a pageSize smaller than the row count returns the most recent rows, not an arbitrary slice") {
+      // Regression test for a real bug: search() previously applied drop/take (pagination) BEFORE
+      // sortBy, so with no deterministic base ordering, a small pageSize picked an arbitrary/oldest-
+      // leaning slice of rows and only sorted *that slice* -- e.g. "most recent 2" could silently
+      // return the two oldest rows in the whole table instead. This only surfaces when pageSize
+      // actually truncates something, which is why every other test above (pageSize=50, 2 rows
+      // inserted) passed identically whether the bug was present or fixed.
+      // Uses real-wall-clock-based far-future timestamps -- NOT an offset from the fixed T0 fixture
+      // (2026-01-15), since seed data like the "Jorlan Interactive" default agent is created with a
+      // real `NOW()`-based createdAt that can be well after T0 -- so these 5 rows are unambiguously
+      // the most recent in the whole table, regardless of what other tests or seed migrations inserted.
+      val prefix = s"PageAgent-${java.util.UUID.randomUUID()}"
+      val farFuture = java.time.Instant.now().plusSeconds(1_000_000L)
+      for {
+        repo <- ZIO.serviceWith[ZIORepositories](_.agent)
+        _    <- ZIO.foreachDiscard(1 to 5) { i =>
+          repo.upsert(Agent(AgentId.empty, s"$prefix-$i", None, None, 0, createdAt = farFuture.plusSeconds(i.toLong)))
+        }
+        res <- repo.search(
+          AgentSearch(name = None, pageSize = 2, sorts = Some(Sort(AgentOrder.CreatedAt, OrderDirection.Desc))),
+        )
+      } yield assertTrue(res.map(_.name) == List(s"$prefix-5", s"$prefix-4"))
+    },
     test("delete agent") {
       for {
         repo  <- ZIO.serviceWith[ZIORepositories](_.agent)

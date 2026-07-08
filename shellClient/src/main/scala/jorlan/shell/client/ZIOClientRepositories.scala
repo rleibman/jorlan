@@ -47,8 +47,17 @@ case class SkillLifecycleResult(
   info:      List[String],
 )
 
+/** Extends the shared [[Repositories]] surface (`agent`/`memory`/`permission`/`scheduler`/`skill`/etc. sub-repos,
+  * implemented identically by `server`'s `ZIORepositories` and `web`'s `AsyncCallbackRepositories`) with client-only
+  * convenience methods. These don't live on the shared model-level sub-repo traits themselves because those traits are
+  * implemented across all three modules -- adding a GraphQL-mutation-shaped convenience wrapper here (e.g.
+  * `createJobWithPipeline`) would force server/web to implement it too, even though it's purely a client ergonomics
+  * concern. Grouped below by the sub-repo each one conceptually extends, so "what can I do with jobs" is answerable by
+  * reading `scheduler` plus this "Scheduler extensions" section, not just one or the other.
+  */
 trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
 
+  // ── Checkpoint policy (memory-adjacent, no dedicated sub-repo) ─────────────
   def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean]
   def getCheckpointPolicy:                          IO[String, CheckpointPolicyConfig]
   def updateCheckpointPolicy(
@@ -58,13 +67,17 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
     beforeExternalEffect: Option[Boolean] = None,
   ): IO[String, CheckpointPolicyConfig]
 
+  // ── MCP server configuration (no dedicated sub-repo; server-side this is handled ad hoc via
+  // ServerSettingsRepository, not a proper repository abstraction, so there's nothing to extend here) ──
   def listMcpServers():                              IO[String, List[jorlan.McpServerInfo]]
   def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo]
   def deleteMcpServer(name:   String):               IO[String, Boolean]
   def reloadMcpServers():                            IO[String, Boolean]
 
+  // ── Dashboard ────────────────────────────────────────────────────────────
   def dashboardKpis(): IO[String, DashboardKpis]
 
+  // ── `permission` extensions (role update/delete beyond the shared upsertRole) ──
   def updateRole(
     id:          RoleId,
     name:        String,
@@ -72,6 +85,8 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
   ):                          IO[String, Role]
   def deleteRole(id: RoleId): IO[String, Boolean]
 
+  // ── `scheduler` extensions (GraphQL-mutation-shaped job/trigger operations beyond the shared
+  // upsertJob/upsertTrigger primitives) ──────────────────────────────────────
   def createJob(
     name:            String,
     prompt:          String,
@@ -110,6 +125,7 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
   ):                                         IO[String, SchedulerTrigger]
   def deleteTrigger(id: SchedulerTriggerId): IO[String, Boolean]
 
+  // ── `skill` extensions (declarative-skill draft lifecycle beyond the shared skill CRUD) ──
   def allCustomSkills():                         IO[String, List[SkillVersionInfo2]]
   def pendingSkillVersions():                    IO[String, List[SkillVersionInfo2]]
   def skillVersions(skillId:           SkillId): IO[String, List[SkillVersionInfo2]]
@@ -144,7 +160,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
     override def search(s: AgentSearch): IO[String, List[Agent]] =
       gqlClient
-        .run(JorlanClient.Queries.agents(JorlanClient.Agent.view))
+        .run(JorlanClient.Queries.agents(s.name, Some(s.page), Some(s.pageSize))(JorlanClient.Agent.view))
         .map(_.getOrElse(List.empty).map(toAgent))
 
     override def getById(id: AgentId): IO[String, Option[Agent]] =
@@ -280,7 +296,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
               .map(_.getOrElse(List.empty).map(toRole))
           case None =>
             gqlClient
-              .run(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
+              .run(JorlanClient.Queries.allRoles(s.name, Some(s.page), Some(s.pageSize))(JorlanClient.Role.view))
               .map(_.getOrElse(List.empty).map(toRole))
         }
       override def upsertRole(role: Role): IO[String, Role] =
@@ -416,6 +432,11 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       finishedAt: Instant,
     ):                                             IO[String, Unit] = ZIO.unit
     override def expireLeases(olderThan: Instant): IO[String, Long] = ZIO.succeed(0L)
+    override def renewLease(
+      id:       SchedulerJobId,
+      workerId: String,
+      now:      Instant,
+    ): IO[String, Boolean] = ZIO.succeed(false)
 
     override def insertPipelineRun(run:  PipelineRun):    IO[String, PipelineRun] = ZIO.fail("not implemented")
     override def updatePipelineRun(run:  PipelineRun):    IO[String, Unit] = ZIO.unit
@@ -820,6 +841,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       v.keywords,
     )
 
+  // ── MCP server configuration ────────────────────────────────────────────
   override def listMcpServers(): IO[String, List[jorlan.McpServerInfo]] =
     gqlClient
       .run(JorlanClient.Queries.mcpServers(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)))
@@ -852,6 +874,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
 
+  // ── Dashboard ────────────────────────────────────────────────────────────
   override def dashboardKpis(): IO[String, DashboardKpis] = {
     val sel = (JorlanClient.DashboardStats.activeSessionCount ~
       JorlanClient.DashboardStats.eventCountToday ~
@@ -866,6 +889,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Role extensions ────────────────────────────────────────────────────────
 
+  // ── `permission` extensions ─────────────────────────────────────────────
   override def updateRole(
     id:          RoleId,
     name:        String,
@@ -881,6 +905,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Scheduler extensions ───────────────────────────────────────────────────
 
+  // ── `scheduler` extensions ───────────────────────────────────────────────
   override def createJob(
     name:            String,
     prompt:          String,
@@ -982,6 +1007,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   ): SkillLifecycleResult =
     SkillLifecycleResult(v.versionId, jorlan.SkillStatus.valueOf(v.newStatus.value), v.errors, v.info)
 
+  // ── `skill` extensions ───────────────────────────────────────────────────
   override def allCustomSkills(): IO[String, List[SkillVersionInfo2]] =
     gqlClient
       .run(JorlanClient.Queries.allCustomSkills(JorlanClient.SkillVersionView.view))
@@ -1037,6 +1063,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Existing impl ──────────────────────────────────────────────────────────
 
+  // ── Checkpoint policy ────────────────────────────────────────────────────
   override def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean] =
     gqlClient.run(JorlanClient.Mutations.requestCheckpoint(sessionId)).map(_.getOrElse(false))
 

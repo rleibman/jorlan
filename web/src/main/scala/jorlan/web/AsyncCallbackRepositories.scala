@@ -345,6 +345,11 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       finishedAt: Instant,
     ):                                             AsyncCallback[Unit] = AsyncCallback.pure(())
     override def expireLeases(olderThan: Instant): AsyncCallback[Long] = AsyncCallback.pure(0L)
+    override def renewLease(
+      id:       SchedulerJobId,
+      workerId: String,
+      now:      Instant,
+    ): AsyncCallback[Boolean] = AsyncCallback.pure(false)
 
     override def insertPipelineRun(run: PipelineRun): AsyncCallback[PipelineRun] =
       AsyncCallback.throwException(new UnsupportedOperationException("insertPipelineRun not available on web client"))
@@ -449,7 +454,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
 
   def listAgents(): AsyncCallback[List[Agent]] =
     adapter
-      .asyncCalibanCallWithAuth(JorlanClient.Queries.agents(JorlanClient.Agent.view))
+      .asyncCalibanCallWithAuth(JorlanClient.Queries.agents()(JorlanClient.Agent.view))
       .map(_.getOrElse(List.empty).map(summon[Conversion[JorlanClient.Agent.AgentView, Agent]]))
 
   def getAgent(id: AgentId): AsyncCallback[Option[Agent]] =
@@ -879,6 +884,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         _,
         _,
       ) => onConnected,
+      onReconnected = (
+        _,
+        _,
+      ) => onConnected,
       onDisconnected = (
         _,
         _,
@@ -908,6 +917,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         _,
         _,
       ) => onConnected,
+      onReconnected = (
+        _,
+        _,
+      ) => onConnected,
       onDisconnected = (
         _,
         _,
@@ -934,6 +947,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
           dataOpt.flatten.fold(Callback.empty)(v => onData(toEventLog(v)))
       },
       onConnected = (
+        _,
+        _,
+      ) => onConnected,
+      onReconnected = (
         _,
         _,
       ) => onConnected,

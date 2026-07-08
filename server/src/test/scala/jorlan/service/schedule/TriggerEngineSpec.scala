@@ -127,10 +127,12 @@ object TriggerEngineSpec extends ZIOSpecDefault {
   ) extends AgentRunner {
 
     override def processMessage(
-      sessionId:  AgentSessionId,
-      content:    String,
-      actorId:    Option[UserId],
-      withMemory: Boolean = true,
+      sessionId:           AgentSessionId,
+      content:             String,
+      actorId:             Option[UserId],
+      withMemory:          Boolean = true,
+      checkpoint:          Boolean = true,
+      allowedToolPrefixes: Option[List[String]] = None,
     ): IO[JorlanError, Unit] =
       for {
         _ <- invoked.update(_ :+ (sessionId, content))
@@ -149,6 +151,7 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       systemPrompt: String,
       content:      String,
       actorId:      Option[UserId],
+      checkpoint:   Boolean = true,
     ): IO[JorlanError, Unit] =
       hub.publish(ResponseChunk(sessionId, "single-call done", finished = false)) *>
         hub.publish(ResponseChunk(sessionId, "", finished = true))
@@ -224,7 +227,8 @@ object TriggerEngineSpec extends ZIOSpecDefault {
           calls             <- invoked.get
         } yield assertTrue(
           calls.nonEmpty,
-          calls.exists { case (_, content) => content == "hello" },
+          // ReactLoop steps get the step system prompt + tool-discipline rules prepended to the user prompt.
+          calls.exists { case (_, content) => content.endsWith("hello") },
           result.exists(_.status == JobStatus.Succeeded),
         )
       } @@ TestAspect.withLiveClock,

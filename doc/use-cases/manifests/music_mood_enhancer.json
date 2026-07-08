@@ -1,0 +1,81 @@
+{
+  "useCaseName": "music_mood_enhancer",
+  "sourceDoc": "doc/use-cases/music-mood-enhancer.md",
+  "role": {
+    "name": "music-mood-agent-role",
+    "description": "Capabilities for the music mood enhancer (Lyrion playback + discovery)",
+    "capabilities": [
+      { "capability": "lyrion.play" },
+      { "capability": "lyrion.players" },
+      { "capability": "lyrion.search" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "search.web" },
+      { "capability": "search.news" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "weather.current" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "music-mood-agent",
+    "description": "Music mood enhancer: controls Lyrion playback on request, picks music matching mood/context using semantic tags in memory, and runs a weekly new-release discovery digest.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["lyrion", "memory", "search", "calendar", "weather"],
+    "invariants": { "role": "knowledgeable music curator with excellent taste" }
+  },
+  "memorySeeds": [
+    {
+      "key": "music-tag.example.prince",
+      "text": "music-tag: Prince: energetic, funky, sexy, groove-oriented, party, 1980s, virtuoso",
+      "scope": "User"
+    },
+    {
+      "key": "music-tag.example.kind-of-blue",
+      "text": "music-tag: Miles Davis - Kind of Blue: quiet, contemplative, late-night, jazz, sophisticated",
+      "scope": "User"
+    },
+    {
+      "key": "music.favorite-artists",
+      "text": "Favorite artists to monitor for new releases: EDIT ME -- list your artists here.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "music-weekly-discovery",
+    "steps": [
+      {
+        "name": "check-releases",
+        "systemPrompt": "You look for music news about the household's favorite artists. Call memory.search once with query 'favorite artists' to get the artist list, then ONE search.news call per artist (max 5 artists) with '<artist> new album OR tour 2026'.\n\nOutput format -- one line per finding, nothing else:\n<artist>: <headline> | <URL>\nOr exactly 'No notable music news this week.'",
+        "userPrompt": "{{now}} -- Check for new releases and music news now.",
+        "tools": ["memory.search", "search.news"],
+        "mode": "ReactLoop",
+        "outputVar": "music_news",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-music-digest",
+        "systemPrompt": "You deliver the weekly music discovery digest. Call notify.user exactly once, passing only 'message' (never userId), titled 'Weekly music discovery' with the findings list.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Findings:\n{{steps.music_news.output}}\n\nSend the digest now.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 20 ? * 5"
+    }
+  }
+}

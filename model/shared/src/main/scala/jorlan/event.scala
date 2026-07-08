@@ -18,6 +18,7 @@ enum EventType derives JsonCodec {
 
   // ─── Agent / session lifecycle ───────────────────────────────────────────────
   case AgentStarted, AgentCompleted, AgentFailed
+  case AgentDefinitionCreated, AgentDefinitionUpdated
   case SessionCreated, SessionSuspended, SessionTerminated
 
   // ─── Message and model call cycle ────────────────────────────────────────────
@@ -41,6 +42,7 @@ enum EventType derives JsonCodec {
   case MemoryWritten, MemoryDeleted, MemoryRescoped, MemoryCheckpointed, MemoryExpired
 
   // ─── RBAC and capabilities ───────────────────────────────────────────────────
+  case RoleCreated, RoleUpdated
   case RoleAssigned, RoleRevoked
   case CapabilityAllowed, CapabilityDenied
   case CapabilityGranted, CapabilityRevoked
@@ -66,6 +68,9 @@ enum EventType derives JsonCodec {
 
   // ─── Declarative skill lifecycle ─────────────────────────────────────────────
   case SkillDraftCreated, SkillLifecycleAdvanced, SkillApproved, SkillRejected
+
+  // ─── MCP server configuration ────────────────────────────────────────────────
+  case McpServerUpserted
 
   // ─── System ──────────────────────────────────────────────────────────────────
   case SystemAlert

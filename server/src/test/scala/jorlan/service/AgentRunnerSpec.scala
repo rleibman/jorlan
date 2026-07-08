@@ -268,14 +268,14 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
           allConvs.length == 1, // No new conversation was created
         )
       },
-      test("processMessage injects pre-stored memory records into system prompt") {
+      test("processMessage injects semantically-relevant memory records into system prompt") {
         import jorlan.service.*
-        import jorlan.testing.InMemoryRepositories
+        import jorlan.testing.NoOpMemoryService
         import zio.json.ast.Json
 
         import java.time.Instant
         val memRecord = MemoryRecord(
-          id = MemoryRecordId.empty,
+          id = MemoryRecordId(1L),
           scope = MemoryScope.User,
           userId = Some(userId),
           workspaceId = None,
@@ -286,9 +286,19 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
           createdAt = Instant.now(),
           updatedAt = Instant.now(),
         )
+        // Memory context comes exclusively from semantic (vector) retrieval — there is no
+        // always-inject-by-importance tier. Stub the semantic query to return our record.
+        val semanticMemory: ULayer[MemoryService] = ZLayer.succeed(new NoOpMemoryService {
+          override def semanticQuery(
+            scope:     MemoryScope,
+            userId:    UserId,
+            agentId:   AgentId,
+            queryText: String,
+            limit:     Int,
+          ): IO[JorlanError, List[MemoryRecord]] = ZIO.succeed(List(memRecord))
+        })
         for {
           capturedPrompts <- Ref.make(List.empty[String])
-          memRepo         <- ZIO.serviceWithZIO[ZIORepositories](_.memory.upsert(memRecord))
           result          <- (for {
             connId  <- ConnectionId.randomZIO
             stream  <- ZIO.serviceWithZIO[AgentRunner](_.subscribeToSession(sessionId, connId))
@@ -303,9 +313,7 @@ object AgentRunnerSpec extends ZIOSpec[ZIORepositories] {
             SkillRegistry.live,
             FakeConfigurationService.layer,
             AgentRunnerImpl.live,
-            MemoryServiceImpl.live,
-            NoOpEmbeddingLayers.embeddingStoreLayer,
-            NoOpEmbeddingLayers.embeddingModelLayer,
+            semanticMemory,
           )
         } yield assertTrue(result.exists(_.contains("User prefers Scala")))
       },

@@ -1,0 +1,76 @@
+{
+  "useCaseName": "language_coach",
+  "sourceDoc": "doc/use-cases/language-coach.md",
+  "role": {
+    "name": "language-coach-agent-role",
+    "description": "Capabilities for the daily language practice coach",
+    "capabilities": [
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "search.web" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "language-coach-agent",
+    "description": "Daily language coach: delivers a short practice lesson each morning based on the learner profile, tracks vocabulary with approximate spaced repetition in memory, and adapts topics to upcoming travel.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["memory", "search", "calendar", "scheduler"],
+    "invariants": { "role": "encouraging, patient language teacher" }
+  },
+  "memorySeeds": [
+    {
+      "key": "language.profile",
+      "text": "Language learner profile: EDIT ME -- target language(s), current level (beginner/intermediate/advanced), goals (travel/conversation/reading), topics of interest, preferred lesson length.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "language-daily-lesson",
+    "steps": [
+      {
+        "name": "review-progress",
+        "systemPrompt": "You prepare context for today's language lesson. Call memory.search once with query 'language' to retrieve the learner profile and recent lesson notes, and once with query 'vocab' for vocabulary items due for review.\n\nOutput format:\nProfile: <one-line summary>\nRecent lessons: <topics covered recently, or 'none'>\nDue vocabulary: <comma-separated words, or 'none'>",
+        "userPrompt": "{{now}} -- Gather the learner context now.",
+        "tools": ["memory.search"],
+        "mode": "ReactLoop",
+        "outputVar": "learner_context",
+        "retryOnFail": 1
+      },
+      {
+        "name": "build-lesson",
+        "systemPrompt": "You are an encouraging, patient language teacher. Write today's short lesson (5-10 minutes of practice) for the learner: a brief vocabulary review of due items, one new grammar point or set of 5 new words with example sentences, and one short exercise (translation or fill-in-the-blank) for the learner to answer by replying. Keep the whole lesson under 250 words.",
+        "userPrompt": "Learner context:\n{{steps.learner_context.output}}\n\nWrite today's lesson now.",
+        "tools": [],
+        "mode": "SingleCall",
+        "outputVar": "lesson",
+        "retryOnFail": 0
+      },
+      {
+        "name": "deliver-lesson",
+        "systemPrompt": "You deliver the daily language lesson. Call notify.user exactly once, passing only 'message' (never userId) with the lesson text. Then call memory.remember once with key 'language.lesson.<date>' summarizing today's topic in one line.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Lesson:\n{{steps.lesson.output}}\n\nDeliver it now.",
+        "tools": ["notify.user", "memory.remember"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 15 ? * *"
+    }
+  }
+}

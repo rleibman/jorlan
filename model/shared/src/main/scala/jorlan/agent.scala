@@ -90,3 +90,14 @@ case class ResponseChunk(
   finished:  Boolean,
   isError:   Boolean = false,
 ) derives JsonCodec
+
+object ResponseChunk {
+
+  /** Prefix used by [[AgentRunner]]'s ReAct loop to publish a UI-only "invoking tool" progress marker as an unfinished
+    * chunk (e.g. `"⟳ calling calendar.listEvents…\n"`). Consumers that reconstruct the model's actual output by
+    * concatenating chunk content (rather than just rendering them to a chat window) must filter these out, or the
+    * reconstructed text ends up polluted with tool-invocation trace lines instead of real content.
+    */
+  val ToolFeedbackPrefix: String = "⟳ calling "
+
+}

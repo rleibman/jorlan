@@ -16,7 +16,7 @@ import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkill}
 import jorlan.google.*
 import jorlan.service.*
-import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.llm.ModelGateways
 import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
@@ -32,7 +32,10 @@ import javax.sql.DataSource
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
 
-  private val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
+  /** Exposes the repository's connection pool as a [[DataSource]] service — also used by integration specs that
+    * assemble [[JorlanEnvironment]] by hand.
+    */
+  val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
     ZLayer.fromZIO(ZIO.serviceWith[QuillRepositories](_.dataSourceLayer)).flatten
 
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
@@ -232,7 +235,7 @@ object EnvironmentBuilder {
         SessionHub.live,
         ToolEventHub.live,
         EventLogHub.live,
-        OllamaModelGateway.live,
+        ModelGateways.live,
         LangChainServiceBuilder.ollamaEmbeddingModelLayer,
         EmbeddingStore.mariadb("jorlan_memory"),
         ToolEmbeddingIndex.live,

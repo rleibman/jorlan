@@ -30,6 +30,12 @@ private case class ReactLoopEnv(
   prompt:            String,
   expertise:         String,
   prioritizedSkills: List[String],
+  // When true the tool list is fixed for the whole turn (caller pinned it via allowedToolPrefixes);
+  // the loop skips the per-iteration embedding re-selection.
+  pinnedTools: Boolean = false,
+  // When false, the before-tool-call (BeforeExternalEffect) checkpoint is skipped — pipeline steps
+  // must not feed their templated prompts into memory summarization on every tool call.
+  checkpoint: Boolean = true,
 )
 
 /** Mutable per-runner [[Ref]] bundle: seeded sessions, active conversation IDs, cached agent IDs, cached personality,
@@ -70,15 +76,18 @@ private object AgentRunnerState {
   *   6. Evaluates [[CheckpointPolicy]] and runs the checkpoint pipeline when triggered.
   */
 class AgentRunnerImpl(
-  modelGateway:       ModelGateway,
-  sessionHub:         SessionHub,
-  toolEventHub:       ToolEventHub,
-  repo:               ZIORepositories,
-  memoryService:      MemoryService,
-  skillRegistry:      SkillRegistry,
-  runnerState:        AgentRunnerState,
-  maxToolSteps:       Int,
-  maxToolResultChars: Int = 2000,
+  modelGateway:  ModelGateway,
+  sessionHub:    SessionHub,
+  toolEventHub:  ToolEventHub,
+  repo:          ZIORepositories,
+  memoryService: MemoryService,
+  skillRegistry: SkillRegistry,
+  runnerState:   AgentRunnerState,
+  maxToolSteps:  Int,
+  // Cap on a single tool result fed back to the model. Must be big enough for realistic results --
+  // a two-week calendar.listEvents JSON easily exceeds 2000 chars, and truncating mid-JSON makes the
+  // model conclude the tool returned nothing useful.
+  maxToolResultChars: Int = 6000,
 ) extends AgentRunner {
 
   private val seeded = runnerState.seeded
@@ -86,10 +95,12 @@ class AgentRunnerImpl(
   private val cachedAgentIds = runnerState.cachedAgentIds
 
   override def processMessage(
-    sessionId:  AgentSessionId,
-    content:    String,
-    actorId:    Option[UserId],
-    withMemory: Boolean = true,
+    sessionId:           AgentSessionId,
+    content:             String,
+    actorId:             Option[UserId],
+    withMemory:          Boolean = true,
+    checkpoint:          Boolean = true,
+    allowedToolPrefixes: Option[List[String]] = None,
   ): IO[JorlanError, Unit] =
     for {
       errorRef    <- Ref.make(Option.empty[String])
@@ -112,11 +123,21 @@ class AgentRunnerImpl(
           )
           _ <- logEvent(sessionId, EventType.UserMessageReceived, actorId)
           initialMessages = buildInitialMessages(systemPrompt, content)
-          tools <- skillRegistry.filteredToolSpecs(
-            prompt = content,
-            expertise = agent.flatMap(_.description).getOrElse(""),
-            recentToolNames = List.empty, // no history yet at start of turn
-            prioritizedSkills = agent.map(_.prioritizedSkills).getOrElse(List.empty),
+          tools <- allowedToolPrefixes match {
+            case Some(prefixes) =>
+              skillRegistry.allToolSpecs.map(
+                _.filter(t => prefixes.exists(p => t.name == p || t.name.startsWith(p + "."))),
+              )
+            case None =>
+              skillRegistry.filteredToolSpecs(
+                prompt = content,
+                expertise = agent.flatMap(_.description).getOrElse(""),
+                recentToolNames = List.empty, // no history yet at start of turn
+                prioritizedSkills = agent.map(_.prioritizedSkills).getOrElse(List.empty),
+              )
+          }
+          _ <- ZIO.logDebug(
+            s"[session:$sessionId] tools for turn (${tools.length}): ${tools.map(_.name).mkString(", ")}",
           )
           ctx = InvocationContext(
             actorId = actorId.getOrElse(UserId.empty),
@@ -134,12 +155,26 @@ class AgentRunnerImpl(
             prompt = content,
             expertise = agent.flatMap(_.description).getOrElse(""),
             prioritizedSkills = agent.map(_.prioritizedSkills).getOrElse(List.empty),
+            pinnedTools = allowedToolPrefixes.isDefined,
+            checkpoint = checkpoint,
           )
           _ <- reactLoop(env, initialMessages, stepsLeft = maxToolSteps)
         } yield ()
       _ <- work
         .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
-        .ensuring(finaliseResponse(convId, sessionId, content, actorId, agentId, personality, errorRef, chunksRef))
+        .ensuring(
+          finaliseResponse(
+            convId,
+            sessionId,
+            content,
+            actorId,
+            agentId,
+            personality,
+            errorRef,
+            chunksRef,
+            checkpoint,
+          ),
+        )
     } yield ()
 
   private def buildInitialMessages(
@@ -181,10 +216,10 @@ class AgentRunnerImpl(
               }
 
             case ToolCallRequested(id, name, argsJson) =>
-              val toolFeedback = s"⟳ calling $name…\n"
+              val toolFeedback = s"${ResponseChunk.ToolFeedbackPrefix}$name…\n"
               for {
                 _ <- ZIO.logDebug(s"[react:${sessionId.value}] tool call → $name args=$argsJson")
-                _ <- actorId.fold(ZIO.unit) { uid =>
+                _ <- actorId.filter(_ => env.checkpoint).fold(ZIO.unit) { uid =>
                   Clock.instant.flatMap { now =>
                     val convMsgs: List[Message] = messages.collect {
                       case UserMsg(c) => Message(MessageId.empty, ConversationId.empty, MessageRole.User, c, None, now)
@@ -244,12 +279,15 @@ class AgentRunnerImpl(
                   ToolResultMsg(id, name, truncatedResult),
                 )
                 calledNames = newMessages.collect { case ToolCallMsg(_, n, _) => n }.distinct
-                newTools <- skillRegistry.filteredToolSpecs(
-                  prompt = env.prompt,
-                  expertise = env.expertise,
-                  recentToolNames = calledNames,
-                  prioritizedSkills = env.prioritizedSkills,
-                )
+                newTools <-
+                  if (env.pinnedTools) ZIO.succeed(env.tools)
+                  else
+                    skillRegistry.filteredToolSpecs(
+                      prompt = env.prompt,
+                      expertise = env.expertise,
+                      recentToolNames = calledNames,
+                      prioritizedSkills = env.prioritizedSkills,
+                    )
                 _ <- reactLoop(env.copy(tools = newTools), newMessages, stepsLeft - 1)
               } yield ()
           }
@@ -312,6 +350,7 @@ class AgentRunnerImpl(
     personality: Personality,
     errorRef:    Ref[Option[String]],
     chunksRef:   Ref[Vector[String]],
+    checkpoint:  Boolean = true,
   ): UIO[Unit] =
     for {
       errMsg <- errorRef.get
@@ -334,7 +373,9 @@ class AgentRunnerImpl(
       _ <- sessionHub.publish(sentinel)
       _ <- ConversationLogger.logAgentResponse(sessionId, fullResponse, isError = effectiveError.isDefined)
       _ <- persistMessages(convId, sessionId, userContent, fullResponse, actorId, effectiveError)
-      _ <- runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, effectiveError).forkDaemon
+      _ <- ZIO.when(checkpoint)(
+        runCheckpoint(sessionId, actorId, agentId, personality, userContent, fullResponse, effectiveError).forkDaemon,
+      )
       _ <- logEvent(sessionId, EventType.AgentResponseCompleted, actorId)
     } yield ()
 
@@ -509,9 +550,12 @@ class AgentRunnerImpl(
         }.unless(errMsg.isDefined && assistantText.isBlank).unit
     }
 
-  private val memoryPromptBudget = 15
-  private val alwaysInjectMinImportance = 7
+  private val memoryPromptBudget = 8
 
+  /** Injects only memories semantically relevant to the current prompt, retrieved via vector search — no
+    * always-inject-by-importance tier. Stable facts (name, family, timezone, etc.) are still retrievable whenever a
+    * prompt actually touches on them, without spending prompt budget on every unrelated turn.
+    */
   private def buildMemoryContext(
     sessionId: AgentSessionId,
     actorId:   Option[UserId],
@@ -519,28 +563,11 @@ class AgentRunnerImpl(
     query:     String,
   ): UIO[String] =
     actorId.fold(ZIO.succeed("")) { userId =>
-      val queryScopes = List(MemoryScope.User, MemoryScope.Shared)
       Clock.instant.flatMap { now =>
-        val importanceFiber = ZIO
-          .foreach(queryScopes) { scope =>
-            memoryService.query(scope, userId, agentId, text = None)
-          }
-          .map(_.flatten.filter(r => r.ttl.forall(_.isAfter(now))))
-
-        val semanticFiber = memoryService
-          .semanticQuery(MemoryScope.User, userId, agentId, query, limit = 5)
-          .orElseSucceed(List.empty)
-
-        (importanceFiber <&> semanticFiber)
-          .map { case (byImportance, bySemantic) =>
-            val seenIds = scala.collection.mutable.Set.empty[MemoryRecordId]
-            val semantic = bySemantic.filter(r => r.ttl.forall(_.isAfter(now)) && seenIds.add(r.id))
-            val sorted = byImportance.sortBy(-_.importance)
-            val important = sorted
-              .filter(r => r.importance >= alwaysInjectMinImportance && seenIds.add(r.id))
-            val filler = sorted
-              .filter(r => r.importance < alwaysInjectMinImportance && seenIds.add(r.id))
-            val selected = (semantic ++ important ++ filler).take(memoryPromptBudget)
+        memoryService
+          .semanticQuery(MemoryScope.User, userId, agentId, query, limit = memoryPromptBudget)
+          .map(_.filter(r => r.ttl.forall(_.isAfter(now))))
+          .map { selected =>
             if (selected.isEmpty) ""
             else {
               val lines = selected
@@ -561,6 +588,7 @@ class AgentRunnerImpl(
     systemPrompt: String,
     content:      String,
     actorId:      Option[UserId],
+    checkpoint:   Boolean = true,
   ): IO[JorlanError, Unit] =
     for {
       errorRef  <- Ref.make(Option.empty[String])
@@ -595,7 +623,19 @@ class AgentRunnerImpl(
         } yield ()
       _ <- work
         .tapError(e => errorRef.update(_.orElse(Some(e.getMessage))))
-        .ensuring(finaliseResponse(convId, sessionId, content, actorId, agentId, personality, errorRef, chunksRef))
+        .ensuring(
+          finaliseResponse(
+            convId,
+            sessionId,
+            content,
+            actorId,
+            agentId,
+            personality,
+            errorRef,
+            chunksRef,
+            checkpoint,
+          ),
+        )
     } yield ()
 
   private val loadPersonality: ZIO[Any, RepositoryError, Personality] =

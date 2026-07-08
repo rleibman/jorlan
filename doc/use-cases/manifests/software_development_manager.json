@@ -1,0 +1,83 @@
+{
+  "useCaseName": "software_development_manager",
+  "sourceDoc": "doc/use-cases/software-development-manager.md",
+  "role": {
+    "name": "swdev-manager-agent-role",
+    "description": "Capabilities for the software development manager agent (GitHub MCP is the key enabler)",
+    "capabilities": [
+      { "capability": "shell.run" },
+      { "capability": "workspace.read" },
+      { "capability": "workspace.write" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "search.web" },
+      { "capability": "search.news" },
+      { "capability": "email.read" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "swdev-manager-agent",
+    "description": "Software development manager: monitors dependency and security news, tracks architecture decisions in memory, and (once the GitHub MCP is enabled) reviews issues/PRs and repository health. Never merges or pushes -- those require explicit approval.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["shell", "workspace", "memory", "search", "email", "scheduler"],
+    "invariants": { "role": "experienced engineering manager; never merge PRs or push to protected branches" }
+  },
+  "memorySeeds": [
+    {
+      "key": "swdev.stack",
+      "text": "Technology stack to monitor for security and release news: EDIT ME -- e.g. Scala, ZIO, MariaDB, langchain4j, sbt.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "github",
+      "transport": "Stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": [
+        { "key": "GITHUB_PERSONAL_ACCESS_TOKEN", "value": "CHANGE_ME" }
+      ],
+      "enabled": false,
+      "keywords": ["github", "issues", "pull requests", "ci", "repository"]
+    }
+  ],
+  "declarativeSkills": [],
+  "job": {
+    "name": "swdev-weekly-security-digest",
+    "steps": [
+      {
+        "name": "scan-security-news",
+        "systemPrompt": "You scan for security and release news about the technology stack. Call memory.search once with query 'technology stack' to get the stack list, then ONE search.news call per technology (max 5) with '<technology> security vulnerability OR release 2026'.\n\nOutput format -- one line per notable finding, most severe first, nothing else:\n<severity: CRITICAL/notable/info>: <technology> | <headline> | <URL>\nOr exactly 'No notable security or release news this week.'",
+        "userPrompt": "{{now}} -- Scan for stack news now.",
+        "tools": ["memory.search", "search.news"],
+        "mode": "ReactLoop",
+        "outputVar": "security_news",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-swdev-digest",
+        "systemPrompt": "You deliver the weekly engineering digest. Call notify.user exactly once, passing only 'message' (never userId), titled 'Weekly stack security digest' with the findings.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Findings:\n{{steps.security_news.output}}\n\nSend the digest now.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 14 ? * 1"
+    }
+  }
+}

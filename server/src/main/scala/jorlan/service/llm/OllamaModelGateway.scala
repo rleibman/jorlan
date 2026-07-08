@@ -45,6 +45,22 @@ private case class OllamaTagsResponse(
   models: List[OllamaTagModel],
 ) derives JsonCodec
 
+/** Parses the "try again in Xs" hint out of a provider rate-limit message. */
+private[llm] object RetryAfter {
+
+  // Matches Groq ("Please try again in 5.645s", "... in 1m16.032s") and Gemini ("Please retry in 55.396s").
+  private val pattern = """(?:try again|retry) in (?:(\d+)m)?(\d+(?:\.\d+)?)s""".r
+
+  /** The provider-suggested wait plus a 1-second buffer, or `None` when the message carries no hint. */
+  def parse(msg: String): Option[zio.Duration] =
+    pattern.findFirstMatchIn(msg).map { m =>
+      val minutes = Option(m.group(1)).flatMap(_.toLongOption).getOrElse(0L)
+      val seconds = Option(m.group(2)).flatMap(_.toDoubleOption).getOrElse(0.0)
+      zio.Duration.fromMillis(minutes * 60000L + math.ceil(seconds * 1000).toLong + 1000L)
+    }
+
+}
+
 /** Holds one LangChain4j assistant and the system prompt it was built with.
   *
   * If the personality changes and `systemPrompt` differs from the stored one, the entry is rebuilt. This resets the
@@ -55,7 +71,9 @@ private case class SessionEntry(
   systemPrompt: String,
 )
 
-/** [[ModelGateway]] implementation backed by a local Ollama endpoint via LangChain4j.
+/** [[ModelGateway]] implementation backed by any LangChain4j [[ai.StreamingChatLanguageModel]] — the provider-specific
+  * parts (model construction and model listing) are supplied by [[OllamaModelGateway.live]] /
+  * [[OpenAiModelGateway.live]]; everything else here is provider-agnostic.
   *
   * A single [[ai.StreamingChatLanguageModel]] (and its HTTP connection pool) is shared across all sessions. Each
   * session gets its own [[ai.StreamAssistant]] wrapping an isolated [[MessageWindowChatMemory]].
@@ -67,11 +85,19 @@ private case class SessionEntry(
   * **Note:** a personality update causes the next call for any active session to rebuild its assistant, discarding
   * conversation history for that session.
   */
-private class OllamaModelGateway(
-  config:       LangChainConfig,
+private[llm] object LangChainModelGateway {
+
+  /** Longest provider-suggested wait we honor before treating a rate limit as unrecoverable (blown daily quota). */
+  val maxRateLimitWait: zio.Duration = 4.minutes
+
+}
+
+private[llm] class LangChainModelGateway(
+  maxMessages:  Int,
   sharedModel:  StreamingChatLanguageModel,
   sessions:     Ref[Map[AgentSessionId, SessionEntry]],
   eventLogRepo: ZIOEventLogRepository,
+  listModels:   IO[JorlanError, List[ModelInfo]],
 ) extends ModelGateway {
 
   private def buildAssistant(
@@ -84,7 +110,7 @@ private class OllamaModelGateway(
           MessageWindowChatMemory
             .builder()
             .id(sessionId.value.toString)
-            .maxMessages(config.maxMessages)
+            .maxMessages(maxMessages)
             .chatMemoryStore(InMemoryChatMemoryStore())
             .build(),
         )
@@ -187,7 +213,7 @@ private class OllamaModelGateway(
         .map(t => ToolSupport.buildToolSpecification(ScalaToolSpec(t.name, t.description, t.inputSchemaJson)))
         .asJava
 
-    for {
+    val attempt = for {
       runtime    <- ZIO.runtime[Any]
       tokenQueue <- Queue.unbounded[Option[String]]
       done       <- Promise.make[JorlanError, ChatStep]
@@ -244,7 +270,8 @@ private class OllamaModelGateway(
               override def onError(e: Throwable): Unit = {
                 val msg = Option(e.getMessage).getOrElse(e.getClass.getName)
                 val modelError: ModelError = e match {
-                  case _: java.net.http.HttpTimeoutException => ModelTimeout(msg)
+                  case _: dev.langchain4j.exception.RateLimitException => ModelRateLimited(msg)
+                  case _: java.net.http.HttpTimeoutException           => ModelTimeout(msg)
                   case e if e.getMessage != null && e.getMessage.toLowerCase.contains("timed") => ModelTimeout(msg)
                   case _                                                                       => ModelUnavailable(msg)
                 }
@@ -261,43 +288,29 @@ private class OllamaModelGateway(
         }.mapError(e => ModelUnavailable(Option(e.getMessage).getOrElse(e.getClass.getName)))
       step <- done.await
     } yield step
+
+    // Free-tier cloud providers (Groq, Gemini) return 429s that clear in seconds; retrying
+    // immediately just burns the pipeline step's retry budget. Wait as long as the provider's
+    // "try again in Xs" hint asks (20s fallback when there is no hint), a few times, before
+    // surfacing the failure. A hint beyond maxRateLimitWait means a blown daily quota — sleeping
+    // inside the step's timeout budget is futile, so fail immediately instead.
+    def waitFor(e: JorlanError): zio.Duration = RetryAfter.parse(e.msg).getOrElse(20.seconds)
+
+    attempt
+      .tapError {
+        case e: ModelRateLimited if waitFor(e) <= LangChainModelGateway.maxRateLimitWait =>
+          ZIO.logWarning(s"[llm] rate limited by provider — waiting ${waitFor(e).render} before retrying chat step")
+        case _ => ZIO.unit
+      }
+      .retry(
+        (Schedule.identity[JorlanError].addDelay(waitFor) && Schedule.recurs(3)).whileInput[JorlanError] {
+          case e: ModelRateLimited => waitFor(e) <= LangChainModelGateway.maxRateLimitWait
+          case _ => false
+        },
+      )
   }
 
-  override def availableModels: IO[JorlanError, List[ModelInfo]] = {
-    // OllamaClient is package-private in LangChain4j, so we call Ollama's REST API directly.
-    // GET /api/tags returns all locally downloaded models (equivalent to `ollama list`).
-    ZIO
-      .attempt {
-        val http = java.net.http.HttpClient.newHttpClient()
-        val request = java.net.http.HttpRequest
-          .newBuilder(java.net.URI.create(s"${config.ollamaBaseUrl}/api/tags"))
-          .timeout(java.time.Duration.ofSeconds(10))
-          .GET()
-          .build()
-        val response = http.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
-        response.body()
-      }
-      .flatMap { body =>
-        ZIO
-          .fromEither(
-            zio.json.JsonDecoder[OllamaTagsResponse].decodeJson(body),
-          ).mapError(new RuntimeException(_))
-      }
-      .map { resp =>
-        resp.models.map { m =>
-          val tag = List(m.details.flatMap(_.parameter_size), m.details.flatMap(_.quantization_level)).flatten
-            .filter(_.nonEmpty).mkString("/")
-          ModelInfo(
-            id = ModelId(m.name),
-            provider = if (tag.nonEmpty) s"ollama/$tag" else "ollama",
-            contextWindow = 0,
-            supportsStreaming = true,
-          )
-        }
-      }
-      .tapError(e => ZIO.logWarning(s"Could not list Ollama models: ${e.getMessage}"))
-      .orElseSucceed(List(ModelInfo(ModelId(config.ollamaModel), "ollama", 0, supportsStreaming = true)))
-  }
+  override def availableModels: IO[JorlanError, List[ModelInfo]] = listModels
 
   override def seedHistory(
     sessionId:    AgentSessionId,
@@ -312,7 +325,7 @@ private class OllamaModelGateway(
             val memory = MessageWindowChatMemory
               .builder()
               .id(sessionId.value.toString)
-              .maxMessages(config.maxMessages)
+              .maxMessages(maxMessages)
               .chatMemoryStore(store)
               .build()
             messages.foreach { msg =>
@@ -344,6 +357,42 @@ private class OllamaModelGateway(
 
 object OllamaModelGateway {
 
+  /** Lists locally downloaded models via Ollama's `GET /api/tags` (OllamaClient is package-private in LangChain4j, so
+    * we call the REST API directly). Falls back to the configured model on error.
+    */
+  private def listOllamaModels(config: LangChainConfig): IO[JorlanError, List[ModelInfo]] =
+    ZIO
+      .attempt {
+        val http = java.net.http.HttpClient.newHttpClient()
+        val request = java.net.http.HttpRequest
+          .newBuilder(java.net.URI.create(s"${config.ollamaBaseUrl}/api/tags"))
+          .timeout(java.time.Duration.ofSeconds(10))
+          .GET()
+          .build()
+        val response = http.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+        response.body()
+      }
+      .flatMap { body =>
+        ZIO
+          .fromEither(
+            zio.json.JsonDecoder[OllamaTagsResponse].decodeJson(body),
+          ).mapError(new RuntimeException(_))
+      }
+      .map { resp =>
+        resp.models.map { m =>
+          val tag = List(m.details.flatMap(_.parameter_size), m.details.flatMap(_.quantization_level)).flatten
+            .filter(_.nonEmpty).mkString("/")
+          ModelInfo(
+            id = ModelId(m.name),
+            provider = if (tag.nonEmpty) s"ollama/$tag" else "ollama",
+            contextWindow = 0,
+            supportsStreaming = true,
+          )
+        }
+      }
+      .tapError(e => ZIO.logWarning(s"Could not list Ollama models: ${e.getMessage}"))
+      .orElseSucceed(List(ModelInfo(ModelId(config.ollamaModel), "ollama", 0, supportsStreaming = true)))
+
   val live: ZLayer[ConfigurationService & ZIORepositories, JorlanError, ModelGateway] =
     ZLayer.fromZIO(
       for {
@@ -361,11 +410,19 @@ object OllamaModelGateway {
                 .topP(config.topP)
                 .numCtx(config.numCtx)
                 .think(false)
+                // Keep the model warm for 30 minutes of inactivity instead of Ollama's 5-minute
+                // default, so a multi-step pipeline with gaps between LLM calls (tool execution,
+                // retries) doesn't repeatedly pay a full model reload cost mid-run. // TODO add to config
+                .defaultRequestParameters(
+                  dev.langchain4j.model.ollama.OllamaChatRequestParameters.builder
+                    .keepAlive(30 * 60)
+                    .build,
+                )
                 .build,
             )
           }.mapError(JorlanError.apply)
         sessions <- Ref.make(Map.empty[AgentSessionId, SessionEntry])
-      } yield OllamaModelGateway(config, model, sessions, eventLogRepo),
+      } yield LangChainModelGateway(config.maxMessages, model, sessions, eventLogRepo, listOllamaModels(config)),
     )
 
 }

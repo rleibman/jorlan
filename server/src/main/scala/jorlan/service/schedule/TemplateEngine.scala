@@ -57,15 +57,14 @@ object TemplateEngine {
     * @param now
     *   Current timestamp (substituted into `{{now}}`).
     */
-  def renderUserPrompt(
-    step:        PipelineStep,
+  private def resolver(
     invariants:  Map[String, String],
     stepContext: Map[String, String],
     runId:       PipelineRunId,
     runContext:  Option[String],
     now:         Instant,
-  ): String = {
-    def resolve(key: String): Option[String] =
+  ): String => Option[String] =
+    key =>
       if (key.startsWith("invariants."))
         invariants.get(key.stripPrefix("invariants."))
       else if (key.startsWith("steps.") && key.endsWith(".output"))
@@ -78,7 +77,29 @@ object TemplateEngine {
       else if (key == "run.context") runContext
       else None
 
-    val renderedPrompt = substitute(step.userPrompt, resolve)
+  /** Substitute template variables in `step.systemPrompt` (no invariants/run-context blocks are prepended — those
+    * belong to the user prompt only). Without this, `{{invariants.KEY}}` references in a step's system prompt would
+    * reach the model as literal placeholder text.
+    */
+  def renderSystemPrompt(
+    step:        PipelineStep,
+    invariants:  Map[String, String],
+    stepContext: Map[String, String],
+    runId:       PipelineRunId,
+    runContext:  Option[String],
+    now:         Instant,
+  ): String =
+    substitute(step.systemPrompt, resolver(invariants, stepContext, runId, runContext, now))
+
+  def renderUserPrompt(
+    step:        PipelineStep,
+    invariants:  Map[String, String],
+    stepContext: Map[String, String],
+    runId:       PipelineRunId,
+    runContext:  Option[String],
+    now:         Instant,
+  ): String = {
+    val renderedPrompt = substitute(step.userPrompt, resolver(invariants, stepContext, runId, runContext, now))
 
     val invariantsBlock =
       if (invariants.isEmpty) ""
@@ -101,5 +122,18 @@ object TemplateEngine {
       |When outputting structured data, produce valid JSON matching the requested schema.
       |Do not explain your reasoning unless explicitly asked.
       |Do not add unsolicited commentary.""".stripMargin
+
+  /** Appended to every ReactLoop pipeline step's system prompt. Small local models routinely narrate actions instead of
+    * calling tools ("I've added it to your calendar" with no calendar.createEvent call) or invent tool results; this
+    * suffix pushes them toward actually invoking the tools they were given.
+    */
+  val toolDisciplineSuffix: String =
+    """
+      |
+      |TOOL RULES — follow strictly:
+      |- To perform any action or look anything up, you MUST call one of the provided tools. Never describe an action as done unless a tool call actually returned a result for it.
+      |- Never invent tool output. If a tool fails or returns nothing useful, say so plainly.
+      |- If no provided tool can do what is asked, state that; do not pretend.
+      |- When you have finished all required tool calls, reply with the final answer as plain text.""".stripMargin
 
 }

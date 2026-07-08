@@ -105,6 +105,7 @@ object ChatPage {
                           val sid = session.id
                           val handler = AsyncCallbackRepositories.subscribeToAgentStream(
                             session.id,
+                            onConnected = state.modState(_.copy(error = None)),
                             onClientError =
                               ex => state.modState(_.copy(streaming = false, error = Some(ex.getMessage))),
                             onData = { chunk =>

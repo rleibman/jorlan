@@ -1,0 +1,76 @@
+{
+  "useCaseName": "music_coach",
+  "sourceDoc": "doc/use-cases/music-coach.md",
+  "role": {
+    "name": "music-coach-agent-role",
+    "description": "Capabilities for the daily music practice coach",
+    "capabilities": [
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "search.web" },
+      { "capability": "workspace.read" },
+      { "capability": "workspace.write" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "music-coach-agent",
+    "description": "Daily music practice coach: builds a focused practice plan from the player profile and repertoire, checks the calendar for upcoming performances or jams, and delivers the plan each morning.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["memory", "calendar", "search", "workspace"],
+    "invariants": { "role": "experienced, motivating music teacher" }
+  },
+  "memorySeeds": [
+    {
+      "key": "music.profile",
+      "text": "Music learner profile: EDIT ME -- instrument(s), current level, repertoire in progress, technique goals (e.g. rudiments, scales), available daily practice time.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "music-daily-practice-plan",
+    "steps": [
+      {
+        "name": "gather-music-context",
+        "systemPrompt": "You prepare context for today's practice plan. Call memory.search once with query 'music' for the player profile and recent practice notes, then calendar.listEvents once for the next 14 days to spot performances, lessons, or jam sessions.\n\nOutput format:\nProfile: <one-line summary>\nRecent practice: <what was practiced lately, or 'unknown'>\nUpcoming events: <one line per relevant event with date, or 'none'>",
+        "userPrompt": "{{now}} -- Gather practice context now.",
+        "tools": ["memory.search", "calendar.listEvents"],
+        "mode": "ReactLoop",
+        "outputVar": "music_context",
+        "retryOnFail": 1
+      },
+      {
+        "name": "plan-practice",
+        "systemPrompt": "You are an experienced, motivating music teacher. Write today's practice plan sized to the player's available time: warm-up, technique focus, repertoire work (prioritize pieces needed for upcoming events), and one specific goal for the session. Under 200 words.",
+        "userPrompt": "Context:\n{{steps.music_context.output}}\n\nWrite today's practice plan now.",
+        "tools": [],
+        "mode": "SingleCall",
+        "outputVar": "practice_plan",
+        "retryOnFail": 0
+      },
+      {
+        "name": "deliver-plan",
+        "systemPrompt": "You deliver the practice plan. Call notify.user exactly once, passing only 'message' (never userId) with the plan. Then call memory.remember once with key 'music.practice.<date>' noting the session focus in one line.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Plan:\n{{steps.practice_plan.output}}\n\nDeliver it now.",
+        "tools": ["notify.user", "memory.remember"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 30 15 ? * *"
+    }
+  }
+}

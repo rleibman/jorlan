@@ -62,7 +62,14 @@ class TriggerEngineImpl(
   pollInterval:       Duration = Duration.ofSeconds(10),
   leaseTtl:           Int = 300,
   jobTimeout:         Duration = Duration.ofSeconds(300),
+  // How many jobs this worker executes at once. Default 1: pipeline steps are LLM-bound, and a local
+  // Ollama instance (especially CPU-only) effectively serves one request at a time — concurrent jobs
+  // just queue against the model and time each other out. Deferred jobs stay Pending (no lease, no
+  // timeout clock running) and are claimed on a later tick when a slot frees.
+  maxConcurrentJobs: Int = 1,
 ) extends TriggerEngine {
+
+  private val runningCount: Ref[Int] = Unsafe.unsafe(implicit u => Ref.unsafe.make(0))
 
   private val workerIdIO: IO[JorlanError, String] =
     ZIO
@@ -191,6 +198,11 @@ class TriggerEngineImpl(
           if (chunk.finished) {
             val out = if (chunk.isError && chunk.content.nonEmpty) acc + chunk.content else acc
             (out, chunk.isError)
+          } else if (chunk.content.startsWith(ResponseChunk.ToolFeedbackPrefix)) {
+            // UI-only "invoking tool" progress marker, not model output — must not leak into the step's
+            // outputVar, or every downstream step's {{steps.X.output}} template gets polluted with stale
+            // tool-invocation trace lines instead of the step's actual result.
+            (acc, false)
           } else (acc + chunk.content, false)
         }
         .timeout(zio.Duration.fromJava(jobTimeout))
@@ -217,18 +229,23 @@ class TriggerEngineImpl(
     stepContext: Map[String, String],
     runId:       PipelineRunId,
     runContext:  Option[String],
+    workerId:    String,
   ): IO[JorlanError, String] = {
     def attempt(attemptsLeft: Int): IO[JorlanError, String] = {
       for {
-        now   <- Clock.instant
+        now <- Clock.instant
+        // Slide the lease forward before each attempt: a single LLM call can legitimately take up to
+        // jobTimeout, and a multi-step pipeline's total runtime can otherwise drift well past leaseTtl,
+        // causing expireLeases to reclaim a job that is still actively (and validly) running.
+        _     <- repo.scheduler.renewLease(job.id, workerId, now).mapError(JorlanError(_)).ignore
         agent <- repo.agent
           .getById(job.agentId.getOrElse(AgentId.empty))
           .mapError(JorlanError(_))
           .map(_.getOrElse(Agent(AgentId.empty, "", None, None, createdAt = now)))
         mergedInvariants = agent.invariants ++ pipeline.invariants
         userPrompt = TemplateEngine.renderUserPrompt(step, mergedInvariants, stepContext, runId, runContext, now)
-        systemPrompt = step.systemPrompt.nonEmpty match {
-          case true  => step.systemPrompt
+        baseSystemPrompt = step.systemPrompt.nonEmpty match {
+          case true  => TemplateEngine.renderSystemPrompt(step, mergedInvariants, stepContext, runId, runContext, now)
           case false => TemplateEngine.accuracySystemPrompt
         }
         result <- runAgentTurn(
@@ -237,9 +254,29 @@ class TriggerEngineImpl(
           sid =>
             step.mode match {
               case StepMode.SingleCall =>
-                agentRunner.processMessageSingleCall(sid, systemPrompt, userPrompt, Some(job.userId))
+                agentRunner.processMessageSingleCall(
+                  sid,
+                  baseSystemPrompt,
+                  userPrompt,
+                  Some(job.userId),
+                  checkpoint = false,
+                )
               case StepMode.ReactLoop =>
-                agentRunner.processMessage(sid, userPrompt, Some(job.userId), withMemory = false)
+                agentRunner.processMessage(
+                  sid,
+                  // ReactLoop has no per-call system-prompt override, so the step's system prompt (plus
+                  // tool-discipline rules for small models) is prepended to the user message instead.
+                  s"$baseSystemPrompt${TemplateEngine.toolDisciplineSuffix}\n\n$userPrompt",
+                  Some(job.userId),
+                  // Memory injection is semantic-only and capped (see AgentRunnerImpl.buildMemoryContext), so
+                  // pipeline steps can afford it — it is how household facts stored as memories (timezone,
+                  // calendar conventions, etc.) reach scheduled runs at all.
+                  withMemory = true,
+                  // Never checkpoint pipeline turns: step outputs live in the run context already; implicit
+                  // summarization of every scheduled run floods memory with transient, redundant records.
+                  checkpoint = false,
+                  allowedToolPrefixes = Option.when(step.tools.nonEmpty)(step.tools),
+                )
             },
         )
         output <- result match {
@@ -269,70 +306,106 @@ class TriggerEngineImpl(
     session:   AgentSession,
     run:       PipelineRun,
     cronCache: Ref[Map[SchedulerTriggerId, CronExpr]],
+    workerId:  String,
   ): IO[JorlanError, Unit] = {
     import zio.json.*
 
+    val isCancelled: IO[JorlanError, Boolean] = isCancelledJob(job.id)
+
+    /** `true` when the pipeline ran to completion, `false` when it stopped because the job was cancelled. */
     def loop(
       remaining:   List[PipelineStep],
       stepContext: Map[String, String],
-    ): IO[JorlanError, Unit] =
+    ): IO[JorlanError, Boolean] =
       remaining match {
-        case Nil          => ZIO.unit
+        case Nil          => ZIO.succeed(true)
         case step :: rest =>
-          executeStep(job, session, step, pipeline, stepContext, run.id, run.runContext)
-            .foldZIO(
-              err =>
-                for {
-                  now <- Clock.instant
-                  failedRun = run.copy(
-                    status = PipelineRunStatus.FailedAtStep,
-                    failedStep = Some(step.name),
-                    contextJson = Some(stepContext.toJson),
-                    finishedAt = Some(now),
-                  )
-                  _ <- repo.scheduler.updatePipelineRun(failedRun).mapError(JorlanError(_))
-                  _ <- ZIO.fail(err)
-                } yield (),
-              output => {
-                val newCtx = stepContext + (step.outputVar -> output)
-                repo.scheduler
-                  .updatePipelineRun(run.copy(contextJson = Some(newCtx.toJson))).mapError(JorlanError(_)) *>
-                  loop(rest, newCtx)
-              },
-            )
+          isCancelled.flatMap {
+            case true =>
+              ZIO.logInfo(
+                s"[TriggerEngine] Job ${job.id.value} ('${job.name}') was cancelled — stopping before step '${step.name}'",
+              ) *> ZIO.succeed(false)
+            case false =>
+              executeStep(job, session, step, pipeline, stepContext, run.id, run.runContext, workerId)
+                .foldZIO(
+                  err =>
+                    for {
+                      now <- Clock.instant
+                      failedRun = run.copy(
+                        status = PipelineRunStatus.FailedAtStep,
+                        failedStep = Some(step.name),
+                        contextJson = Some(stepContext.toJson),
+                        finishedAt = Some(now),
+                      )
+                      _ <- repo.scheduler.updatePipelineRun(failedRun).mapError(JorlanError(_))
+                      _ <- ZIO.fail(err)
+                    } yield false,
+                  output => {
+                    val newCtx = stepContext + (step.outputVar -> output)
+                    repo.scheduler
+                      .updatePipelineRun(run.copy(contextJson = Some(newCtx.toJson))).mapError(JorlanError(_)) *>
+                      loop(rest, newCtx)
+                  },
+                )
+          }
       }
 
     loop(pipeline.steps, Map.empty).foldZIO(
       err =>
         for {
           now       <- Clock.instant
+          cancelled <- isCancelled
           _         <- ZIO.logWarning(s"[TriggerEngine] Pipeline job ${job.id.value} failed: ${err.msg}")
           latestRun <- repo.scheduler
             .listPipelineRuns(job.id).mapError(JorlanError(_))
             .map(_.find(_.id == run.id).getOrElse(run))
           _ <- notifyPipelineFailure(job, latestRun, err)
-          _ <- scheduleRetryOrFail(job, now)
+          _ <-
+            if (cancelled)
+              ZIO.logInfo(s"[TriggerEngine] Job ${job.id.value} was cancelled — not retrying the failed run")
+            else scheduleRetryOrFail(job, now)
           _ <- logJobEvent(EventType.SchedulerJobFailed, job)
         } yield (),
-      _ =>
+      completed =>
         for {
-          now <- Clock.instant
-          _   <- repo.scheduler
-            .updatePipelineRun(run.copy(status = PipelineRunStatus.Succeeded, finishedAt = Some(now)))
-            .mapError(JorlanError(_))
-          _ <- repo.scheduler
-            .releaseJob(job.id, JobStatus.Succeeded, None, now)
-            .mapError(JorlanError(_))
-          _ <- logJobEvent(EventType.SchedulerJobCompleted, job)
-          _ <- advanceTriggers(job, cronCache, now)
-            .tapError(e =>
-              ZIO.logWarning(
-                s"[TriggerEngine] Job ${job.id.value} succeeded but trigger advance failed: ${e.msg}",
-              ),
-            ).ignore
+          now       <- Clock.instant
+          cancelled <- isCancelled
+          _         <-
+            if (!completed || cancelled) {
+              // Stopped mid-pipeline by a cancel, or finished after a cancel: leave the job in its Cancelled
+              // state (never overwrite it with Succeeded) and close out the run record.
+              repo.scheduler
+                .updatePipelineRun(run.copy(status = PipelineRunStatus.Cancelled, finishedAt = Some(now)))
+                .mapError(JorlanError(_)) *>
+                ZIO.logInfo(
+                  s"[TriggerEngine] Job ${job.id.value} ('${job.name}') run #${run.id.value} closed as Cancelled" +
+                    (if (completed) " (pipeline had already finished when the cancel landed)" else ""),
+                )
+            } else {
+              repo.scheduler
+                .updatePipelineRun(run.copy(status = PipelineRunStatus.Succeeded, finishedAt = Some(now)))
+                .mapError(JorlanError(_)) *>
+                repo.scheduler
+                  .releaseJob(job.id, JobStatus.Succeeded, None, now)
+                  .mapError(JorlanError(_)) *>
+                logJobEvent(EventType.SchedulerJobCompleted, job) *>
+                advanceTriggers(job, cronCache, now)
+                  .tapError(e =>
+                    ZIO.logWarning(
+                      s"[TriggerEngine] Job ${job.id.value} succeeded but trigger advance failed: ${e.msg}",
+                    ),
+                  ).ignore
+            }
         } yield (),
     )
   }
+
+  /** Whether the job was cancelled out from under the executing fiber (e.g. via the cancelJob mutation). */
+  private def isCancelledJob(jobId: SchedulerJobId): IO[JorlanError, Boolean] =
+    repo.scheduler
+      .getJob(jobId)
+      .mapError(JorlanError(_))
+      .map(_.exists(_.status == JobStatus.Cancelled))
 
   /** Execute a single claimed job: create a session, run its pipeline, collect the result, then terminate the session.
     */
@@ -384,7 +457,7 @@ class TriggerEngineImpl(
                 )
                 .mapError(JorlanError(_))
           }
-          _ <- executePipelineJob(job, job.pipeline, session, run, cronCache)
+          _ <- executePipelineJob(job, job.pipeline, session, run, cronCache, workerId)
         } yield ()
       }.catchAll { err =>
         // Session creation or other setup failure: treat the job as failed
@@ -461,11 +534,23 @@ class TriggerEngineImpl(
       _    <- repo.scheduler.expireLeases(now.minusSeconds(leaseTtl.toLong))
       jobs <- repo.scheduler.getPendingJobs
       _    <- ZIO.foreachDiscard(jobs) { job =>
-        repo.scheduler
-          .claimJob(job.id, workerId, now, leaseTtl)
-          .flatMap { claimed =>
-            executeJob(job, cronCache, workerId).forkDaemon.unit.when(claimed)
-          }
+        runningCount.get.flatMap { running =>
+          if (running >= maxConcurrentJobs)
+            ZIO.logDebug(
+              s"[TriggerEngine] Deferring job ${job.id.value} ('${job.name}') — " +
+                s"$running job(s) already running (max $maxConcurrentJobs); it stays Pending for a later tick",
+            )
+          else
+            repo.scheduler
+              .claimJob(job.id, workerId, now, leaseTtl)
+              .flatMap { claimed =>
+                (runningCount.update(_ + 1) *>
+                  executeJob(job, cronCache, workerId)
+                    .ensuring(runningCount.update(_ - 1))
+                    .forkDaemon
+                    .unit).when(claimed)
+              }
+        }
       }
     } yield ()
   }
@@ -508,6 +593,7 @@ object TriggerEngine {
       Duration.ofSeconds(s.pollIntervalSeconds.toLong),
       s.leaseTtlSeconds,
       Duration.ofSeconds(s.jobTimeoutSeconds.toLong),
+      s.maxConcurrentJobs,
     )
   }
 

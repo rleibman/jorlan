@@ -46,7 +46,7 @@ type JorlanApiEnv = ZIORepositories & CapabilityEvaluator & AgentSessionManager 
 /** ZIO environment type required by the main application. */
 type JorlanEnvironment =
   JorlanApiEnv & AuthServer[User, UserId, ConnectionId] & AuthConfig & OAuthService & OAuthStateStore & SessionHub &
-    TriggerEngine & ConnectorManager & EmbeddingStore & EmbeddingModel
+    TriggerEngine & ConnectorManager & EmbeddingStore & EmbeddingModel & javax.sql.DataSource
 
 /** Main entry point for the Jorlan server. */
 object Jorlan extends ZIOApp {
@@ -192,7 +192,7 @@ object Jorlan extends ZIOApp {
           getSetting = key =>
             repos.setting
               .get(key)
-              .tapError(e => ZIO.logWarning(s"Plugin getSetting('$key') failed: ${e.msg}"))
+              .tapError(e => ZIO.logError(s"Plugin getSetting('$key') failed: ${e.msg}"))
               .orElseSucceed(None),
           setSetting = (
             key,
@@ -200,7 +200,7 @@ object Jorlan extends ZIOApp {
           ) =>
             repos.setting
               .set(key, value)
-              .tapError(e => ZIO.logWarning(s"Plugin setSetting('$key') failed: ${e.msg}"))
+              .tapError(e => ZIO.logError(s"Plugin setSetting('$key') failed: ${e.msg}"))
               .orElseSucceed(()),
         ).catchAll(e => ZIO.logError(s"Plugin loading failed: ${e.msg}").as(List.empty))
       _ <- ZIO.foreachDiscard(pluginSkills)(registry.register)
@@ -428,6 +428,8 @@ object Jorlan extends ZIOApp {
   private def startServices: ZIO[Scope & SkillRegistry & ConnectorManager & JorlanEnvironment, JorlanError, Unit] =
     for {
       _ <- ZIO.serviceWithZIO[TriggerEngine](_.start.forkScoped)
+      // Backfill any memory records missing from the derived vector index (see MemoryEmbeddingReconciler).
+      _ <- jorlan.service.memory.MemoryEmbeddingReconciler.run.forkScoped
       _ <- ZIO
         .serviceWithZIO[ZIORepositories] { repos =>
           repos.memory.purgeExpired

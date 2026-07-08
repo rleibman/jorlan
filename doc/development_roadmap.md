@@ -237,6 +237,44 @@ GraphQL.
 
 ---
 
+## Phase 18: Use-Case Manifest Importer
+
+**Goal:** Provision a `doc/use-cases/*.md` use case (role, agent persona, memory seeds, MCP servers, declarative
+skills, scheduled pipeline job + trigger) into a running server from a JSON manifest, instead of manual UI work.
+See `doc/mini-designs/use-case-manifest-importer.md` and `doc/phase-review/use-case-manifest-importer-review.md`
+(tracked as phase ID `PUCI` since it wasn't originally planned as a numbered phase).
+
+- [x] `UseCaseManifest` JSON schema (`model/shared/src/main/scala/jorlan/usecase/UseCaseManifest.scala`)
+- [x] `shellClient` module extracted from `shell` (`ShellConfig`/`ServerUrl`/`AuthClient`/`GraphQLClient`/
+  `ZIOClientRepositories`), so both `shell` and the new lean `useCaseImporter` module can depend on it
+- [x] `UseCaseImporterApp` headless CLI (`useCaseImporter` module) — provisions a manifest via the existing
+  GraphQL API, idempotent re-runs, additive/updating only
+- [x] Worked example: `doc/use-cases/manifests/food_calendar.json`, restructured into a 6-step pipeline
+  (context saturation avoidance, per `doc/mini-designs/pipeline-jobs.md`)
+- [x] Pipeline template-reference validation at import time (`validatePipelineReferences`) — catches
+  `{{steps.NAME.output}}` typos/forward-references before any network call, not as a runtime pipeline failure
+- [x] Bug fix: `QuillAgentRepository.upsert`'s MariaDB `ON DUPLICATE KEY UPDATE`/`LAST_INSERT_ID` quirk was
+  silently creating a duplicate row on every "update"
+- [x] Bug fix: 16 `QuillRepositories.scala` search methods applied `drop`/`take` before `sortBy`, returning an
+  arbitrary/stale slice instead of the intended top-N (this directly caused the Event Log page to show almost
+  no recent activity)
+- [x] PUCI-004: reconcile `TriggerEngine`'s independent `jobTimeoutSeconds` (default 300s) with `ai.timeout`
+  (10min) so scheduled pipeline steps aren't killed before the LLM client's own timeout could fire
+- [x] PUCI-005: server-side exact-name lookups for Agent/Role (currently fetch-a-page-then-client-filter,
+  silently misses rows past `pageSize`)
+- [x] PUCI-006: missing `logEvent` calls on `createRole`/`updateRole`/`upsertMcpServer`/`updateJobPipeline`/
+  `upsertAgent`/`createSkillDraft` (append-only audit trail gap, 3rd recurrence of this pattern)
+- [x] PUCI-007: floating methods on `ZIOClientRepositories` grouped and labeled by the sub-repo they
+  conceptually extend (`scheduler`/`permission`/`skill` extensions), with a doc comment explaining why they
+  can't move onto the shared model-level sub-repo traits themselves without also changing `web`'s
+  `AsyncCallbackRepositories` and `server`'s `ZIORepositories` (both implement the same shared
+  `Repositories[F[_]]` interface) -- a proper `McpServerRepository`-style cross-module refactor is a
+  separate, larger follow-up, not something to force into this cleanup pass
+- [x] PUCI-008: extract a shared combinator for the 9 near-identical `provisionX` functions
+- [x] PUCI-009: regression tests for both Quill bug fixes above
+
+---
+
 
 ---
 

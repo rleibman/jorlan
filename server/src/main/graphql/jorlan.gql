@@ -85,6 +85,8 @@ enum EventType {
   AgentStarted
   AgentCompleted
   AgentFailed
+  AgentDefinitionCreated
+  AgentDefinitionUpdated
   SessionCreated
   SessionSuspended
   SessionTerminated
@@ -111,6 +113,8 @@ enum EventType {
   MemoryRescoped
   MemoryCheckpointed
   MemoryExpired
+  RoleCreated
+  RoleUpdated
   RoleAssigned
   RoleRevoked
   CapabilityAllowed
@@ -147,6 +151,7 @@ enum EventType {
   SkillLifecycleAdvanced
   SkillApproved
   SkillRejected
+  McpServerUpserted
   SystemAlert
   ServerInitialized
 }
@@ -496,9 +501,9 @@ type Queries {
   userCapabilityGrants(value: UserId!): [CapabilityGrant!]
   roleCapabilityGrants(value: RoleId!): [CapabilityGrant!]
   userChannelIdentities(value: UserId!): [ChannelIdentity!]
-  allRoles(page: Int, pageSize: Int): [Role!]
+  allRoles(name: String, page: Int, pageSize: Int): [Role!]
   checkpointPolicy: CheckpointPolicyConfig
-  agents: [Agent!]
+  agents(name: String, page: Int, pageSize: Int): [Agent!]
   agent(value: AgentId!): Agent
   dashboardStats: DashboardStats
   skillDashboardData(value: String!): String

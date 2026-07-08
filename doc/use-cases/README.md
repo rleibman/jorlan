@@ -9,6 +9,9 @@ Machine-readable manifests for provisioning a use case into a running server liv
 `doc/use-cases/manifests/`, translated per the schema in `manifest-schema.md` and applied via
 `UseCaseImporterApp`. See `HOW-TO-IMPLEMENT-A-USE-CASE.md` for the step-by-step process.
 
+All use cases now have manifests in `manifests/`. Outstanding gaps (MCP credentials, missing scripts,
+declarative skills to author, native skills to build) are tracked per use case in `TODO.md`.
+
 ---
 
 ## Status Legend

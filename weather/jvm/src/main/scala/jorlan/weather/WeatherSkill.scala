@@ -82,7 +82,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.current",
         description = "Fetch current weather conditions for a named location. Returns temperature, feels_like, humidity, description, wind_speed, and visibility.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name to look up weather for, e.g. 'London' or 'Paris,FR'. If the user does not specify a city, OMIT this field entirely to use the server's configured default location."},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"OMIT this field unless a specific city was explicitly requested — omitting it uses the server's configured default location, which is almost always correct. Never guess or invent a city."},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(
@@ -94,7 +94,7 @@ class WeatherSkill(
       ToolDescriptor(
         name = "weather.forecast",
         description = "Fetch a simplified multi-day weather forecast for a named location. Returns a list of forecast entries with date, temp_min, temp_max, and description.",
-        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"City name to get a forecast for, e.g. 'Paris' or 'Tokyo,JP'. If the user does not specify a city, OMIT this field entirely to use the server's configured default location."},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
+        inputSchema = json"""{"type":"object","properties":{"location":{"type":"string","description":"OMIT this field unless a specific city was explicitly requested — omitting it uses the server's configured default location, which is almost always correct. Never guess or invent a city."},"days":{"type":"integer","description":"Number of days to forecast (1–5); default 5"},"units":{"type":"string","description":"Override units: metric | imperial | standard"}},"required":[]}""",
         outputSchema = Json.Obj("type" -> Json.Str("array")),
         requiredCapabilities = List(CapabilityName("weather.read")),
         examplePrompts = List(

@@ -28,19 +28,16 @@ class MemoryServiceImpl(
 ) extends MemoryService {
 
   private def embedAndStore(stored: MemoryRecord): UIO[Unit] = {
-    val text = s"${stored.recordKey}: ${stored.value}"
-    val metaMap = Map[String, AnyRef](
-      "memoryRecordId" -> stored.id.value.toString,
-      "userId"         -> stored.userId.map(_.value.toString).getOrElse(""),
-      "agentId"        -> stored.agentId.map(_.value.toString).getOrElse(""),
-      "scope"          -> stored.scope.toString,
-    ).asJava
-    val segment = TextSegment.from(text, Metadata.from(metaMap))
+    val (text, segment) = MemoryServiceImpl.embeddingSegment(stored)
     ZIO
       .attemptBlocking {
         val embedding = embeddingModel.embed(text).content()
         embeddingStore.add(embedding, segment)
-      }.forkDaemon.ignore
+      }
+      // A failed embedding leaves the record permanently invisible to semantic recall until the startup
+      // reconciler backfills it — worth a warning, never worth failing the store itself.
+      .tapError(e => ZIO.logWarning(s"Failed to embed memory record ${stored.id.value}: ${e.getMessage}"))
+      .forkDaemon.ignore
   }
 
   override def store(record: MemoryRecord): IO[JorlanError, MemoryRecord] =
@@ -190,11 +187,15 @@ class MemoryServiceImpl(
     ZIO
       .attemptBlocking {
         val queryEmbedding = embeddingModel.embed(queryText).content()
+        // Deliberately filters on userId only, NOT on `scope`: semantic recall should surface any memory the
+        // user can see (User, Workspace, Shared) — household facts like the timezone live in Workspace scope
+        // and must still reach prompts.
         val filter = MetadataFilterBuilder.metadataKey("userId").isEqualTo(userId.value.toString)
         val request = EmbeddingSearchRequest
           .builder()
           .queryEmbedding(queryEmbedding)
           .maxResults(limit)
+          .minScore(MemoryServiceImpl.semanticQueryMinScore)
           .filter(filter)
           .build()
         embeddingStore.search(request).matches().asScala.toList.flatMap { m =>
@@ -220,6 +221,25 @@ class MemoryServiceImpl(
 }
 
 object MemoryServiceImpl {
+
+  /** Minimum cosine similarity for a memory record to be considered relevant to the current prompt. Below this, a
+    * record is treated as noise rather than context worth spending prompt budget on.
+    */
+  private val semanticQueryMinScore: Double = 0.6
+
+  /** The text and metadata segment a memory record is embedded as. Shared with [[MemoryEmbeddingReconciler]] so the
+    * startup backfill produces byte-identical index entries to the live [[MemoryService.store]] path.
+    */
+  def embeddingSegment(record: MemoryRecord): (String, TextSegment) = {
+    val text = s"${record.recordKey}: ${record.value}"
+    val metaMap = Map[String, AnyRef](
+      "memoryRecordId" -> record.id.value.toString,
+      "userId"         -> record.userId.map(_.value.toString).getOrElse(""),
+      "agentId"        -> record.agentId.map(_.value.toString).getOrElse(""),
+      "scope"          -> record.scope.toString,
+    ).asJava
+    (text, TextSegment.from(text, Metadata.from(metaMap)))
+  }
 
   val live: URLayer[ZIORepositories & ModelGateway & EmbeddingStore & EmbeddingModel, MemoryService] =
     ZLayer.fromZIO(

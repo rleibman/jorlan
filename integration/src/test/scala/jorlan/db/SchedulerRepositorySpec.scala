@@ -211,6 +211,33 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
           fetched.exists(_.resultJson.contains("""{"result":"ok"}""")),
         )
       },
+      test("renewLease slides leasedAt forward for the owning worker") {
+        for {
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
+          (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched12")
+          job        <- repo.upsertJob(makeJob(aid, uid, "renew-lease"))
+          _          <- repo.claimJob(job.id, "worker-A", T0, 300)
+          later = T0.plusSeconds(120)
+          renewed <- repo.renewLease(job.id, "worker-A", later)
+          fetched <- repo.getJob(job.id)
+        } yield assertTrue(renewed, fetched.exists(_.leasedAt.contains(later)))
+      },
+      test("renewLease is a no-op once another worker has reclaimed the lease") {
+        for {
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
+          (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched13")
+          job        <- repo.upsertJob(makeJob(aid, uid, "renew-lease-lost"))
+          _          <- repo.claimJob(job.id, "worker-A", T0, 300)
+          _          <- repo.expireLeases(T0.plusSeconds(1)) // reclaim as if worker-A's lease went stale
+          _          <- repo.claimJob(job.id, "worker-B", T0.plusSeconds(2), 300)
+          renewed    <- repo.renewLease(job.id, "worker-A", T0.plusSeconds(120))
+          fetched    <- repo.getJob(job.id)
+        } yield assertTrue(!renewed, fetched.exists(_.leasedBy.contains("worker-B")))
+      },
       test("expireLeases reclaims stale Running jobs to Pending") {
         for {
           userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)

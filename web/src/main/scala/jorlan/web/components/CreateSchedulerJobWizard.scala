@@ -99,7 +99,14 @@ object CreateSchedulerJobWizard {
         ) =>
           def setField(f: WizardState => WizardState): Callback = state.modState(f)
 
-          def nextStep(): Callback = state.modState(s => s.copy(step = (s.step + 1).min(stepLabels.length - 1)))
+          def nextStep(): Callback =
+            state.modState(s =>
+              s.copy(
+                step = (s.step + 1).min(stepLabels.length - 1),
+                // Leaving the Steps page implicitly finishes editing the open step, same as "Done editing step".
+                editingStep = if (s.step == 1) None else s.editingStep,
+              ),
+            )
           def prevStep(): Callback = state.modState(s => s.copy(step = (s.step - 1).max(0)))
 
           def save(): Callback =
@@ -397,41 +404,43 @@ object CreateSchedulerJobWizard {
 
           val verb = if (props.editingJob.isDefined) "Edit" else "New"
 
-          Dialog(true)(
-            DialogTitle()(s"$verb Scheduler Job — ${stepLabels(sv.step)}"),
-            DialogContent()(
-              Stepper.withProps(
-                StepperOwnProps().setActiveStep(sv.step.toDouble).asInstanceOf[Stepper.Props],
-              )(
-                stepLabels.zipWithIndex.map { case (label, idx) =>
-                  Step.withKey(idx.toString)(
-                    StepLabel()(label),
-                  )
-                }*,
+          Dialog(true)
+            .fullWidth(true)
+            .maxWidth(net.leibman.jorlan.muiSystem.muiSystemStrings.lg)(
+              DialogTitle()(s"$verb Scheduler Job — ${stepLabels(sv.step)}"),
+              DialogContent()(
+                Stepper.withProps(
+                  StepperOwnProps().setActiveStep(sv.step.toDouble).asInstanceOf[Stepper.Props],
+                )(
+                  stepLabels.zipWithIndex.map { case (label, idx) =>
+                    Step.withKey(idx.toString)(
+                      StepLabel()(label),
+                    )
+                  }*,
+                ),
+                <.div(^.style := js.Dynamic.literal(marginTop = "24px"))(
+                  stepContent,
+                ),
               ),
-              <.div(^.style := js.Dynamic.literal(marginTop = "24px"))(
-                stepContent,
+              DialogActions()(
+                MuiButton.disabled(sv.saving).onClick(() => props.onClose.runNow())("Cancel"),
+                if (sv.step > 0) {
+                  MuiButton.disabled(sv.saving).onClick(() => prevStep().runNow())("Back")
+                } else EmptyVdom,
+                if (sv.step < stepLabels.length - 1) {
+                  val disabled = sv.step == 1 && !canAdvanceFromSteps
+                  MuiButton
+                    .variant("contained")
+                    .disabled(disabled)
+                    .onClick(() => nextStep().runNow())("Next")
+                } else {
+                  MuiButton
+                    .variant("contained")
+                    .disabled(sv.saving || sv.steps.isEmpty)
+                    .onClick(() => save().runNow())(if (props.editingJob.isDefined) "Save" else "Create")
+                },
               ),
-            ),
-            DialogActions()(
-              MuiButton.disabled(sv.saving).onClick(() => props.onClose.runNow())("Cancel"),
-              if (sv.step > 0) {
-                MuiButton.disabled(sv.saving).onClick(() => prevStep().runNow())("Back")
-              } else EmptyVdom,
-              if (sv.step < stepLabels.length - 1) {
-                val disabled = sv.step == 1 && !canAdvanceFromSteps
-                MuiButton
-                  .variant("contained")
-                  .disabled(disabled)
-                  .onClick(() => nextStep().runNow())("Next")
-              } else {
-                MuiButton
-                  .variant("contained")
-                  .disabled(sv.saving || sv.steps.isEmpty)
-                  .onClick(() => save().runNow())(if (props.editingJob.isDefined) "Save" else "Create")
-              },
-            ),
-          )
+            )
       }
 
   def apply(

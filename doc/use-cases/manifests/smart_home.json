@@ -1,0 +1,73 @@
+{
+  "useCaseName": "smart_home",
+  "sourceDoc": "doc/use-cases/smart-home.md",
+  "role": {
+    "name": "smart-home-agent-role",
+    "description": "Capabilities for the smart home agent (Home Assistant MCP is the key enabler)",
+    "capabilities": [
+      { "capability": "calendar.listEvents" },
+      { "capability": "weather.current" },
+      { "capability": "weather.forecast" },
+      { "capability": "weather.alerts" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "smart-home-agent",
+    "description": "Smart home agent: monitors weather alerts and calendar context, and (once the Home Assistant MCP is enabled) reads sensors and controls devices with approval gates on high-risk actions.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["weather", "calendar", "memory", "scheduler"],
+    "invariants": { "role": "cautious home operations manager; high-risk actions (locks, alarm, garage) always require explicit approval" }
+  },
+  "memorySeeds": [],
+  "mcpServers": [
+    {
+      "name": "home-assistant",
+      "transport": "Http",
+      "url": "http://CHANGE_ME:8123/mcp_server",
+      "env": [
+        { "key": "HA_BEARER_TOKEN", "value": "CHANGE_ME" }
+      ],
+      "enabled": false,
+      "keywords": ["home assistant", "lights", "climate", "locks", "sensors", "smart home"]
+    }
+  ],
+  "declarativeSkills": [],
+  "job": {
+    "name": "smart-home-weather-watch",
+    "steps": [
+      {
+        "name": "check-alerts",
+        "systemPrompt": "You check for severe weather affecting the home. Call weather.alerts once with NO location parameter (the server default is our home).\n\nOutput: one line per active alert with severity and timeframe, or exactly 'No active weather alerts.'",
+        "userPrompt": "{{now}} -- Check weather alerts now.",
+        "tools": ["weather.alerts"],
+        "mode": "ReactLoop",
+        "outputVar": "alerts",
+        "retryOnFail": 1
+      },
+      {
+        "name": "notify-if-severe",
+        "systemPrompt": "You decide whether to notify. If the alert list contains any active alert, call notify.user once (pass only 'message', never userId) summarizing the alert and any sensible home preparation (close windows, check sump pump, etc.). If there are no alerts, do NOT call any tool.\n\nOutput: 'notified' or 'no alerts -- nothing sent'.",
+        "userPrompt": "Alerts:\n{{steps.alerts.output}}\n\nNotify if warranted.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "result",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 13,22 ? * *"
+    }
+  }
+}
