@@ -297,9 +297,8 @@ object UsersPage {
                   AsyncCallbackRepositories.permission.searchRoles(RoleSearch(userId = None))
               ).flatMap { case (userRoles, allRoles) =>
                 state
-                  .setState(
-                    state.value
-                      .copy(rolesUser = Some(user), userRoles = userRoles, allRoles = allRoles, assignRoleId = ""),
+                  .modState(
+                    _.copy(rolesUser = Some(user), userRoles = userRoles, allRoles = allRoles, assignRoleId = ""),
                   ).asAsyncCallback
               }
                 .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))

@@ -104,10 +104,8 @@ object SkillsPage {
           state,
         ) =>
           def toggleExpand(name: String): Callback =
-            if (state.value.expanded.contains(name))
-              state.modState(_.copy(expanded = state.value.expanded - name))
-            else
-              state.modState(_.copy(expanded = state.value.expanded + name))
+            state
+              .modState(s => s.copy(expanded = if (s.expanded.contains(name)) s.expanded - name else s.expanded + name))
 
           def toggleEnabled(skill: SkillInfo): Callback =
             Callback {

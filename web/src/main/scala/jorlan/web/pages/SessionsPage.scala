@@ -89,13 +89,11 @@ object SessionsPage {
               AsyncCallbackRepositories.agent
                 .terminateSession(sessionId)
                 .flatMap { _ =>
-                  val newSessions = state.value.sessions.filterNot(_.id == sessionId)
-                  val maxPage = math.max(0, (newSessions.size - 1) / state.value.rowsPerPage)
-                  state
-                    .modState(
-                      _.copy(sessions = newSessions, page = math.min(state.value.page, maxPage)),
-                    )
-                    .asAsyncCallback
+                  state.modState { s =>
+                    val newSessions = s.sessions.filterNot(_.id == sessionId)
+                    val maxPage = math.max(0, (newSessions.size - 1) / s.rowsPerPage)
+                    s.copy(sessions = newSessions, page = math.min(s.page, maxPage))
+                  }.asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
@@ -125,9 +123,9 @@ object SessionsPage {
                 .flatMap { sessionOpt =>
                   sessionOpt.fold(AsyncCallback.unit) { session =>
                     state
-                      .modState(
-                        _.copy(
-                          sessions = state.value.sessions :+ session,
+                      .modState(s =>
+                        s.copy(
+                          sessions = s.sessions :+ session,
                           showCreate = false,
                           selectedModelId = None,
                         ),

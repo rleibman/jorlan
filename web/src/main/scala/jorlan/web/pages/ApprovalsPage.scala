@@ -58,9 +58,12 @@ object ApprovalsPage {
 
             val handler = AsyncCallbackRepositories.subscribeToApprovals(
               onData = { newApproval =>
-                val existing = state.value.approvals
-                if (existing.exists(_.id == newApproval.id)) Callback.empty
-                else state.modState(_.copy(approvals = existing :+ newApproval))
+                // Dedup decision must happen inside the updater: reading state.value first and
+                // appending later can clobber updates that land in between.
+                state.modState(s =>
+                  if (s.approvals.exists(_.id == newApproval.id)) s
+                  else s.copy(approvals = s.approvals :+ newApproval),
+                )
               },
             )
             state.modState(_.copy(wsHandler = Some(handler))).runNow()
@@ -83,9 +86,7 @@ object ApprovalsPage {
                 .flatMap { result =>
                   if (result)
                     state
-                      .modState(
-                        _.copy(approvals = state.value.approvals.filterNot(_.id == id)),
-                      )
+                      .modState(s => s.copy(approvals = s.approvals.filterNot(_.id == id)))
                       .asAsyncCallback
                   else
                     AsyncCallback.unit

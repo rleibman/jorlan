@@ -55,9 +55,8 @@ object EventLogPage {
               flushScheduled = false
               if (batch.nonEmpty) {
                 state
-                  .modState(
-                    _.copy(events = (batch.reverse ::: state.value.events).take(200)),
-                  ).runNow()
+                  .modState(s => s.copy(events = (batch.reverse ::: s.events).take(200)))
+                  .runNow()
               }
             }
 
@@ -151,11 +150,11 @@ object EventLogPage {
                                   .size("small")
                                   .onClick(() =>
                                     state
-                                      .modState(
-                                        _.copy(
+                                      .modState(s =>
+                                        s.copy(
                                           expanded =
-                                            if (isExpanded) state.value.expanded - event.id
-                                            else state.value.expanded + event.id,
+                                            if (s.expanded.contains(event.id)) s.expanded - event.id
+                                            else s.expanded + event.id,
                                         ),
                                       )
                                       .runNow(),

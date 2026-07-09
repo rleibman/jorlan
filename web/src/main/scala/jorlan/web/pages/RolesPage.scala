@@ -102,9 +102,8 @@ object RolesPage {
                 .flatMap(_ => AsyncCallbackRepositories.permission.searchRoles(RoleSearch()))
                 .flatMap(roles =>
                   state
-                    .setState(
-                      state.value
-                        .copy(saving = false, showCreate = false, createName = "", createDesc = "", roles = roles),
+                    .modState(
+                      _.copy(saving = false, showCreate = false, createName = "", createDesc = "", roles = roles),
                     )
                     .asAsyncCallback,
                 )
