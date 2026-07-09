@@ -96,24 +96,29 @@ object EnvironmentBuilder {
         ingress    <- ZIO.service[MessageIngress]
         httpClient <- ZIO.service[Client]
         jobManager <- ZIO.service[JobManager]
-runHandler: TelegramRunCommandHandler = { (jobName, runContext, channelUserId) =>
-  repos.user
-    .userByChannelIdentity(ChannelType.Telegram, channelUserId)
-    .mapError(JorlanError(_))
-    .flatMap {
-      case None => ZIO.fail(JorlanError(s"Unrecognized Telegram user '$channelUserId'"))
-      case Some(user) =>
-        jobManager.listJobs(None).flatMap { jobs =>
-          jobs.find(j => j.userId == user.id && j.name.equalsIgnoreCase(jobName)) match {
-            case None => ZIO.fail(JorlanError(s"No job named '$jobName' found for your user."))
-            case Some(job) =>
-              jobManager.triggerPipeline(job.id, runContext).map { runId =>
-                s"Pipeline '${job.name}' triggered (run #${runId.value}). Check the Scheduler page for progress."
+        runHandler: TelegramRunCommandHandler = {
+          (
+            jobName,
+            runContext,
+            channelUserId,
+          ) =>
+            repos.user
+              .userByChannelIdentity(ChannelType.Telegram, channelUserId)
+              .mapError(JorlanError(_))
+              .flatMap {
+                case None       => ZIO.fail(JorlanError(s"Unrecognized Telegram user '$channelUserId'"))
+                case Some(user) =>
+                  jobManager.listJobs(None).flatMap { jobs =>
+                    jobs.find(j => j.userId == user.id && j.name.equalsIgnoreCase(jobName)) match {
+                      case None      => ZIO.fail(JorlanError(s"No job named '$jobName' found for your user."))
+                      case Some(job) =>
+                        jobManager.triggerPipeline(job.id, runContext).map { runId =>
+                          s"Pipeline '${job.name}' triggered (run #${runId.value}). Check the Scheduler page for progress."
+                        }
+                    }
+                  }
               }
-          }
         }
-    }
-}
         connectors <- skillRepo
           .searchConnectors(ConnectorSearch())
         telegramInstances = connectors.filter(_.connectorType == ConnectorType.Telegram)
