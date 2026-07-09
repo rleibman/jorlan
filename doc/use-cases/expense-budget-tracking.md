@@ -444,3 +444,40 @@ Every year:
 * Organize tax-related records.
 * Summarize long-term trends.
 * Review financial goals.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Monitor email for receipts and invoices | `email.list`, `email.read`, `email.search` |
+| Store and search financial records | `memory.remember`, `memory.search_semantic`, `workspace.write` |
+| Scheduled daily/weekly/monthly reviews | `scheduler.create_job` |
+| Google Drive receipts and exports | `GoogleDriveSkill` — `drive.listFiles`, `drive.readFile`, `drive.downloadFile` |
+| Telegram spending alerts | `TelegramConnectorSkill` — `telegram.send_message` |
+| Currency conversion for travel expenses | `units.convert` (if supported) or declarative HTTP skill |
+| Web search for financial information | `search.web` |
+| Shell-based CSV processing of bank exports | `shell.run`, `shell.cat`, `workspace.write` |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### PDF/Document extraction MCP
+Bank statements and receipts often arrive as PDFs. Options:
+- **MarkItDown MCP** (`markitdown-mcp`) — Microsoft's document-to-markdown converter; supports PDF, XLSX, DOCX
+- Transport: stdio (`npx markitdown-mcp` or equivalent)
+- Alternatively: use `shell.run("pdftotext <file>.pdf -")` if `poppler-utils` is installed on the server
+
+### Declarative HTTP skills to define
+
+| Skill | API | Notes |
+|---|---|---|
+| `currency_exchange` | exchangerate.host (free) or Open Exchange Rates | `GET https://open.er-api.com/v6/latest/<BASE>` |
+| `tax_reference` | IRS / CRA reference lookups | `http_fetch.get` on official sites |
+
+### What is not yet feasible
+
+- **OCR for physical receipts / scanned documents** — requires Tesseract or a cloud OCR API. Use `shell.run("tesseract <img> stdout")` if Tesseract is installed on the server, or configure an OCR API as a declarative HTTP skill (e.g. Google Vision, AWS Textract).
+- **Direct bank API access** — requires Open Banking / Plaid integration; not currently planned.
+- **Transaction classification ML model** — the agent itself can classify transactions using its reasoning; no separate ML model needed.
+- **Spreadsheet generation** — `workspace.write` can produce CSV; full Excel requires a library or the MarkItDown MCP in reverse.

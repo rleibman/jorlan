@@ -365,3 +365,32 @@ When a milestone is reached:
 * Celebrate the achievement.
 * Update the roadmap.
 * Create the next milestone plan.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Per-skill learner profile | `memory.remember`, `memory.search_semantic` |
+| Daily and weekly practice triggers | `scheduler.create_job` |
+| Deliver practice tasks via Telegram | `TelegramConnectorSkill` — `telegram.send_message` |
+| Calendar integration for practice schedules | `GoogleCalendarSkill` — `calendar.createEvent` |
+| Store learning plans, assessments, roadmaps | `workspace.write`, `workspace.read` |
+| Web search for learning resources | `search.web`, `http_fetch.get` |
+| Spaced repetition scheduling (approximated) | `scheduler.create_job` (dynamic intervals) + `memory` |
+| Inactivity detection | `scheduler.create_job` + `memory.search` (check last practice date) |
+
+### Simulating Spaced Repetition
+
+Without a dedicated SRS engine, use:
+- Store each item: `memory.remember("srs:<program>:<item> interval=<days> nextReview=<ISO date> easeFactor=<ef>")`
+- Find due items: `memory.search("srs:<program>:* nextReview")` and filter by date in agent reasoning
+- After review: update the memory entry with new interval and next review date
+- Schedule the next session: `scheduler.create_job(runAt=<nextReview>, ...)`
+
+### What is not yet feasible
+
+- **Audio/video analysis for performance review** — requires media input pipeline; not supported
+- **Automated quizzing with adaptive difficulty** — the agent can generate quizzes conversationally via Telegram; true adaptive difficulty tracking is manual via `memory`
+- **Code evaluation for programming skills** — `shell.run` can execute code samples as part of a programming exercise; results returned to the agent for evaluation

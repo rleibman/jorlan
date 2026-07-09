@@ -11,6 +11,7 @@ import jorlan.graphql.client.JorlanClient
 import jorlan.graphql.client.JorlanClientDecoders.given
 import jorlan.service.{CheckpointPolicyConfig, EventLogFilter}
 import zio.*
+import zio.json.*
 import zio.json.ast.Json
 
 import java.time.Instant
@@ -46,8 +47,17 @@ case class SkillLifecycleResult(
   info:      List[String],
 )
 
+/** Extends the shared [[Repositories]] surface (`agent`/`memory`/`permission`/`scheduler`/`skill`/etc. sub-repos,
+  * implemented identically by `server`'s `ZIORepositories` and `web`'s `AsyncCallbackRepositories`) with client-only
+  * convenience methods. These don't live on the shared model-level sub-repo traits themselves because those traits are
+  * implemented across all three modules -- adding a GraphQL-mutation-shaped convenience wrapper here (e.g.
+  * `createJobWithPipeline`) would force server/web to implement it too, even though it's purely a client ergonomics
+  * concern. Grouped below by the sub-repo each one conceptually extends, so "what can I do with jobs" is answerable by
+  * reading `scheduler` plus this "Scheduler extensions" section, not just one or the other.
+  */
 trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
 
+  // ── Checkpoint policy (memory-adjacent, no dedicated sub-repo) ─────────────
   def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean]
   def getCheckpointPolicy:                          IO[String, CheckpointPolicyConfig]
   def updateCheckpointPolicy(
@@ -57,13 +67,17 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
     beforeExternalEffect: Option[Boolean] = None,
   ): IO[String, CheckpointPolicyConfig]
 
+  // ── MCP server configuration (no dedicated sub-repo; server-side this is handled ad hoc via
+  // ServerSettingsRepository, not a proper repository abstraction, so there's nothing to extend here) ──
   def listMcpServers():                              IO[String, List[jorlan.McpServerInfo]]
   def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo]
   def deleteMcpServer(name:   String):               IO[String, Boolean]
   def reloadMcpServers():                            IO[String, Boolean]
 
+  // ── Dashboard ────────────────────────────────────────────────────────────
   def dashboardKpis(): IO[String, DashboardKpis]
 
+  // ── `permission` extensions (role update/delete beyond the shared upsertRole) ──
   def updateRole(
     id:          RoleId,
     name:        String,
@@ -71,6 +85,8 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
   ):                          IO[String, Role]
   def deleteRole(id: RoleId): IO[String, Boolean]
 
+  // ── `scheduler` extensions (GraphQL-mutation-shaped job/trigger operations beyond the shared
+  // upsertJob/upsertTrigger primitives) ──────────────────────────────────────
   def createJob(
     name:            String,
     prompt:          String,
@@ -79,10 +95,24 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
   ): IO[String, SchedulerJob]
+
+  /** Creates a job from a fully-specified [[Pipeline]] (multi-step, real per-step system prompts) and an optional
+    * owning agent. Used by tooling that builds pipelines directly (e.g. the use-case manifest importer) rather than the
+    * simple single-prompt path above (used by the `/scheduler create` shell command).
+    */
+  def createJobWithPipeline(
+    name:            String,
+    pipeline:        Pipeline,
+    agentId:         Option[AgentId],
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob]
+
   def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -95,6 +125,7 @@ trait ZIOClientRepositories extends Repositories[[A] =>> IO[String, A]] {
   ):                                         IO[String, SchedulerTrigger]
   def deleteTrigger(id: SchedulerTriggerId): IO[String, Boolean]
 
+  // ── `skill` extensions (declarative-skill draft lifecycle beyond the shared skill CRUD) ──
   def allCustomSkills():                         IO[String, List[SkillVersionInfo2]]
   def pendingSkillVersions():                    IO[String, List[SkillVersionInfo2]]
   def skillVersions(skillId:           SkillId): IO[String, List[SkillVersionInfo2]]
@@ -127,9 +158,31 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         .run(JorlanClient.Queries.listSessions()(JorlanClient.AgentSession.view))
         .map(_.getOrElse(List.empty).map(toAgentSession))
 
-    override def getById(id:            AgentId):         IO[String, Option[Agent]] = ZIO.succeed(None)
-    override def search(s:              AgentSearch):     IO[String, List[Agent]] = ZIO.succeed(List.empty)
-    override def upsert(a:              Agent):           IO[String, Agent] = ZIO.fail("not implemented")
+    override def search(s: AgentSearch): IO[String, List[Agent]] =
+      gqlClient
+        .run(JorlanClient.Queries.agents(s.name, Some(s.page), Some(s.pageSize))(JorlanClient.Agent.view))
+        .map(_.getOrElse(List.empty).map(toAgent))
+
+    override def getById(id: AgentId): IO[String, Option[Agent]] =
+      search(AgentSearch()).map(_.find(_.id == id))
+
+    override def upsert(a: Agent): IO[String, Agent] =
+      gqlClient
+        .run(
+          JorlanClient.Mutations
+            .upsertAgent(
+              id = a.id,
+              name = a.name,
+              description = a.description,
+              defaultModel = a.defaultModel,
+              trustLevel = a.trustLevel,
+              prioritizedSkills = a.prioritizedSkills,
+              invariantsJson = a.invariants.toJson,
+            )(JorlanClient.Agent.view),
+        )
+        .flatMap(r => ZIO.fromOption(r).orElseFail("upsertAgent returned nothing"))
+        .map(toAgent)
+
     override def delete(id:             AgentId):         IO[String, Long] = ZIO.fail("not implemented")
     override def getSession(id:         AgentSessionId):  IO[String, Option[AgentSession]] = ZIO.succeed(None)
     override def upsertSession(session: AgentSession):    IO[String, AgentSession] = ZIO.fail("not implemented")
@@ -243,7 +296,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
               .map(_.getOrElse(List.empty).map(toRole))
           case None =>
             gqlClient
-              .run(JorlanClient.Queries.allRoles()(JorlanClient.Role.view))
+              .run(JorlanClient.Queries.allRoles(s.name, Some(s.page), Some(s.pageSize))(JorlanClient.Role.view))
               .map(_.getOrElse(List.empty).map(toRole))
         }
       override def upsertRole(role: Role): IO[String, Role] =
@@ -348,7 +401,6 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     override def updateJobConfig(
       id:              SchedulerJobId,
       name:            String,
-      prompt:          String,
       maxRetries:      Int,
       backoffSeconds:  Int,
       backoffPolicy:   RetryBackoffPolicy,
@@ -380,6 +432,23 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       finishedAt: Instant,
     ):                                             IO[String, Unit] = ZIO.unit
     override def expireLeases(olderThan: Instant): IO[String, Long] = ZIO.succeed(0L)
+    override def renewLease(
+      id:       SchedulerJobId,
+      workerId: String,
+      now:      Instant,
+    ): IO[String, Boolean] = ZIO.succeed(false)
+
+    override def insertPipelineRun(run:  PipelineRun):    IO[String, PipelineRun] = ZIO.fail("not implemented")
+    override def updatePipelineRun(run:  PipelineRun):    IO[String, Unit] = ZIO.unit
+    override def listPipelineRuns(jobId: SchedulerJobId): IO[String, List[PipelineRun]] = ZIO.succeed(List.empty)
+    override def getPipelineRun(id:      PipelineRunId):  IO[String, Option[PipelineRun]] = ZIO.succeed(None)
+    override def updateJobPipeline(
+      id:       SchedulerJobId,
+      pipeline: Pipeline,
+    ): IO[String, Boolean] =
+      gqlClient
+        .run(JorlanClient.Mutations.updateJobPipeline(id, pipeline.toJson)(JorlanClient.SchedulerJob.view))
+        .map(_.isDefined)
 
   }
 
@@ -436,7 +505,8 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       email:    String,
       password: String,
     ):                                       IO[String, Option[User]] = ZIO.succeed(None)
-    override def userByEmail(email: String): IO[String, Option[User]] = ZIO.succeed(None)
+    override def userByEmail(email: String): IO[String, Option[User]] =
+      search(UserSearch(pageSize = 500)).map(_.find(_.email.equalsIgnoreCase(email)))
     override def changePassword(
       id:          UserId,
       newPassword: String,
@@ -699,6 +769,18 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   private def toRole(v: JorlanClient.Role.RoleView): Role =
     Role(id = v.id, name = v.name, description = v.description)
 
+  private def toAgent(v: JorlanClient.Agent.AgentView): Agent =
+    Agent(
+      id = v.id,
+      name = v.name,
+      description = v.description,
+      defaultModel = v.defaultModel,
+      trustLevel = v.trustLevel,
+      prioritizedSkills = v.prioritizedSkills,
+      invariants = v.invariants.fromJson[Map[String, String]].getOrElse(Map.empty),
+      createdAt = v.createdAt,
+    )
+
   private def toChannelIdentity(v: JorlanClient.ChannelIdentity.ChannelIdentityView): ChannelIdentity =
     ChannelIdentity(
       id = ChannelIdentityId(v.id.toLong),
@@ -721,28 +803,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     )
 
   private def toSchedulerJob(v: JorlanClient.SchedulerJob.SchedulerJobView): SchedulerJob =
-    SchedulerJob(
-      id = v.id,
-      agentId = v.agentId,
-      userId = v.userId,
-      skillId = v.skillId,
-      name = v.name,
-      prompt = v.prompt,
-      inputJson = v.inputJson,
-      status = v.status,
-      scheduledAt = v.scheduledAt,
-      startedAt = v.startedAt,
-      finishedAt = v.finishedAt,
-      resultJson = v.resultJson,
-      maxRetries = v.maxRetries,
-      retryCount = v.retryCount,
-      backoffSeconds = v.backoffSeconds,
-      backoffPolicy = v.backoffPolicy,
-      missedRunPolicy = v.missedRunPolicy,
-      leasedAt = v.leasedAt,
-      leasedBy = v.leasedBy,
-      createdAt = v.createdAt,
-    )
+    summon[Conversion[JorlanClient.SchedulerJob.SchedulerJobView, SchedulerJob]](v)
 
   private def toSchedulerTrigger(v: JorlanClient.SchedulerTrigger.SchedulerTriggerView): SchedulerTrigger =
     SchedulerTrigger(
@@ -780,6 +841,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       v.keywords,
     )
 
+  // ── MCP server configuration ────────────────────────────────────────────
   override def listMcpServers(): IO[String, List[jorlan.McpServerInfo]] =
     gqlClient
       .run(JorlanClient.Queries.mcpServers(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)))
@@ -812,6 +874,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
 
+  // ── Dashboard ────────────────────────────────────────────────────────────
   override def dashboardKpis(): IO[String, DashboardKpis] = {
     val sel = (JorlanClient.DashboardStats.activeSessionCount ~
       JorlanClient.DashboardStats.eventCountToday ~
@@ -826,6 +889,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Role extensions ────────────────────────────────────────────────────────
 
+  // ── `permission` extensions ─────────────────────────────────────────────
   override def updateRole(
     id:          RoleId,
     name:        String,
@@ -841,9 +905,38 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Scheduler extensions ───────────────────────────────────────────────────
 
+  // ── `scheduler` extensions ───────────────────────────────────────────────
   override def createJob(
     name:            String,
     prompt:          String,
+    maxRetries:      Int,
+    backoffSeconds:  Int,
+    backoffPolicy:   RetryBackoffPolicy,
+    missedRunPolicy: MissedRunPolicy,
+  ): IO[String, SchedulerJob] = {
+    val pipeline = Pipeline(
+      steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = prompt, outputVar = "result")),
+    )
+    gqlClient
+      .run(
+        JorlanClient.Mutations
+          .createJob(
+            name = name,
+            pipelineJson = pipeline.toJson,
+            maxRetries = maxRetries,
+            backoffSeconds = backoffSeconds,
+            backoffPolicy = backoffPolicy,
+            missedRunPolicy = missedRunPolicy,
+          )(JorlanClient.SchedulerJob.view),
+      )
+      .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
+      .map(toSchedulerJob)
+  }
+
+  override def createJobWithPipeline(
+    name:            String,
+    pipeline:        Pipeline,
+    agentId:         Option[AgentId],
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -852,9 +945,15 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
     gqlClient
       .run(
         JorlanClient.Mutations
-          .createJob(name, prompt, None, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
-            JorlanClient.SchedulerJob.view,
-          ),
+          .createJob(
+            name = name,
+            pipelineJson = pipeline.toJson,
+            agentId = agentId,
+            maxRetries = maxRetries,
+            backoffSeconds = backoffSeconds,
+            backoffPolicy = backoffPolicy,
+            missedRunPolicy = missedRunPolicy,
+          )(JorlanClient.SchedulerJob.view),
       )
       .flatMap(r => ZIO.fromOption(r).orElseFail("createJob returned nothing"))
       .map(toSchedulerJob)
@@ -862,7 +961,6 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   override def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -870,7 +968,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   ): IO[String, SchedulerJob] =
     gqlClient
       .run(
-        JorlanClient.Mutations.updateJob(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
+        JorlanClient.Mutations.updateJob(id, name, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)(
           JorlanClient.SchedulerJob.view,
         ),
       )
@@ -909,6 +1007,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   ): SkillLifecycleResult =
     SkillLifecycleResult(v.versionId, jorlan.SkillStatus.valueOf(v.newStatus.value), v.errors, v.info)
 
+  // ── `skill` extensions ───────────────────────────────────────────────────
   override def allCustomSkills(): IO[String, List[SkillVersionInfo2]] =
     gqlClient
       .run(JorlanClient.Queries.allCustomSkills(JorlanClient.SkillVersionView.view))
@@ -964,6 +1063,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   // ── Existing impl ──────────────────────────────────────────────────────────
 
+  // ── Checkpoint policy ────────────────────────────────────────────────────
   override def requestCheckpoint(sessionId: AgentSessionId): IO[String, Boolean] =
     gqlClient.run(JorlanClient.Mutations.requestCheckpoint(sessionId)).map(_.getOrElse(false))
 

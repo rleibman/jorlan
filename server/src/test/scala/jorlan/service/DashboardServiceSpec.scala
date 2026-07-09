@@ -30,12 +30,13 @@ object DashboardServiceSpec extends ZIOSpecDefault {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = agentId,
+      agentId = Some(agentId),
       userId = userId,
       skillId = None,
       name = name,
-      prompt = "test",
-      inputJson = None,
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "test", outputVar = "result")),
+      ),
       status = status,
       scheduledAt = T0.minusSeconds(60),
       startedAt = None,

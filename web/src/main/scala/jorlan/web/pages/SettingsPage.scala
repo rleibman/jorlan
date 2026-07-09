@@ -78,7 +78,7 @@ object SettingsPage {
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -95,10 +95,10 @@ object SettingsPage {
                 AsyncCallbackRepositories.setting
                   .updatePersonality(p.name, p.formality, p.languages, p.expertise, p.prompt)
                   .flatMap { saved =>
-                    state.setState(state.value.copy(personality = saved, saved = true, error = None)).asAsyncCallback
+                    state.modState(_.copy(personality = saved, saved = true, error = None)).asAsyncCallback
                   }
                   .completeWith {
-                    case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                    case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                     case _                      => Callback.empty
                   }
                   .runNow()
@@ -128,8 +128,8 @@ object SettingsPage {
                       .label("Formality")
                       .onChange(e =>
                         state
-                          .setState(
-                            state.value.copy(
+                          .modState(
+                            _.copy(
                               personality = Some(
                                 p.copy(formality = Formality.valueOf(e.target.value.asInstanceOf[String])),
                               ),
@@ -176,8 +176,8 @@ object SettingsPage {
                         .onChange(e => {
                           val arr = e.target.value.asInstanceOf[js.Array[String]].toList
                           state
-                            .setState(
-                              state.value.copy(
+                            .modState(
+                              _.copy(
                                 personality = Some(p.copy(languages = arr)),
                                 saved = false,
                               ),
@@ -196,8 +196,8 @@ object SettingsPage {
                       val raw = e.target.value.asInstanceOf[String]
                       val items = raw.split(",").map(_.trim).filter(_.nonEmpty).toList
                       state
-                        .setState(
-                          state.value.copy(
+                        .modState(
+                          _.copy(
                             personality = Some(p.copy(expertise = items)),
                             saved = false,
                           ),
@@ -213,8 +213,8 @@ object SettingsPage {
                     .variant("outlined")
                     .onChange(e =>
                       state
-                        .setState(
-                          state.value.copy(
+                        .modState(
+                          _.copy(
                             personality = Some(p.copy(prompt = e.target.value.asInstanceOf[String])),
                             saved = false,
                           ),

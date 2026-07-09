@@ -448,3 +448,51 @@ Every week:
 * Generate operational summary.
 * Identify issues.
 * Recommend improvements.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Calendar awareness (vacations, events, routines) | `GoogleCalendarSkill` — `calendar.listEvents` |
+| Weather monitoring and alerts | `weather` skill |
+| Telegram alerts and notifications | `TelegramConnectorSkill` — `telegram.send_message` |
+| Store home state, preferences, automation history | `memory.remember`, `memory.search_semantic` |
+| Scheduled reviews and routine triggers | `scheduler.create_job` |
+| Approval gates for high-risk actions | Jorlan's built-in approval system (all actions requiring approval use `approval` workflow) |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### Home Assistant MCP (HIGH PRIORITY — this is the key enabler)
+
+Home Assistant (HA) provides a unified API layer over all smart home protocols (Zigbee, Z-Wave, Matter,
+Wi-Fi devices, MQTT). The official HA MCP integration exposes all entities as tools.
+
+- **Package:** Home Assistant MCP (built into HA via `Settings → Integrations → MCP Server` in HA 2025.1+)
+- **Transport:** HTTP or HTTP+SSE (configure the HA MCP URL in Jorlan's MCP server settings)
+- **Provides:**
+  - `homeassistant.get_state(entity_id)` — read any sensor or device state
+  - `homeassistant.call_service(domain, service, entity_id, data)` — control any device
+  - `homeassistant.list_entities(domain?)` — discover available devices
+  - `homeassistant.get_history(entity_id, start, end)` — device history
+- **Covers:** lights, climate, locks, garage, switches, sensors (motion, door, window, temperature, humidity, energy), cameras, alarm systems
+
+With HA as the middleware, Jorlan does **not** need direct Zigbee/Z-Wave/MQTT access.
+
+**Setup steps:**
+1. Enable the MCP integration in Home Assistant.
+2. Generate an HA long-lived access token.
+3. In Jorlan Settings → MCP Servers, add: `http` transport, URL = `http://<ha-host>:8123/mcp_server`, Bearer token in headers.
+
+### Automation policy enforcement
+
+High-risk actions (unlock door, disable alarm, open garage) must go through Jorlan's approval system:
+- Agent calls the relevant HA tool → Jorlan intercepts via approval gate → user approves via Telegram or UI → HA action executes
+- Low-risk actions (lights, approved climate adjustments) can be auto-approved for designated routines
+
+### What is not yet feasible
+
+- **Direct Zigbee/Z-Wave without Home Assistant** — use Home Assistant as the middleware layer (recommended)
+- **Camera computer vision (package detection, visitor recognition)** — requires a vision model connected to camera feeds; HA can trigger motion events but vision analysis is not yet supported in Jorlan
+- **Voice assistant integration** — requires audio I/O pipeline; not supported

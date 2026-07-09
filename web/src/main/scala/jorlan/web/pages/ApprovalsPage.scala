@@ -46,24 +46,27 @@ object ApprovalsPage {
               .listApprovals()
               .flatMap { approvals =>
                 state
-                  .setState(state.value.copy(approvals = approvals, loading = false))
+                  .modState(_.copy(approvals = approvals, loading = false))
                   .asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
 
             val handler = AsyncCallbackRepositories.subscribeToApprovals(
               onData = { newApproval =>
-                val existing = state.value.approvals
-                if (existing.exists(_.id == newApproval.id)) Callback.empty
-                else state.setState(state.value.copy(approvals = existing :+ newApproval))
+                // Dedup decision must happen inside the updater: reading state.value first and
+                // appending later can clobber updates that land in between.
+                state.modState(s =>
+                  if (s.approvals.exists(_.id == newApproval.id)) s
+                  else s.copy(approvals = s.approvals :+ newApproval),
+                )
               },
             )
-            state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            state.modState(_.copy(wsHandler = Some(handler))).runNow()
             // cleanup: close the subscription when the component unmounts
             handler.close()
           }
@@ -83,16 +86,14 @@ object ApprovalsPage {
                 .flatMap { result =>
                   if (result)
                     state
-                      .setState(
-                        state.value.copy(approvals = state.value.approvals.filterNot(_.id == id)),
-                      )
+                      .modState(s => s.copy(approvals = s.approvals.filterNot(_.id == id)))
                       .asAsyncCallback
                   else
                     AsyncCallback.unit
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
-                    state.setState(state.value.copy(error = Some(ex.getMessage)))
+                    state.modState(_.copy(error = Some(ex.getMessage)))
                   case _ => Callback.empty
                 }
                 .runNow()

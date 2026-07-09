@@ -14,7 +14,7 @@ import zio.json.ast.Json
 
 import java.io.{BufferedOutputStream, FileOutputStream}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Path}
 import java.util.zip.{ZipEntry, ZipOutputStream}
 
 /** Built-in skill for reading and writing files in the configured workspace root directory.

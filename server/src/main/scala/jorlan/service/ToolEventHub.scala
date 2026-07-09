@@ -11,12 +11,10 @@ import zio.*
 import zio.stream.ZStream
 
 /** A single tool-lifecycle event published to subscribers during a ReAct turn.
-  *
-  * @param sessionId
-  *   identifies the agent session that produced the event
   */
 sealed trait ToolEvent {
 
+  /** Session ID identifying the agent session that produced the event. */
   def sessionId: AgentSessionId
 
 }

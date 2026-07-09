@@ -51,13 +51,13 @@ object OAuthManagementPage {
               .listOAuthProviders()
               .flatMap { result =>
                 state
-                  .setState(
-                    state.value.copy(connectedProviders = result, loading = false),
+                  .modState(
+                    _.copy(connectedProviders = result, loading = false),
                   ).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(err) =>
-                  state.setState(state.value.copy(loading = false, error = Some(err.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(err.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -76,9 +76,9 @@ object OAuthManagementPage {
                   case scala.util.Success(Some(authUrl)) =>
                     Callback { org.scalajs.dom.window.location.href = authUrl }
                   case scala.util.Success(None) =>
-                    state.setState(state.value.copy(error = Some(s"Failed to start $provider OAuth")))
+                    state.modState(_.copy(error = Some(s"Failed to start $provider OAuth")))
                   case scala.util.Failure(err) =>
-                    state.setState(state.value.copy(error = Some(err.getMessage)))
+                    state.modState(_.copy(error = Some(err.getMessage)))
                 }
                 .runNow()
             }

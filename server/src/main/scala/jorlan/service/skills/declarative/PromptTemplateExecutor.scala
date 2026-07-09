@@ -10,7 +10,6 @@ import jorlan.*
 import jorlan.service.*
 import zio.*
 import zio.json.ast.Json
-import zio.stream.ZStream
 
 /** Executes a [[PromptTemplateExecutorConfig]] tool by calling the LLM with substituted prompts. */
 object PromptTemplateExecutor {
@@ -28,7 +27,7 @@ object PromptTemplateExecutor {
       .chatStep(sessionId, messages, List.empty)
       .flatMap {
         case FinalAnswer(stream) =>
-          stream.runCollect.map(chunks => Json.Str(chunks.mkString)).mapError(JorlanError(_))
+          stream.runCollect.mapBoth(JorlanError(_), chunks => Json.Str(chunks.mkString))
         case ToolCallRequested(_, name, _) =>
           ZIO.fail(JorlanError(s"Prompt template tool triggered unexpected tool call: $name"))
       }

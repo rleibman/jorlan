@@ -7,8 +7,6 @@
 package jorlan.google
 
 import jorlan.JorlanError
-import zio.*
-import zio.json.*
 import zio.json.ast.Json
 
 import java.security.{MessageDigest, SecureRandom}

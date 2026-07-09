@@ -131,6 +131,61 @@ object GoogleCalendarSkillSpec extends ZIOSpecDefault {
           case _ => assert(false)(isTrue)
         }
       },
+      test("calendar.listEvents accepts timeMin with no zone offset, assuming UTC") {
+        for {
+          skill  <- makeSkill()
+          result <- skill.invoke(
+            dummyCtx,
+            "calendar.listEvents",
+            Json.Obj(
+              "calendarId" -> Json.Str(calId),
+              "timeMin"    -> Json.Str("2026-06-01T11:30:00"),
+            ),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            val count = fields.collectFirst { case ("count", Json.Num(n)) => n.intValue() }.getOrElse(-1)
+            assert(count)(equalTo(0))
+          case _ => assert(false)(isTrue)
+        }
+      },
+      test("calendar.listEvents accepts an offset date-time for timeMin") {
+        for {
+          skill  <- makeSkill()
+          result <- skill.invoke(
+            dummyCtx,
+            "calendar.listEvents",
+            Json.Obj(
+              "calendarId" -> Json.Str(calId),
+              // 04:30 at -07:00 == 11:30Z, later than the sample event at 10:00Z — filters it out
+              "timeMin" -> Json.Str("2026-06-01T04:30:00-07:00"),
+            ),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            val count = fields.collectFirst { case ("count", Json.Num(n)) => n.intValue() }.getOrElse(-1)
+            assert(count)(equalTo(0))
+          case _ => assert(false)(isTrue)
+        }
+      },
+      test("calendar.listEvents accepts a bare date for timeMin, assuming midnight UTC") {
+        for {
+          skill  <- makeSkill()
+          result <- skill.invoke(
+            dummyCtx,
+            "calendar.listEvents",
+            Json.Obj(
+              "calendarId" -> Json.Str(calId),
+              "timeMin"    -> Json.Str("2026-06-02"),
+            ),
+          )
+        } yield result match {
+          case Json.Obj(fields) =>
+            val count = fields.collectFirst { case ("count", Json.Num(n)) => n.intValue() }.getOrElse(-1)
+            assert(count)(equalTo(0))
+          case _ => assert(false)(isTrue)
+        }
+      },
       test("calendar.getEvent returns event by id") {
         for {
           skill  <- makeSkill()

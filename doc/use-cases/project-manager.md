@@ -516,3 +516,41 @@ When a project is completed:
 * Archive project knowledge.
 * Record lessons learned.
 * Generate recommendations for future projects.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Project knowledge base (goals, decisions, risks, tasks) | `memory.remember`, `memory.search_semantic`, `workspace.write` |
+| Scheduled daily/weekly/monthly reviews | `scheduler.create_job` |
+| Calendar for milestones and meetings | `GoogleCalendarSkill` — `calendar.createEvent`, `calendar.listEvents` |
+| Email communications and tracking | `email.list`, `email.read`, `email.search` |
+| Telegram status alerts | `TelegramConnectorSkill` — `telegram.send_message` |
+| Document storage for artifacts | `workspace.write`, `workspace.search` |
+| Notifications and escalations | `notify.user` |
+| Web search for research and context | `search.web` |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### GitHub (for software projects)
+- Package: `@modelcontextprotocol/server-github` (official Anthropic MCP)
+- Transport: stdio
+- Provides: issue tracking, PR monitoring, code search, repository status
+- Required for: software development projects (links issues/PRs to project records)
+
+### New native skill planned: `notes`
+
+A `notes` skill (Phase 16 roadmap) would provide a lightweight structured scratchpad:
+- `notes.set(key, content)` — store a named note
+- `notes.get(key)` — retrieve a note
+- `notes.list()` — list all note keys
+- `notes.delete(key)` — remove a note
+
+Until available, use `workspace.write` / `workspace.read` for the same purpose.
+
+### What is not yet feasible
+
+- **Jira / Linear / Asana integration** — no native skills; use `http_fetch` to their REST APIs as a declarative skill, or find community MCP servers for these tools
+- **Gantt chart generation** — the agent can output Mermaid diagrams via `workspace.write`; rendering requires a separate tool

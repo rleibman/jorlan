@@ -6,12 +6,9 @@
 
 package jorlan.routes
 
-import auth.*
 import jorlan.*
-import jorlan.routes.StaticRoutes.file
 import zio.*
 import zio.http.*
-import zio.stream.ZStream
 
 import java.nio.file.{Files, Paths as JPaths}
 
@@ -168,9 +165,15 @@ object StaticRoutes extends AppRoutes[ConfigurationService, Any, JorlanError] {
                   for {
                     config <- ZIO.serviceWithZIO[ConfigurationService](_.appConfig)
                     staticContentDir = config.jorlan.http.staticContentDir
-                    // Fall back to index.html for SPA routing when the requested path doesn't exist as a static file
-                    result <- file(s"$staticContentDir/$somethingElse")
-                      .orElse(file(s"$staticContentDir/index.html"))
+                    // Sanitize path: strip leading slash, reject traversal sequences
+                    relative = somethingElse.stripPrefix("/")
+                    normalized = JPaths.get(relative).normalize()
+                    result <-
+                      (if (normalized.isAbsolute || normalized.startsWith(".."))
+                         ZIO.fail(NotFoundError(normalized, "Path traversal not allowed"))
+                       else
+                         file(s"$staticContentDir/${normalized.toString}"))
+                        .orElse(file(s"$staticContentDir/index.html"))
                   } yield result
                 }.mapError(JorlanError(_))
                 .map(response => response.updateHeaders(_ => getHeaders(somethingElse)))

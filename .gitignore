@@ -70,3 +70,4 @@ dist
 /.claude/.claude/worktrees/phase-14.11/
 /.claude/.claude/worktrees/phase-14.16/
 /stLib/node_modules/
+.bloop

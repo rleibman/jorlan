@@ -7,7 +7,7 @@
 package jorlan
 
 import jorlan.*
-import jorlan.service.{CorrelationId, EventLogFilter, EventLogOrder}
+import jorlan.service.{CorrelationId, EventLogFilter}
 import zio.*
 import zio.json.*
 import zio.test.*
@@ -477,12 +477,13 @@ object DomainSpec extends ZIOSpecDefault {
   private def baseJob: SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = AgentId(1L),
+      agentId = Some(AgentId(1L)),
       userId = UserId(1L),
       skillId = None,
       name = "test-job",
-      prompt = "",
-      inputJson = None,
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+      ),
       status = JobStatus.Pending,
       scheduledAt = T0,
       startedAt = None,

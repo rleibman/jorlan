@@ -233,7 +233,7 @@ object CommandHandler {
       "/scheduler list                      List all scheduler jobs with status and results",
       "/scheduler result <id>               Show full result/error for a scheduler job",
       "/scheduler create <name> <prompt>    Create a new scheduler job (defaults: 3 retries, 60s backoff)",
-      "/scheduler update <id> <field> <v>   Update a job field (name|prompt|maxRetries|backoffSeconds|backoffPolicy|missedRunPolicy)",
+      "/scheduler update <id> <field> <v>   Update a job field (name|maxRetries|backoffSeconds|backoffPolicy|missedRunPolicy)",
       "/scheduler delete <id>               Delete a scheduler job",
       "/scheduler pause <id>                Pause a scheduler job",
       "/scheduler resume <id>               Resume a paused scheduler job",
@@ -927,8 +927,10 @@ object CommandHandler {
                 case JobStatus.Succeeded => j.resultJson.map(r => s"  result: ${r.take(100)}").getOrElse("")
                 case _                   => ""
               }
-              val promptPreview = if (j.prompt.nonEmpty) s"  prompt: ${j.prompt.take(80)}" else ""
-              s"  [${j.id.value}] ${j.name}  status=${j.status}  retries=${j.retryCount}/${j.maxRetries}$promptPreview$result"
+              val promptPreview = j.pipeline.steps.headOption
+                .map(s => s"  prompt: ${s.userPrompt.take(80)}").getOrElse("")
+              val stepsInfo = if (j.pipeline.steps.size > 1) s"  steps=${j.pipeline.steps.size}" else ""
+              s"  [${j.id.value}] ${j.name}  status=${j.status}  retries=${j.retryCount}/${j.maxRetries}$stepsInfo$promptPreview$result"
             }.mkString("\n")
           screen(_.addMessage(MessageKind.System, s"Scheduler jobs:\n$lines"))
       },
@@ -944,7 +946,8 @@ object CommandHandler {
           val lines = Seq(
             s"Job: ${job.name} [${job.id.value}]",
             s"Status: ${job.status}",
-            s"Prompt: ${job.prompt}",
+            s"Steps: ${job.pipeline.steps.size}",
+            job.pipeline.steps.headOption.map(s => s"First step prompt: ${s.userPrompt}").getOrElse(""),
             s"Retries: ${job.retryCount}/${job.maxRetries}",
             s"Scheduled: ${job.scheduledAt}",
             job.startedAt.map(t => s"Started: $t").getOrElse(""),
@@ -1376,7 +1379,7 @@ object CommandHandler {
     )
 
   private val validSchedulerFields: Set[String] =
-    Set("name", "prompt", "maxRetries", "backoffSeconds", "backoffPolicy", "missedRunPolicy")
+    Set("name", "maxRetries", "backoffSeconds", "backoffPolicy", "missedRunPolicy")
 
   private def updateSchedulerJob(
     id:    SchedulerJobId,
@@ -1393,7 +1396,6 @@ object CommandHandler {
           case Some(job) =>
             val updated = field match {
               case "name"       => job.copy(name = value)
-              case "prompt"     => job.copy(prompt = value)
               case "maxRetries" =>
                 value.toIntOption
                   .map(n => job.copy(maxRetries = n))
@@ -1416,7 +1418,6 @@ object CommandHandler {
               _.updateJob(
                 id,
                 updated.name,
-                updated.prompt,
                 updated.maxRetries,
                 updated.backoffSeconds,
                 updated.backoffPolicy,

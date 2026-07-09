@@ -8,7 +8,6 @@ package zio.json
 
 import zio.json.literal.JsonLiteralMacros
 
-import zio.json.*
 import zio.json.ast.Json
 
 package object literal {

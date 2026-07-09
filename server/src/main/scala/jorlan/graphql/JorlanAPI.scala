@@ -13,7 +13,7 @@ import caliban.schema.Schema.auto.*
 import caliban.wrappers.Wrapper.OverallWrapper
 import caliban.wrappers.Wrappers.*
 import jorlan.*
-import jorlan.connector.{HasDashboardData, InvocationContext, Skill}
+import jorlan.connector.{HasDashboardData, Skill}
 import jorlan.db.repository.*
 import jorlan.service.*
 import jorlan.service.mcp.{McpManager, McpServerConfig, McpTransport}
@@ -24,7 +24,8 @@ import zio.json.ast.Json
 import zio.json.{DecoderOps, EncoderOps, JsonEncoder}
 import zio.stream.ZStream
 
-import java.time.Instant
+import cron4s.Cron
+import java.time.{Duration as JDuration, Instant}
 
 /** Caliban GraphQL schema for the Jorlan control-plane API. */
 @scala.annotation.nowarn("msg=IsUnionOf")
@@ -395,6 +396,51 @@ object JorlanAPI {
       repr = _.toString,
     )
 
+  private given Schema[Any, PipelineRunId] =
+    Schema.scalarSchema("PipelineRunId", None, None, None, id => Value.IntValue(id.value))
+
+  private given ArgBuilder[PipelineRunId] = ArgBuilder.long.map(PipelineRunId(_))
+
+  private given Schema[Any, StepMode] =
+    Schema.enumSchema[StepMode](
+      name = "StepMode",
+      values = StepMode.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, PipelineRunStatus] =
+    Schema.enumSchema[PipelineRunStatus](
+      name = "PipelineRunStatus",
+      values = PipelineRunStatus.values
+        .map(v =>
+          __EnumValue(
+            name = v.toString,
+            description = None,
+            deprecationReason = None,
+            isDeprecated = false,
+            directives = None,
+          ),
+        ).toList,
+      repr = _.toString,
+    )
+
+  private given Schema[Any, Map[String, String]] = Schema.stringSchema.contramap(m => m.toJson)
+
+  private given Schema[Any, Pipeline] = Schema.stringSchema.contramap(p => p.toJson)
+
+  private given Schema[Any, PipelineRun] = Schema.gen[Any, PipelineRun]
+
+  private given Schema[Any, Agent] = Schema.gen[Any, Agent]
+
   private given Schema[Any, SchedulerJob] = Schema.gen[Any, SchedulerJob]
 
   private given Schema[Any, SchedulerTrigger] = Schema.gen[Any, SchedulerTrigger]
@@ -482,7 +528,7 @@ object JorlanAPI {
     }
 
   private given ArgBuilder[TriggerType] =
-    ArgBuilder.string.flatMap { s =>
+    ArgBuilder.enumString[TriggerType] { s =>
       TriggerType.values
         .find(v => s.equalsIgnoreCase(v.toString)).toRight(CalibanError.ExecutionError(s"Invalid TriggerType '$s'"))
     }
@@ -606,6 +652,22 @@ object JorlanAPI {
     pageSize: Option[Int] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
+  /** Input for `allRoles` — supports an optional exact-name filter so callers (e.g. the use-case manifest importer) can
+    * look up a role by name without fetching and client-side-filtering a whole page.
+    */
+  case class RolesInput(
+    name:     Option[String] = None,
+    page:     Option[Int] = None,
+    pageSize: Option[Int] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `agents` — supports an optional exact-name filter, same rationale as [[RolesInput]]. */
+  case class AgentsInput(
+    name:     Option[String] = None,
+    page:     Option[Int] = None,
+    pageSize: Option[Int] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
   /** Input for `users` admin list query. */
   case class ListUsersInput(
     active:       Option[Boolean] = None,
@@ -699,11 +761,13 @@ object JorlanAPI {
     scope: MemoryScope = MemoryScope.User,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** Input for `createJob` — creates a new scheduler job. */
+  /** Input for `createJob` — creates a new scheduler job. `pipelineJson` is a JSON-encoded [[Pipeline]] with at least
+    * one step.
+    */
   case class CreateJobInput(
     name:            String,
-    prompt:          String,
-    inputJson:       Option[String] = None,
+    pipelineJson:    String,
+    agentId:         Option[AgentId] = None,
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
     backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
@@ -717,11 +781,37 @@ object JorlanAPI {
     expression:  String,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** Input for `updateJob` — updates mutable configuration of an existing job. */
+  /** Input for `triggerPipeline` — manually trigger a pipeline job with an optional run context. */
+  case class TriggerPipelineInput(
+    jobId:      SchedulerJobId,
+    runContext: Option[String] = None,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `upsertAgent` — create or update an agent definition. */
+  case class UpsertAgentInput(
+    id:                AgentId,
+    name:              String,
+    description:       Option[String] = None,
+    defaultModel:      Option[ModelId] = None,
+    trustLevel:        Int = 0,
+    prioritizedSkills: List[String] = List.empty,
+    invariantsJson:    String = "{}",
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `updateJobPipeline` — replaces the pipeline definition on a scheduler job. `pipelineJson` must decode to
+    * a [[Pipeline]] with at least one step.
+    */
+  case class UpdateJobPipelineInput(
+    id:           SchedulerJobId,
+    pipelineJson: String,
+  ) derives Schema.SemiAuto, ArgBuilder
+
+  /** Input for `updateJob` — updates mutable metadata of an existing job (name, retry settings). Pipeline content is
+    * updated separately via `updateJobPipeline`.
+    */
   case class UpdateJobInput(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
     backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
@@ -819,6 +909,8 @@ object JorlanAPI {
     job: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[SchedulerJob]],
     /** Returns triggers for a given job. */
     triggers: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[SchedulerTrigger]],
+    /** Returns pipeline run history for a given job, ordered by startedAt descending. */
+    pipelineRuns: SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[PipelineRun]],
     /** Returns pending approval requests for the authenticated user. */
     listApprovals: ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ApprovalRequest]],
     /** Returns the list of AI models available on this server. */
@@ -839,10 +931,14 @@ object JorlanAPI {
     roleCapabilityGrants: RoleId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[CapabilityGrant]],
     /** Returns channel identities for a specific user. Requires `admin.user.manage`. */
     userChannelIdentities: UserId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[ChannelIdentity]],
-    /** Returns all roles in the system. Requires `admin.user.manage`. */
-    allRoles: PaginationInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
+    /** Returns all roles in the system, optionally filtered by exact name. Requires `admin.user.manage`. */
+    allRoles: RolesInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Role]],
     /** Returns the current checkpoint policy configuration. */
     checkpointPolicy: ZIO[JorlanApiEnv & JorlanSession, JorlanError, CheckpointPolicyConfig],
+    /** Returns all agent definitions, optionally filtered by exact name. Requires `admin.agent.manage`. */
+    agents: AgentsInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, List[Agent]],
+    /** Returns a single agent definition by ID. Requires `admin.agent.manage`. */
+    agent: AgentId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Option[Agent]],
     /** Returns aggregated system metrics for the dashboard. */
     dashboardStats: ZIO[JorlanApiEnv & JorlanSession, JorlanError, DashboardStats],
     /** Returns per-skill dashboard JSON data for a skill that implements HasDashboardData. */
@@ -885,6 +981,7 @@ object JorlanAPI {
     resumeJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     cancelJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     triggerNow:        SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
+    triggerPipeline:   TriggerPipelineInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, PipelineRunId],
     deleteJob:         SchedulerJobId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     updateJob:         UpdateJobInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SchedulerJob],
     deleteTrigger:     SchedulerTriggerId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
@@ -936,6 +1033,10 @@ object JorlanAPI {
     updateSkillConfig: UpdateSkillConfigInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Boolean],
     /** Creates a new declarative skill draft from a JSON manifest string. Requires `skill.create`. */
     createSkillDraft: String => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillVersionView],
+    /** Creates or updates an agent definition (including invariants). Requires `admin.agent.manage`. */
+    upsertAgent: UpsertAgentInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, Agent],
+    /** Sets (or clears) the pipeline JSON on a scheduler job. Requires `scheduler.manage`. */
+    updateJobPipeline: UpdateJobPipelineInput => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SchedulerJob],
     /** Advances a skill version to the next lifecycle state. */
     advanceSkillLifecycle: SkillVersionId => ZIO[JorlanApiEnv & JorlanSession, JorlanError, SkillLifecycleResultView],
     /** Approves a skill version that is AwaitingApproval, making it Active. Requires `admin.skills.approve`. */
@@ -1170,6 +1271,12 @@ object JorlanAPI {
               _       <- requireCapability("scheduler.manage", actorId)
               result  <- ZIO.serviceWithZIO[JobManager](_.listTriggers(jobId))
             } yield result,
+          pipelineRuns = jobId =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              runs    <- ZIO.serviceWithZIO[JobManager](_.pipelineRuns(jobId))
+            } yield runs,
           listApprovals = for {
             actorId <- actorIdFromSession
             result  <- ZIO
@@ -1279,7 +1386,12 @@ object JorlanAPI {
               _       <- requireCapability("admin.user.manage", actorId)
               roles   <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.searchRoles(
-                  RoleSearch(userId = None, page = input.page.getOrElse(0), pageSize = input.pageSize.getOrElse(50)),
+                  RoleSearch(
+                    userId = None,
+                    name = input.name,
+                    page = input.page.getOrElse(0),
+                    pageSize = input.pageSize.getOrElse(50),
+                  ),
                 ),
               )
             } yield roles,
@@ -1289,6 +1401,28 @@ object JorlanAPI {
               _       <- requireCapability("memory.read", actorId)
               config  <- ZIO.serviceWithZIO[MemoryService](_.getCheckpointPolicy)
             } yield config,
+          agents = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.agent.manage", actorId)
+              result  <- ZIO
+                .serviceWithZIO[ZIORepositories](
+                  _.agent.search(
+                    AgentSearch(
+                      name = input.name,
+                      page = input.page.getOrElse(0),
+                      pageSize = input.pageSize.getOrElse(200),
+                    ),
+                  ),
+                )
+                .mapError(JorlanError(_))
+            } yield result,
+          agent = id =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.agent.manage", actorId)
+              result  <- ZIO.serviceWithZIO[ZIORepositories](_.agent.getById(id)).mapError(JorlanError(_))
+            } yield result,
           dashboardStats =
             for {
               actorId <- actorIdFromSession
@@ -1482,6 +1616,8 @@ object JorlanAPI {
               role    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.upsertRole(Role(RoleId.empty, input.name, input.description)),
               )
+              now <- Clock.instant
+              _   <- logEvent(EventType.RoleCreated, Some(actorId), None, now)
             } yield role,
           updateRole = input =>
             for {
@@ -1490,6 +1626,8 @@ object JorlanAPI {
               role    <- ZIO.serviceWithZIO[ZIORepositories](
                 _.permission.upsertRole(Role(input.id, input.name, input.description)),
               )
+              now <- Clock.instant
+              _   <- logEvent(EventType.RoleUpdated, Some(actorId), None, now)
             } yield role,
           deleteRole = id =>
             for {
@@ -1604,17 +1742,21 @@ object JorlanAPI {
             } yield record,
           createJob = input =>
             for {
-              actorId <- actorIdFromSession
-              _       <- requireCapability("scheduler.manage", actorId)
-              agentId <- resolveAgentIdStrict(actorId)
-              now     <- Clock.instant
-              job     <- ZIO.serviceWithZIO[JobManager](
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("scheduler.manage", actorId)
+              pipeline <- ZIO
+                .fromEither(input.pipelineJson.fromJson[Pipeline])
+                .mapError(e => JorlanError(s"Invalid pipeline JSON: $e"))
+              _ <- ZIO
+                .fail(JorlanError("Pipeline must have at least one step"))
+                .when(pipeline.steps.isEmpty)
+              now <- Clock.instant
+              job <- ZIO.serviceWithZIO[JobManager](
                 _.createJob(
-                  agentId,
+                  input.agentId,
                   actorId,
                   input.name,
-                  input.prompt,
-                  input.inputJson,
+                  pipeline,
                   input.maxRetries,
                   input.backoffSeconds,
                   input.backoffPolicy,
@@ -1628,6 +1770,36 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("scheduler.manage", actorId)
               _       <- assertJobOwnership(input.jobId, actorId)
+              _       <- input.triggerType match {
+                case TriggerType.Cron =>
+                  ZIO
+                    .fromEither(Cron.parse(input.expression))
+                    .mapError(e =>
+                      JorlanError(
+                        s"Invalid cron expression '${input.expression}': $e. " +
+                          "cron4s requires 6 fields (sec min hr dom mon dow) and uses '?' for the unused dom/dow field. " +
+                          "Examples: '0 0 18 ? * 6' = 18:00 every Saturday, '0 0 9 ? * 1-5' = 09:00 weekdays, " +
+                          "'0 0 9 * * ?' = 09:00 every day",
+                      ),
+                    ).unit
+                case TriggerType.Interval =>
+                  ZIO
+                    .attempt(JDuration.parse(input.expression))
+                    .mapError(_ =>
+                      JorlanError(
+                        s"Invalid interval '${input.expression}'. Use ISO 8601 duration format (e.g. PT1H, PT30M, P1D)",
+                      ),
+                    ).unit
+                case TriggerType.OneShot =>
+                  ZIO
+                    .attempt(Instant.parse(input.expression))
+                    .mapError(_ =>
+                      JorlanError(
+                        s"Invalid datetime '${input.expression}'. Use ISO 8601 format (e.g. 2026-07-01T09:00:00Z)",
+                      ),
+                    ).unit
+                case TriggerType.Event => ZIO.unit
+              }
               now     <- Clock.instant
               trigger <- ZIO.serviceWithZIO[JobManager](
                 _.addTrigger(
@@ -1698,7 +1870,6 @@ object JorlanAPI {
                 _.updateJob(
                   input.id,
                   input.name,
-                  input.prompt,
                   input.maxRetries,
                   input.backoffSeconds,
                   input.backoffPolicy,
@@ -1751,7 +1922,7 @@ object JorlanAPI {
           startOAuth = provider =>
             for {
               actorId <- actorIdFromSession
-              authUrl <- ZIO.serviceWithZIO[OAuthReconnectService](_.buildAuthUrl(actorId, provider))
+              authUrl <- ZIO.serviceWithZIO[OAuthCredentialService](_.buildAuthUrl(actorId, provider))
             } yield OAuthStartResult(authUrl = authUrl),
           revokeOAuth = provider =>
             for {
@@ -1902,7 +2073,9 @@ object JorlanAPI {
               _           <- ZIO
                 .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
                 .mapError(JorlanError(_))
-              _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
+              _   <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
+              now <- Clock.instant
+              _   <- logEvent(EventType.McpServerUpserted, Some(actorId), None, now)
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
@@ -1967,6 +2140,8 @@ object JorlanAPI {
                 .serviceWithZIO[ZIORepositories](
                   _.skill.getVersionWithSkillName(version.id),
                 ).mapError(JorlanError(_))
+              now <- Clock.instant
+              _   <- logEvent(EventType.SkillDraftCreated, Some(actorId), None, now)
             } yield result match {
               case Some((v, name)) => toSkillVersionView(v, name, SkillTier.Declarative)
               case None            => toSkillVersionView(version, "", SkillTier.Declarative)
@@ -1991,13 +2166,79 @@ object JorlanAPI {
                 _.reject(input.versionId, input.reason, actorId),
               )
             } yield toLifecycleResultView(result),
+          triggerPipeline = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("scheduler.manage", actorId)
+              _       <- assertJobOwnership(input.jobId, actorId)
+              runId   <- ZIO.serviceWithZIO[JobManager](_.triggerPipeline(input.jobId, input.runContext))
+              now     <- Clock.instant
+              _       <- logEvent(EventType.SchedulerJobTriggered, Some(actorId), None, now)
+            } yield runId,
+          upsertAgent = input =>
+            for {
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.agent.manage", actorId)
+              now     <- Clock.instant
+              invs    <- ZIO
+                .fromEither(input.invariantsJson.fromJson[Map[String, String]])
+                .mapError(e => JorlanError(s"Invalid invariants JSON: $e"))
+              existing <- ZIO
+                .serviceWithZIO[ZIORepositories](_.agent.getById(input.id))
+                .mapError(JorlanError(_))
+              agent = existing
+                .getOrElse(
+                  Agent(
+                    id = input.id,
+                    name = input.name,
+                    description = input.description,
+                    defaultModel = input.defaultModel,
+                    trustLevel = input.trustLevel,
+                    prioritizedSkills = input.prioritizedSkills,
+                    invariants = invs,
+                    createdAt = now,
+                  ),
+                ).copy(
+                  name = input.name,
+                  description = input.description,
+                  defaultModel = input.defaultModel,
+                  trustLevel = input.trustLevel,
+                  prioritizedSkills = input.prioritizedSkills,
+                  invariants = invs,
+                )
+              saved <- ZIO.serviceWithZIO[ZIORepositories](_.agent.upsert(agent)).mapError(JorlanError(_))
+              _     <- logEvent(
+                if (existing.isDefined) EventType.AgentDefinitionUpdated else EventType.AgentDefinitionCreated,
+                Some(actorId),
+                None,
+                now,
+              )
+            } yield saved,
+          updateJobPipeline = input =>
+            for {
+              actorId  <- actorIdFromSession
+              _        <- requireCapability("scheduler.manage", actorId)
+              _        <- assertJobOwnership(input.id, actorId)
+              pipeline <- ZIO
+                .fromEither(input.pipelineJson.fromJson[Pipeline])
+                .mapError(e => JorlanError(s"Invalid pipeline JSON: $e"))
+              _ <- ZIO
+                .fail(JorlanError("Pipeline must have at least one step"))
+                .when(pipeline.steps.isEmpty)
+              job <- ZIO.serviceWithZIO[JobManager](_.getJob(input.id))
+              _   <- ZIO
+                .serviceWithZIO[ZIORepositories](_.scheduler.updateJobPipeline(input.id, pipeline))
+                .mapError(JorlanError(_))
+              now <- Clock.instant
+              _   <- logEvent(EventType.SchedulerJobUpdated, Some(actorId), None, now)
+            } yield job.copy(pipeline = pipeline),
         ),
         Subscriptions(
           approvalNotifications = ZStream.unwrap(
             for {
               actorId <- actorIdFromSession
               _       <- requireCapability("approval.read", actorId)
-              stream  <- ZIO.serviceWithZIO[ApprovalHub](_.subscribeToNewRequests)
+              stream  <- ZIO.serviceWithZIO[ApprovalService](_.subscribeToNewRequests)
             } yield stream.filter(_.requestorUserId == actorId),
           ),
           eventLogTail = ZStream.unwrap(

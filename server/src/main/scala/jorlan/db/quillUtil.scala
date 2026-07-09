@@ -101,6 +101,8 @@ given MappedEncoding[Long, SchedulerJobId] = MappedEncoding(SchedulerJobId.apply
 given MappedEncoding[SchedulerJobId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, SchedulerTriggerId] = MappedEncoding(SchedulerTriggerId.apply)
 given MappedEncoding[SchedulerTriggerId, Long] = MappedEncoding(_.value)
+given MappedEncoding[Long, PipelineRunId] = MappedEncoding(PipelineRunId.apply)
+given MappedEncoding[PipelineRunId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, EventLogId] = MappedEncoding(EventLogId.apply)
 given MappedEncoding[EventLogId, Long] = MappedEncoding(_.value)
 given MappedEncoding[Long, ArtifactId] = MappedEncoding(ArtifactId.apply)
@@ -148,6 +150,29 @@ given MappedEncoding[String, List[String]] =
           error => throw RuntimeException(s"Invalid List[String] JSON value: $error"),
           identity,
         ),
+  )
+
+given MappedEncoding[Map[String, String], String] = MappedEncoding(v => v.toJson)
+given MappedEncoding[String, Map[String, String]] =
+  MappedEncoding(s =>
+    // Quill interop: throw is required — see note above.
+    if (s == null || s.isEmpty) Map.empty
+    else
+      s.fromJson[Map[String, String]].fold(
+          error => throw RuntimeException(s"Invalid Map[String,String] JSON value: $error"),
+          identity,
+        ),
+  )
+
+import jorlan.Pipeline.given
+given MappedEncoding[Pipeline, String] = MappedEncoding(p => p.toJson)
+given MappedEncoding[String, Pipeline] =
+  MappedEncoding(s =>
+    // Quill interop: throw is required — see note above.
+    s.fromJson[Pipeline].fold(
+        error => throw RuntimeException(s"Invalid Pipeline JSON value: $error"),
+        identity,
+      ),
   )
 
 given MappedEncoding[Vector[Float], String] = MappedEncoding(v => v.toJson)
@@ -221,6 +246,10 @@ given MappedEncoding[String, EventType] = MappedEncoding(EventType.valueOf)
 given MappedEncoding[EventType, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, JobStatus] = MappedEncoding(JobStatus.valueOf)
 given MappedEncoding[JobStatus, String] = MappedEncoding(_.toString)
+given MappedEncoding[String, PipelineRunStatus] = MappedEncoding(PipelineRunStatus.valueOf)
+given MappedEncoding[PipelineRunStatus, String] = MappedEncoding(_.toString)
+given MappedEncoding[String, StepMode] = MappedEncoding(StepMode.valueOf)
+given MappedEncoding[StepMode, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, TriggerType] = MappedEncoding(TriggerType.valueOf)
 given MappedEncoding[TriggerType, String] = MappedEncoding(_.toString)
 given MappedEncoding[String, RetryBackoffPolicy] = MappedEncoding(RetryBackoffPolicy.valueOf)

@@ -10,7 +10,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.*
+import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField, *}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
@@ -76,11 +76,11 @@ object MemoryPage {
             AsyncCallbackRepositories.memory
               .search(MemorySearch(MemoryScope.User))
               .flatMap { memories =>
-                state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
+                state.modState(_.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
               }
               .completeWith {
                 case scala.util.Failure(ex) =>
-                  state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                  state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                 case _ => Callback.empty
               }
               .runNow()
@@ -97,11 +97,11 @@ object MemoryPage {
               AsyncCallbackRepositories.memory
                 .search(MemorySearch(MemoryScope.User, textSearch = search))
                 .flatMap { memories =>
-                  state.setState(state.value.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
+                  state.modState(_.copy(memories = memories, loading = false, page = 0)).asAsyncCallback
                 }
                 .completeWith {
                   case scala.util.Failure(ex) =>
-                    state.setState(state.value.copy(loading = false, error = Some(ex.getMessage)))
+                    state.modState(_.copy(loading = false, error = Some(ex.getMessage)))
                   case _ => Callback.empty
                 }
                 .runNow()
@@ -112,15 +112,13 @@ object MemoryPage {
               AsyncCallbackRepositories.memory
                 .delete(id)
                 .flatMap { _ =>
-                  val newMems = state.value.memories.filter(_.id != id)
-                  val maxPage = math.max(0, (newMems.size - 1) / state.value.rowsPerPage)
-                  state
-                    .setState(
-                      state.value.copy(memories = newMems, page = math.min(state.value.page, maxPage)),
-                    )
-                    .asAsyncCallback
+                  state.modState { s =>
+                    val newMems = s.memories.filter(_.id != id)
+                    val maxPage = math.max(0, (newMems.size - 1) / s.rowsPerPage)
+                    s.copy(memories = newMems, page = math.min(s.page, maxPage))
+                  }.asAsyncCallback
                 }
-                .completeWith(PageUtils.onError(err => state.setState(state.value.copy(error = err))))
+                .completeWith(PageUtils.onError(err => state.modState(_.copy(error = err))))
                 .runNow()
             }
 
@@ -131,17 +129,16 @@ object MemoryPage {
                 .flatMap { count =>
                   if (count > 0L)
                     state
-                      .setState(
-                        state.value.copy(
-                          memories =
-                            state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Shared) else m),
+                      .modState(s =>
+                        s.copy(
+                          memories = s.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Shared) else m),
                         ),
                       )
                       .asAsyncCallback
                   else AsyncCallback.unit
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -154,17 +151,16 @@ object MemoryPage {
                 .flatMap { count =>
                   if (count > 0L)
                     state
-                      .setState(
-                        state.value.copy(
-                          memories =
-                            state.value.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Private) else m),
+                      .modState(s =>
+                        s.copy(
+                          memories = s.memories.map(m => if (m.id == id) m.copy(scope = MemoryScope.Private) else m),
                         ),
                       )
                       .asAsyncCallback
                   else AsyncCallback.unit
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -190,9 +186,9 @@ object MemoryPage {
                 )
                 .flatMap { stored =>
                   state
-                    .setState(
-                      state.value.copy(
-                        memories = state.value.memories :+ stored,
+                    .modState(s =>
+                      s.copy(
+                        memories = s.memories :+ stored,
                         showStore = false,
                         storeForm = StoreForm("", "", MemoryScope.User),
                       ),
@@ -200,7 +196,7 @@ object MemoryPage {
                     .asAsyncCallback
                 }
                 .completeWith {
-                  case scala.util.Failure(ex) => state.setState(state.value.copy(error = Some(ex.getMessage)))
+                  case scala.util.Failure(ex) => state.modState(_.copy(error = Some(ex.getMessage)))
                   case _                      => Callback.empty
                 }
                 .runNow()
@@ -222,7 +218,7 @@ object MemoryPage {
               MuiButton
                 .variant("contained")
                 .size("small")
-                .onClick(() => state.setState(state.value.copy(showStore = true)).runNow())("+ Remember"),
+                .onClick(() => state.modState(_.copy(showStore = true)).runNow())("+ Remember"),
             ),
             state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
             MuiTextField
@@ -233,7 +229,7 @@ object MemoryPage {
               .sx(js.Dynamic.literal(mb = 2, width = 300))
               .onChange(e => {
                 val q = e.target.value.asInstanceOf[String]
-                (state.setState(state.value.copy(search = q, loading = true)) >> runSearch(q)).runNow()
+                (state.modState(_.copy(search = q, loading = true)) >> runSearch(q)).runNow()
               }),
             if (state.value.loading) CircularProgress()
             else if (state.value.memories.isEmpty)
@@ -306,11 +302,11 @@ object MemoryPage {
                     (
                       _,
                       p,
-                    ) => state.setState(state.value.copy(page = p)).runNow(),
+                    ) => state.modState(_.copy(page = p)).runNow(),
                   )
                   .onRowsPerPageChange(e =>
                     state
-                      .setState(state.value.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
+                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
                       .runNow(),
                   )(),
               ),
@@ -325,14 +321,10 @@ object MemoryPage {
                   .variant("outlined")
                   .size("small")
                   .sx(js.Dynamic.literal(mt = 1, mb = 2))
-                  .onChange(e =>
-                    state
-                      .setState(
-                        state.value
-                          .copy(storeForm = state.value.storeForm.copy(key = e.target.value.asInstanceOf[String])),
-                      )
-                      .runNow(),
-                  ),
+                  .onChange { e =>
+                    val v = e.target.value.asInstanceOf[String]
+                    state.modState(s => s.copy(storeForm = s.storeForm.copy(key = v))).runNow()
+                  },
                 MuiTextField
                   .label("Text")
                   .value(state.value.storeForm.text)
@@ -342,41 +334,42 @@ object MemoryPage {
                   .variant("outlined")
                   .size("small")
                   .sx(js.Dynamic.literal(mb = 2))
-                  .onChange(e =>
-                    state
-                      .setState(
-                        state.value
-                          .copy(storeForm = state.value.storeForm.copy(text = e.target.value.asInstanceOf[String])),
-                      )
-                      .runNow(),
-                  ),
-                MuiTextField
-                  .label("Scope (optional)")
-                  .value(state.value.storeForm.scope.toString)
-                  .fullWidth(true)
-                  .variant("outlined")
-                  .size("small")
-                  .onChange(e =>
-                    state
-                      .setState(
-                        state.value
-                          .copy(storeForm =
-                            state.value.storeForm
-                              .copy(scope =
-                                MemoryScope.values
-                                  .find(
-                                    _.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim),
-                                  ).getOrElse(
-                                    MemoryScope.User,
-                                  ),
-                              ),
-                          ),
-                      )
-                      .runNow(),
-                  ),
+                  .onChange { e =>
+                    val v = e.target.value.asInstanceOf[String]
+                    state.modState(s => s.copy(storeForm = s.storeForm.copy(text = v))).runNow()
+                  },
+                FormControl.withProps(
+                  js.Dynamic
+                    .literal(fullWidth = true, size = "small", sx = js.Dynamic.literal(mb = 2))
+                    .asInstanceOf[FormControl.Props],
+                )(
+                  InputLabel.withProps(
+                    js.Dynamic.literal(id = "scope-label").asInstanceOf[InputLabel.Props],
+                  )("Scope"),
+                  MuiSelect
+                    .value(state.value.storeForm.scope.toString)
+                    .label("Scope")
+                    .fullWidth(true)
+                    .size("small")
+                    .onChange { e =>
+                      val scope = MemoryScope.values
+                        .find(_.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim))
+                        .getOrElse(MemoryScope.User)
+                      state
+                        .modState(s => s.copy(storeForm = s.storeForm.copy(scope = scope)))
+                        .runNow()
+                    }(
+                      MuiMenuItem.value(MemoryScope.User.toString)("User (permanent — private to you)"),
+                      MuiMenuItem.value(MemoryScope.Shared.toString)("Shared (permanent — visible to all agents)"),
+                      MuiMenuItem.value(MemoryScope.Workspace.toString)("Workspace (permanent — this workspace only)"),
+                      MuiMenuItem.value(MemoryScope.Private.toString)(
+                        "Private (ephemeral — this agent session only)",
+                      ),
+                    ),
+                ),
               ),
               DialogActions()(
-                MuiButton.onClick(() => state.setState(state.value.copy(showStore = false)).runNow())("Cancel"),
+                MuiButton.onClick(() => state.modState(_.copy(showStore = false)).runNow())("Cancel"),
                 MuiButton
                   .variant("contained")
                   .disabled(state.value.storeForm.key.trim.isEmpty || state.value.storeForm.text.trim.isEmpty)

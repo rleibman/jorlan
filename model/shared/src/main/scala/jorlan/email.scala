@@ -30,6 +30,7 @@ case class EmailMessage(
   date:              Instant,
   attachments:       List[EmailAttachment],
   labels:            List[String],
+  isRead:            Boolean,
   pgpSigned:         Boolean,
   pgpSignatureValid: Option[Boolean],
 ) derives JsonCodec

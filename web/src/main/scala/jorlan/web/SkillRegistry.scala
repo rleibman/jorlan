@@ -8,7 +8,6 @@ package jorlan.web
 
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.VdomElement
-import org.scalajs.dom
 import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*

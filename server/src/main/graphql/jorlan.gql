@@ -29,6 +29,8 @@ scalar ModelId
 
 scalar PermissionId
 
+scalar PipelineRunId
+
 scalar RiskClass
 
 scalar RoleId
@@ -83,6 +85,8 @@ enum EventType {
   AgentStarted
   AgentCompleted
   AgentFailed
+  AgentDefinitionCreated
+  AgentDefinitionUpdated
   SessionCreated
   SessionSuspended
   SessionTerminated
@@ -109,6 +113,8 @@ enum EventType {
   MemoryRescoped
   MemoryCheckpointed
   MemoryExpired
+  RoleCreated
+  RoleUpdated
   RoleAssigned
   RoleRevoked
   CapabilityAllowed
@@ -140,6 +146,12 @@ enum EventType {
   CalendarEventDeleted
   DriveFileRead
   DriveFileListed
+  ContactRead
+  SkillDraftCreated
+  SkillLifecycleAdvanced
+  SkillApproved
+  SkillRejected
+  McpServerUpserted
   SystemAlert
   ServerInitialized
 }
@@ -194,6 +206,13 @@ enum OAuthProvider {
   Telegram
 }
 
+enum PipelineRunStatus {
+  Running
+  Succeeded
+  FailedAtStep
+  Cancelled
+}
+
 enum RetryBackoffPolicy {
   Fixed
   Exponential
@@ -223,6 +242,17 @@ enum SkillStatus {
 input McpEnvVarInput {
   key: String!
   value: String!
+}
+
+type Agent {
+  id: AgentId!
+  name: String!
+  description: String
+  defaultModel: ModelId
+  trustLevel: Int!
+  prioritizedSkills: [String!]!
+  invariants: String!
+  createdAt: Instant!
 }
 
 type AgentSession {
@@ -368,14 +398,15 @@ type Mutations {
   forgetMemory(value: MemoryRecordId!): Boolean
   markMemoryShared(value: MemoryRecordId!): MemoryRecord
   markMemoryPrivate(value: MemoryRecordId!): MemoryRecord
-  createJob(name: String!, prompt: String!, inputJson: String, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
+  createJob(name: String!, pipelineJson: String!, agentId: AgentId, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
   addTrigger(jobId: SchedulerJobId!, triggerType: TriggerType!, expression: String!): SchedulerTrigger
   pauseJob(value: SchedulerJobId!): Boolean
   resumeJob(value: SchedulerJobId!): Boolean
   cancelJob(value: SchedulerJobId!): Boolean
   triggerNow(value: SchedulerJobId!): Boolean
+  triggerPipeline(jobId: SchedulerJobId!, runContext: String): PipelineRunId
   deleteJob(value: SchedulerJobId!): Boolean
-  updateJob(id: SchedulerJobId!, name: String!, prompt: String!, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
+  updateJob(id: SchedulerJobId!, name: String!, maxRetries: Int!, backoffSeconds: Int!, backoffPolicy: RetryBackoffPolicy!, missedRunPolicy: MissedRunPolicy!): SchedulerJob
   deleteTrigger(value: SchedulerTriggerId!): Boolean
   decideApproval(requestId: ApprovalRequestId!, approved: Boolean!, note: String): Boolean
   terminateSession(value: AgentSessionId!): Boolean
@@ -397,6 +428,8 @@ type Mutations {
   disableSkill(value: String!): Boolean
   updateSkillConfig(name: String!, configJson: String!): Boolean
   createSkillDraft(value: String!): SkillVersionView
+  upsertAgent(id: AgentId!, name: String!, description: String, defaultModel: ModelId, trustLevel: Int!, prioritizedSkills: [String!]!, invariantsJson: String!): Agent
+  updateJobPipeline(id: SchedulerJobId!, pipelineJson: String!): SchedulerJob
   advanceSkillLifecycle(value: SkillVersionId!): SkillLifecycleResultView
   approveSkillVersion(value: SkillVersionId!): SkillLifecycleResultView
   rejectSkillVersion(versionId: SkillVersionId!, reason: String!): SkillLifecycleResultView
@@ -433,6 +466,17 @@ type Personality {
   prompt: String!
 }
 
+type PipelineRun {
+  id: PipelineRunId!
+  jobId: SchedulerJobId!
+  status: PipelineRunStatus!
+  runContext: String
+  contextJson: String
+  failedStep: String
+  startedAt: Instant!
+  finishedAt: Instant
+}
+
 type Queries {
   user(value: UserId!): User
   users(active: Boolean, nameContains: String, page: Int, pageSize: Int): [User!]
@@ -446,6 +490,7 @@ type Queries {
   jobs(optAgentId: AgentId): [SchedulerJob!]
   job(value: SchedulerJobId!): SchedulerJob
   triggers(value: SchedulerJobId!): [SchedulerTrigger!]
+  pipelineRuns(value: SchedulerJobId!): [PipelineRun!]
   listApprovals: [ApprovalRequest!]
   availableModels: [ModelInfo!]
   skills: [SkillInfo!]
@@ -456,8 +501,10 @@ type Queries {
   userCapabilityGrants(value: UserId!): [CapabilityGrant!]
   roleCapabilityGrants(value: RoleId!): [CapabilityGrant!]
   userChannelIdentities(value: UserId!): [ChannelIdentity!]
-  allRoles(page: Int, pageSize: Int): [Role!]
+  allRoles(name: String, page: Int, pageSize: Int): [Role!]
   checkpointPolicy: CheckpointPolicyConfig
+  agents(name: String, page: Int, pageSize: Int): [Agent!]
+  agent(value: AgentId!): Agent
   dashboardStats: DashboardStats
   skillDashboardData(value: String!): String
   mcpServers: [McpServerView!]
@@ -483,12 +530,11 @@ type Role {
 
 type SchedulerJob {
   id: SchedulerJobId!
-  agentId: AgentId!
+  agentId: AgentId
   userId: UserId!
   skillId: SkillId
   name: String!
-  prompt: String!
-  inputJson: String
+  pipeline: String!
   status: JobStatus!
   scheduledAt: Instant!
   startedAt: Instant

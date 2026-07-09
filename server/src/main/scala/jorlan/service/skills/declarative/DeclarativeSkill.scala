@@ -9,7 +9,6 @@ package jorlan.service.skills.declarative
 import jorlan.*
 import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescriptor}
 import jorlan.service.ModelGateway
-import just.semver.SemVer
 import zio.*
 import zio.http.Client
 import zio.json.ast.Json

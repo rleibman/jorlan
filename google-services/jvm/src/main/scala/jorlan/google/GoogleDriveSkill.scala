@@ -11,7 +11,6 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import jorlan.service.DriveProvider
 import just.semver.SemVer
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 import zio.json.literal.*
 

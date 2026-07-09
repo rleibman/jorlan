@@ -101,28 +101,28 @@ val bouncyCastleVersion = "1.84"
 val googleApiClientVersion = "2.9.0"
 val googleApisGmailVersion = "v1-rev20260525-2.0.0"
 val googleApisCalendarVersion = "v3-rev20260614-2.0.0"
-val googleApisDriveVersion = "v3-rev20260428-2.0.0"
+val googleApisDriveVersion = "v3-rev20260624-2.0.0"
 val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
 val googleAuthLibraryVersion = "1.48.0"
 val telegramiumVersion = "10.1000.0"
-val calibanClientVersion = "3.1.2"
-val calibanVersion = "3.1.2"
+val calibanClientVersion = "3.1.4"
+val calibanVersion = "3.1.4"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val cron4sVersion = "0.8.2"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "12.9.0"
+val flywayVersion = "12.10.0"
 val izumiReflectVersion = "3.0.9"
 val jaxbApiVersion = "2.3.1"
 val jsoniterVersion = "2.38.16"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.16.3"
-val langchainCoreVersion = "1.16.3"
-val langchainLibrariesVersion = "1.16.3-beta26"
+val langchain4jOllamaVersion = "1.17.1"
+val langchainCoreVersion = "1.17.1"
+val langchainLibrariesVersion = "1.17.1-beta27"
 val lanternaVersion = "3.1.5"
-val logbackVersion = "1.5.34"
+val logbackVersion = "1.5.37"
 val mariadbVersion = "3.5.9"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
@@ -133,13 +133,13 @@ val scalaJavaTimeVersion = "2.7.0"
 val scalajsDomVersion = "2.8.1"
 val scalajsReactVersion = "4.0.0"
 val scalatagsVersion = "0.13.1"
-val stlibVersion = "1.3.0"
+val stlibVersion = "1.5.0"
 val sttpClient4Version = "4.0.25"
 val testContainerVersion = "0.44.1"
 val zioAuth = "3.1.6"
 val zioCacheVersion = "0.2.8"
 val zioConfigVersion = "4.0.7"
-val zioHttpVersion = "3.11.2"
+val zioHttpVersion = "3.11.3"
 val zioJsonVersion = "0.9.2"
 val zioLoggingSlf4j2Version = "2.5.3"
 val zioNioVersion = "2.0.2"
@@ -151,7 +151,7 @@ lazy val commonSettings = Seq(
   organization     := "net.leibman",
   startYear        := Some(2026),
   organizationName := "Roberto Leibman",
-  headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
+  headerLicense    := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
   licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
   resolvers += Resolver.mavenLocal,
 )
@@ -350,7 +350,7 @@ lazy val telegramConnector =
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
-// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 5)
+// Discord Connector — DiscordConnectorSkill + DiscordApiClient (JDA 6)
 
 lazy val discordConnector =
   crossProject(JSPlatform, JVMPlatform)
@@ -359,7 +359,7 @@ lazy val discordConnector =
     .settings(name := "jorlan-discord")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "net.dv8tion" % "JDA" % "5.6.1" exclude("club.minnced", "opus-java"),
+        "net.dv8tion" % "JDA" % "6.4.2" exclude ("club.minnced", "opus-java"),
       ),
       coverageExcludedFiles := ".*DiscordApiClient.*",
     )
@@ -571,7 +571,7 @@ lazy val server = project
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
-    Test / fork           := true,
+    Test / fork := true,
     coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*;.*McpClient.*;.*SkillPluginLoader.*;.*StaticRoutes.*;.*OAuthRoutes.*;.*FlywayMigration.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
     Compile / doc / sources := Seq.empty,
@@ -621,10 +621,64 @@ lazy val integration = project
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
+// Shell client — GraphQL/HTTP plumbing shared by the interactive shell and headless
+// tools (e.g. UseCaseImporterApp) that need to talk to a Jorlan server without
+// pulling in the Lanterna TUI.
+
+lazy val shellClient = project
+  .dependsOn(gqlClient.jvm, modelJVM)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name := "jorlan-shell-client",
+    libraryDependencies ++= Seq(
+      "dev.zio"                       %% "zio"                 % zioVersion withSources (),
+      "dev.zio"                       %% "zio-config"          % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-magnolia" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-config-typesafe" % zioConfigVersion withSources (),
+      "dev.zio"                       %% "zio-json"            % zioJsonVersion withSources (),
+      "com.github.ghostdogpr"         %% "caliban-client"      % calibanClientVersion withSources (),
+      "com.softwaremill.sttp.client4" %% "core"                % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio"                 % sttpClient4Version withSources (),
+      "com.softwaremill.sttp.client4" %% "zio-json"            % sttpClient4Version withSources (),
+      "dev.zio"                       %% "zio-test"            % zioVersion % "test" withSources (),
+      "dev.zio"                       %% "zio-test-sbt"        % zioVersion % "test" withSources (),
+    ),
+    Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    coverageExcludedFiles := ".*JorlanClient.*;.*ZIOClientRepositories.*;.*AuthClient.*",
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
+// Use-case manifest importer — headless tool that provisions a doc/use-cases
+// manifest (role, agent, memory seeds, MCP servers, declarative skills, scheduled
+// job) into a running server. See doc/mini-designs/use-case-manifest-importer.md.
+
+lazy val useCaseImporter = project
+  .in(file("useCaseImporter"))
+  .dependsOn(shellClient, modelJVM)
+  .enablePlugins(AutomateHeaderPlugin)
+  .settings(commonSettings)
+  .settings(
+    scalacOptions ++= scala3Opts :+ "-Werror",
+    name                := "jorlan-use-case-importer",
+    Compile / mainClass := Some("jorlan.shell.UseCaseImporterApp"),
+    libraryDependencies ++= Seq(
+      "dev.zio"       %% "zio"                % zioVersion withSources (),
+      "dev.zio"       %% "zio-json"           % zioJsonVersion withSources (),
+      "dev.zio"       %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
+      "ch.qos.logback" % "logback-classic"    % logbackVersion withSources (),
+    ),
+    fork                := true,
+    run / fork          := true,
+    run / baseDirectory := (ThisBuild / baseDirectory).value,
+  )
+
+////////////////////////////////////////////////////////////////////////////////////
 // Shell — CLI client (connects to server via GraphQL)
 
 lazy val shell = project
-  .dependsOn(gqlClient.jvm)
+  .dependsOn(gqlClient.jvm, shellClient)
   .enablePlugins(
     AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
@@ -657,10 +711,10 @@ lazy val shell = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
     // so Lanterna can put the terminal into raw mode and receive keystrokes.
-    fork                             := true,
-    run / fork                       := true,
-    run / connectInput               := true,
-    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
+    fork               := true,
+    run / fork         := true,
+    run / connectInput := true,
+    coverageExcludedFiles := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
     coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
@@ -818,6 +872,7 @@ lazy val ai = project
       "dev.langchain4j"    % "langchain4j-core"     % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j"          % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j-ollama"   % langchain4jOllamaVersion withSources (),
+      "dev.langchain4j"    % "langchain4j-open-ai"  % langchainCoreVersion withSources (),
       "dev.langchain4j"    % "langchain4j-easy-rag" % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-qdrant"   % langchainLibrariesVersion withSources (),
       "dev.langchain4j"    % "langchain4j-mariadb"  % langchainLibrariesVersion withSources (),
@@ -882,7 +937,7 @@ lazy val web: Project = project
     // The entire web module compiles to JavaScript (Scala.js) and requires a
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
     // doesn't instrument Scala.js bytecode or report 0% coverage.
-    coverageEnabled := false,
+    coverageEnabled                           := false,
     run / fork                                := true,
     Global / scalaJSStage                     := FastOptStage,
     Compile / scalaJSUseMainModuleInitializer := true,
@@ -954,15 +1009,17 @@ lazy val root = project
 
       ai,
       server,
+      shellClient,
       shell,
+      useCaseImporter,
       integration,
-    ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*
+    ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*,
   )
   .settings(
     name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
-    startYear        := Some(2026),
+    startYear      := Some(2026),
     licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
-    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax))
+    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
   )

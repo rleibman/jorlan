@@ -33,11 +33,8 @@ trait JobManager {
     *   The user on whose behalf the job runs (used to create the execution session).
     * @param name
     *   Unique human-readable label for this job.
-    * @param prompt
-    *   The message sent to the LLM when the job fires.
-    * @param inputJson
-    *   Optional JSON payload passed verbatim to the agent when the job fires. Callers are responsible for ensuring this
-    *   is valid JSON and within a reasonable size (recommend ≤ 64 KB).
+    * @param pipeline
+    *   The ordered sequence of steps this job executes on each trigger. Must have at least one step.
     * @param maxRetries
     *   Number of additional attempts on failure (0 = no retry).
     * @param backoffSeconds
@@ -48,11 +45,10 @@ trait JobManager {
     *   How to handle runs that were missed while the server was offline.
     */
   def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
-    prompt:          String,
-    inputJson:       Option[String],
+    pipeline:        Pipeline,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -111,11 +107,12 @@ trait JobManager {
   /** Permanently delete the job and all of its triggers. */
   def deleteJob(id: SchedulerJobId): IO[JorlanError, Unit]
 
-  /** Update the mutable configuration of a job (name, prompt, retry settings). Status and timestamps are unchanged. */
+  /** Update the mutable metadata of a job (name, retry settings). Status, timestamps, and pipeline content are
+    * unchanged — see `updateJobPipeline` (server repository layer) for pipeline content updates.
+    */
   def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -124,6 +121,26 @@ trait JobManager {
 
   /** Remove a trigger from its job. */
   def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit]
+
+  /** Manually trigger a pipeline job with an optional run context.
+    *
+    * Creates a [[PipelineRun]] record, marks the job `Pending`, and stores the run context so the TriggerEngine can
+    * inject it into template substitution.
+    *
+    * @param jobId
+    *   The job to trigger.
+    * @param runContext
+    *   Optional free-form instructions for this specific run (available as `{{run.context}}` in every step).
+    * @return
+    *   The ID of the newly created [[PipelineRun]] record.
+    */
+  def triggerPipeline(
+    jobId:      SchedulerJobId,
+    runContext: Option[String],
+  ): IO[JorlanError, PipelineRunId]
+
+  /** List all [[PipelineRun]]s for the given job, ordered by `startedAt` descending. */
+  def pipelineRuns(jobId: SchedulerJobId): IO[JorlanError, List[PipelineRun]]
 
 }
 

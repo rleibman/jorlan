@@ -18,7 +18,7 @@ import dev.langchain4j.store.memory.chat.InMemoryChatMemoryStore
 import zio.*
 import zio.stream.ZStream
 
-val timeout = 5.minutes
+val timeout = 10.minutes
 
 trait StreamAssistant {
 

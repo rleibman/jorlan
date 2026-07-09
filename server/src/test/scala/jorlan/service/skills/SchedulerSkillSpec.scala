@@ -37,13 +37,13 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
       test("createJob creates a pending job") {
         for {
           skill <- makeSkill
-          job   <- skill.createJob(agentId, userId, "skill-job", "", None)
+          job   <- skill.createJob(Some(agentId), userId, "skill-job", "")
         } yield assertTrue(job.name == "skill-job", job.status == JobStatus.Pending)
       },
       test("listJobs returns jobs for the agent") {
         for {
           skill <- makeSkill
-          _     <- skill.createJob(agentId, userId, "listed", "", None)
+          _     <- skill.createJob(Some(agentId), userId, "listed", "")
           jobs  <- skill.listJobs(agentId)
         } yield assertTrue(jobs.exists(_.name == "listed"))
       },
@@ -51,7 +51,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         for {
           skill  <- makeSkill
           mgr    <- ZIO.service[JobManager]
-          job    <- skill.createJob(agentId, userId, "pause-skill", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "pause-skill", "")
           _      <- skill.pauseJob(job.id)
           result <- mgr.getJob(job.id)
         } yield assertTrue(result.status == JobStatus.Paused)
@@ -60,7 +60,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         for {
           skill  <- makeSkill
           mgr    <- ZIO.service[JobManager]
-          job    <- skill.createJob(agentId, userId, "resume-skill", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "resume-skill", "")
           _      <- skill.pauseJob(job.id)
           _      <- skill.resumeJob(job.id)
           result <- mgr.getJob(job.id)
@@ -70,7 +70,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         for {
           skill  <- makeSkill
           mgr    <- ZIO.service[JobManager]
-          job    <- skill.createJob(agentId, userId, "cancel-skill", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "cancel-skill", "")
           _      <- skill.cancelJob(job.id)
           result <- mgr.getJob(job.id)
         } yield assertTrue(result.status == JobStatus.Cancelled)
@@ -79,7 +79,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         for {
           skill  <- makeSkill
           mgr    <- ZIO.service[JobManager]
-          job    <- skill.createJob(agentId, userId, "trigger-skill", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "trigger-skill", "")
           _      <- skill.pauseJob(job.id)
           _      <- skill.triggerNow(job.id)
           result <- mgr.getJob(job.id)
@@ -121,7 +121,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
           skill  <- makeSkill
-          job    <- skill.createJob(agentId, userId, "pause-invoke", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "pause-invoke", "")
           result <- skill.invoke(ctx, "scheduler.pause_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
         } yield assertTrue(result == Json.Bool(true))
       },
@@ -129,7 +129,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
           skill  <- makeSkill
-          job    <- skill.createJob(agentId, userId, "resume-invoke", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "resume-invoke", "")
           _      <- skill.pauseJob(job.id)
           result <- skill.invoke(ctx, "scheduler.resume_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
         } yield assertTrue(result == Json.Bool(true))
@@ -138,7 +138,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
           skill  <- makeSkill
-          job    <- skill.createJob(agentId, userId, "cancel-invoke", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "cancel-invoke", "")
           result <- skill.invoke(ctx, "scheduler.cancel_job", Json.Obj("id" -> Json.Str(job.id.value.toString)))
         } yield assertTrue(result == Json.Bool(true))
       },
@@ -146,7 +146,7 @@ object SchedulerSkillSpec extends ZIOSpec[JobManager] {
         val ctx = InvocationContext(userId, Some(agentId), None)
         for {
           skill  <- makeSkill
-          job    <- skill.createJob(agentId, userId, "trigger-invoke", "", None)
+          job    <- skill.createJob(Some(agentId), userId, "trigger-invoke", "")
           result <- skill.invoke(ctx, "scheduler.trigger_now", Json.Obj("id" -> Json.Str(job.id.value.toString)))
         } yield assertTrue(result == Json.Bool(true))
       },

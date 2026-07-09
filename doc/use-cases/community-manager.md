@@ -487,3 +487,42 @@ Every year:
 * Analyze participation.
 * Review accomplishments.
 * Recommend strategic priorities.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Member records, organizational memory | `memory.remember` / `memory.search` / `memory.search_semantic` |
+| Scheduled reviews (weekly, monthly, annual) | `scheduler.create_job` |
+| Email communications | `email.send`, `email.draft`, `email.list`, `email.read` |
+| Telegram announcements and reminders | `TelegramConnectorSkill` — `telegram.send_message` |
+| Calendar events and meeting scheduling | `GoogleCalendarSkill` — `calendar.listEvents`, `calendar.createEvent` |
+| Contact lookup and relationship tracking | `GoogleContactsSkill` — `google_contacts.search_contacts` |
+| Document storage for meeting notes / policies | `workspace.write`, `workspace.read`, `workspace.search` |
+| Notifications and alerts | `notify.user` |
+| Web search for community resources | `search.web` |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### Slack (if the community uses Slack)
+- Package: `@modelcontextprotocol/server-slack` (official Anthropic MCP)
+- Transport: stdio
+- Provides: `slack.list_channels`, `slack.post_message`, `slack.get_history`, `slack.search`
+- Note: Jorlan also has a Discord connector built-in for Discord-based communities.
+
+#### SMS (if needed for SMS outreach)
+- No official MCP exists; use Twilio's REST API via a declarative HTTP skill or `http_fetch`
+- Twilio SMS: `POST https://api.twilio.com/2010-04-01/Accounts/<SID>/Messages.json`
+
+### Declarative HTTP skills to define
+
+- **Google Forms** — for surveys: use `http_fetch.post` to Google Forms API endpoints
+- **Mailchimp / Buttondown** — for newsletters: define a declarative skill using their REST APIs
+
+### What is not yet feasible
+
+- Real-time monitoring of community forums (requires webhook ingress or polling connector)
+- Automatic membership CRM with deduplication (use `memory` + `workspace` as a lightweight substitute)
+- SMS connector (no built-in; Twilio via `http_fetch` is the workaround)

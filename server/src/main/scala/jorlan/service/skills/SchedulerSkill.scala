@@ -66,7 +66,7 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
       ToolDescriptor(
         name = "scheduler.create_job",
         description = "Create a new scheduled job that runs on a cron expression. Returns the created job ID.",
-        inputSchema = json"""{"type":"object","properties":{"name":{"type":"string","description":"Human-readable job name"},"cronExpression":{"type":"string","description":"Cron expression (e.g. '0 10 * * *' for daily at 10am)"},"input":{"type":"string","description":"Optional JSON input to pass to the job"}},"required":["name","cronExpression"]}""",
+        inputSchema = json"""{"type":"object","properties":{"name":{"type":"string","description":"Human-readable job name"},"cronExpression":{"type":"string","description":"Cron expression (e.g. '0 10 * * *' for daily at 10am)"},"prompt":{"type":"string","description":"The message sent to the LLM each time the job fires"},"input":{"type":"string","description":"Deprecated alias for 'prompt'"}},"required":["name","cronExpression"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("scheduler.manage")),
         examplePrompts = List(
@@ -168,9 +168,8 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
         for {
           name     <- field("name")
           cronExpr <- field("cronExpression")
-          agentId = ctx.agentId.getOrElse(AgentId.empty)
           prompt = optField("prompt").getOrElse(optField("input").getOrElse(""))
-          job <- createJob(agentId, ctx.actorId, name, prompt, optField("input"))
+          job <- createJob(ctx.agentId, ctx.actorId, name, prompt)
           // Add the cron trigger after job creation
           now <- Clock.instant
           _   <- jobManager
@@ -245,27 +244,38 @@ class SchedulerSkill(jobManager: JobManager) extends Skill {
   }
 
   def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
     prompt:          String,
-    inputJson:       Option[String],
     maxRetries:      Int = 0,
     backoffSeconds:  Int = 60,
     backoffPolicy:   RetryBackoffPolicy = RetryBackoffPolicy.Fixed,
     missedRunPolicy: MissedRunPolicy = MissedRunPolicy.Skip,
-  ): IO[JorlanError, SchedulerJob] =
+  ): IO[JorlanError, SchedulerJob] = {
+    val pipeline = Pipeline(
+      steps = List(
+        PipelineStep(
+          name = "run",
+          systemPrompt = "",
+          userPrompt = prompt,
+          tools = List.empty,
+          mode = StepMode.ReactLoop,
+          outputVar = "result",
+        ),
+      ),
+    )
     jobManager.createJob(
       agentId,
       userId,
       name,
-      prompt,
-      inputJson,
+      pipeline,
       maxRetries,
       backoffSeconds,
       backoffPolicy,
       missedRunPolicy,
     )
+  }
 
   def listJobs(agentId: AgentId): IO[JorlanError, List[SchedulerJob]] =
     jobManager.listJobs(Some(agentId))

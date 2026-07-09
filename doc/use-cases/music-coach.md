@@ -222,3 +222,30 @@ Monthly:
 * Evaluate progress.
 * Adjust practice priorities.
 * Recommend new challenges.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Store per-instrument learner profile | `memory.remember`, `memory.search_semantic` |
+| Daily practice trigger | `scheduler.create_job` (cron at configurable time) |
+| Deliver practice plans via Telegram | `TelegramConnectorSkill` — `telegram.send_message` |
+| Check calendar for performance/jam dates | `GoogleCalendarSkill` — `calendar.listEvents` |
+| Store repertoire, mastery tracking, rudiment logs | `workspace.write`, `workspace.read` |
+| Weekly progress review | `scheduler.create_job` (cron: `0 10 * * 0`) |
+| Web search for exercises, backing tracks, theory resources | `search.web`, `http_fetch.get` |
+
+### What is not yet feasible
+
+- **Audio recording evaluation** — analyzing practice recordings for timing, dynamics, tone, and articulation requires an audio analysis pipeline (e.g. a cloud audio API or local model); not currently supported
+- **Metronome as a real-time service** — the agent can suggest BPM and metronome apps, but cannot provide a real-time click track
+- **Ear training audio playback** — requires audio output capability; not currently supported
+- **Pitch detection** — requires audio input; not currently supported
+
+### Notes
+
+The text-based coaching capabilities of this use case (practice planning, theory instruction, repertoire tracking,
+progress reporting, drummer-specific guidance) are fully achievable with existing Jorlan skills. The gap is
+exclusively in the audio analysis and playback dimensions.

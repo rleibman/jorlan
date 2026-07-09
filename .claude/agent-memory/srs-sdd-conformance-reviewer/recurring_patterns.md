@@ -5,6 +5,17 @@ metadata:
   type: project
 ---
 
+## Patterns observed as of use-case manifest importer review (2026-07-01)
+
+### Missing logEvent in mutation resolvers is a persistent, recurring gap (3rd occurrence)
+The manifest importer drives 11 GraphQL mutations; 5 of them (`createRole`, `updateRole`, `upsertMcpServer`, `updateJobPipeline`, `upsertAgent`, `createSkillDraft`) write no event-log entry at all in `JorlanAPI.scala`, while sibling mutations (`assignRole`, `storeMemory`, `createJob`, `updateJob`, `addTrigger`, `grantCapability`) do. This is the same class of gap flagged in Phase 8 and Sprint 1-3 ("Skill lifecycle transitions write no event log entries") — it was not reintroduced by this branch, but the importer is the first caller to exercise the full gap set at volume. Pattern: whenever any new client (importer, shell command, UI action) is added that calls an *existing* mutation resolver, grep that resolver's body for `logEvent` before assuming the mutation is audited — do not assume older/pre-existing resolvers are compliant just because newer ones are. Recommend proposing this as a standing pre-merge checklist item rather than re-discovering it each phase.
+
+### Capability-gated admin actions correctly excluded from a declarative manifest's own grant list (positive pattern)
+The use-case manifest schema (`doc/use-cases/manifest-schema.md`) deliberately keeps `admin.agent.manage`/`admin.settings`/`skill.create` out of the manifest's own `role.capabilities` section — these are enforced via `requireCapability(...)` checks on the *operator's* actor id in `JorlanAPI.scala` (`upsertAgent`, `upsertMcpServer`, `createSkillDraft`), so a manifest cannot self-grant admin capabilities. This is a good precedent for reviewing any future declarative/importable manifest format: check that admin-tier capabilities are enforced against the caller's identity server-side, not expressible inside the imported document itself.
+
+### Pagination/sort-order regression tests that only check internal ordering, not global correctness
+`QuillRepositories` had a limit-before-sort bug across 16 search methods (fixed on this branch), but the existing tests (`SortingAndSortingSpec.scala`) only assert the *returned page* is internally sorted — a pattern that passes trivially even under the old buggy pre-sort-then-limit code, since any final N-row slice is still sorted among itself. Pattern: when reviewing pagination tests, check that at least one test inserts more rows than the page size with distinguishable sort keys and asserts the page is the correct *global* top/bottom-N slice, not merely internally ordered.
+
 ## Patterns observed as of Phase 10 review (2026-06-04)
 
 ### Missed-run policy enum defined but logic never consulted

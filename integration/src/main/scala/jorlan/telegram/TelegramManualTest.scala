@@ -10,8 +10,6 @@ import jorlan.telegram.*
 import zio.*
 import zio.http.Client
 
-import scala.annotation.tailrec
-
 /** Manual smoke test for the Telegram connector.
   *
   * Not part of the automated test suite — run explicitly with:

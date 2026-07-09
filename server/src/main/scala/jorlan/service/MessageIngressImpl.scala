@@ -8,7 +8,7 @@ package jorlan.service
 
 import jorlan.*
 import jorlan.connector.*
-import jorlan.db.repository.{ZIORepositories, ZIOUserRepository}
+import jorlan.db.repository.ZIORepositories
 import zio.*
 
 /** Connector-agnostic ingress pipeline.

@@ -1,0 +1,57 @@
+{
+  "useCaseName": "birthday_reminder",
+  "sourceDoc": "doc/use-cases/birthday-reminder.md",
+  "role": {
+    "name": "birthday-reminder-agent-role",
+    "description": "Capabilities for the daily birthday reminder agent (Gramps genealogy data via shell export)",
+    "capabilities": [
+      { "capability": "shell.run" },
+      { "capability": "google_contacts.search_contacts" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "birthday-reminder-agent",
+    "description": "Daily birthday agent: reads upcoming birthdays from the Gramps family tree export and sends reminders, skipping deceased individuals and avoiding duplicate reminders.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["shell", "memory", "google_contacts"],
+    "invariants": { "role": "attentive family assistant" }
+  },
+  "memorySeeds": [],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "birthday-daily-check",
+    "steps": [
+      {
+        "name": "get-birthdays",
+        "systemPrompt": "You find upcoming family birthdays. Call shell.run once with command '/opt/jorlan/scripts/gramps-birthdays.sh' (it prints JSON: name, birthday, living status). If the script fails or is missing, output exactly: BIRTHDAY DATA UNAVAILABLE -- and stop.\n\nOutput format -- one line per person with a birthday today or tomorrow, nothing else:\nYYYY-MM-DD: <name> | turning <age> | living: <yes/no/unknown>\nOr exactly 'No birthdays today or tomorrow.'",
+        "userPrompt": "{{now}} -- Check for upcoming birthdays now.",
+        "tools": ["shell.run"],
+        "mode": "ReactLoop",
+        "outputVar": "birthdays",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-reminders",
+        "systemPrompt": "You send birthday reminders. For each living person in the list, first call memory.search for 'birthday reminder sent <name>' to avoid duplicates, then call notify.user once per new reminder (pass only 'message', never userId) with the person's name, age, and a suggestion to reach out. For 'living: unknown' entries, include them in a separate 'please verify' line. Finally call memory.remember once per reminder sent, key 'birthday.sent.<name>.<date>'.\n\nOutput: one line per reminder sent, or 'nothing to send'.",
+        "userPrompt": "Birthday list:\n{{steps.birthdays.output}}\n\nSend any needed reminders now.",
+        "tools": ["notify.user", "memory.search", "memory.remember"],
+        "mode": "ReactLoop",
+        "outputVar": "reminders",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": null
+  }
+}

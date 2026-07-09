@@ -7,7 +7,7 @@
 package jorlan.rss
 
 import org.xml.sax.InputSource
-import javax.xml.parsers.{DocumentBuilder, DocumentBuilderFactory}
+import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.{Element, Node, NodeList}
 
 /** Pure XML parser supporting RSS 2.0 and Atom 1.0 feeds. */

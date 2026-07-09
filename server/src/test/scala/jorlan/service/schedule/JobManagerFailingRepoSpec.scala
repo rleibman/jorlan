@@ -27,12 +27,15 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
 
   private val anyJob: SchedulerJob = SchedulerJob(
     id = SchedulerJobId(1L),
-    agentId = agentId,
+    agentId = Some(agentId),
     userId = userId,
     skillId = None,
     name = "test-job",
-    prompt = "",
-    inputJson = None,
+    pipeline = Pipeline(
+      steps = List(
+        PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result"),
+      ),
+    ),
     status = JobStatus.Pending,
     scheduledAt = Instant.EPOCH,
     startedAt = None,
@@ -71,7 +74,6 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
       override def updateJobConfig(
         id:              SchedulerJobId,
         name:            String,
-        prompt:          String,
         maxRetries:      Int,
         backoffSeconds:  Int,
         backoffPolicy:   RetryBackoffPolicy,
@@ -103,6 +105,20 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
         finishedAt: Instant,
       ): RepositoryTask[Unit] = releaseJobFn(id, status, resultJson, finishedAt)
       override def expireLeases(olderThan: Instant): RepositoryTask[Long] = alwaysFail
+      override def renewLease(
+        id:       SchedulerJobId,
+        workerId: String,
+        now:      Instant,
+      ):                                                    RepositoryTask[Boolean] = alwaysFail
+      override def insertPipelineRun(run: PipelineRun):     RepositoryTask[PipelineRun] = ZIO.succeed(run)
+      override def updatePipelineRun(run: PipelineRun):     RepositoryTask[Unit] = ZIO.unit
+      override def listPipelineRuns(jobId: SchedulerJobId): RepositoryTask[List[PipelineRun]] =
+        ZIO.succeed(List.empty)
+      override def getPipelineRun(id: PipelineRunId): RepositoryTask[Option[PipelineRun]] = ZIO.none
+      override def updateJobPipeline(
+        id:       SchedulerJobId,
+        pipeline: Pipeline,
+      ): RepositoryTask[Boolean] = alwaysFail
     }
 
   private def managerLayer(schedulerRepo: ZIOSchedulerRepository): ULayer[JobManagerImpl] =
@@ -114,7 +130,18 @@ object JobManagerFailingRepoSpec extends ZIOSpecDefault {
         for {
           mgr    <- ZIO.service[JobManagerImpl]
           result <- mgr
-            .createJob(agentId, userId, "j", "", None, 0, 60, RetryBackoffPolicy.Fixed, MissedRunPolicy.Skip).either
+            .createJob(
+              Some(agentId),
+              userId,
+              "j",
+              Pipeline(steps =
+                List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+              ),
+              0,
+              60,
+              RetryBackoffPolicy.Fixed,
+              MissedRunPolicy.Skip,
+            ).either
         } yield assertTrue(result.isLeft)
       }.provide(managerLayer(makeRepo())),
       test("addTrigger: upsertTrigger failure covers line-68 lambda") {

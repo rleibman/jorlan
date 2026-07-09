@@ -1,0 +1,78 @@
+{
+  "useCaseName": "skill_development_program",
+  "sourceDoc": "doc/use-cases/skill-development-program.md",
+  "role": {
+    "name": "skill-development-agent-role",
+    "description": "Capabilities for the weekly skill development program coach",
+    "capabilities": [
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "search.web" },
+      { "capability": "calendar.createEvent" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "workspace.read" },
+      { "capability": "workspace.write" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "skill-development-agent",
+    "description": "Skill development coach: maintains a structured learning program per skill, plans each week's practice tasks with approximate spaced repetition, finds learning resources, and reports progress weekly.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["memory", "search", "scheduler", "calendar", "workspace"],
+    "invariants": { "role": "structured, supportive learning program designer" }
+  },
+  "memorySeeds": [
+    {
+      "key": "srs.program",
+      "text": "Skill development program: EDIT ME -- skill(s) being developed, current milestone, weekly time budget, assessment criteria.",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "skill-weekly-plan",
+    "steps": [
+      {
+        "name": "review-week",
+        "systemPrompt": "You review the past week of a skill development program. Call memory.search once with query 'srs' for the program definition and item review states, and once with query 'practice' for recent session notes.\n\nOutput format:\nProgram: <one-line summary>\nLast week: <what was practiced / completed, or 'no activity recorded'>\nItems due for review: <comma-separated, or 'none'>",
+        "userPrompt": "{{now}} -- Review the program state now.",
+        "tools": ["memory.search"],
+        "mode": "ReactLoop",
+        "outputVar": "program_state",
+        "retryOnFail": 1
+      },
+      {
+        "name": "plan-week",
+        "systemPrompt": "You are a structured, supportive learning program designer. Write next week's plan: 3-5 concrete practice tasks sized to the weekly time budget, spaced-repetition review of due items first, one stretch goal, and a self-assessment question for the end of the week. Under 250 words.",
+        "userPrompt": "Program state:\n{{steps.program_state.output}}\n\nWrite next week's plan now.",
+        "tools": [],
+        "mode": "SingleCall",
+        "outputVar": "week_plan",
+        "retryOnFail": 0
+      },
+      {
+        "name": "deliver-week-plan",
+        "systemPrompt": "You deliver the weekly skill plan. Call notify.user exactly once, passing only 'message' (never userId) with the plan. Then call memory.remember once with key 'srs.weekplan.<date>' summarizing the week's focus in one line.\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Plan:\n{{steps.week_plan.output}}\n\nDeliver it now.",
+        "tools": ["notify.user", "memory.remember"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 17 ? * 7"
+    }
+  }
+}

@@ -7,7 +7,6 @@
 package jorlan.service
 
 import jorlan.*
-import jorlan.*
 import zio.*
 
 /** Evaluates a [[CapabilityRequest]] against the policy store and returns the first matching [[EvaluationResult]].

@@ -39,15 +39,16 @@ import scala.language.unsafeNulls
   * fresh `FakeModelGateway.stepsLayer` via `provideSomeLayer` so the `Ref[List[ChatStep]]` is never shared between
   * tests and tests remain independent.
   */
-object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationService] {
+object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationService & javax.sql.DataSource] {
 
   private type FullEnv = JorlanEnvironment & JorlanSession & GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
   private type Interp = GraphQLInterpreter[JorlanApiEnv & JorlanSession, Any]
 
-  override val bootstrap: TaskLayer[ZIORepositories & ConfigurationService] =
-    ZLayer.make[ZIORepositories & ConfigurationService](
+  override val bootstrap: TaskLayer[ZIORepositories & ConfigurationService & javax.sql.DataSource] =
+    ZLayer.make[ZIORepositories & ConfigurationService & javax.sql.DataSource](
       JorlanContainer.configLayer,
       QuillRepositories.live,
+      EnvironmentBuilder.dataSourceLayer,
     )
 
   private val authConfigLayer: ZLayer[ConfigurationService, Nothing, AuthConfig] =
@@ -90,6 +91,13 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
         userId:   UserId,
         provider: String,
       ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+      override def buildAuthUrl(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.succeed("https://accounts.google.com/test")
+      override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+        ZIO.fail(JorlanError("not implemented in test"))
     },
   )
 
@@ -123,10 +131,9 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
     */
   private def fullEnvLayer(
     steps: List[ChatStep],
-  ): ZLayer[ZIORepositories & ConfigurationService, Throwable, FullEnv] =
-    ZLayer.makeSome[ZIORepositories & ConfigurationService, FullEnv](
+  ): ZLayer[ZIORepositories & ConfigurationService & javax.sql.DataSource, Throwable, FullEnv] =
+    ZLayer.makeSome[ZIORepositories & ConfigurationService & javax.sql.DataSource, FullEnv](
       stubCapabilityEvaluator,
-      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -147,16 +154,17 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
       ZLayer.succeed(ConnectorManager.empty),
       NotificationRouter.live,
       stubOAuthCredentialService,
+
       Client.default,
       McpManager.live,
       DashboardService.live,
-      OAuthReconnectService.live,
       SkillLifecycleService.live,
       ZLayer.succeed(JorlanSession.serverSession),
       ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
     )
 
-  override def spec: Spec[ZIORepositories & ConfigurationService & TestEnvironment & Scope, Any] =
+  override def spec
+    : Spec[ZIORepositories & ConfigurationService & javax.sql.DataSource & TestEnvironment & Scope, Any] =
     suite("ToolCallingLoop integration")(
       test("submitMessage triggers tool call and FinalAnswer chunks arrive via agentResponseStream") {
         for {
@@ -184,7 +192,7 @@ object ToolCallingLoopSpec extends ZIOSpec[ZIORepositories & ConfigurationServic
             texts.exists(t => t.contains("Tool result:") || t.contains("done")),
           )
         }
-      }.provideSomeLayer[ZIORepositories & ConfigurationService](
+      }.provideSomeLayer[ZIORepositories & ConfigurationService & javax.sql.DataSource](
         fullEnvLayer(
           List(
             ToolCallRequested(id = "tc-1", name = "echo.run", argsJson = """{}"""),

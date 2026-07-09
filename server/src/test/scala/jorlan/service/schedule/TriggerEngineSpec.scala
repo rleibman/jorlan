@@ -8,11 +8,13 @@ package jorlan.service.schedule
 
 import cron4s.expr.CronExpr
 import jorlan.*
-import jorlan.db.repository.{ZIOEventLogRepository, ZIORepositories, ZIOSchedulerRepository}
-import jorlan.service.schedule.{TriggerEngine, TriggerEngineImpl}
-import jorlan.service.{AgentRunner, AgentSessionManager, SessionHub}
+import jorlan.connector.InvocationContext
+import jorlan.db.repository.ZIORepositories
+import jorlan.service.schedule.TriggerEngineImpl
+import jorlan.service.{AgentRunner, AgentSessionManager, NotificationRouter, SessionHub}
 import jorlan.testing.InMemoryRepositories
 import zio.*
+import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
@@ -22,6 +24,22 @@ import java.time.{Duration, Instant}
   * `Ref`-backed repos) — a shared `bootstrap` would cause cross-test contamination.
   */
 object TriggerEngineSpec extends ZIOSpecDefault {
+
+  private val noopNotificationRouter: NotificationRouter = new NotificationRouter {
+    override def notifyUser(
+      userId:  UserId,
+      message: String,
+      ctx:     InvocationContext,
+    ): UIO[Json] =
+      ZIO.succeed(Json.Str("ok"))
+    override def notifyChannel(
+      channelUserId: String,
+      channelType:   ChannelType,
+      message:       String,
+      ctx:           InvocationContext,
+    ): UIO[Json] =
+      ZIO.succeed(Json.Str("ok"))
+  }
 
   private val agentId = AgentId(1L)
   private val userId = UserId(1L)
@@ -41,12 +59,13 @@ object TriggerEngineSpec extends ZIOSpecDefault {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = agentId,
+      agentId = Some(agentId),
       userId = userId,
       skillId = None,
       name = name,
-      prompt = "hello",
-      inputJson = Some("hello"),
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "hello", outputVar = "result")),
+      ),
       status = status,
       scheduledAt = scheduledAt,
       startedAt = None,
@@ -108,10 +127,12 @@ object TriggerEngineSpec extends ZIOSpecDefault {
   ) extends AgentRunner {
 
     override def processMessage(
-      sessionId:  AgentSessionId,
-      content:    String,
-      actorId:    Option[UserId],
-      withMemory: Boolean = true,
+      sessionId:           AgentSessionId,
+      content:             String,
+      actorId:             Option[UserId],
+      withMemory:          Boolean = true,
+      checkpoint:          Boolean = true,
+      allowedToolPrefixes: Option[List[String]] = None,
     ): IO[JorlanError, Unit] =
       for {
         _ <- invoked.update(_ :+ (sessionId, content))
@@ -124,6 +145,16 @@ object TriggerEngineSpec extends ZIOSpecDefault {
           }
         _ <- ZIO.fail(JorlanError("simulated failure")).unless(shouldSucceed)
       } yield ()
+
+    override def processMessageSingleCall(
+      sessionId:    AgentSessionId,
+      systemPrompt: String,
+      content:      String,
+      actorId:      Option[UserId],
+      checkpoint:   Boolean = true,
+    ): IO[JorlanError, Unit] =
+      hub.publish(ResponseChunk(sessionId, "single-call done", finished = false)) *>
+        hub.publish(ResponseChunk(sessionId, "", finished = true))
 
     override def subscribeToSession(
       sessionId:    AgentSessionId,
@@ -144,7 +175,13 @@ object TriggerEngineSpec extends ZIOSpecDefault {
       invoked <- Ref.make(List.empty[(AgentSessionId, String)])
       sm = StubSessionManager(sessionId)
       runner = StubAgentRunner(hub, invoked, shouldSucceed)
-      engine = TriggerEngineImpl(repo = repo, sessionManager = sm, agentRunner = runner, pollInterval = pollInterval)
+      engine = TriggerEngineImpl(
+        repo = repo,
+        sessionManager = sm,
+        agentRunner = runner,
+        notificationRouter = noopNotificationRouter,
+        pollInterval = pollInterval,
+      )
     } yield (engine, invoked)
 
   /** Run a single tick on the engine using a deterministic worker ID and fresh cron cache. */
@@ -190,7 +227,8 @@ object TriggerEngineSpec extends ZIOSpecDefault {
           calls             <- invoked.get
         } yield assertTrue(
           calls.nonEmpty,
-          calls.exists { case (_, content) => content == "hello" },
+          // ReactLoop steps get the step system prompt + tool-discipline rules prepended to the user prompt.
+          calls.exists { case (_, content) => content.endsWith("hello") },
           result.exists(_.status == JobStatus.Succeeded),
         )
       } @@ TestAspect.withLiveClock,

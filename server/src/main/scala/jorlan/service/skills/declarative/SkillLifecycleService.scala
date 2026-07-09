@@ -266,9 +266,10 @@ private class LiveSkillLifecycleService(
         ZIO.succeed(LifecycleResult(version.id, SkillStatus.Draft, errors, Nil))
       case Right(_) =>
         repos.skill
-          .upsertVersionStatus(version.id, SkillStatus.Validated, None)
-          .mapError(repoErr)
-          .as(LifecycleResult(version.id, SkillStatus.Validated, Nil, List("Manifest validated successfully")))
+          .upsertVersionStatus(version.id, SkillStatus.Validated, None).mapBoth(
+            repoErr,
+            _ => LifecycleResult(version.id, SkillStatus.Validated, Nil, List("Manifest validated successfully")),
+          )
     }
   }
 
@@ -276,15 +277,16 @@ private class LiveSkillLifecycleService(
     parseManifest(version).flatMap { m =>
       val detectedCaps = m.tools.flatMap(_.requiredCapabilities).distinct
       repos.skill
-        .upsertVersionStatus(version.id, SkillStatus.PermissionReviewed, None)
-        .mapError(repoErr)
-        .as(
-          LifecycleResult(
-            version.id,
-            SkillStatus.PermissionReviewed,
-            Nil,
-            List(s"Required capabilities: ${if (detectedCaps.isEmpty) "(none)" else detectedCaps.mkString(", ")}"),
-          ),
+        .upsertVersionStatus(version.id, SkillStatus.PermissionReviewed, None).mapBoth(
+          repoErr,
+          { _ =>
+            LifecycleResult(
+              version.id,
+              SkillStatus.PermissionReviewed,
+              Nil,
+              List(s"Required capabilities: ${if (detectedCaps.isEmpty) "(none)" else detectedCaps.mkString(", ")}"),
+            )
+          },
         )
     }
 
@@ -301,22 +303,24 @@ private class LiveSkillLifecycleService(
         else
           "Sandbox test passed"
       repos.skill
-        .upsertVersionStatus(version.id, SkillStatus.SandboxTested, None)
-        .mapError(repoErr)
-        .as(LifecycleResult(version.id, SkillStatus.SandboxTested, Nil, List(msg)))
+        .upsertVersionStatus(version.id, SkillStatus.SandboxTested, None).mapBoth(
+          repoErr,
+          _ => LifecycleResult(version.id, SkillStatus.SandboxTested, Nil, List(msg)),
+        )
     }
 
   private def runSubmitForApproval(version: SkillVersion): IO[JorlanError, LifecycleResult] =
     repos.skill
-      .upsertVersionStatus(version.id, SkillStatus.AwaitingApproval, None)
-      .mapError(repoErr)
-      .as(
-        LifecycleResult(
-          version.id,
-          SkillStatus.AwaitingApproval,
-          Nil,
-          List("Submitted for admin approval"),
-        ),
+      .upsertVersionStatus(version.id, SkillStatus.AwaitingApproval, None).mapBoth(
+        repoErr,
+        { _ =>
+          LifecycleResult(
+            version.id,
+            SkillStatus.AwaitingApproval,
+            Nil,
+            List("Submitted for admin approval"),
+          )
+        },
       )
 
   private def parseManifest(version: SkillVersion): IO[JorlanError, DeclarativeSkillManifest] =

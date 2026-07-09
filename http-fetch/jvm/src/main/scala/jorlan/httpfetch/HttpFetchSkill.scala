@@ -11,7 +11,6 @@ import jorlan.connector.{InvocationContext, Skill, SkillDescriptor, ToolDescript
 import just.semver.SemVer
 import zio.*
 import zio.http.*
-import zio.json.*
 import zio.json.ast.Json
 
 /** Built-in skill that lets agents make HTTP GET and POST requests to external URLs.

@@ -8,12 +8,10 @@ package jorlan.telegram
 
 import io.circe.parser as circeParser
 import jorlan.*
-import jorlan.connector.UnrecognizedIdentityPolicy
 import telegramium.bots.CirceImplicits.given
 import telegramium.bots.Update
 import zio.*
 import zio.http.*
-import zio.json.*
 
 import java.io.ByteArrayOutputStream
 

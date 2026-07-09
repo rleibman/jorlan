@@ -16,13 +16,14 @@ import jorlan.db.repository.{QuillRepositories, ZIORepositories}
 import jorlan.discord.{DiscordApiClientLive, DiscordConfig, DiscordConnectorSkill}
 import jorlan.google.*
 import jorlan.service.*
-import jorlan.service.llm.OllamaModelGateway
+import jorlan.service.llm.ModelGateways
 import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.service.memory.MemoryServiceImpl
+import jorlan.service.JobManager
 import jorlan.service.schedule.{JobManagerImpl, TriggerEngine}
-import jorlan.service.skills.SkillRegistry
-import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill}
+import jorlan.service.skills.{SkillRegistry, ToolEmbeddingIndex}
+import jorlan.telegram.{TelegramApiClientLive, TelegramConfig, TelegramConnectorSkill, TelegramRunCommandHandler}
 import zio.http.Client
 import zio.{ULayer, URLayer, ZIO, ZLayer}
 
@@ -31,7 +32,10 @@ import javax.sql.DataSource
 // $COVERAGE-OFF$ Layer wiring requires all external infrastructure (DB, model server) — not unit-testable
 object EnvironmentBuilder {
 
-  private val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
+  /** Exposes the repository's connection pool as a [[DataSource]] service — also used by integration specs that
+    * assemble [[JorlanEnvironment]] by hand.
+    */
+  val dataSourceLayer: ZLayer[QuillRepositories, Nothing, DataSource] =
     ZLayer.fromZIO(ZIO.serviceWith[QuillRepositories](_.dataSourceLayer)).flatten
 
   private val oauthServiceLayer: ZLayer[ConfigurationService, ConfigurationError, OAuthService] =
@@ -84,13 +88,37 @@ object EnvironmentBuilder {
       ).flatten
 
   private val liveConnectorManagerLayer
-    : ZLayer[ZIORepositories & MessageIngress & Client, JorlanError, ConnectorManager] =
+    : ZLayer[ZIORepositories & MessageIngress & Client & JobManager, JorlanError, ConnectorManager] =
     ZLayer.fromZIO {
       for {
         repos <- ZIO.service[ZIORepositories]
         skillRepo = repos.skill
         ingress    <- ZIO.service[MessageIngress]
         httpClient <- ZIO.service[Client]
+        jobManager <- ZIO.service[JobManager]
+        runHandler: TelegramRunCommandHandler = {
+          (
+            jobName,
+            runContext,
+            channelUserId,
+          ) =>
+            repos.user
+              .userByChannelIdentity(ChannelType.Telegram, channelUserId)
+              .mapError(JorlanError(_))
+              .flatMap {
+                case None       => ZIO.fail(JorlanError(s"Unrecognized Telegram user '$channelUserId'"))
+                case Some(user) =>
+                  jobManager.listJobs(None).flatMap { jobs =>
+                    jobs.find(j => j.userId == user.id && j.name.equalsIgnoreCase(jobName)) match {
+                      case None      => ZIO.fail(JorlanError(s"No job named '$jobName' found for your user."))
+                      case Some(job) =>
+                        jobManager.triggerPipeline(job.id, runContext).map { runId =>
+                          s"Pipeline '${job.name}' triggered (run #${runId.value}). Check the Scheduler page for progress."
+                        }
+                    }
+                  }
+              }
+        }
         connectors <- skillRepo
           .searchConnectors(ConnectorSearch())
         telegramInstances = connectors.filter(_.connectorType == ConnectorType.Telegram)
@@ -119,9 +147,12 @@ object EnvironmentBuilder {
               ZIO
                 .foreach(ranked.headOption) { user =>
                   repos.user
-                    .getChannelIdentities(user.id).mapError(JorlanError(_)).map { ids =>
-                      ids.find(_.channelType == ChannelType.Telegram).map(_.channelUserId)
-                    }
+                    .getChannelIdentities(user.id).mapBoth(
+                      JorlanError(_),
+                      { ids =>
+                        ids.find(_.channelType == ChannelType.Telegram).map(_.channelUserId)
+                      },
+                    )
                 }.map(_.flatten)
             }
         }
@@ -133,6 +164,7 @@ object EnvironmentBuilder {
               TelegramApiClientLive(cfg, httpClient),
               ingress,
               telegramNameResolver,
+              Some(runHandler),
             )
         }
         discordInstances = connectors.filter(_.connectorType == ConnectorType.Discord)
@@ -188,6 +220,8 @@ object EnvironmentBuilder {
           clientId = googleCfg.clientId,
           clientSecret = googleCfg.clientSecret,
           client = httpClient,
+          secret = config.jorlan.auth.secretKey.key,
+          redirectUri = googleCfg.redirectUri,
         )
       } yield oauthSvc
     }
@@ -201,7 +235,6 @@ object EnvironmentBuilder {
         QuillRepositories.live,
         dataSourceLayer,
         CapabilityEvaluatorImpl.live,
-        ApprovalHub.live,
         ApprovalServiceImpl.live,
         JorlanAuthServer.live,
         oauthServiceLayer,
@@ -209,9 +242,10 @@ object EnvironmentBuilder {
         SessionHub.live,
         ToolEventHub.live,
         EventLogHub.live,
-        OllamaModelGateway.live,
+        ModelGateways.live,
         LangChainServiceBuilder.ollamaEmbeddingModelLayer,
         EmbeddingStore.mariadb("jorlan_memory"),
+        ToolEmbeddingIndex.live,
         AgentSessionManagerImpl.live,
         MemoryServiceImpl.live,
         NotificationRouter.live,
@@ -224,7 +258,6 @@ object EnvironmentBuilder {
         liveConnectorManagerLayer,
         oauthCredentialServiceLayer,
         Client.default,
-        OAuthReconnectService.live,
         SkillLifecycleService.live,
         McpManager.live,
       ).orDie

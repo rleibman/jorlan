@@ -36,6 +36,30 @@ case OAuthProvider.Telegram => __EnumValue("Telegram")
             val values: scala.collection.immutable.Vector[OAuthProvider] = scala.collection.immutable.Vector(Google, Discord, Telegram)
           }
        
+sealed trait PipelineRunStatus extends scala.Product with scala.Serializable { def value: String }
+          object PipelineRunStatus {
+            case object Running extends PipelineRunStatus { val value: String = "Running" }
+case object Succeeded extends PipelineRunStatus { val value: String = "Succeeded" }
+case object FailedAtStep extends PipelineRunStatus { val value: String = "FailedAtStep" }
+case object Cancelled extends PipelineRunStatus { val value: String = "Cancelled" }
+
+            implicit val decoder: ScalarDecoder[PipelineRunStatus] = {
+              case __StringValue ("Running") => Right(PipelineRunStatus.Running)
+case __StringValue ("Succeeded") => Right(PipelineRunStatus.Succeeded)
+case __StringValue ("FailedAtStep") => Right(PipelineRunStatus.FailedAtStep)
+case __StringValue ("Cancelled") => Right(PipelineRunStatus.Cancelled)
+              case other => Left(DecodingError(s"Can't build PipelineRunStatus from input $other"))
+            }
+            implicit val encoder: ArgEncoder[PipelineRunStatus] = {
+              case PipelineRunStatus.Running => __EnumValue("Running")
+case PipelineRunStatus.Succeeded => __EnumValue("Succeeded")
+case PipelineRunStatus.FailedAtStep => __EnumValue("FailedAtStep")
+case PipelineRunStatus.Cancelled => __EnumValue("Cancelled")
+            }
+
+            val values: scala.collection.immutable.Vector[PipelineRunStatus] = scala.collection.immutable.Vector(Running, Succeeded, FailedAtStep, Cancelled)
+          }
+       
 sealed trait SkillStatus extends scala.Product with scala.Serializable { def value: String }
           object SkillStatus {
             case object Draft extends SkillStatus { val value: String = "Draft" }
@@ -73,7 +97,30 @@ case SkillStatus.Revoked => __EnumValue("Revoked")
           }
        
   
-  type AgentSession
+  type Agent
+object Agent {
+  
+final case class AgentView(id: jorlan.AgentId, name: String, description: scala.Option[String], defaultModel: scala.Option[jorlan.ModelId], trustLevel: Int, prioritizedSkills: List[String], invariants: String, createdAt: java.time.Instant)
+
+
+
+
+type ViewSelection = SelectionBuilder[Agent, AgentView]
+
+def view: ViewSelection = (id ~ name ~ description ~ defaultModel ~ trustLevel ~ prioritizedSkills ~ invariants ~ createdAt).map { case (id, name, description, defaultModel, trustLevel, prioritizedSkills, invariants, createdAt) => AgentView(id, name, description, defaultModel, trustLevel, prioritizedSkills, invariants, createdAt) }
+
+  def id: SelectionBuilder[Agent, jorlan.AgentId] = _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+  def name: SelectionBuilder[Agent, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
+  def description: SelectionBuilder[Agent, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("description", OptionOf(Scalar()))
+  def defaultModel: SelectionBuilder[Agent, scala.Option[jorlan.ModelId]] = _root_.caliban.client.SelectionBuilder.Field("defaultModel", OptionOf(Scalar()))
+  def trustLevel: SelectionBuilder[Agent, Int] = _root_.caliban.client.SelectionBuilder.Field("trustLevel", Scalar())
+  def prioritizedSkills: SelectionBuilder[Agent, List[String]] = _root_.caliban.client.SelectionBuilder.Field("prioritizedSkills", ListOf(Scalar()))
+  def invariants: SelectionBuilder[Agent, String] = _root_.caliban.client.SelectionBuilder.Field("invariants", Scalar())
+  def createdAt: SelectionBuilder[Agent, java.time.Instant] = _root_.caliban.client.SelectionBuilder.Field("createdAt", Scalar())
+}
+
+
+type AgentSession
 object AgentSession {
   
 final case class AgentSessionView(id: jorlan.AgentSessionId, agentId: jorlan.AgentId, userId: jorlan.UserId, workspaceId: scala.Option[jorlan.WorkspaceId], status: jorlan.SessionStatus, modelId: scala.Option[jorlan.ModelId], chatRef: scala.Option[String], createdAt: java.time.Instant, updatedAt: java.time.Instant)
@@ -445,6 +492,29 @@ def view: ViewSelection = (name ~ formality ~ languages ~ expertise ~ prompt).ma
 }
 
 
+type PipelineRun
+object PipelineRun {
+  
+final case class PipelineRunView(id: jorlan.PipelineRunId, jobId: jorlan.SchedulerJobId, status: PipelineRunStatus, runContext: scala.Option[String], contextJson: scala.Option[String], failedStep: scala.Option[String], startedAt: java.time.Instant, finishedAt: scala.Option[java.time.Instant])
+
+
+
+
+type ViewSelection = SelectionBuilder[PipelineRun, PipelineRunView]
+
+def view: ViewSelection = (id ~ jobId ~ status ~ runContext ~ contextJson ~ failedStep ~ startedAt ~ finishedAt).map { case (id, jobId, status, runContext, contextJson, failedStep, startedAt, finishedAt) => PipelineRunView(id, jobId, status, runContext, contextJson, failedStep, startedAt, finishedAt) }
+
+  def id: SelectionBuilder[PipelineRun, jorlan.PipelineRunId] = _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
+  def jobId: SelectionBuilder[PipelineRun, jorlan.SchedulerJobId] = _root_.caliban.client.SelectionBuilder.Field("jobId", Scalar())
+  def status: SelectionBuilder[PipelineRun, PipelineRunStatus] = _root_.caliban.client.SelectionBuilder.Field("status", Scalar())
+  def runContext: SelectionBuilder[PipelineRun, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("runContext", OptionOf(Scalar()))
+  def contextJson: SelectionBuilder[PipelineRun, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("contextJson", OptionOf(Scalar()))
+  def failedStep: SelectionBuilder[PipelineRun, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("failedStep", OptionOf(Scalar()))
+  def startedAt: SelectionBuilder[PipelineRun, java.time.Instant] = _root_.caliban.client.SelectionBuilder.Field("startedAt", Scalar())
+  def finishedAt: SelectionBuilder[PipelineRun, scala.Option[java.time.Instant]] = _root_.caliban.client.SelectionBuilder.Field("finishedAt", OptionOf(Scalar()))
+}
+
+
 type ResponseChunk
 object ResponseChunk {
   
@@ -485,22 +555,21 @@ def view: ViewSelection = (id ~ name ~ description).map { case (id, name, descri
 type SchedulerJob
 object SchedulerJob {
   
-final case class SchedulerJobView(id: jorlan.SchedulerJobId, agentId: jorlan.AgentId, userId: jorlan.UserId, skillId: scala.Option[jorlan.SkillId], name: String, prompt: String, inputJson: scala.Option[String], status: jorlan.JobStatus, scheduledAt: java.time.Instant, startedAt: scala.Option[java.time.Instant], finishedAt: scala.Option[java.time.Instant], resultJson: scala.Option[String], maxRetries: Int, retryCount: Int, backoffSeconds: Int, backoffPolicy: jorlan.RetryBackoffPolicy, missedRunPolicy: jorlan.MissedRunPolicy, leasedAt: scala.Option[java.time.Instant], leasedBy: scala.Option[String], createdAt: java.time.Instant)
+final case class SchedulerJobView(id: jorlan.SchedulerJobId, agentId: scala.Option[jorlan.AgentId], userId: jorlan.UserId, skillId: scala.Option[jorlan.SkillId], name: String, pipeline: String, status: jorlan.JobStatus, scheduledAt: java.time.Instant, startedAt: scala.Option[java.time.Instant], finishedAt: scala.Option[java.time.Instant], resultJson: scala.Option[String], maxRetries: Int, retryCount: Int, backoffSeconds: Int, backoffPolicy: jorlan.RetryBackoffPolicy, missedRunPolicy: jorlan.MissedRunPolicy, leasedAt: scala.Option[java.time.Instant], leasedBy: scala.Option[String], createdAt: java.time.Instant)
 
 
 
 
 type ViewSelection = SelectionBuilder[SchedulerJob, SchedulerJobView]
 
-def view: ViewSelection = (id ~ agentId ~ userId ~ skillId ~ name ~ prompt ~ inputJson ~ status ~ scheduledAt ~ startedAt ~ finishedAt ~ resultJson ~ maxRetries ~ retryCount ~ backoffSeconds ~ backoffPolicy ~ missedRunPolicy ~ leasedAt ~ leasedBy ~ createdAt).map { case (id, agentId, userId, skillId, name, prompt, inputJson, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) => SchedulerJobView(id, agentId, userId, skillId, name, prompt, inputJson, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) }
+def view: ViewSelection = (id ~ agentId ~ userId ~ skillId ~ name ~ pipeline ~ status ~ scheduledAt ~ startedAt ~ finishedAt ~ resultJson ~ maxRetries ~ retryCount ~ backoffSeconds ~ backoffPolicy ~ missedRunPolicy ~ leasedAt ~ leasedBy ~ createdAt).map { case (id, agentId, userId, skillId, name, pipeline, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) => SchedulerJobView(id, agentId, userId, skillId, name, pipeline, status, scheduledAt, startedAt, finishedAt, resultJson, maxRetries, retryCount, backoffSeconds, backoffPolicy, missedRunPolicy, leasedAt, leasedBy, createdAt) }
 
   def id: SelectionBuilder[SchedulerJob, jorlan.SchedulerJobId] = _root_.caliban.client.SelectionBuilder.Field("id", Scalar())
-  def agentId: SelectionBuilder[SchedulerJob, jorlan.AgentId] = _root_.caliban.client.SelectionBuilder.Field("agentId", Scalar())
+  def agentId: SelectionBuilder[SchedulerJob, scala.Option[jorlan.AgentId]] = _root_.caliban.client.SelectionBuilder.Field("agentId", OptionOf(Scalar()))
   def userId: SelectionBuilder[SchedulerJob, jorlan.UserId] = _root_.caliban.client.SelectionBuilder.Field("userId", Scalar())
   def skillId: SelectionBuilder[SchedulerJob, scala.Option[jorlan.SkillId]] = _root_.caliban.client.SelectionBuilder.Field("skillId", OptionOf(Scalar()))
   def name: SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("name", Scalar())
-  def prompt: SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("prompt", Scalar())
-  def inputJson: SelectionBuilder[SchedulerJob, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("inputJson", OptionOf(Scalar()))
+  def pipeline: SelectionBuilder[SchedulerJob, String] = _root_.caliban.client.SelectionBuilder.Field("pipeline", Scalar())
   def status: SelectionBuilder[SchedulerJob, jorlan.JobStatus] = _root_.caliban.client.SelectionBuilder.Field("status", Scalar())
   def scheduledAt: SelectionBuilder[SchedulerJob, java.time.Instant] = _root_.caliban.client.SelectionBuilder.Field("scheduledAt", Scalar())
   def startedAt: SelectionBuilder[SchedulerJob, scala.Option[java.time.Instant]] = _root_.caliban.client.SelectionBuilder.Field("startedAt", OptionOf(Scalar()))
@@ -722,6 +791,7 @@ object Queries {
   def jobs[A](optAgentId : scala.Option[jorlan.AgentId] = None)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[scala.Option[jorlan.AgentId]]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("jobs", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("optAgentId", optAgentId, "AgentId")))
   def job[A](value : jorlan.SchedulerJobId)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("job", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "SchedulerJobId!")))
   def triggers[A](value : jorlan.SchedulerJobId)(innerSelection: SelectionBuilder[SchedulerTrigger, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("triggers", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "SchedulerJobId!")))
+  def pipelineRuns[A](value : jorlan.SchedulerJobId)(innerSelection: SelectionBuilder[PipelineRun, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("pipelineRuns", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "SchedulerJobId!")))
   def listApprovals[A](innerSelection: SelectionBuilder[ApprovalRequest, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("listApprovals", OptionOf(ListOf(Obj(innerSelection))))
   def availableModels[A](innerSelection: SelectionBuilder[ModelInfo, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("availableModels", OptionOf(ListOf(Obj(innerSelection))))
   def skills[A](innerSelection: SelectionBuilder[SkillInfo, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("skills", OptionOf(ListOf(Obj(innerSelection))))
@@ -732,8 +802,10 @@ object Queries {
   def userCapabilityGrants[A](value : jorlan.UserId)(innerSelection: SelectionBuilder[CapabilityGrant, A])(implicit encoder0: ArgEncoder[jorlan.UserId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("userCapabilityGrants", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "UserId!")))
   def roleCapabilityGrants[A](value : jorlan.RoleId)(innerSelection: SelectionBuilder[CapabilityGrant, A])(implicit encoder0: ArgEncoder[jorlan.RoleId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("roleCapabilityGrants", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "RoleId!")))
   def userChannelIdentities[A](value : jorlan.UserId)(innerSelection: SelectionBuilder[ChannelIdentity, A])(implicit encoder0: ArgEncoder[jorlan.UserId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("userChannelIdentities", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("value", value, "UserId!")))
-  def allRoles[A](page : scala.Option[Int] = None, pageSize : scala.Option[Int] = None)(innerSelection: SelectionBuilder[Role, A])(implicit encoder0: ArgEncoder[scala.Option[Int]]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("allRoles", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")))
+  def allRoles[A](name : scala.Option[String] = None, page : scala.Option[Int] = None, pageSize : scala.Option[Int] = None)(innerSelection: SelectionBuilder[Role, A])(implicit encoder0: ArgEncoder[scala.Option[String]], encoder1: ArgEncoder[scala.Option[Int]]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("allRoles", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("name", name, "String"), Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")))
   def checkpointPolicy[A](innerSelection: SelectionBuilder[CheckpointPolicyConfig, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("checkpointPolicy", OptionOf(Obj(innerSelection)))
+  def agents[A](name : scala.Option[String] = None, page : scala.Option[Int] = None, pageSize : scala.Option[Int] = None)(innerSelection: SelectionBuilder[Agent, A])(implicit encoder0: ArgEncoder[scala.Option[String]], encoder1: ArgEncoder[scala.Option[Int]]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("agents", OptionOf(ListOf(Obj(innerSelection))), arguments = List(Argument("name", name, "String"), Argument("page", page, "Int"), Argument("pageSize", pageSize, "Int")))
+  def agent[A](value : jorlan.AgentId)(innerSelection: SelectionBuilder[Agent, A])(implicit encoder0: ArgEncoder[jorlan.AgentId]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("agent", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "AgentId!")))
   def dashboardStats[A](innerSelection: SelectionBuilder[DashboardStats, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("dashboardStats", OptionOf(Obj(innerSelection)))
   def skillDashboardData(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[String]] = _root_.caliban.client.SelectionBuilder.Field("skillDashboardData", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def mcpServers[A](innerSelection: SelectionBuilder[McpServerView, A]): SelectionBuilder[_root_.caliban.client.Operations.RootQuery, scala.Option[List[A]]] = _root_.caliban.client.SelectionBuilder.Field("mcpServers", OptionOf(ListOf(Obj(innerSelection))))
@@ -764,14 +836,15 @@ object Mutations {
   def forgetMemory(value : jorlan.MemoryRecordId)(implicit encoder0: ArgEncoder[jorlan.MemoryRecordId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("forgetMemory", OptionOf(Scalar()), arguments = List(Argument("value", value, "MemoryRecordId!")))
   def markMemoryShared[A](value : jorlan.MemoryRecordId)(innerSelection: SelectionBuilder[MemoryRecord, A])(implicit encoder0: ArgEncoder[jorlan.MemoryRecordId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("markMemoryShared", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "MemoryRecordId!")))
   def markMemoryPrivate[A](value : jorlan.MemoryRecordId)(innerSelection: SelectionBuilder[MemoryRecord, A])(implicit encoder0: ArgEncoder[jorlan.MemoryRecordId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("markMemoryPrivate", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "MemoryRecordId!")))
-  def createJob[A](name : String, prompt : String, inputJson : scala.Option[String] = None, maxRetries : Int, backoffSeconds : Int, backoffPolicy : jorlan.RetryBackoffPolicy, missedRunPolicy : jorlan.MissedRunPolicy)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[String], encoder1: ArgEncoder[scala.Option[String]], encoder2: ArgEncoder[Int], encoder3: ArgEncoder[jorlan.RetryBackoffPolicy], encoder4: ArgEncoder[jorlan.MissedRunPolicy]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("createJob", OptionOf(Obj(innerSelection)), arguments = List(Argument("name", name, "String!"), Argument("prompt", prompt, "String!"), Argument("inputJson", inputJson, "String"), Argument("maxRetries", maxRetries, "Int!"), Argument("backoffSeconds", backoffSeconds, "Int!"), Argument("backoffPolicy", backoffPolicy, "RetryBackoffPolicy!"), Argument("missedRunPolicy", missedRunPolicy, "MissedRunPolicy!")))
+  def createJob[A](name : String, pipelineJson : String, agentId : scala.Option[jorlan.AgentId] = None, maxRetries : Int, backoffSeconds : Int, backoffPolicy : jorlan.RetryBackoffPolicy, missedRunPolicy : jorlan.MissedRunPolicy)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[String], encoder1: ArgEncoder[scala.Option[jorlan.AgentId]], encoder2: ArgEncoder[Int], encoder3: ArgEncoder[jorlan.RetryBackoffPolicy], encoder4: ArgEncoder[jorlan.MissedRunPolicy]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("createJob", OptionOf(Obj(innerSelection)), arguments = List(Argument("name", name, "String!"), Argument("pipelineJson", pipelineJson, "String!"), Argument("agentId", agentId, "AgentId"), Argument("maxRetries", maxRetries, "Int!"), Argument("backoffSeconds", backoffSeconds, "Int!"), Argument("backoffPolicy", backoffPolicy, "RetryBackoffPolicy!"), Argument("missedRunPolicy", missedRunPolicy, "MissedRunPolicy!")))
   def addTrigger[A](jobId : jorlan.SchedulerJobId, triggerType : jorlan.TriggerType, expression : String)(innerSelection: SelectionBuilder[SchedulerTrigger, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId], encoder1: ArgEncoder[jorlan.TriggerType], encoder2: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("addTrigger", OptionOf(Obj(innerSelection)), arguments = List(Argument("jobId", jobId, "SchedulerJobId!"), Argument("triggerType", triggerType, "TriggerType!"), Argument("expression", expression, "String!")))
   def pauseJob(value : jorlan.SchedulerJobId)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("pauseJob", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerJobId!")))
   def resumeJob(value : jorlan.SchedulerJobId)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("resumeJob", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerJobId!")))
   def cancelJob(value : jorlan.SchedulerJobId)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("cancelJob", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerJobId!")))
   def triggerNow(value : jorlan.SchedulerJobId)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("triggerNow", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerJobId!")))
+  def triggerPipeline(jobId : jorlan.SchedulerJobId, runContext : scala.Option[String] = None)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId], encoder1: ArgEncoder[scala.Option[String]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[jorlan.PipelineRunId]] = _root_.caliban.client.SelectionBuilder.Field("triggerPipeline", OptionOf(Scalar()), arguments = List(Argument("jobId", jobId, "SchedulerJobId!"), Argument("runContext", runContext, "String")))
   def deleteJob(value : jorlan.SchedulerJobId)(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("deleteJob", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerJobId!")))
-  def updateJob[A](id : jorlan.SchedulerJobId, name : String, prompt : String, maxRetries : Int, backoffSeconds : Int, backoffPolicy : jorlan.RetryBackoffPolicy, missedRunPolicy : jorlan.MissedRunPolicy)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId], encoder1: ArgEncoder[String], encoder2: ArgEncoder[Int], encoder3: ArgEncoder[jorlan.RetryBackoffPolicy], encoder4: ArgEncoder[jorlan.MissedRunPolicy]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateJob", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "SchedulerJobId!"), Argument("name", name, "String!"), Argument("prompt", prompt, "String!"), Argument("maxRetries", maxRetries, "Int!"), Argument("backoffSeconds", backoffSeconds, "Int!"), Argument("backoffPolicy", backoffPolicy, "RetryBackoffPolicy!"), Argument("missedRunPolicy", missedRunPolicy, "MissedRunPolicy!")))
+  def updateJob[A](id : jorlan.SchedulerJobId, name : String, maxRetries : Int, backoffSeconds : Int, backoffPolicy : jorlan.RetryBackoffPolicy, missedRunPolicy : jorlan.MissedRunPolicy)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId], encoder1: ArgEncoder[String], encoder2: ArgEncoder[Int], encoder3: ArgEncoder[jorlan.RetryBackoffPolicy], encoder4: ArgEncoder[jorlan.MissedRunPolicy]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateJob", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "SchedulerJobId!"), Argument("name", name, "String!"), Argument("maxRetries", maxRetries, "Int!"), Argument("backoffSeconds", backoffSeconds, "Int!"), Argument("backoffPolicy", backoffPolicy, "RetryBackoffPolicy!"), Argument("missedRunPolicy", missedRunPolicy, "MissedRunPolicy!")))
   def deleteTrigger(value : jorlan.SchedulerTriggerId)(implicit encoder0: ArgEncoder[jorlan.SchedulerTriggerId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("deleteTrigger", OptionOf(Scalar()), arguments = List(Argument("value", value, "SchedulerTriggerId!")))
   def decideApproval(requestId : jorlan.ApprovalRequestId, approved : Boolean, note : scala.Option[String] = None)(implicit encoder0: ArgEncoder[jorlan.ApprovalRequestId], encoder1: ArgEncoder[Boolean], encoder2: ArgEncoder[scala.Option[String]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("decideApproval", OptionOf(Scalar()), arguments = List(Argument("requestId", requestId, "ApprovalRequestId!"), Argument("approved", approved, "Boolean!"), Argument("note", note, "String")))
   def terminateSession(value : jorlan.AgentSessionId)(implicit encoder0: ArgEncoder[jorlan.AgentSessionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("terminateSession", OptionOf(Scalar()), arguments = List(Argument("value", value, "AgentSessionId!")))
@@ -793,6 +866,8 @@ object Mutations {
   def disableSkill(value : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("disableSkill", OptionOf(Scalar()), arguments = List(Argument("value", value, "String!")))
   def updateSkillConfig(name : String, configJson : String)(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[Boolean]] = _root_.caliban.client.SelectionBuilder.Field("updateSkillConfig", OptionOf(Scalar()), arguments = List(Argument("name", name, "String!"), Argument("configJson", configJson, "String!")))
   def createSkillDraft[A](value : String)(innerSelection: SelectionBuilder[SkillVersionView, A])(implicit encoder0: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("createSkillDraft", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "String!")))
+  def upsertAgent[A](id : jorlan.AgentId, name : String, description : scala.Option[String] = None, defaultModel : scala.Option[jorlan.ModelId] = None, trustLevel : Int, prioritizedSkills : List[String] = Nil, invariantsJson : String)(innerSelection: SelectionBuilder[Agent, A])(implicit encoder0: ArgEncoder[jorlan.AgentId], encoder1: ArgEncoder[String], encoder2: ArgEncoder[scala.Option[String]], encoder3: ArgEncoder[scala.Option[jorlan.ModelId]], encoder4: ArgEncoder[Int], encoder5: ArgEncoder[List[String]]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("upsertAgent", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "AgentId!"), Argument("name", name, "String!"), Argument("description", description, "String"), Argument("defaultModel", defaultModel, "ModelId"), Argument("trustLevel", trustLevel, "Int!"), Argument("prioritizedSkills", prioritizedSkills, "[String!]!"), Argument("invariantsJson", invariantsJson, "String!")))
+  def updateJobPipeline[A](id : jorlan.SchedulerJobId, pipelineJson : String)(innerSelection: SelectionBuilder[SchedulerJob, A])(implicit encoder0: ArgEncoder[jorlan.SchedulerJobId], encoder1: ArgEncoder[String]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("updateJobPipeline", OptionOf(Obj(innerSelection)), arguments = List(Argument("id", id, "SchedulerJobId!"), Argument("pipelineJson", pipelineJson, "String!")))
   def advanceSkillLifecycle[A](value : SkillVersionId)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("advanceSkillLifecycle", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "SkillVersionId!")))
   def approveSkillVersion[A](value : SkillVersionId)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("approveSkillVersion", OptionOf(Obj(innerSelection)), arguments = List(Argument("value", value, "SkillVersionId!")))
   def rejectSkillVersion[A](versionId : SkillVersionId, reason : String)(innerSelection: SelectionBuilder[SkillLifecycleResultView, A])(implicit encoder0: ArgEncoder[SkillVersionId]): SelectionBuilder[_root_.caliban.client.Operations.RootMutation, scala.Option[A]] = _root_.caliban.client.SelectionBuilder.Field("rejectSkillVersion", OptionOf(Obj(innerSelection)), arguments = List(Argument("versionId", versionId, "SkillVersionId!"), Argument("reason", reason, "String!")))

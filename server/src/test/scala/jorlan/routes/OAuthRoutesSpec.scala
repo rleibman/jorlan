@@ -6,11 +6,15 @@
 
 package jorlan.routes
 
-import jorlan.service.OAuthReconnectService
-import jorlan.UserId
+import jorlan.*
+import jorlan.google.{OAuthCredentialEncryptor, OAuthCredentialServiceImpl}
+import jorlan.service.OAuthCredentialService
 import zio.*
+import zio.json.ast.Json
 import zio.test.*
 import zio.test.Assertion.*
+
+import java.time.Instant
 
 object OAuthRoutesSpec extends ZIOSpecDefault {
 
@@ -19,14 +23,53 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
   private val userId = UserId(42L)
   private val provider = "google"
 
-  private val reconnectLayer: ULayer[OAuthReconnectService] =
-    ZLayer.fromZIO(OAuthReconnectService.make(testSecret, "test-client-id", redirectUri))
+  private val noOpRepo: ExternalCredentialRepository[[A] =>> IO[JorlanError, A]] =
+    new ExternalCredentialRepository[[A] =>> IO[JorlanError, A]] {
+      def upsert(
+        u: UserId,
+        p: String,
+        d: Json,
+        e: Option[Instant],
+        s: Option[String],
+      ): IO[JorlanError, Unit] = ZIO.unit
+      def find(
+        u: UserId,
+        p: String,
+      ): IO[JorlanError, Option[ExternalCredential]] = ZIO.none
+      def delete(
+        u: UserId,
+        p: String,
+      ):                          IO[JorlanError, Unit] = ZIO.unit
+      def listByUser(u:  UserId): IO[JorlanError, List[ExternalCredential]] = ZIO.succeed(List.empty)
+      def listOAuthProviders():   IO[JorlanError, List[String]] = ZIO.succeed(List.empty)
+      def startOAuth(p:  String): IO[JorlanError, Option[String]] = ZIO.none
+      def revokeOAuth(p: String): IO[JorlanError, Unit] = ZIO.unit
+      def oauthStatus(p: String): IO[JorlanError, Option[OAuthStatus]] = ZIO.none
+    }
+
+  private val reconnectLayer: ULayer[OAuthCredentialService] =
+    ZLayer.fromZIO(
+      for {
+        tokenCache <- Ref.make(Map.empty[(UserId, String), (String, Instant)])
+        nonceStore <- Ref.make(Map.empty[String, Long])
+      } yield new OAuthCredentialServiceImpl(
+        noOpRepo,
+        OAuthCredentialEncryptor("test-enc-key"),
+        "test-client-id",
+        "test-client-secret",
+        null.asInstanceOf[zio.http.Client],
+        tokenCache,
+        testSecret,
+        redirectUri,
+        nonceStore,
+      ),
+    )
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
-    suite("OAuthReconnectService")(
+    suite("OAuthCredentialService reconnect")(
       test("buildAuthUrl returns a Google authorization URL") {
         for {
-          svc <- ZIO.service[OAuthReconnectService]
+          svc <- ZIO.service[OAuthCredentialService]
           url <- svc.buildAuthUrl(userId, provider)
         } yield assertTrue(
           url.startsWith("https://accounts.google.com/o/oauth2/v2/auth"),
@@ -37,13 +80,13 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
       },
       test("buildAuthUrl fails for unsupported provider") {
         for {
-          svc    <- ZIO.service[OAuthReconnectService]
+          svc    <- ZIO.service[OAuthCredentialService]
           result <- svc.buildAuthUrl(userId, "dropbox").either
         } yield assertTrue(result.isLeft)
       },
       test("verifyAndConsume succeeds for a freshly built URL") {
         for {
-          svc <- ZIO.service[OAuthReconnectService]
+          svc <- ZIO.service[OAuthCredentialService]
           url <- svc.buildAuthUrl(userId, provider)
           state = extractState(url)
           result <- svc.verifyAndConsume(state)
@@ -54,7 +97,7 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
       },
       test("verifyAndConsume fails on replay (nonce consumed)") {
         for {
-          svc <- ZIO.service[OAuthReconnectService]
+          svc <- ZIO.service[OAuthCredentialService]
           url <- svc.buildAuthUrl(userId, provider)
           state = extractState(url)
           _      <- svc.verifyAndConsume(state)
@@ -63,7 +106,7 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
       },
       test("verifyAndConsume rejects tampered state") {
         for {
-          svc <- ZIO.service[OAuthReconnectService]
+          svc <- ZIO.service[OAuthCredentialService]
           url <- svc.buildAuthUrl(userId, provider)
           state = extractState(url)
           tampered = state.split("\\.", 2) match {
@@ -79,7 +122,7 @@ object OAuthRoutesSpec extends ZIOSpecDefault {
       },
       test("verifyAndConsume rejects malformed state") {
         for {
-          svc    <- ZIO.service[OAuthReconnectService]
+          svc    <- ZIO.service[OAuthCredentialService]
           result <- svc.verifyAndConsume("nodothere").either
         } yield assertTrue(result.isLeft)
       },

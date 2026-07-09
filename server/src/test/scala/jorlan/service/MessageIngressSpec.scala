@@ -108,12 +108,22 @@ object MessageIngressSpec extends ZIOSpecDefault {
   private class RecordingAgentRunner(dispatched: Ref[List[(AgentSessionId, String)]]) extends AgentRunner {
 
     override def processMessage(
-      sessionId:  AgentSessionId,
-      content:    String,
-      actorId:    Option[UserId],
-      withMemory: Boolean = true,
+      sessionId:           AgentSessionId,
+      content:             String,
+      actorId:             Option[UserId],
+      withMemory:          Boolean = true,
+      checkpoint:          Boolean = true,
+      allowedToolPrefixes: Option[List[String]] = None,
     ): IO[JorlanError, Unit] =
       dispatched.update(_ :+ (sessionId, content))
+    override def processMessageSingleCall(
+      sessionId:    AgentSessionId,
+      systemPrompt: String,
+      content:      String,
+      actorId:      Option[UserId],
+      checkpoint:   Boolean = true,
+    ): IO[JorlanError, Unit] = ZIO.unit
+
     override def subscribeToSession(
       sessionId:    AgentSessionId,
       connectionId: ConnectionId,

@@ -597,3 +597,50 @@ When a significant decision is made:
 * Link affected systems.
 * Store rationale.
 * Update knowledge base.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Shell execution (build, test, static analysis) | `shell.run`, `shell.grep`, `shell.find`, `shell.cat` |
+| Workspace for code artifacts and docs | `workspace.write`, `workspace.read`, `workspace.search` |
+| Architecture decisions, project knowledge | `memory.remember`, `memory.search_semantic` |
+| Scheduled reviews (weekly, monthly, quarterly) | `scheduler.create_job` |
+| Email for team communications | `email.list`, `email.read`, `email.search` |
+| Telegram for build alerts and status | `TelegramConnectorSkill` — `telegram.send_message` |
+| RSS for dependency and security news | `rss.fetch`, `rss.save_feed` |
+| Web search for technical research | `search.web` |
+| Market/news for vendor updates | `market.news`, `search.news` |
+
+### MCPs to add via Jorlan's MCP Manager
+
+#### GitHub (HIGH PRIORITY for software projects)
+- Package: `@modelcontextprotocol/server-github` (official Anthropic MCP, free)
+- Transport: stdio (`npx -y @modelcontextprotocol/server-github`)
+- Provides: `github.list_issues`, `github.get_issue`, `github.create_issue_comment`, `github.list_pull_requests`, `github.get_pull_request`, `github.get_file_contents`, `github.search_code`, `github.list_commits`
+- Required capability: GitHub Personal Access Token (store as env var `GITHUB_TOKEN`)
+
+#### GitLab (if applicable)
+- Community MCP: `@igk/gitlab-mcp-server` or similar
+- Transport: stdio
+- Configure with `GITLAB_TOKEN` env var
+
+### Native GitHub skill (Phase 16 roadmap)
+
+A first-party `github` skill is planned for Phase 16. Until then, use the MCP server above.
+The native skill would provide tighter integration with Jorlan's approval system and event log.
+
+### Declarative HTTP skills to define
+
+| Skill | API | Notes |
+|---|---|---|
+| `github_actions_ci` | GitHub Actions API (`/repos/{owner}/{repo}/actions/runs`) | Monitor CI pipeline status |
+| `github_releases` | GitHub Releases API | Track new releases for dependencies |
+
+### What is not yet feasible
+
+- **Merge PRs or push to protected branches** — intentionally forbidden by the use case's automation policy; all such actions require explicit user approval
+- **Paperclip / external orchestrator integration** — requires Phase 17 Orchestrator Integration features
+- **Real-time build failure webhooks** — polling via scheduler is the current approach; webhooks require an inbound HTTP endpoint (possible with zio-http routes but not yet wired)

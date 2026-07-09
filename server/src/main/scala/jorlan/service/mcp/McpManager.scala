@@ -13,8 +13,6 @@ import zio.*
 import zio.http.Client
 import zio.json.*
 
-import java.nio.file.{Path, Paths}
-
 /** Reads MCP server configs from [[ZIOServerSettingsRepository]], connects to each server, and registers adapters in
   * [[SkillRegistry]].
   *
@@ -42,24 +40,18 @@ class McpManagerImpl(
 
   private def settings: ZIOServerSettingsRepository = repos.setting
 
-  override def loadAndRegister: UIO[Unit] =
-    loadedRef.set(doLoad)
+  override def loadAndRegister: UIO[Unit] = {
+    loadedRef.set(doLoad())
+  }
 
-  private def doLoad: ZIO[Scope, Nothing, Unit] = {
-    val workspaceSpillDir: UIO[Option[Path]] =
+  private def doLoad(): ZIO[Scope, Nothing, Unit] = {
+    val workspaceCfg: UIO[Option[WorkspaceSettings]] =
       settings
         .get("skill.workspace")
         .map(_.flatMap(_.as[WorkspaceSettings].toOption))
-        .flatMap {
-          case None      => ZIO.none
-          case Some(cfg) =>
-            ZIO
-              .attempt(Paths.get(cfg.root).toAbsolutePath.normalize().resolve("mcp-spill"))
-              .fold(_ => None, Some(_))
-        }
         .catchAll(_ => ZIO.none)
 
-    workspaceSpillDir.flatMap { spillDir =>
+    workspaceCfg.flatMap { wsCfg =>
       settings
         .get("mcp.servers").flatMap {
           case None =>
@@ -72,7 +64,7 @@ class McpManagerImpl(
               case Right(configs) =>
                 registry.unregisterWhere(_.startsWith("mcp.")) *>
                   ZIO.foreachDiscard(configs.filter(_.enabled)) { cfg =>
-                    makeAdapter(cfg, spillDir)
+                    makeAdapter(cfg, wsCfg)
                       .flatMap(adapter => registry.register(adapter))
                       .tapError(e => ZIO.logWarning(s"Skipping MCP server '${cfg.name}': ${e.msg}"))
                       .ignore
@@ -83,8 +75,8 @@ class McpManagerImpl(
   }
 
   private def makeAdapter(
-    cfg:      McpServerConfig,
-    spillDir: Option[Path],
+    cfg:   McpServerConfig,
+    wsCfg: Option[WorkspaceSettings],
   ): ZIO[Scope, JorlanError, McpSkillAdapter] =
     cfg.transport match {
       case McpTransport.Http =>
@@ -93,7 +85,7 @@ class McpManagerImpl(
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP transport requires 'url'"))
           case Some(url) =>
             HttpMcpClient.make(client, url).flatMap { httpClient =>
-              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, spillDir))
+              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, wsCfg))
             }
         }
       case McpTransport.HttpSse =>
@@ -102,7 +94,7 @@ class McpManagerImpl(
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP+SSE transport requires 'url'"))
           case Some(url) =>
             HttpSseMcpClient.make(client, url).flatMap { httpClient =>
-              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, spillDir))
+              httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, wsCfg))
             }
         }
       case McpTransport.Stdio =>
@@ -111,7 +103,7 @@ class McpManagerImpl(
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': stdio transport requires 'command'"))
           case Some(_) =>
             StdioMcpClient.make(cfg).flatMap { stdioClient =>
-              stdioClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, stdioClient, cfg.keywords, spillDir))
+              stdioClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, stdioClient, cfg.keywords, wsCfg))
             }
         }
     }

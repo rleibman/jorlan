@@ -14,6 +14,8 @@ import zio.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
+import scala.language.postfixOps
+
 /** Built-in skill for user discovery, channel-identity management, role, and capability-grant management.
   *
   * Tools:

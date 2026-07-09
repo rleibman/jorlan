@@ -47,6 +47,7 @@ case class UserSearch(
 
 enum AgentOrder { case Id, Name, CreatedAt }
 case class AgentSearch(
+  name:     Option[String] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[AgentOrder]] = None,
@@ -153,6 +154,7 @@ case class WorkspaceSearch(
 enum RoleOrder { case Id, Name }
 case class RoleSearch(
   userId:   Option[UserId] = None,
+  name:     Option[String] = None,
   page:     Int = 0,
   pageSize: Int = 20,
   sorts:    Option[Sort[RoleOrder]] = None,
@@ -352,7 +354,6 @@ trait SchedulerRepository[F[_]] {
   def updateJobConfig(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -388,8 +389,36 @@ trait SchedulerRepository[F[_]] {
     finishedAt: Instant,
   ): F[Unit]
 
+  /** Slide a job's lease forward to `now`, but only if it is still owned by `workerId`. A no-op (returns `false`) if
+    * the lease was already reclaimed by [[expireLeases]] (e.g. this worker took longer than the lease TTL and lost
+    * ownership) -- callers must not treat that as an error, just stop making further progress on the job.
+    */
+  def renewLease(
+    id:       SchedulerJobId,
+    workerId: String,
+    now:      Instant,
+  ): F[Boolean]
+
   /** Reset stale leases (where `leasedAt < olderThan`) back to `Pending` so another worker can pick them up. */
   def expireLeases(olderThan: Instant): F[Long]
+
+  /** Persist a new [[PipelineRun]] record; `id` is auto-assigned. */
+  def insertPipelineRun(run: PipelineRun): F[PipelineRun]
+
+  /** Update the status, contextJson, failedStep, and finishedAt of an existing [[PipelineRun]]. */
+  def updatePipelineRun(run: PipelineRun): F[Unit]
+
+  /** Return all [[PipelineRun]]s for the given job, ordered by `startedAt` descending. */
+  def listPipelineRuns(jobId: SchedulerJobId): F[List[PipelineRun]]
+
+  /** Return a single [[PipelineRun]] by ID, or `None` if not found. */
+  def getPipelineRun(id: PipelineRunId): F[Option[PipelineRun]]
+
+  /** Replace the pipeline content of an existing job. */
+  def updateJobPipeline(
+    id:       SchedulerJobId,
+    pipeline: Pipeline,
+  ): F[Boolean]
 
 }
 

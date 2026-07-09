@@ -22,11 +22,10 @@ class JobManagerImpl(
 ) extends JobManager {
 
   override def createJob(
-    agentId:         AgentId,
+    agentId:         Option[AgentId],
     userId:          UserId,
     name:            String,
-    prompt:          String,
-    inputJson:       Option[String],
+    pipeline:        Pipeline,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
@@ -42,8 +41,7 @@ class JobManagerImpl(
             userId = userId,
             skillId = None,
             name = name,
-            prompt = prompt,
-            inputJson = inputJson,
+            pipeline = pipeline,
             status = JobStatus.Pending,
             scheduledAt = now,
             startedAt = None,
@@ -103,17 +101,44 @@ class JobManagerImpl(
     for {
       now <- Clock.instant
       job <- getJob(id)
-      _   <- repo.scheduler
+      _   <- ZIO.logInfo(
+        s"[JobManager] Cancelling job ${id.value} ('${job.name}', status=${job.status}" +
+          job.leasedBy.fold("")(w => s", leased by $w") + ")",
+      )
+      _ <- repo.scheduler
         .releaseJob(id, JobStatus.Cancelled, None, now)
         .mapError(JorlanError(_))
         .unless(job.status == JobStatus.Cancelled)
+      // Mark any in-flight runs Cancelled so the run history reflects reality immediately. The executing
+      // TriggerEngine fiber notices the Cancelled job status before its next step and stops there.
+      runs <- repo.scheduler.listPipelineRuns(id).mapError(JorlanError(_))
+      running = runs.filter(_.status == PipelineRunStatus.Running)
+      _ <- ZIO.foreachDiscard(running) { run =>
+        repo.scheduler
+          .updatePipelineRun(run.copy(status = PipelineRunStatus.Cancelled, finishedAt = Some(now)))
+          .mapError(JorlanError(_))
+      }
+      _ <- ZIO.when(running.nonEmpty)(
+        ZIO.logInfo(
+          s"[JobManager] Job ${id.value}: marked ${running.size} in-flight run(s) as Cancelled " +
+            s"(${running.map(_.id.value).mkString(", ")}); the engine stops before its next step",
+        ),
+      )
     } yield ()
 
   override def triggerNow(id: SchedulerJobId): IO[JorlanError, Unit] =
     for {
       now <- Clock.instant
       job <- getJob(id)
-      _   <- repo.scheduler
+      _   <- ZIO.when(job.status == JobStatus.Running)(
+        ZIO.fail(
+          JorlanError(
+            s"Job ${id.value} ('${job.name}') is already running — cancel it or wait for it to finish before triggering again",
+          ),
+        ),
+      )
+      _ <- ZIO.logInfo(s"[JobManager] Manually triggering job ${id.value} ('${job.name}')")
+      _ <- repo.scheduler
         .upsertJob(job.released(JobStatus.Pending, now))
         .mapError(JorlanError(_))
     } yield ()
@@ -124,14 +149,13 @@ class JobManagerImpl(
   override def updateJob(
     id:              SchedulerJobId,
     name:            String,
-    prompt:          String,
     maxRetries:      Int,
     backoffSeconds:  Int,
     backoffPolicy:   RetryBackoffPolicy,
     missedRunPolicy: MissedRunPolicy,
   ): IO[JorlanError, SchedulerJob] =
     repo.scheduler
-      .updateJobConfig(id, name, prompt, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
+      .updateJobConfig(id, name, maxRetries, backoffSeconds, backoffPolicy, missedRunPolicy)
       .mapError(JorlanError(_))
       .flatMap { updated =>
         if (updated) getJob(id)
@@ -140,6 +164,35 @@ class JobManagerImpl(
 
   override def deleteTrigger(id: SchedulerTriggerId): IO[JorlanError, Unit] =
     repo.scheduler.deleteTrigger(id).mapError(JorlanError(_)).unit
+
+  override def triggerPipeline(
+    jobId:      SchedulerJobId,
+    runContext: Option[String],
+  ): IO[JorlanError, PipelineRunId] =
+    for {
+      now <- Clock.instant
+      job <- getJob(jobId)
+      run <- repo.scheduler
+        .insertPipelineRun(
+          PipelineRun(
+            id = PipelineRunId.empty,
+            jobId = jobId,
+            status = PipelineRunStatus.Running,
+            runContext = runContext,
+            contextJson = None,
+            failedStep = None,
+            startedAt = now,
+            finishedAt = None,
+          ),
+        )
+        .mapError(JorlanError(_))
+      _ <- repo.scheduler
+        .upsertJob(job.released(JobStatus.Pending, now))
+        .mapError(JorlanError(_))
+    } yield run.id
+
+  override def pipelineRuns(jobId: SchedulerJobId): IO[JorlanError, List[PipelineRun]] =
+    repo.scheduler.listPipelineRuns(jobId).mapError(JorlanError(_))
 
 }
 

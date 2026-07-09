@@ -1,0 +1,74 @@
+{
+  "useCaseName": "home_maintenance_manager",
+  "sourceDoc": "doc/use-cases/home-maintanence-manager.md",
+  "role": {
+    "name": "home-maintenance-agent-role",
+    "description": "Capabilities for the home maintenance manager (chore skill pending; memory-based approximation)",
+    "capabilities": [
+      { "capability": "memory.remember" },
+      { "capability": "memory.search" },
+      { "capability": "memory.search_semantic" },
+      { "capability": "workspace.read" },
+      { "capability": "workspace.write" },
+      { "capability": "calendar.createEvent" },
+      { "capability": "calendar.listEvents" },
+      { "capability": "scheduler.create_job" },
+      { "capability": "notify.send" }
+    ]
+  },
+  "assignRoleToUser": "roberto@leibman.net",
+  "agent": {
+    "name": "home-maintenance-agent",
+    "description": "Home maintenance manager: tracks recurring chores and seasonal maintenance in memory (until the native chore skill exists), reminds weekly, and keeps an asset/maintenance record.",
+    "trustLevel": 0,
+    "prioritizedSkills": ["memory", "calendar", "scheduler", "workspace"],
+    "invariants": { "role": "practical, organized home maintenance planner" }
+  },
+  "memorySeeds": [
+    {
+      "key": "chore.example.hvac-filter",
+      "text": "chore: Replace HVAC filter | frequency: every 90 days | last done: EDIT ME (YYYY-MM-DD) | priority: high",
+      "scope": "User"
+    },
+    {
+      "key": "chore.example.gutters",
+      "text": "chore: Clean gutters | frequency: every 180 days (spring and fall) | last done: EDIT ME (YYYY-MM-DD) | priority: medium",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [],
+  "declarativeSkills": [],
+  "job": {
+    "name": "home-maintenance-weekly-review",
+    "steps": [
+      {
+        "name": "review-chores",
+        "systemPrompt": "You review household chores. Call memory.search once with query 'chore' to get all chore records (each has frequency and last-done date). Compute which are due or overdue relative to today.\n\nOutput format -- one line per due/overdue chore, nothing else:\n<chore name> | due since <date> | priority <level>\nOr exactly 'Nothing due this week.'",
+        "userPrompt": "{{now}} -- Review the chore list now.",
+        "tools": ["memory.search"],
+        "mode": "ReactLoop",
+        "outputVar": "due_chores",
+        "retryOnFail": 1
+      },
+      {
+        "name": "send-chore-reminders",
+        "systemPrompt": "You deliver the weekly maintenance reminder. Call notify.user exactly once, passing only 'message' (never userId), titled 'Home maintenance this week' with the due-chore list (or a short all-clear note).\n\nOutput: one line confirming delivery.",
+        "userPrompt": "Due chores:\n{{steps.due_chores.output}}\n\nSend the reminder now.",
+        "tools": ["notify.user"],
+        "mode": "ReactLoop",
+        "outputVar": "delivery",
+        "retryOnFail": 1
+      }
+    ],
+    "invariants": {},
+    "personality": null,
+    "maxRetries": 1,
+    "backoffSeconds": 300,
+    "backoffPolicy": "Fixed",
+    "missedRunPolicy": "Skip",
+    "trigger": {
+      "triggerType": "Cron",
+      "expression": "0 0 16 ? * 6"
+    }
+  }
+}

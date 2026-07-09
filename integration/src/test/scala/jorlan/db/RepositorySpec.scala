@@ -119,6 +119,26 @@ object RepositorySpec extends ZIOSpec[ZIORepositories] {
         )
       }
     },
+    test("upsert with an existing id updates in place, does not create a duplicate row") {
+      // Regression test for a real bug: QuillAgentRepository.upsert previously used
+      // insertValue(...).onConflictUpdate(...).returningGenerated(_.id), and MariaDB's
+      // INSERT ... ON DUPLICATE KEY UPDATE still advances the auto-increment counter even when the
+      // UPDATE branch fires, so returningGenerated (backed by LAST_INSERT_ID()) returned a bogus,
+      // never-persisted id instead of the existing row's real id -- silently creating a second,
+      // duplicate row on every "update" call.
+      for {
+        repo    <- ZIO.serviceWith[ZIORepositories](_.agent)
+        created <- repo.upsert(Agent(AgentId.empty, "DupCheckAgent", None, None, 0, createdAt = T0))
+        updated <- repo.upsert(created.copy(description = Some("updated"), trustLevel = 5))
+        byId    <- repo.getById(created.id)
+        all     <- repo.search(AgentSearch(name = Some("DupCheckAgent"), pageSize = 1000))
+      } yield assertTrue(
+        updated.id == created.id,
+        byId.exists(_.description.contains("updated")),
+        byId.exists(_.trustLevel == 5),
+        all.size == 1,
+      )
+    },
     test("agent sessions") {
       for {
         agentRepo <- ZIO.serviceWith[ZIORepositories](_.agent)

@@ -86,6 +86,13 @@ object JorlanEndToEndSpec
         userId:   UserId,
         provider: String,
       ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+      override def buildAuthUrl(
+        userId:   UserId,
+        provider: String,
+      ): IO[JorlanError, String] =
+        ZIO.succeed("https://accounts.google.com/test")
+      override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+        ZIO.fail(JorlanError("not implemented in test"))
     },
   )
 
@@ -222,8 +229,8 @@ object JorlanEndToEndSpec
     ZLayer.make[JorlanEnvironment](
       configLayer,
       QuillRepositories.live,
+      EnvironmentBuilder.dataSourceLayer,
       stubCapabilityEvaluator, // real CapabilityEvaluator tested separately in CapabilityEvaluatorSpec
-      ApprovalHub.live,
       ApprovalServiceImpl.live,
       jorlan.auth.JorlanAuthServer.live,
       authConfigLayer,
@@ -247,7 +254,6 @@ object JorlanEndToEndSpec
       Client.default,
       McpManager.live,
       DashboardService.live,
-      OAuthReconnectService.live,
       SkillLifecycleService.live,
     )
 

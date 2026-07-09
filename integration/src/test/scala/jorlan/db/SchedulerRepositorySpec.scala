@@ -6,7 +6,6 @@
 
 package jorlan.db
 
-import jorlan.*
 import jorlan.db.TestFixtures.*
 import jorlan.db.repository.*
 import jorlan.*
@@ -24,12 +23,13 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
   ): SchedulerJob =
     SchedulerJob(
       id = SchedulerJobId.empty,
-      agentId = agentId,
+      agentId = Some(agentId),
       userId = userId,
       skillId = None,
       name = name,
-      prompt = "",
-      inputJson = None,
+      pipeline = Pipeline(
+        steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+      ),
       status = JobStatus.Pending,
       scheduledAt = T0,
       startedAt = None,
@@ -211,6 +211,33 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
           fetched.exists(_.resultJson.contains("""{"result":"ok"}""")),
         )
       },
+      test("renewLease slides leasedAt forward for the owning worker") {
+        for {
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
+          (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched12")
+          job        <- repo.upsertJob(makeJob(aid, uid, "renew-lease"))
+          _          <- repo.claimJob(job.id, "worker-A", T0, 300)
+          later = T0.plusSeconds(120)
+          renewed <- repo.renewLease(job.id, "worker-A", later)
+          fetched <- repo.getJob(job.id)
+        } yield assertTrue(renewed, fetched.exists(_.leasedAt.contains(later)))
+      },
+      test("renewLease is a no-op once another worker has reclaimed the lease") {
+        for {
+          userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
+          agentRepo  <- ZIO.serviceWith[ZIORepositories](_.agent)
+          repo       <- ZIO.serviceWith[ZIORepositories](_.scheduler)
+          (uid, aid) <- createUserAndAgent(userRepo, agentRepo, "Sched13")
+          job        <- repo.upsertJob(makeJob(aid, uid, "renew-lease-lost"))
+          _          <- repo.claimJob(job.id, "worker-A", T0, 300)
+          _          <- repo.expireLeases(T0.plusSeconds(1)) // reclaim as if worker-A's lease went stale
+          _          <- repo.claimJob(job.id, "worker-B", T0.plusSeconds(2), 300)
+          renewed    <- repo.renewLease(job.id, "worker-A", T0.plusSeconds(120))
+          fetched    <- repo.getJob(job.id)
+        } yield assertTrue(!renewed, fetched.exists(_.leasedBy.contains("worker-B")))
+      },
       test("expireLeases reclaims stale Running jobs to Pending") {
         for {
           userRepo   <- ZIO.serviceWith[ZIORepositories](_.user)
@@ -245,7 +272,7 @@ object SchedulerRepositorySpec extends ZIOSpec[ZIORepositories] {
           filtered   <- repo.listJobs(Some(aid))
         } yield assertTrue(
           all.size >= 2,
-          filtered.forall(_.agentId == aid),
+          filtered.forall(_.agentId.contains(aid)),
           filtered.exists(_.name == "agent1-only"),
           !filtered.exists(_.name == "agent2-only"),
         )

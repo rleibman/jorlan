@@ -17,7 +17,6 @@ import net.leibman.jorlan.muiMaterial.listItemListItemMod.ListItemOwnProps
 import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
 import net.leibman.jorlan.muiMaterial.typographyTypographyMod.TypographyOwnProps
-import net.leibman.jorlan.muiSystem.boxBoxMod.BoxOwnProps
 import net.leibman.jorlan.muiSystem.styleFunctionSxStyleFunctionSxMod.SxProps
 
 import scala.language.unsafeNulls

@@ -73,7 +73,7 @@ object DashboardPage {
                   .listSkills()
                   .flatMap { skills =>
                     state
-                      .setState(state.value.copy(stats = statsOpt, skills = skills, loading = false))
+                      .modState(_.copy(stats = statsOpt, skills = skills, loading = false))
                       .asAsyncCallback
                       .flatMap { _ =>
                         val skillsWithDashboard = skills.filter(_.hasDashboardData)
@@ -90,7 +90,7 @@ object DashboardPage {
                       }
                   }
               }
-              .completeWith(PageUtils.onError(err => state.setState(state.value.copy(loading = false, error = err))))
+              .completeWith(PageUtils.onError(err => state.modState(_.copy(loading = false, error = err))))
               .runNow()
           }
       }

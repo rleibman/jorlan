@@ -47,9 +47,21 @@ case class AgentSettings(
 /** Durable scheduler configuration. */
 case class SchedulerSettings(
   pollIntervalSeconds: Int = 10,
-  leaseTtlSeconds:     Int = 300,
-  jobTimeoutSeconds:   Int = 300,
-  listJobsLimit:       Int = 200,
+  // Must comfortably exceed jobTimeoutSeconds -- TriggerEngine renews this lease before each pipeline
+  // step attempt, but a single attempt can legitimately run for up to jobTimeoutSeconds before that next
+  // renewal. If leaseTtlSeconds is shorter than jobTimeoutSeconds, expireLeases reclaims a job that is
+  // still actively running, letting another poll tick claim and re-execute it concurrently -- this is
+  // exactly what caused the cascading Ollama timeouts seen in production (multiple duplicate pipeline
+  // runs all competing for one model instance).
+  leaseTtlSeconds: Int = 1200,
+  // Must comfortably exceed ai.timeout (the LLM completion client's own timeout) -- otherwise
+  // TriggerEngine kills a slow-but-legitimate pipeline step before the LLM client's timeout could
+  // ever fire, burning a retry cycle for no reason.
+  jobTimeoutSeconds: Int = 900,
+  listJobsLimit:     Int = 200,
+  // Jobs executed concurrently per worker. Keep at 1 for a single local Ollama instance: concurrent
+  // LLM-bound jobs queue against the model and push each other past the client timeout.
+  maxConcurrentJobs: Int = 1,
 )
 
 /** How workspace paths are scoped per invocation. Stored in the DB under `skill.workspace`. */

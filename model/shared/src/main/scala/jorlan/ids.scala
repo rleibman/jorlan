@@ -222,6 +222,20 @@ object MemoryEmbeddingId {
 
 }
 
+/** Primary key for [[PipelineRun]] records. */
+opaque type PipelineRunId = Long
+object PipelineRunId {
+
+  def apply(v: Long): PipelineRunId = v
+
+  /** Sentinel value representing an unsaved / default-constructed record. */
+  val empty: PipelineRunId = 0L
+  extension (id: PipelineRunId) { def value: Long = id }
+  given JsonEncoder[PipelineRunId] = JsonEncoder[Long].contramap(_.value)
+  given JsonDecoder[PipelineRunId] = JsonDecoder[Long].map(PipelineRunId(_))
+
+}
+
 /** Primary key for [[SchedulerJob]] records. */
 opaque type SchedulerJobId = Long
 object SchedulerJobId {

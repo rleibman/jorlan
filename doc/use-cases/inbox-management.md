@@ -371,3 +371,41 @@ Immediately when suspicious mail is detected:
 * Notify Roberto.
 * Explain concerns.
 * Recommend appropriate action.
+
+## Implementation in Jorlan
+
+### Existing skills that satisfy this use case
+
+| Requirement | Jorlan skill / tool |
+|---|---|
+| Monitor inbox continuously / on schedule | `scheduler.create_job` (cron trigger) + `email.list`, `email.search` |
+| Read and classify messages | `email.read`, `email.search` |
+| Draft responses | `email.draft` |
+| Reply (with approval) | `email.reply` (approval gate required) |
+| Archive / flag / move messages | `email.archive`, `email.flag`, `email.move` |
+| Track follow-ups and commitments | `memory.remember`, `memory.search` |
+| Create calendar events from emails | `GoogleCalendarSkill` — `calendar.createEvent` |
+| Look up contacts for context | `GoogleContactsSkill` — `google_contacts.search_contacts` |
+| Store attachments / financial docs | `GoogleDriveSkill` — `drive.listFiles` |
+| Telegram security alerts | `TelegramConnectorSkill` — `telegram.send_message` |
+| Web search for context (e.g. verify suspicious sender) | `search.web` |
+| Project-email association | `memory.search_semantic` (agent reasons about project relevance) |
+
+### No additional MCPs needed
+
+The `email` skill (backed by Gmail or IMAP/SMTP) already covers all email operations this use case requires.
+Gmail users get the `GmailProvider` with full folder/label support. IMAP users get `ImapSmtpProvider`.
+
+### Agent configuration notes
+
+This use case is best implemented as a **polling agent** triggered by the scheduler:
+- `scheduler.create_job(cron="0 * * * *", ...)` — check email every hour
+- `scheduler.create_job(cron="0 7 * * *", ...)` — daily morning inbox briefing sent to Telegram
+- `scheduler.create_job(cron="0 18 * * *", ...)` — daily follow-up review
+
+The agent should have the `email.*` capability plus approval gates on `email.send` and `email.delete`.
+
+### What is not yet feasible
+
+- **Real-time new mail detection** — requires IMAP IDLE push or Gmail push notifications (webhook ingress); currently the agent polls on a schedule instead
+- **Automatic sending, archiving, or deletion** — intentionally forbidden by the use case's automation policy; these require user approval in Jorlan's approval system

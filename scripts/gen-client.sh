@@ -49,6 +49,7 @@ MissedRunPolicy:jorlan.MissedRunPolicy,\
 RetryBackoffPolicy:jorlan.RetryBackoffPolicy,\
 SchedulerJobId:jorlan.SchedulerJobId,\
 SchedulerTriggerId:jorlan.SchedulerTriggerId,\
+PipelineRunId:jorlan.PipelineRunId,\
 SkillId:jorlan.SkillId,\
 TriggerType:jorlan.TriggerType,\
 Instant:java.time.Instant,\

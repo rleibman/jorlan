@@ -15,7 +15,7 @@ import jorlan.service.*
 import jorlan.service.llm.FakeModelGateway
 import jorlan.service.memory.MemoryServiceImpl
 import jorlan.service.schedule.JobManagerImpl
-import jorlan.service.skills.{MemorySkill, SkillRegistry}
+import jorlan.service.skills.{MemorySkill, SkillRegistry, ToolEmbeddingIndex}
 import jorlan.service.mcp.McpManager
 import jorlan.service.skills.declarative.SkillLifecycleService
 import jorlan.testing.{FakeConfigurationService, InMemoryRepositories, NoOpEmbeddingLayers, NoOpMemoryService}
@@ -30,7 +30,7 @@ import zio.test.*
   *   - All Mutations (createUser, updateUser, createRole, assignRole, revokeRole, grantPermission, revokePermission)
   *   - Authorization helpers: `actorIdFromSession` (unauthenticated → error), `requireCapability` (deny/allow)
   *   - Input validation: `grantPermission` must target exactly one of userId/roleId
-  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalHub]]; `eventLogTail` returns an empty stream in
+  *   - Subscriptions: `approvalNotifications` backed by [[ApprovalService]]; `eventLogTail` returns an empty stream in
   *     tests
   */
 object JorlanAPISpec extends ZIOSpecDefault {
@@ -91,6 +91,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
       userId:   UserId,
       provider: String,
     ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    override def buildAuthUrl(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.succeed("https://accounts.google.com/o/oauth2/v2/auth?test=1")
+    override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+      ZIO.fail(JorlanError("not implemented in test"))
   })
 
   private val connectedOAuthCredSvc: ULayer[OAuthCredentialService] = ZLayer.succeed(new OAuthCredentialService {
@@ -119,6 +126,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
       userId:   UserId,
       provider: String,
     ): IO[JorlanError, Option[java.time.Instant]] = ZIO.none
+    override def buildAuthUrl(
+      userId:   UserId,
+      provider: String,
+    ): IO[JorlanError, String] =
+      ZIO.succeed("https://accounts.google.com/o/oauth2/v2/auth?test=1")
+    override def verifyAndConsume(state: String): IO[JorlanError, (UserId, String)] =
+      ZIO.fail(JorlanError("not implemented in test"))
   })
 
   private def makeAppLayer(
@@ -148,15 +162,6 @@ object JorlanAPISpec extends ZIOSpecDefault {
       } yield repo).provide(repoLayer)
     }
 
-    val approvalSvcLayer: ULayer[ApprovalService] = ZLayer.succeed(
-      new ApprovalService {
-        override def authorize(request: CapabilityRequest): IO[JorlanError, AuthorizationResult] =
-          ZIO.succeed(AuthorizationResult.Allowed)
-        override def recordDecision(decision: ApprovalDecision): IO[JorlanError, ApprovalDecision] =
-          ZIO.succeed(decision)
-        override def expireStaleRequests(): IO[JorlanError, Long] = ZIO.succeed(0L)
-      }: ApprovalService,
-    )
     val noOpNotificationRouter: ULayer[NotificationRouter] = ZLayer.succeed(
       new NotificationRouter {
         override def notifyUser(
@@ -184,7 +189,8 @@ object JorlanAPISpec extends ZIOSpecDefault {
         AgentSessionManagerImpl.live,
         memSvcLayer,
         NoOpEmbeddingLayers.embeddingStoreLayer,
-        NoOpEmbeddingLayers.embeddingModelLayer, {
+        NoOpEmbeddingLayers.embeddingModelLayer,
+        ToolEmbeddingIndex.noOp, {
           ZLayer.fromZIO {
             for {
               svc   <- ZIO.service[MemoryService]
@@ -196,13 +202,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         FakeConfigurationService.layer,
         AgentRunnerImpl.live,
         JobManagerImpl.live,
-        approvalSvcLayer,
-        ApprovalHub.live,
+        ApprovalServiceImpl.live,
         noOpNotificationRouter,
         oauthCredSvcLayer,
         DashboardService.live,
         Client.default.orDie,
-        ZLayer.fromZIO(OAuthReconnectService.make("test-secret", "test-client-id", "http://localhost/callback")),
         SkillLifecycleService.live,
         McpManager.live,
         ZLayer.fromZIO(JorlanAPI.api.interpreter.orDie),
@@ -515,10 +519,10 @@ object JorlanAPISpec extends ZIOSpecDefault {
         }
       } yield assertTrue(events.isEmpty)
     }.provideLayer(makeAppLayer()) @@ TestAspect.withLiveClock,
-    test("approvalNotifications subscription receives event published through ApprovalHub") {
+    test("approvalNotifications subscription receives event published through ApprovalService") {
       for {
-        hub    <- ZIO.service[ApprovalHub]
-        stream <- hub.subscribeToNewRequests
+        svc    <- ZIO.service[ApprovalService]
+        stream <- svc.subscribeToNewRequests
         req = ApprovalRequest(
           id = ApprovalRequestId(42L),
           capability = CapabilityName("shell.execute"),
@@ -532,7 +536,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
           expiresAt = None,
         )
         fiber  <- stream.take(1).runCollect.map(_.toList).fork
-        _      <- hub.notifyNewRequest(req)
+        _      <- svc.notifyNewRequest(req)
         events <- fiber.join
       } yield assertTrue(
         events.size == 1,
@@ -780,12 +784,13 @@ object JorlanAPISpec extends ZIOSpecDefault {
     InMemorySchedulerRepo.make.flatMap { repo =>
       val foreignJob = SchedulerJob(
         id = SchedulerJobId.empty,
-        agentId = AgentId(1L),
+        agentId = Some(AgentId(1L)),
         userId = UserId(2L),
         skillId = None,
         name = "foreign-job",
-        prompt = "",
-        inputJson = None,
+        pipeline = Pipeline(
+          steps = List(PipelineStep(name = "run", systemPrompt = "", userPrompt = "", outputVar = "result")),
+        ),
         status = JobStatus.Pending,
         scheduledAt = Instant.now(),
         startedAt = None,
@@ -870,7 +875,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { addTrigger(jobId: 1, triggerType: "Interval", expression: "PT1H") { id } }""",
+          """mutation { addTrigger(jobId: 1, triggerType: Interval, expression: "PT1H") { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty, result.errors.exists(e => e.toString.contains("owned")))
     }.provideLayer(
@@ -880,29 +885,28 @@ object JorlanAPISpec extends ZIOSpecDefault {
         ),
       ),
     ),
-    test("createJob fails when no active agent session (resolveAgentIdStrict)") {
+    test("createJob succeeds without an active agent session (uses AgentId.empty as fallback)") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { createJob(name: "x", prompt: "", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "x", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
-      } yield assertTrue(result.errors.nonEmpty)
+      } yield assertTrue(result.errors.isEmpty)
     }.provideLayer(makeAppLayer()),
     test("createJob fails when scheduler.manage capability is denied") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { createJob(name: "test", prompt: "", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "test", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(capEval = denyAll)),
     test("createJob with real scheduler repo creates job in Pending state") {
       for {
-        interp <- ZIO.service[Interp]
-        // Create a session so resolveAgentIdStrict finds one
+        interp        <- ZIO.service[Interp]
         sessionResult <- interp.execute("""mutation { createSession { id } }""")
         result        <- interp.execute(
-          """mutation { createJob(name: "my-job", prompt: "Do your thing", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name status } }""",
+          """mutation { createJob(name: "my-job", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"Do your thing\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name status } }""",
         )
       } yield assertTrue(
         sessionResult.errors.isEmpty,
@@ -1380,7 +1384,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "pause-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "pause-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(s"""mutation { pauseJob(value: $jobId) }""")
@@ -1391,7 +1395,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "resume-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "resume-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         _      <- interp.execute(s"""mutation { pauseJob(value: $jobId) }""")
@@ -1403,7 +1407,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "cancel-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "cancel-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(s"""mutation { cancelJob(value: $jobId) }""")
@@ -1414,7 +1418,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "delete-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "delete-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(s"""mutation { deleteJob(value: $jobId) }""")
@@ -1425,7 +1429,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "trigger-me", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "trigger-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(s"""mutation { triggerNow(value: $jobId) }""")
@@ -1436,11 +1440,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "update-me", prompt: "original", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "update-me", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"original\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(
-          s"""mutation { updateJob(id: $jobId, name: "updated-name", prompt: "new prompt", maxRetries: 2, backoffSeconds: 30, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name } }""",
+          s"""mutation { updateJob(id: $jobId, name: "updated-name", maxRetries: 2, backoffSeconds: 30, backoffPolicy: Fixed, missedRunPolicy: Skip) { id name } }""",
         )
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("updated-name"))
     }.provideLayer(makeAppLayer()),
@@ -1449,11 +1453,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "trigger-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "trigger-job", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         result <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id jobId } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id jobId } }""",
         )
       } yield assertTrue(result.errors.isEmpty, result.data.toString.contains("jobId"))
     }.provideLayer(makeAppLayer()),
@@ -1462,11 +1466,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "dt-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "dt-job", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         triggerResult <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id } }""",
         )
         triggerId = extractLong(triggerResult.data.toString, "id")
         result <- interp.execute(s"""mutation { deleteTrigger(value: $triggerId) }""")
@@ -1477,11 +1481,11 @@ object JorlanAPISpec extends ZIOSpecDefault {
         interp       <- ZIO.service[Interp]
         _            <- interp.execute("""mutation { createSession { id } }""")
         createResult <- interp.execute(
-          """mutation { createJob(name: "trigger-list-job", prompt: "p", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
+          """mutation { createJob(name: "trigger-list-job", pipelineJson: "{\"steps\":[{\"name\":\"run\",\"systemPrompt\":\"\",\"userPrompt\":\"p\",\"tools\":[],\"mode\":\"ReactLoop\",\"outputVar\":\"result\",\"retryOnFail\":0}],\"invariants\":{}}", maxRetries: 0, backoffSeconds: 60, backoffPolicy: Fixed, missedRunPolicy: Skip) { id } }""",
         )
         jobId = extractLong(createResult.data.toString, "id")
         addTrigResult <- interp.execute(
-          s"""mutation { addTrigger(jobId: $jobId, triggerType: "Cron", expression: "0 * * * *") { id } }""",
+          s"""mutation { addTrigger(jobId: $jobId, triggerType: Cron, expression: "0 0 * ? * *") { id } }""",
         )
         result <- interp.execute(s"""{ triggers(value: $jobId) { id } }""")
       } yield assertTrue(

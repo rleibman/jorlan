@@ -97,8 +97,8 @@ trait Skill {
       case Json.Obj(fields) =>
         fields
           .collectFirst {
-            case (`key`, Json.Num(n)) => n.longValue
-            case (`key`, Json.Str(s)) => s.toLong
+            case (`key`, Json.Num(n))                             => n.longValue
+            case (`key`, Json.Str(s)) if s.toLongOption.isDefined => s.toLong
           }.fold(ZIO.fail(ValidationError(s"missing or invalid field '$key'")): IO[JorlanError, Long])(ZIO.succeed(_))
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
     }

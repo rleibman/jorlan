@@ -55,9 +55,8 @@ object EventLogPage {
               flushScheduled = false
               if (batch.nonEmpty) {
                 state
-                  .setState(
-                    state.value.copy(events = (batch.reverse ::: state.value.events).take(200)),
-                  ).runNow()
+                  .modState(s => s.copy(events = (batch.reverse ::: s.events).take(200)))
+                  .runNow()
               }
             }
 
@@ -71,11 +70,11 @@ object EventLogPage {
                   }
                 }
               },
-              onConnected = state.setState(state.value.copy(running = true, error = None)),
-              onDisconnected = state.setState(state.value.copy(running = false)),
-              onClientError = ex => state.setState(state.value.copy(error = Some(ex.getMessage), running = false)),
+              onConnected = state.modState(_.copy(running = true, error = None)),
+              onDisconnected = state.modState(_.copy(running = false)),
+              onClientError = ex => state.modState(_.copy(error = Some(ex.getMessage), running = false)),
             )
-            state.setState(state.value.copy(wsHandler = Some(handler))).runNow()
+            state.modState(_.copy(wsHandler = Some(handler))).runNow()
             // cleanup: close the subscription when the component unmounts
             handler.close()
           }
@@ -110,7 +109,7 @@ object EventLogPage {
                   .onClick { () =>
                     handler
                       .close()
-                      .flatMap(_ => state.setState(state.value.copy(running = false, wsHandler = None)))
+                      .flatMap(_ => state.modState(_.copy(running = false, wsHandler = None)))
                       .runNow()
                   }("Disconnect")
               },
@@ -151,11 +150,11 @@ object EventLogPage {
                                   .size("small")
                                   .onClick(() =>
                                     state
-                                      .setState(
-                                        state.value.copy(
+                                      .modState(s =>
+                                        s.copy(
                                           expanded =
-                                            if (isExpanded) state.value.expanded - event.id
-                                            else state.value.expanded + event.id,
+                                            if (s.expanded.contains(event.id)) s.expanded - event.id
+                                            else s.expanded + event.id,
                                         ),
                                       )
                                       .runNow(),
