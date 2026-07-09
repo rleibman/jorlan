@@ -151,7 +151,7 @@ lazy val commonSettings = Seq(
   organization     := "net.leibman",
   startYear        := Some(2026),
   organizationName := "Roberto Leibman",
-  headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
+  headerLicense    := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
   licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
   resolvers += Resolver.mavenLocal,
 )
@@ -359,7 +359,7 @@ lazy val discordConnector =
     .settings(name := "jorlan-discord")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "net.dv8tion" % "JDA" % "6.4.2" exclude("club.minnced", "opus-java"),
+        "net.dv8tion" % "JDA" % "6.4.2" exclude ("club.minnced", "opus-java"),
       ),
       coverageExcludedFiles := ".*DiscordApiClient.*",
     )
@@ -571,7 +571,7 @@ lazy val server = project
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
-    Test / fork           := true,
+    Test / fork := true,
     coverageExcludedFiles := ".*EnvironmentBuilder.*;.*scala/jorlan/Jorlan.*;.*McpClient.*;.*SkillPluginLoader.*;.*StaticRoutes.*;.*OAuthRoutes.*;.*FlywayMigration.*",
     // Skip Scaladoc during packaging — cron4s has a Scala.js annotation that breaks DottyDoc on JVM.
     Compile / doc / sources := Seq.empty,
@@ -642,8 +642,8 @@ lazy val shellClient = project
       "com.softwaremill.sttp.client4" %% "core"                % sttpClient4Version withSources (),
       "com.softwaremill.sttp.client4" %% "zio"                 % sttpClient4Version withSources (),
       "com.softwaremill.sttp.client4" %% "zio-json"            % sttpClient4Version withSources (),
-      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+      "dev.zio"                       %% "zio-test"            % zioVersion % "test" withSources (),
+      "dev.zio"                       %% "zio-test-sbt"        % zioVersion % "test" withSources (),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     coverageExcludedFiles := ".*JorlanClient.*;.*ZIOClientRepositories.*;.*AuthClient.*",
@@ -664,14 +664,14 @@ lazy val useCaseImporter = project
     name                := "jorlan-use-case-importer",
     Compile / mainClass := Some("jorlan.shell.UseCaseImporterApp"),
     libraryDependencies ++= Seq(
-      "dev.zio" %% "zio"                % zioVersion withSources (),
-      "dev.zio" %% "zio-json"           % zioJsonVersion withSources (),
-      "dev.zio" %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
-      "ch.qos.logback" % "logback-classic" % logbackVersion withSources (),
+      "dev.zio"       %% "zio"                % zioVersion withSources (),
+      "dev.zio"       %% "zio-json"           % zioJsonVersion withSources (),
+      "dev.zio"       %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
+      "ch.qos.logback" % "logback-classic"    % logbackVersion withSources (),
     ),
-    fork                  := true,
-    run / fork            := true,
-    run / baseDirectory   := (ThisBuild / baseDirectory).value,
+    fork                := true,
+    run / fork          := true,
+    run / baseDirectory := (ThisBuild / baseDirectory).value,
   )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -711,10 +711,10 @@ lazy val shell = project
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
     // so Lanterna can put the terminal into raw mode and receive keystrokes.
-    fork                             := true,
-    run / fork                       := true,
-    run / connectInput               := true,
-    coverageExcludedFiles            := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
+    fork               := true,
+    run / fork         := true,
+    run / connectInput := true,
+    coverageExcludedFiles := ".*JorlanClient.*;.*JorlanScreen.*;.*JorlanShell.*;.*CommandHandler.*;.*ZIOClientRepositories.*;.*ShellCommand.*;.*EndToEndTestApp.*;.*SubscriptionClient.*;.*AuthClient.*",
     coverageExcludedPackages         := "jorlan\\.shell\\.tui.*",
     assembly / mainClass             := Some("jorlan.shell.JorlanShell"),
     assembly / assemblyMergeStrategy := {
@@ -937,7 +937,7 @@ lazy val web: Project = project
     // The entire web module compiles to JavaScript (Scala.js) and requires a
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
     // doesn't instrument Scala.js bytecode or report 0% coverage.
-    coverageEnabled := false,
+    coverageEnabled                           := false,
     run / fork                                := true,
     Global / scalaJSStage                     := FastOptStage,
     Compile / scalaJSUseMainModuleInitializer := true,
@@ -1013,13 +1013,13 @@ lazy val root = project
       shell,
       useCaseImporter,
       integration,
-    ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*
+    ) ++ (if (sys.env.get("CI").contains("true")) Seq.empty[ProjectReference] else Seq[ProjectReference](web))): _*,
   )
   .settings(
     name           := "jorlan",
     publish / skip := true,
     version        := "0.1.0",
-    startYear        := Some(2026),
+    startYear      := Some(2026),
     licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.txt")),
-    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax))
+    headerLicense := Some(HeaderLicense.ALv2("2026", "Roberto Leibman", HeaderLicenseStyle.SpdxSyntax)),
   )
