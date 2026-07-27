@@ -108,26 +108,35 @@ object ToolSupport {
 
   private def buildElement(node: JsonNode): JsonSchemaElement = {
     val desc = Option(node.get("description")).map(_.asText).orNull
-    declaredType(node) match {
-      case "integer" => JsonIntegerSchema.builder().description(desc).build()
-      case "number"  => JsonNumberSchema.builder().description(desc).build()
-      case "boolean" => JsonBooleanSchema.builder().description(desc).build()
-      // Nested objects are recursed into rather than flattened to a string: an MCP tool whose argument is an
-      // object (a name, a date, a child reference) is unusable if the model is told to pass a bare string.
-      case "object" => buildObjectSchema(node)
-      // An array schema with no `items` is rejected outright by strict providers, and tells a model nothing
-      // about what to put in the array. Default the element type to string when the server omits it.
-      case "array" =>
-        val items = Option(node.get("items")).map(buildElement).getOrElse(JsonStringSchema.builder().build())
-        JsonArraySchema.builder().description(desc).items(items).build()
-      case _ =>
-        if (node.has("enum")) {
-          val values = node.get("enum").elements().asScala.map(_.asText).toList.asJava
-          JsonEnumSchema.builder().enumValues(values).description(desc).build()
-        } else {
-          JsonStringSchema.builder().description(desc).build()
-        }
-    }
+
+    val typeNode = node.get("type")
+    val nullable =
+      typeNode != null && typeNode.isArray && typeNode.elements().asScala.exists(_.asText == "null")
+
+    val base: JsonSchemaElement =
+      declaredType(node) match {
+        case "integer" => JsonIntegerSchema.builder().description(desc).build()
+        case "number"  => JsonNumberSchema.builder().description(desc).build()
+        case "boolean" => JsonBooleanSchema.builder().description(desc).build()
+        // Nested objects are recursed into rather than flattened to a string: an MCP tool whose argument is an
+        // object (a name, a date, a child reference) is unusable if the model is told to pass a bare string.
+        case "object" => buildObjectSchema(node)
+        // An array schema with no `items` is rejected outright by strict providers, and tells a model nothing
+        // about what to put in the array. Default the element type to string when the server omits it.
+        case "array" =>
+          val items = Option(node.get("items")).map(buildElement).getOrElse(JsonStringSchema.builder().build())
+          JsonArraySchema.builder().description(desc).items(items).build()
+        case _ =>
+          if (node.has("enum")) {
+            val values = node.get("enum").elements().asScala.map(_.asText).toList.asJava
+            JsonEnumSchema.builder().enumValues(values).description(desc).build()
+          } else {
+            JsonStringSchema.builder().description(desc).build()
+          }
+      }
+
+    if (nullable) JsonAnyOfSchema.builder().description(desc).anyOf(base, JsonNullSchema()).build()
+    else base
   }
 
   /** Extract the first tool call from a [[ChatResponse]], if the model requested one. */
