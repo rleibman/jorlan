@@ -193,8 +193,8 @@ class AgentRunnerImpl(
     systemMsgs :+ UserMsg(userContent)
   }
 
-  /** Consecutive failures of a single tool, carried across loop iterations. Reset whenever a call succeeds or the
-    * model switches tools.
+  /** Consecutive failures of a single tool, carried across loop iterations. Reset whenever a call succeeds or the model
+    * switches tools.
     */
   private case class FailureStreak(
     tool:  String,
@@ -326,7 +326,8 @@ class AgentRunnerImpl(
                 _ <- ZIO
                   .logWarning(
                     s"[react:${sessionId.value}] '$name' has failed ${newStreak.fold(0)(_.count)} times in a row" +
-                      (if (giveUp) " — withdrawing tools and forcing a final answer" else " — telling the model to stop retrying it"),
+                      (if (giveUp) " — withdrawing tools and forcing a final answer"
+                       else " — telling the model to stop retrying it"),
                   ).when(newStreak.exists(_.count >= softToolFailureStreak))
                 newMessages = messages ++ List(
                   ToolCallMsg(id, name, argsJson),

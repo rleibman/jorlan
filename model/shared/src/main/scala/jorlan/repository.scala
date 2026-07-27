@@ -245,6 +245,7 @@ trait AgentRepository[F[_]] {
   def createSession(modelId:      Option[ModelId]):    F[Option[AgentSession]]
   def terminateSession(sessionId: AgentSessionId):     F[Unit]
   def availableModels():                               F[List[ModelInfo]]
+
   /** @param allowedTools
     *   When set, the model sees only tools matching these names/namespace prefixes for this turn (empty = no tools);
     *   `None` means the default relevance-filtered selection over all tools.

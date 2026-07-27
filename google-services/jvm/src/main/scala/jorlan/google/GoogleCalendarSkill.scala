@@ -176,9 +176,9 @@ class GoogleCalendarSkill(
 
   /** Parses a model-supplied date/time string as an [[Instant]]. Accepts a full instant (`2026-07-01T00:00:00Z`), an
     * offset date-time (`2026-07-01T18:00:00-07:00`), a local date-time with no zone offset (`2026-07-01T00:00:00`,
-    * interpreted in the server's local timezone), or a bare date (`2026-07-01`, local midnight) — the model frequently omits or varies the zone
-    * designator despite being asked for "ISO 8601", so all four are treated as valid rather than rejecting anything but
-    * a strict instant.
+    * interpreted in the server's local timezone), or a bare date (`2026-07-01`, local midnight) — the model frequently
+    * omits or varies the zone designator despite being asked for "ISO 8601", so all four are treated as valid rather
+    * than rejecting anything but a strict instant.
     */
   private def parseInstant(s: String): Either[JorlanError, Instant] = {
     val attempts: List[String => Try[Instant]] = List(

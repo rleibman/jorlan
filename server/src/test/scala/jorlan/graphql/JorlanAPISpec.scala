@@ -1611,7 +1611,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
           """mutation { upsertMcpServer(name: "auth-mcp", transport: "Http", url: "http://localhost:8077/mcp", args: [], env: [], keywords: [], enabled: true, headers: [{ key: "Authorization", value: "Bearer tok" }]) { name } }""",
         )
         result <- interp.execute("""query { mcpServers { name headers { key value } } }""")
-        text   = result.data.toString
+        text = result.data.toString
       } yield assertTrue(
         result.errors.isEmpty,
         text.contains("Authorization"),

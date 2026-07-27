@@ -783,7 +783,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def set(
       key:   String,
       value: Json,
-    ): AsyncCallback[Unit] = AsyncCallback.pure(())
+    ):                                AsyncCallback[Unit] = AsyncCallback.pure(())
     override def delete(key: String): AsyncCallback[Unit] = AsyncCallback.pure(())
 
     override def serverPersonality(): AsyncCallback[Option[Personality]] =
@@ -866,9 +866,9 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
   // The web UI manages MCP servers through the GraphQL mcpServers/upsertMcpServer/deleteMcpServer
   // operations, not this repo, so these are inert stubs.
   override val mcpServer: McpServerRepository[AsyncCallback] = new McpServerRepository[AsyncCallback] {
-    override def listMcpServers():                        AsyncCallback[List[McpServerConfig]] = AsyncCallback.pure(List.empty)
+    override def listMcpServers(): AsyncCallback[List[McpServerConfig]] = AsyncCallback.pure(List.empty)
     override def upsertMcpServer(config: McpServerConfig): AsyncCallback[McpServerConfig] = AsyncCallback.pure(config)
-    override def deleteMcpServer(name:   String):         AsyncCallback[Boolean] = AsyncCallback.pure(false)
+    override def deleteMcpServer(name:   String):          AsyncCallback[Boolean] = AsyncCallback.pure(false)
   }
 
   // ── Subscription helpers ───────────────────────────────────────────────────

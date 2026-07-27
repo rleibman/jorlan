@@ -58,8 +58,8 @@ object FlywayMigration {
     *
     * `createFlyway` used to call `makeDataSource` inline, which hands Flyway an *unmanaged* HikariDataSource that
     * nobody ever closes. Migration is a startup thing, but the pool it opened was not: it kept `minimumIdle`
-    * connections alive, and its housekeeping thread kept the pool itself from ever being collected, for the entire
-    * life of the process — a second pool, permanently, next to the application's real one.
+    * connections alive, and its housekeeping thread kept the pool itself from ever being collected, for the entire life
+    * of the process — a second pool, permanently, next to the application's real one.
     */
   private def withFlyway[A](
     flywayConfig: FlywayConfig,

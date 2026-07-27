@@ -69,8 +69,8 @@ class McpManagerImpl(
     }
   }
 
-  /** Longest a single MCP server may take to connect + list its tools before it is treated as unavailable and
-    * skipped. Generous enough for a valid server whose package `npx`/`docker` must first download.
+  /** Longest a single MCP server may take to connect + list its tools before it is treated as unavailable and skipped.
+    * Generous enough for a valid server whose package `npx`/`docker` must first download.
     */
   private val serverInitTimeout: Duration = Duration.fromSeconds(45)
 

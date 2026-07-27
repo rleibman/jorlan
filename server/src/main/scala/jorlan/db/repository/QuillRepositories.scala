@@ -1786,14 +1786,38 @@ private class QuillMcpServerRepository(qc: QuillCtx) extends QuillRepoBase(qc) w
         qMcpServers
           .insertValue(lift(row))
           .onConflictUpdate(
-            (t, e) => t.transport -> e.transport,
-            (t, e) => t.command   -> e.command,
-            (t, e) => t.args      -> e.args,
-            (t, e) => t.env       -> e.env,
-            (t, e) => t.url       -> e.url,
-            (t, e) => t.enabled   -> e.enabled,
-            (t, e) => t.keywords  -> e.keywords,
-            (t, e) => t.headers   -> e.headers,
+            (
+              t,
+              e,
+            ) => t.transport -> e.transport,
+            (
+              t,
+              e,
+            ) => t.command -> e.command,
+            (
+              t,
+              e,
+            ) => t.args -> e.args,
+            (
+              t,
+              e,
+            ) => t.env -> e.env,
+            (
+              t,
+              e,
+            ) => t.url -> e.url,
+            (
+              t,
+              e,
+            ) => t.enabled -> e.enabled,
+            (
+              t,
+              e,
+            ) => t.keywords -> e.keywords,
+            (
+              t,
+              e,
+            ) => t.headers -> e.headers,
           ),
       ),
     ).as(config).mapError(RepositoryError.apply)

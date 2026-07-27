@@ -11,8 +11,8 @@ import zio.test.*
 
 import scala.jdk.CollectionConverters.*
 
-/** Verifies that [[ToolSupport.buildToolSpecification]] makes optional properties nullable so strict providers
-  * (Groq, OpenAI) accept an explicit `null` argument instead of rejecting the whole tool call.
+/** Verifies that [[ToolSupport.buildToolSpecification]] makes optional properties nullable so strict providers (Groq,
+  * OpenAI) accept an explicit `null` argument instead of rejecting the whole tool call.
   */
 object ToolSupportSpec extends ZIOSpecDefault {
 
@@ -36,11 +36,11 @@ object ToolSupportSpec extends ZIOSpecDefault {
 
         val playerIdNullable = playerId match {
           case a: JsonAnyOfSchema => a.anyOf().asScala.exists(_.isInstanceOf[JsonNullSchema])
-          case _                  => false
+          case _ => false
         }
         val countNullable = count match {
           case a: JsonAnyOfSchema => a.anyOf().asScala.exists(_.isInstanceOf[JsonNullSchema])
-          case _                  => false
+          case _ => false
         }
 
         assertTrue(
@@ -70,7 +70,7 @@ object ToolSupportSpec extends ZIOSpecDefault {
 
         val nameObj = primaryName match {
           case o: JsonObjectSchema => Some(o)
-          case _                   => None
+          case _ => None
         }
         val surnameList = nameObj.flatMap(_.properties().asScala.get("surname_list"))
         // surname_list is optional inside primary_name, so it is wrapped as anyOf(array, null).

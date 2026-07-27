@@ -602,7 +602,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def set(
         key:   String,
         value: Json,
-      ): IO[String, Unit] = ZIO.unit
+      ):                                IO[String, Unit] = ZIO.unit
       override def delete(key: String): IO[String, Unit] = ZIO.unit
 
       override def serverPersonality(): IO[String, Option[Personality]] =
@@ -684,9 +684,9 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
 
   override val mcpServer: McpServerRepository[[A] =>> IO[String, A]] =
     new McpServerRepository[[A] =>> IO[String, A]] {
-      override def listMcpServers():                     IO[String, List[McpServerConfig]] = ZIO.succeed(List.empty)
+      override def listMcpServers():                         IO[String, List[McpServerConfig]] = ZIO.succeed(List.empty)
       override def upsertMcpServer(config: McpServerConfig): IO[String, McpServerConfig] = ZIO.succeed(config)
-      override def deleteMcpServer(name:   String):         IO[String, Boolean] = ZIO.succeed(false)
+      override def deleteMcpServer(name:   String):          IO[String, Boolean] = ZIO.succeed(false)
     }
 
   // ── Conversion helpers ─────────────────────────────────────────────────────
@@ -866,7 +866,7 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       .map(_.getOrElse(List.empty).map(toMcpServerInfo))
 
   override def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo] = {
-    val envInputs    = server.env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value))
+    val envInputs = server.env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value))
     val headerInputs = server.headers.map(h => JorlanClient.McpEnvVarInput(h.key, h.value))
     gqlClient
       .run(

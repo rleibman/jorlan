@@ -23,38 +23,40 @@ import scala.jdk.CollectionConverters.*
 object UseCaseManifestSpec extends ZIOSpecDefault {
 
   /** Tests do not run from a guaranteed working directory, so walk up until the manifests directory appears. */
-  private def manifestsDir: Task[Path] = ZIO.attempt {
-    import scala.language.unsafeNulls
-    val relative = Paths.get("doc", "use-cases", "manifests")
-    Iterator
-      .iterate(Paths.get("").toAbsolutePath)(_.getParent)
-      .takeWhile(_ != null)
-      .map(_.resolve(relative))
-      .find(Files.isDirectory(_))
-      .getOrElse(throw new RuntimeException(s"Could not locate $relative from ${Paths.get("").toAbsolutePath}"))
-  }
+  private def manifestsDir: Task[Path] =
+    ZIO.attempt {
+      import scala.language.unsafeNulls
+      val relative = Paths.get("doc", "use-cases", "manifests")
+      Iterator
+        .iterate(Paths.get("").toAbsolutePath)(_.getParent)
+        .takeWhile(_ != null)
+        .map(_.resolve(relative))
+        .find(Files.isDirectory(_))
+        .getOrElse(throw new RuntimeException(s"Could not locate $relative from ${Paths.get("").toAbsolutePath}"))
+    }
 
   private def loadManifests: Task[List[(String, UseCaseManifest)]] =
     manifestsDir.flatMap { dir =>
-      ZIO.attempt {
-        import scala.language.unsafeNulls
-        Files.list(dir).iterator().asScala.filter(_.toString.endsWith(".json")).toList.sortBy(_.toString)
-      }.flatMap { files =>
-        ZIO.foreach(files) { f =>
-          for {
-            raw      <- ZIO.attempt(Files.readString(f))
-            name     = f.getFileName.toString
-            manifest <- ZIO
-              .fromEither(raw.fromJson[UseCaseManifest])
-              .mapError(e => new RuntimeException(s"$name: does not decode as a UseCaseManifest: $e"))
-          } yield name -> manifest
+      ZIO
+        .attempt {
+          import scala.language.unsafeNulls
+          Files.list(dir).iterator().asScala.filter(_.toString.endsWith(".json")).toList.sortBy(_.toString)
+        }.flatMap { files =>
+          ZIO.foreach(files) { f =>
+            for {
+              raw <- ZIO.attempt(Files.readString(f))
+              name = f.getFileName.toString
+              manifest <- ZIO
+                .fromEither(raw.fromJson[UseCaseManifest])
+                .mapError(e => new RuntimeException(s"$name: does not decode as a UseCaseManifest: $e"))
+            } yield name -> manifest
+          }
         }
-      }
     }
 
   /** `PipelineStep.tools` is a *prefix allowlist* (`AgentRunnerImpl`: `t.name == p || t.name.startsWith(p + ".")`), and
-    * `McpSkillAdapter` registers MCP tools as `mcp.<server>.<tool>`. So a step that wants an MCP server's tools must say
-    * `mcp.<server>`, never the bare server name — which matches nothing and silently leaves the step with no tools.
+    * `McpSkillAdapter` registers MCP tools as `mcp.<server>.<tool>`. So a step that wants an MCP server's tools must
+    * say `mcp.<server>`, never the bare server name — which matches nothing and silently leaves the step with no tools.
     */
   private def badMcpPrefixes(m: UseCaseManifest): List[String] =
     for {
@@ -111,7 +113,7 @@ object UseCaseManifestSpec extends ZIOSpecDefault {
           val missing = for {
             (name, m) <- ms
             server    <- m.mcpServers
-            ns        = namespaceOf(server.name)
+            ns = namespaceOf(server.name)
             if !m.agent.prioritizedSkills.contains(ns)
           } yield s"$name: server '${server.name}' is not in prioritizedSkills as '$ns'"
           assertTrue(missing.isEmpty)
@@ -121,7 +123,7 @@ object UseCaseManifestSpec extends ZIOSpecDefault {
         // The resolver does `McpTransport.valueOf(input.transport)`; "http" or "stdio" fail the import opaquely.
         loadManifests.map { ms =>
           val valid = McpTransport.values.map(_.toString).toSet
-          val bad   = for {
+          val bad = for {
             (name, m) <- ms
             server    <- m.mcpServers
             if !valid.contains(server.transport)
@@ -150,7 +152,7 @@ object UseCaseManifestSpec extends ZIOSpecDefault {
             (name, m) <- ms
             server    <- m.mcpServers
             kv        <- server.env ++ server.headers
-            key       = kv.key.toUpperCase
+            key = kv.key.toUpperCase
             if key.contains("PASSWORD") || key.contains("TOKEN") || key.contains("SECRET") ||
               key.contains("API_KEY") || key == "AUTHORIZATION"
             if !kv.value.contains("CHANGE_ME")
@@ -162,12 +164,12 @@ object UseCaseManifestSpec extends ZIOSpecDefault {
         // Mirrors the importer's own validatePipelineReferences; without it these blow up at runtime inside langchain4j.
         loadManifests.map { ms =>
           val pattern = """\{\{steps\.(\w+)\.\w+}}""".r
-          val bad     = for {
+          val bad = for {
             (name, m) <- ms
             job       <- m.job.toList
             (step, i) <- job.steps.zipWithIndex
-            earlier   = job.steps.take(i).map(_.outputVar).toSet
-            ref       <- captures(pattern, step.systemPrompt + step.userPrompt)
+            earlier = job.steps.take(i).map(_.outputVar).toSet
+            ref <- captures(pattern, step.systemPrompt + step.userPrompt)
             if !earlier.contains(ref)
           } yield s"$name: step '${step.name}' references '{{steps.$ref}}', not an earlier outputVar"
           assertTrue(bad.isEmpty)
@@ -176,7 +178,7 @@ object UseCaseManifestSpec extends ZIOSpecDefault {
       test("{{invariants.X}} references resolve to a declared invariant") {
         loadManifests.map { ms =>
           val pattern = """\{\{invariants\.(\w+)}}""".r
-          val bad     = for {
+          val bad = for {
             (name, m) <- ms
             job       <- m.job.toList
             step      <- job.steps

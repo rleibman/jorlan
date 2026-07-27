@@ -24,8 +24,8 @@ import scala.language.unsafeNulls
 object TemplateEngine {
 
   /** Renders `{{now}}` in the server's local timezone with the day of week and zone spelled out, e.g.
-    * `2026-07-10T09:30:15-07:00 (Friday, America/Los_Angeles)`. Models plan household schedules in local time;
-    * handing them a bare UTC instant makes them create events and reason about "today" in the wrong timezone.
+    * `2026-07-10T09:30:15-07:00 (Friday, America/Los_Angeles)`. Models plan household schedules in local time; handing
+    * them a bare UTC instant makes them create events and reason about "today" in the wrong timezone.
     */
   private def formatNow(now: Instant): String = {
     val zdt = java.time.ZonedDateTime.ofInstant(now, java.time.ZoneId.systemDefault())

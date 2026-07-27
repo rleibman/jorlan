@@ -167,7 +167,7 @@ object Jorlan extends ZIOApp {
           .get("skill.workspace")
           .mapError(e => new Throwable(e.msg))
           .map(_.flatMap(_.as[WorkspaceSettings].toOption).getOrElse(WorkspaceSettings()))
-      workRoot   <- ZIO.attempt(Paths.get(workspaceCfg.root).toAbsolutePath.normalize())
+      workRoot     <- ZIO.attempt(Paths.get(workspaceCfg.root).toAbsolutePath.normalize())
       documentsCfg <-
         repos.setting
           .get("skill.documents")
@@ -425,7 +425,9 @@ object Jorlan extends ZIOApp {
       lifecycleSvc <- ZIO.service[jorlan.service.skills.declarative.SkillLifecycleService]
       _            <- registry.register(SkillAuthoringSkill(lifecycleSvc))
       // ── MCP servers ───────────────────────────────────────────────────────────
-      _ <- ZIO.serviceWithZIO[ZIORepositories](repos => jorlan.service.mcp.McpServerMigration.run.provideEnvironment(zio.ZEnvironment(repos)))
+      _ <- ZIO.serviceWithZIO[ZIORepositories](repos =>
+        jorlan.service.mcp.McpServerMigration.run.provideEnvironment(zio.ZEnvironment(repos)),
+      )
       _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
       // ── Apply explicit skill.disabled list from server_settings ───────────────
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {

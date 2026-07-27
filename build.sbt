@@ -170,10 +170,10 @@ lazy val disableExplicitDepsForScalaJs = Seq(
 // zio-json — which every module already declares — so we exclude them from the "undeclared"
 // report rather than forcing an explicit, version-coupled declaration in each module.
 lazy val explicitDepsIgnoredTransitives = Seq(
-  undeclaredCompileDependenciesFilter -= moduleFilter(organization = "dev.zio", name = "izumi-reflect"),
-  undeclaredCompileDependenciesFilter -= moduleFilter(organization = "dev.zio", name = "zio-stacktracer"),
-  undeclaredCompileDependenciesFilter -= moduleFilter(organization = "dev.zio", name = "zio-streams"),
-  undeclaredCompileDependenciesFilter -= moduleFilter(organization = "com.softwaremill.magnolia1_3", name = "magnolia"),
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "izumi-reflect")),
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-stacktracer")),
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-streams")),
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.softwaremill.magnolia1_3", name = "magnolia")),
 )
 
 lazy val commonSettings = explicitDepsIgnoredTransitives ++ Seq(
@@ -219,7 +219,7 @@ lazy val model =
       // zio-auth is declared with an explicit "_3" suffix and single "%" (see comment below), so the
       // plugin cannot match the declared ModuleID to the resolved jar and wrongly reports it unused
       // even though session.scala imports it. Exclude it from the unused report.
-      unusedCompileDependenciesFilter -= moduleFilter(organization = "net.leibman", name = "zio-auth_3"),
+      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth_3")),
       libraryDependencies ++= Seq(
         "dev.zio"     %% "zio"              % zioVersion withSources (),
         "dev.zio"     %% "zio-json"         % zioJsonVersion withSources (),
@@ -457,11 +457,11 @@ lazy val emailConnector =
       coverageExcludedPackages := "jorlan\\.email.*",
       // cats-core / cats-effect-kernel are referenced only through zio-interop-cats' and emil's
       // signatures, never imported directly, so we don't force an explicit declaration.
-      undeclaredCompileDependenciesFilter -= moduleFilter(organization = "org.typelevel", name = "cats-core"),
-      undeclaredCompileDependenciesFilter -= moduleFilter(organization = "org.typelevel", name = "cats-effect-kernel"),
+      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-core")),
+      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-effect-kernel")),
       // bcpg is not referenced yet — PgpService is currently a null-object stub — but the artifact is
       // kept on the classpath for the forthcoming PGP implementation.
-      unusedCompileDependenciesFilter -= moduleFilter(organization = "org.bouncycastle", name = "bcpg-jdk18on"),
+      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.bouncycastle", name = "bcpg-jdk18on")),
       libraryDependencies ++= Seq(
         "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
         "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
@@ -495,7 +495,7 @@ lazy val httpFetchSkill =
     .jvmSettings(
       libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
       // zio-schema is referenced only through zio-http's endpoint signatures, not directly.
-      undeclaredCompileDependenciesFilter -= moduleFilter(organization = "dev.zio", name = "zio-schema"),
+      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -609,10 +609,10 @@ lazy val server = project
     // zio-schema and the quill engine/sql/jdbc modules are referenced only through the signatures of
     // zio-http and quill-jdbc-zio respectively (quill-engine even resolves to a different version), so
     // we don't force explicit declarations of them.
-    undeclaredCompileDependenciesFilter -= moduleFilter(organization = "dev.zio", name = "zio-schema"),
-    undeclaredCompileDependenciesFilter -= moduleFilter(organization = "io.getquill", name = "quill-engine"),
-    undeclaredCompileDependenciesFilter -= moduleFilter(organization = "io.getquill", name = "quill-jdbc"),
-    undeclaredCompileDependenciesFilter -= moduleFilter(organization = "io.getquill", name = "quill-sql"),
+    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
+    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-engine")),
+    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-jdbc")),
+    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-sql")),
     libraryDependencies ++= Seq(
       // DB
       "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion % Runtime withSources (),
@@ -949,9 +949,10 @@ lazy val ai = project
     commonSettings,
     // guava is referenced only through the qdrant gRPC client's method signatures (ListenableFuture),
     // never imported directly, so we don't force an explicit declaration.
-    undeclaredCompileDependenciesFilter -= moduleFilter(organization = "com.google.guava", name = "guava"),
+    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.google.guava", name = "guava")),
     libraryDependencies ++= Seq(
       "dev.zio"                    %% "zio"                 % zioVersion withSources (),
+      "dev.zio"                    %% "zio-streams"         % zioVersion withSources (),
       "dev.langchain4j"             % "langchain4j-core"    % langchainCoreVersion withSources (),
       "dev.langchain4j"             % "langchain4j"         % langchainCoreVersion withSources (),
       "dev.langchain4j"             % "langchain4j-ollama"  % langchain4jOllamaVersion withSources (),

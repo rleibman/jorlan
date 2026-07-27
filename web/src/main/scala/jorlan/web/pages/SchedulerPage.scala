@@ -686,11 +686,14 @@ object SchedulerPage {
                                                                                    TableCell()(run.id.value.toString),
                                                                                    TableCell()(run.status.toString),
                                                                                    TableCell()(
-                                                                                     PageUtils.formatTimestamp(run.startedAt),
+                                                                                     PageUtils
+                                                                                       .formatTimestamp(run.startedAt),
                                                                                    ),
                                                                                    TableCell()(
                                                                                      run.finishedAt
-                                                                                       .fold("-")(PageUtils.formatTimestamp(_)),
+                                                                                       .fold("-")(
+                                                                                         PageUtils.formatTimestamp(_),
+                                                                                       ),
                                                                                    ),
                                                                                    TableCell()(
                                                                                      run.failedStep.getOrElse("-"),

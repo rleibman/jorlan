@@ -59,8 +59,8 @@ object ToolSupport {
     buildObjectSchema(ObjectMapper().readTree(json))
   }
 
-  /** The declared type, tolerating both `"type": "string"` and union forms like `"type": ["string", "null"]` (which
-    * MCP servers emit for nullable fields). Defaults to string when absent.
+  /** The declared type, tolerating both `"type": "string"` and union forms like `"type": ["string", "null"]` (which MCP
+    * servers emit for nullable fields). Defaults to string when absent.
     */
   private def declaredType(node: JsonNode): String = {
     val t = node.get("type")

@@ -46,9 +46,9 @@ object McpServerRepositorySpec extends ZIOSpec[ZIORepositories] {
     suite("McpServerRepository")(
       test("upsert then list round-trips all fields (args/env/keywords as JSON, transport as enum)") {
         for {
-          repo   <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
-          _      <- repo.upsertMcpServer(stdioCfg)
-          all    <- repo.listMcpServers()
+          repo <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
+          _    <- repo.upsertMcpServer(stdioCfg)
+          all  <- repo.listMcpServers()
           stored = all.find(_.name == "grampsweb")
         } yield assertTrue(
           stored.contains(stdioCfg),
@@ -56,10 +56,10 @@ object McpServerRepositorySpec extends ZIOSpec[ZIORepositories] {
       },
       test("upsert with an existing name replaces in place (no duplicate row)") {
         for {
-          repo    <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
-          _       <- repo.upsertMcpServer(stdioCfg)
-          _       <- repo.upsertMcpServer(stdioCfg.copy(enabled = true, keywords = List("changed")))
-          all     <- repo.listMcpServers()
+          repo <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
+          _    <- repo.upsertMcpServer(stdioCfg)
+          _    <- repo.upsertMcpServer(stdioCfg.copy(enabled = true, keywords = List("changed")))
+          all  <- repo.listMcpServers()
           matches = all.filter(_.name == "grampsweb")
         } yield assertTrue(
           matches.size == 1,
@@ -69,12 +69,12 @@ object McpServerRepositorySpec extends ZIOSpec[ZIORepositories] {
       },
       test("round-trips headers on an HTTP server, and an upsert that clears them takes effect") {
         for {
-          repo    <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
-          _       <- repo.upsertMcpServer(httpCfg)
-          all     <- repo.listMcpServers()
-          stored  = all.find(_.name == "mealorama")
-          _       <- repo.upsertMcpServer(httpCfg.copy(headers = Map.empty))
-          all2    <- repo.listMcpServers()
+          repo <- ZIO.serviceWith[ZIORepositories](_.mcpServer)
+          _    <- repo.upsertMcpServer(httpCfg)
+          all  <- repo.listMcpServers()
+          stored = all.find(_.name == "mealorama")
+          _    <- repo.upsertMcpServer(httpCfg.copy(headers = Map.empty))
+          all2 <- repo.listMcpServers()
           cleared = all2.find(_.name == "mealorama")
         } yield assertTrue(
           stored.contains(httpCfg),

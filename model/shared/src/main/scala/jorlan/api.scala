@@ -56,8 +56,8 @@ case class DashboardStats(
   jobOutcomeCounts:       List[DashboardNamedCount],
 ) derives JsonCodec
 
-/** A single key/value pair for an MCP server — an environment variable, or an HTTP header. GraphQL has no map type,
-  * so maps cross the wire as lists of these.
+/** A single key/value pair for an MCP server — an environment variable, or an HTTP header. GraphQL has no map type, so
+  * maps cross the wire as lists of these.
   */
 case class McpEnvVarInfo(
   key:   String,

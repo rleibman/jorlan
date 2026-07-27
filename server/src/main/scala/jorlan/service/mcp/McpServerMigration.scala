@@ -23,17 +23,19 @@ object McpServerMigration {
 
   val run: ZIO[ZIORepositories, Nothing, Unit] = {
     val effect = for {
-      repos <- ZIO.service[ZIORepositories]
+      repos  <- ZIO.service[ZIORepositories]
       legacy <- repos.setting.get(LegacyKey)
-      _ <- legacy match {
-        case None => ZIO.unit
+      _      <- legacy match {
+        case None       => ZIO.unit
         case Some(json) =>
           json.as[List[McpServerConfig]] match {
             case Left(err) =>
               ZIO.logWarning(s"MCP migration: could not parse legacy '$LegacyKey' ($err); leaving it in place")
             case Right(configs) =>
               for {
-                _ <- ZIO.logInfo(s"MCP migration: moving ${configs.size} server config(s) from '$LegacyKey' into the mcpServer table")
+                _ <- ZIO.logInfo(
+                  s"MCP migration: moving ${configs.size} server config(s) from '$LegacyKey' into the mcpServer table",
+                )
                 _ <- ZIO.foreachDiscard(configs)(cfg => repos.mcpServer.upsertMcpServer(cfg))
                 // Only drop the legacy key after every row is safely upserted.
                 _ <- repos.setting.delete(LegacyKey)

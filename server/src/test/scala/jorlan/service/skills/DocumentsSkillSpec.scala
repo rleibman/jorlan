@@ -67,13 +67,15 @@ object DocumentsSkillSpec extends ZIOSpecDefault {
             case Json.Obj(fields) =>
               val docs = fields.collectFirst { case ("documents", Json.Arr(items)) => items }.getOrElse(Chunk.empty)
               val first = docs.headOption
-              val name = first.collect { case Json.Obj(f) =>
-                f.collectFirst { case ("name", Json.Str(n)) => n }.getOrElse("")
-              }.getOrElse("")
-              val sections = first.collect { case Json.Obj(f) =>
-                f.collectFirst { case ("sections", Json.Arr(s)) => s.collect { case Json.Str(x) => x }.toList }
-                  .getOrElse(Nil)
-              }.getOrElse(Nil)
+              val name = first
+                .collect { case Json.Obj(f) =>
+                  f.collectFirst { case ("name", Json.Str(n)) => n }.getOrElse("")
+                }.getOrElse("")
+              val sections = first
+                .collect { case Json.Obj(f) =>
+                  f.collectFirst { case ("sections", Json.Arr(s)) => s.collect { case Json.Str(x) => x }.toList }
+                    .getOrElse(Nil)
+                }.getOrElse(Nil)
               assertTrue(
                 docs.length == 1,
                 name == "program.md",

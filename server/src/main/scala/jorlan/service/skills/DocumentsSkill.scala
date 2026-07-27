@@ -19,11 +19,11 @@ import java.nio.file.{Files, Path}
   * behaves, kept in a jailed directory and read **section by section** rather than wholesale.
   *
   * This exists so a long instruction document (e.g. a 400-line teaching methodology) can inform an agent without
-  * pasting the whole thing into every prompt: the agent lists a document's section headings, then reads only the one
-  * or two sections relevant to the task at hand.
+  * pasting the whole thing into every prompt: the agent lists a document's section headings, then reads only the one or
+  * two sections relevant to the task at hand.
   *
-  * Unlike [[WorkspaceSkill]] (read/write, per-session scratch space), documents are read-only, shared, and placed by
-  * an administrator or the use-case importer into the jailed root.
+  * Unlike [[WorkspaceSkill]] (read/write, per-session scratch space), documents are read-only, shared, and placed by an
+  * administrator or the use-case importer into the jailed root.
   *
   * Tools:
   *   - `docs.list` — list available documents and their section headings (no content)
@@ -69,8 +69,7 @@ class DocumentsSkill(
     tools = List(
       ToolDescriptor(
         name = "docs.list",
-        description =
-          "List the available reference documents and, for each, its section headings. Use this first to discover what documents exist and which sections they contain before reading.",
+        description = "List the available reference documents and, for each, its section headings. Use this first to discover what documents exist and which sections they contain before reading.",
         inputSchema = Json.Obj("type" -> Json.Str("object"), "properties" -> Json.Obj()),
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("docs.read")),
@@ -81,8 +80,7 @@ class DocumentsSkill(
       ),
       ToolDescriptor(
         name = "docs.read",
-        description =
-          "Read a reference document. Provide 'section' (a heading name from docs.list) to read only that section -- strongly preferred over reading the whole document, which can be very long. Omit 'section' only when the whole document is genuinely needed.",
+        description = "Read a reference document. Provide 'section' (a heading name from docs.list) to read only that section -- strongly preferred over reading the whole document, which can be very long. Omit 'section' only when the whole document is genuinely needed.",
         inputSchema = Json.decoder
           .decodeJson(
             """|{"type":"object","properties":{"name":{"type":"string","description":"Document name (from docs.list)"},"section":{"type":"string","description":"Optional heading name; returns only that section"}},"required":["name"]}""",
@@ -171,7 +169,9 @@ class DocumentsSkill(
     section: String,
   ): Option[String] = {
     val lines = content.linesIterator.toVector
-    val headings = lines.zipWithIndex.flatMap { case (line, idx) => headingOf(line).map { case (lvl, txt) => (idx, lvl, txt) } }
+    val headings = lines.zipWithIndex.flatMap { case (line, idx) =>
+      headingOf(line).map { case (lvl, txt) => (idx, lvl, txt) }
+    }
     val q = section.trim.toLowerCase
     val exact = headings.find(_._3.toLowerCase == q)
     val chosen = exact.orElse(headings.find(_._3.toLowerCase.contains(q)))
@@ -198,7 +198,7 @@ class DocumentsSkill(
             .attemptBlocking(new String(Files.readAllBytes(p), StandardCharsets.UTF_8))
             .mapError(e => JorlanError(s"docs.read: ${e.getMessage}"))
           out <- str(args, "section") match {
-            case None => ZIO.succeed(content)
+            case None          => ZIO.succeed(content)
             case Some(section) =>
               ZIO
                 .fromOption(extractSection(content, section))
