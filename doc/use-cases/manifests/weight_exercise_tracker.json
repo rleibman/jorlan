@@ -5,15 +5,33 @@
     "name": "fitness-tracker-agent-role",
     "description": "Capabilities for the weight and exercise tracking agent (health skill pending; memory-based logging)",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "calendar.createEvent" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "workspace.read" },
-      { "capability": "workspace.write" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "calendar.createEvent"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "workspace.read"
+      },
+      {
+        "capability": "workspace.write"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -21,8 +39,15 @@
     "name": "fitness-tracker-agent",
     "description": "Fitness tracker: logs weight and exercise entries told to it in chat (structured memory keys), sends a weekly progress review with trends, and adjusts for travel detected on the calendar.",
     "trustLevel": 0,
-    "prioritizedSkills": ["memory", "calendar", "workspace", "scheduler"],
-    "invariants": { "role": "supportive fitness coach; celebrate consistency over perfection; never give medical advice" }
+    "prioritizedSkills": [
+      "memory",
+      "calendar",
+      "workspace",
+      "scheduler"
+    ],
+    "invariants": {
+      "role": "supportive fitness coach; celebrate consistency over perfection; never give medical advice"
+    }
   },
   "memorySeeds": [
     {
@@ -40,7 +65,10 @@
         "name": "gather-fitness-log",
         "systemPrompt": "You gather the week's fitness data. Call memory.search once with query 'health' for the profile and recent weight/exercise log entries (keys like health:weight:<date> and health:exercise:<date>), then calendar.listEvents once for the next 7 days to spot travel.\n\nOutput format:\nProfile: <one-line summary>\nWeigh-ins this week: <date: value, ... or 'none logged'>\nExercise this week: <one line per session, or 'none logged'>\nUpcoming travel: <dates, or 'none'>",
         "userPrompt": "{{now}} -- Gather the week's fitness log now.",
-        "tools": ["memory.search", "calendar.listEvents"],
+        "tools": [
+          "memory.search",
+          "calendar.listEvents"
+        ],
         "mode": "ReactLoop",
         "outputVar": "fitness_log",
         "retryOnFail": 1
@@ -58,7 +86,9 @@
         "name": "send-review",
         "systemPrompt": "You deliver the weekly fitness review. Call notify.user exactly once, passing only 'message' (never userId) with the review text.\n\nOutput: one line confirming delivery.",
         "userPrompt": "Review:\n{{steps.review.output}}\n\nSend it now.",
-        "tools": ["notify.user"],
+        "tools": [
+          "notify.user"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -72,7 +102,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 30 16 ? * 7"
+      "expression": "0 30 9 ? * 6"
     }
   }
 }

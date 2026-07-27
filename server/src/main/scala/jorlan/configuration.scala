@@ -77,6 +77,18 @@ case class WorkspaceSettings(
   defaultScope: WorkspaceScope = WorkspaceScope.Session,
 ) derives JsonCodec
 
+/** Reference-documents configuration. Stored in the DB under `skill.documents`.
+  *
+  * A jailed, read-only directory of reference material (methodologies, guides, playbooks) that agents read
+  * section-by-section rather than wholesale. Distinct from the read/write, per-session workspace.
+  *
+  * @param root
+  *   Absolute path to the documents directory. Empty means the default `<user.home>/.jorlan/documents`.
+  */
+case class DocumentsSettings(
+  root: String = "",
+) derives JsonCodec
+
 /** Shell execution configuration. Stored in the DB under `skill.shell`.
   *
   * @param allowedBinaries

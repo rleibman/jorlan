@@ -28,7 +28,7 @@ trait TriggerEngine {
 }
 
 import java.net.InetAddress
-import java.time.{Duration, Instant, ZoneOffset, ZonedDateTime}
+import java.time.{Duration, Instant, ZoneId, ZonedDateTime}
 
 /** Daemon fiber that drives the durable scheduler: polls for pending jobs, claims them with DB-level locking, executes
   * them via [[AgentRunner]], and advances trigger schedules.
@@ -105,7 +105,9 @@ class TriggerEngineImpl(
     cronExpr: CronExpr,
     now:      Instant,
   ): IO[JorlanError, Unit] = {
-    val zdtNow = ZonedDateTime.ofInstant(now, ZoneOffset.UTC)
+    // Cron expressions are written and evaluated in the server's local timezone ("0 0 9 ? * 3" = 9 AM
+    // local on Wednesdays), matching what a human scheduling a household job expects.
+    val zdtNow = ZonedDateTime.ofInstant(now, ZoneId.systemDefault())
     cronExpr.next(zdtNow) match {
       case Some(nextZdt) =>
         repo.scheduler.upsertJob(job.released(JobStatus.Pending, nextZdt.toInstant)).mapError(JorlanError(_)).unit
@@ -489,7 +491,7 @@ class TriggerEngineImpl(
                   .fromEither(Cron.parse(trigger.expression))
                   .mapError(e => JorlanError(e.toString))
                   .flatMap { cronExpr =>
-                    val zdtNow = ZonedDateTime.ofInstant(now, ZoneOffset.UTC)
+                    val zdtNow = ZonedDateTime.ofInstant(now, ZoneId.systemDefault())
                     cronExpr.next(zdtNow) match {
                       case Some(next) =>
                         job.missedRunPolicy match {

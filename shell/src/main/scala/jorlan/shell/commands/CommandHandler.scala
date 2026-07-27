@@ -104,8 +104,10 @@ object CommandHandler {
       case ShellCommand.SchedulerTriggerAdd(id, tt, expr)          => addSchedulerTrigger(id, tt, expr)
       case ShellCommand.SchedulerTriggerDelete(tid)                => deleteSchedulerTrigger(tid)
       case ShellCommand.McpList                                    => listMcpServers
-      case ShellCommand.McpAdd(n, t, cmd, args, env, url, en, kw)  => addMcpServer(n, t, cmd, args, env, url, en, kw)
-      case ShellCommand.McpEdit(n, t, cmd, args, env, url, en, kw) => editMcpServer(n, t, cmd, args, env, url, en, kw)
+      case ShellCommand.McpAdd(n, t, cmd, args, env, url, en, kw, hs) =>
+        addMcpServer(n, t, cmd, args, env, url, en, kw, hs)
+      case ShellCommand.McpEdit(n, t, cmd, args, env, url, en, kw, hs) =>
+        editMcpServer(n, t, cmd, args, env, url, en, kw, hs)
       case ShellCommand.McpDelete(name)                            => deleteMcpServer(name)
       case ShellCommand.McpReload                                  => reloadMcpServers
       case ShellCommand.McpEnable(name)                            => setMcpEnabled(name, enabled = true)
@@ -1549,8 +1551,11 @@ object CommandHandler {
     url:       Option[String],
     enabled:   Boolean,
     keywords:  List[String],
+    headers:   List[McpEnvVarInfo],
   ): ZIO[Env, Nothing, Unit] =
-    repo(_.upsertMcpServer(McpServerInfo(name, transport, command, args, env, url, enabled, keywords))).foldZIO(
+    repo(
+      _.upsertMcpServer(McpServerInfo(name, transport, command, args, env, url, enabled, keywords, headers)),
+    ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Add MCP server failed: $err")),
       s => screen(_.addMessage(MessageKind.System, s"MCP server '${s.name}' saved.")),
     )
@@ -1564,6 +1569,7 @@ object CommandHandler {
     url:       Option[String],
     enabled:   Option[Boolean],
     keywords:  Option[List[String]],
+    headers:   Option[List[McpEnvVarInfo]],
   ): ZIO[Env, Nothing, Unit] =
     repo(_.listMcpServers()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not fetch MCP servers: $err")),
@@ -1579,6 +1585,7 @@ object CommandHandler {
               url = url.orElse(existing.url),
               enabled = enabled.getOrElse(existing.enabled),
               keywords = keywords.getOrElse(existing.keywords),
+              headers = headers.getOrElse(existing.headers),
             )
             repo(_.upsertMcpServer(updated)).foldZIO(
               err => screen(_.addMessage(MessageKind.Error, s"Edit MCP server failed: $err")),

@@ -399,7 +399,12 @@ class LyrionSkill(
   ): Double =
     obj match {
       case Json.Obj(fields) =>
-        fields.collectFirst { case (`key`, Json.Num(n)) => n.doubleValue }.getOrElse(0.0)
+        fields
+          .collectFirst {
+            case (`key`, Json.Num(n)) => Some(n.doubleValue)
+            // Lyrion freely returns numbers as strings (alarm times, track numbers, ...)
+            case (`key`, Json.Str(s)) => s.toDoubleOption
+          }.flatten.getOrElse(0.0)
       case _ => 0.0
     }
 
@@ -519,15 +524,28 @@ class LyrionSkill(
     }
 
   private def playerStatus(playerId: String): IO[JorlanError, Json] =
-    rpc(playerId, List(Json.Str("status"), Json.Str("-"), Json.Num(1), Json.Str("tags:aAltu"))).map { result =>
+    rpc(playerId, List(Json.Str("status"), Json.Str("-"), Json.Num(1), Json.Str("tags:aAldtu"))).map { result =>
       val volumeResult = numField(result, "_mixer volume")
       val volume = if (volumeResult == 0.0) numField(result, "mixer volume") else volumeResult
+      // The current track lives inside playlist_loop (requested with "-" = current index, count 1),
+      // NOT at the top level of the status result. Remote streams carry a top-level current_title.
+      val current = arrField(result, "playlist_loop").headOption
+      def track(key: String): String = current.map(strField(_, key)).getOrElse("")
+      val title = Some(track("title")).filter(_.nonEmpty).getOrElse(strField(result, "current_title"))
       Json.Obj(
-        "mode"   -> Json.Str(strField(result, "mode")),
-        "title"  -> Json.Str(strField(result, "title")),
-        "artist" -> Json.Str(strField(result, "artist")),
-        "album"  -> Json.Str(strField(result, "album")),
-        "volume" -> Json.Num(volume),
+        "playerName"     -> Json.Str(strField(result, "player_name")),
+        "power"          -> Json.Bool(boolField(result, "power")),
+        "mode"           -> Json.Str(strField(result, "mode")),
+        "title"          -> Json.Str(title),
+        "artist"         -> Json.Str(track("artist")),
+        "album"          -> Json.Str(track("album")),
+        "volume"         -> Json.Num(volume),
+        "positionSecs"   -> Json.Num(numField(result, "time")),
+        "durationSecs"   -> Json.Num(numField(result, "duration")),
+        "playlistIndex"  -> Json.Num(numField(result, "playlist_cur_index")),
+        "playlistTracks" -> Json.Num(numField(result, "playlist_tracks")),
+        "shuffle"        -> Json.Bool(boolField(result, "playlist shuffle")),
+        "repeat"         -> Json.Bool(boolField(result, "playlist repeat")),
       )
     }
 
@@ -571,15 +589,18 @@ class LyrionSkill(
       .as(Json.Obj("ok" -> Json.Bool(true)))
 
   private def playlist(playerId: String): IO[JorlanError, Json] =
-    rpc(playerId, List(Json.Str("status"), Json.Num(0), Json.Num(100), Json.Str("tags:aAltu"))).map { result =>
+    // The 'd' tag is required for per-track duration; without it playlist_loop entries have none.
+    rpc(playerId, List(Json.Str("status"), Json.Num(0), Json.Num(100), Json.Str("tags:aAldtu"))).map { result =>
       val tracks = arrField(result, "playlist_loop")
+      val currentIndex = numField(result, "playlist_cur_index").intValue
       Json.Arr(tracks.zipWithIndex.map { case (t, idx) =>
         Json.Obj(
-          "index"    -> Json.Num(idx),
-          "title"    -> Json.Str(strField(t, "title")),
-          "artist"   -> Json.Str(strField(t, "artist")),
-          "album"    -> Json.Str(strField(t, "album")),
-          "duration" -> Json.Num(numField(t, "duration")),
+          "index"     -> Json.Num(idx),
+          "isCurrent" -> Json.Bool(idx == currentIndex),
+          "title"     -> Json.Str(strField(t, "title")),
+          "artist"    -> Json.Str(strField(t, "artist")),
+          "album"     -> Json.Str(strField(t, "album")),
+          "duration"  -> Json.Num(numField(t, "duration")),
         )
       }*)
     }
@@ -747,17 +768,18 @@ class LyrionSkill(
       "Fri" -> "5",
       "Sat" -> "6",
     )
+    // Lyrion's dow parameter is a comma-separated list of day digits (e.g. "1,2,3,4,5").
     args match {
       case Json.Obj(fields) =>
         fields.collectFirst { case ("days", v) => v } match {
-          case None                       => ZIO.succeed("0123456") // default: every day
-          case Some(Json.Str("daily"))    => ZIO.succeed("0123456")
-          case Some(Json.Str("weekdays")) => ZIO.succeed("12345")
-          case Some(Json.Str("weekends")) => ZIO.succeed("06")
+          case None                       => ZIO.succeed("0,1,2,3,4,5,6") // default: every day
+          case Some(Json.Str("daily"))    => ZIO.succeed("0,1,2,3,4,5,6")
+          case Some(Json.Str("weekdays")) => ZIO.succeed("1,2,3,4,5")
+          case Some(Json.Str("weekends")) => ZIO.succeed("0,6")
           case Some(Json.Arr(dayArr))     =>
             val days = dayArr.collect { case Json.Str(d) => dayMap.getOrElse(d, "") }.filter(_.nonEmpty).sorted
             if (days.isEmpty) ZIO.fail(ValidationError("No valid day names provided"))
-            else ZIO.succeed(days.mkString)
+            else ZIO.succeed(days.mkString(","))
           case Some(other) => ZIO.fail(ValidationError(s"Invalid 'days' value: $other"))
         }
       case _ => ZIO.fail(ValidationError("args must be a JSON object"))
@@ -807,7 +829,7 @@ class LyrionSkill(
           case Json.Obj(f) => f.collectFirst { case ("repeat", Json.Bool(b)) => b }
           case _           => None
         }).getOrElse(true)
-      volume = int(args, "volume").getOrElse(-1)
+      volumeParam = int(args, "volume").map(v => Json.Str(s"volume:$v")).toList
       params = List(
         Json.Str("alarm"),
         Json.Str("add"),
@@ -815,8 +837,7 @@ class LyrionSkill(
         Json.Str(s"dow:$dow"),
         Json.Str(s"enabled:${if (enabled) 1 else 0}"),
         Json.Str(s"repeat:${if (repeat) 1 else 0}"),
-        Json.Str(s"volume:$volume"),
-      )
+      ) ++ volumeParam
       result <- rpc(playerId, params)
     } yield Json.Obj(
       "ok"      -> Json.Bool(true),
@@ -829,7 +850,7 @@ class LyrionSkill(
 
   private def alarmUpdate(args: Json): IO[JorlanError, Json] =
     for {
-      playerId     <- requireStr(args, "playerId")
+      playerId     <- requirePlayerId(args)
       id           <- requireStr(args, "id")
       timeParamOpt <- str(args, "time")
         .map(t => parseTimeHHMM(t).map(s => Some(s"time:$s")))

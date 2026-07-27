@@ -39,6 +39,33 @@ jobs:
         GITHUB_ACTOR: ${{ github.actor }}
       run: sbt --error "scalafmtCheckAll; scalafmtSbtCheck"
 
+  explicit-deps:
+    name: Explicit dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: 'sbt'
+
+    - name: Setup sbt
+      uses: sbt/setup-sbt@v1
+
+    # Fails the build if any module uses a library it does not declare, or declares one it does not
+    # use (compile scope). Runs at the root so the check aggregates across every module. GitHub sets
+    # CI=true, so the web (Scala.js/ScalablyTyped) module is excluded from the root aggregate, matching
+    # the test job; the explicit-deps check is disabled for Scala.js modules anyway.
+    - name: Check explicit dependencies
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      run: sbt --error "undeclaredCompileDependenciesTest; unusedCompileDependenciesTest"
+
   build:
 
     runs-on: ubuntu-latest

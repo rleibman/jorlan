@@ -51,7 +51,12 @@ private class DashboardServiceLive(repos: ZIORepositories) extends DashboardServ
   override def globalStats: IO[JorlanError, DashboardStats] = {
     for {
       now <- Clock.instant
-      startOfToday = now.atZone(ZoneOffset.UTC).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant
+      // "Today" is the server's local day, not the UTC day — with a UTC cutoff the dashboard's daily
+      // counters reset mid-afternoon local time and exclude same-(local-)day activity before it.
+      startOfToday = {
+        val zone = java.time.ZoneId.systemDefault()
+        now.atZone(zone).toLocalDate.atStartOfDay(zone).toInstant
+      }
       events   <- repos.eventLog.search(EventLogFilter(from = Some(startOfToday), pageSize = EventLogFilter.MaxLimit))
       sessions <- repos.agent.searchSessions(AgentSessionSearch(pageSize = 1000)).mapError(JorlanError(_))
       jobs     <- repos.scheduler.listJobs(None, 1000)
@@ -91,7 +96,8 @@ private class DashboardServiceLive(repos: ZIORepositories) extends DashboardServ
       .flatMap { e =>
         e.payloadJson.flatMap {
           case zio.json.ast.Json.Obj(fields) =>
-            fields.collectFirst { case ("toolName", zio.json.ast.Json.Str(name)) => name }
+            // AgentRunnerImpl writes the payload as {"tool": <name>, "payload": <args>}.
+            fields.collectFirst { case ("tool", zio.json.ast.Json.Str(name)) => name }
           case _ => None
         }
       }

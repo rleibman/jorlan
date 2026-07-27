@@ -5,20 +5,51 @@
     "name": "travel-planning-agent-role",
     "description": "Capabilities for the interactive travel planning agent",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "calendar.createEvent" },
-      { "capability": "email.read" },
-      { "capability": "drive.listFiles" },
-      { "capability": "drive.readFile" },
-      { "capability": "google_contacts.search_contacts" },
-      { "capability": "weather.forecast" },
-      { "capability": "search.web" },
-      { "capability": "http_fetch.get" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "mcp.call"
+      },
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "calendar.createEvent"
+      },
+      {
+        "capability": "email.read"
+      },
+      {
+        "capability": "drive.listFiles"
+      },
+      {
+        "capability": "drive.readFile"
+      },
+      {
+        "capability": "google_contacts.search_contacts"
+      },
+      {
+        "capability": "weather.forecast"
+      },
+      {
+        "capability": "search.web"
+      },
+      {
+        "capability": "http_fetch.get"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -26,8 +57,20 @@
     "name": "travel-planning-agent",
     "description": "Interactive travel planner: researches destinations, flights, and lodging options; tracks reservation confirmations from email; adds trip events and pre-departure reminders to the calendar; remembers preferences and lessons learned from past trips.",
     "trustLevel": 0,
-    "prioritizedSkills": ["search", "calendar", "email", "memory", "weather", "scheduler", "google_contacts", "drive"],
-    "invariants": { "role": "meticulous travel planner and researcher; research and present options -- never book anything" }
+    "prioritizedSkills": [
+      "mcp.google_maps",
+      "search",
+      "calendar",
+      "email",
+      "memory",
+      "weather",
+      "scheduler",
+      "google_contacts",
+      "drive"
+    ],
+    "invariants": {
+      "role": "meticulous travel planner and researcher; research and present options -- never book anything"
+    }
   },
   "memorySeeds": [
     {
@@ -41,12 +84,24 @@
       "name": "google-maps",
       "transport": "Stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-google-maps"
+      ],
       "env": [
-        { "key": "GOOGLE_MAPS_API_KEY", "value": "CHANGE_ME" }
+        {
+          "key": "GOOGLE_MAPS_API_KEY",
+          "value": "CHANGE_ME"
+        }
       ],
       "enabled": false,
-      "keywords": ["maps", "directions", "places", "geocoding", "travel"]
+      "keywords": [
+        "maps",
+        "directions",
+        "places",
+        "geocoding",
+        "travel"
+      ]
     }
   ],
   "declarativeSkills": [],

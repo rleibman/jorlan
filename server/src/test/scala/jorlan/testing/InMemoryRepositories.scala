@@ -442,8 +442,9 @@ object InMemoryRepositories {
     override def terminateSession(sessionId: AgentSessionId):  RepositoryTask[Unit] = ZIO.unit
     override def availableModels():                            RepositoryTask[List[ModelInfo]] = ZIO.succeed(List.empty)
     override def submitMessage(
-      sessionId: AgentSessionId,
-      content:   String,
+      sessionId:    AgentSessionId,
+      content:      String,
+      allowedTools: Option[List[String]] = None,
     ): RepositoryTask[Unit] = ZIO.unit
 
   }
@@ -627,6 +628,8 @@ object InMemoryRepositories {
       value: Json,
     ): UIO[Unit] = store.update(_.updated(key, value))
 
+    override def delete(key: String): UIO[Unit] = store.update(_ - key)
+
     override def serverPersonality(): UIO[Option[Personality]] =
       get(ZIOServerSettingsRepository.PersonalityKey).map(_.flatMap(_.as[Personality].toOption))
 
@@ -651,6 +654,23 @@ object InMemoryRepositories {
       Ref.make(m).map(InMemoryServerSettingsRepo(_))
 
     val layer = ZLayer(make())
+
+  }
+
+  // ─── MCP servers (Ref-backed) ─────────────────────────────────────────────────
+
+  object InMemoryMcpServerRepo {
+
+    def make(initial: List[McpServerConfig] = List.empty): UIO[ZIOMcpServerRepository] =
+      Ref.make(initial.map(c => c.name -> c).toMap).map { store =>
+        new ZIOMcpServerRepository {
+          override def listMcpServers(): RepositoryTask[List[McpServerConfig]] = store.get.map(_.values.toList)
+          override def upsertMcpServer(config: McpServerConfig): RepositoryTask[McpServerConfig] =
+            store.update(_.updated(config.name, config)).as(config)
+          override def deleteMcpServer(name: String): RepositoryTask[Boolean] =
+            store.modify(m => (m.contains(name), m - name))
+        }
+      }
 
   }
 
@@ -1184,6 +1204,7 @@ object InMemoryRepositories {
         override def extCredential: ZIOExternalCredentialRepository = original.extCredential
         override def serverInfo:    ZIOServerInfoRepository = original.serverInfo
         override def skillIndex:    ZIOSkillIndexRepository = original.skillIndex
+        override def mcpServer:     ZIOMcpServerRepository = original.mcpServer
       })
     }
 
@@ -1212,6 +1233,7 @@ object InMemoryRepositories {
         permissionRepo   <- permissionRepoOpt.fold(InMemoryPermissionRepo.make)(ZIO.succeed)
         settingsRepo     <- settingsRepoOpt.fold(InMemoryServerSettingsRepo.make())(ZIO.succeed)
         extCredRepo      <- InMemoryExtCredentialRepo.make
+        mcpServerRepo    <- InMemoryMcpServerRepo.make()
       } yield new ZIORepositories {
         override def user: ZIOUserRepository = userRepo
 
@@ -1253,6 +1275,7 @@ object InMemoryRepositories {
             override def removeBySkillName(skillName: String):      RepositoryTask[Unit] = ZIO.unit
             override def keepOnly(skillNames:         Set[String]): RepositoryTask[Unit] = ZIO.unit
           }
+        override def mcpServer: ZIOMcpServerRepository = mcpServerRepo
       }
     }
 

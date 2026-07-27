@@ -206,7 +206,7 @@ object CustomSkillsPage {
                               TableCell()(sv.skillName),
                               TableCell()(sv.version),
                               TableCell()(sv.tier),
-                              TableCell()(sv.createdAt.toString.take(19)),
+                              TableCell()(PageUtils.formatTimestamp(sv.createdAt)),
                               TableCell()(
                                 Box.withProps(
                                   BoxOwnProps[Theme]()
@@ -274,7 +274,7 @@ object CustomSkillsPage {
                                   .asInstanceOf[Chip.Props],
                               )(),
                             ),
-                            TableCell()(sv.createdAt.toString.take(19)),
+                            TableCell()(PageUtils.formatTimestamp(sv.createdAt)),
                           )
                         }*,
                       ),

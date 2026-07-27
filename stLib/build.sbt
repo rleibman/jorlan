@@ -46,7 +46,6 @@ licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
 
 doc / sources := Nil
 
-//stReactEnableTreeShaking := true
 publishTo := Some(
   "GitHub Package Registry" at "https://maven.pkg.github.com/rleibman/jorlan",
 )

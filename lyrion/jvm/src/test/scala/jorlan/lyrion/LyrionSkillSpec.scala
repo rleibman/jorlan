@@ -119,14 +119,23 @@ object LyrionSkillSpec extends ZIOSpecDefault {
       |}""".stripMargin,
   )
 
+  // Mirrors the real Lyrion status shape: the current track lives in playlist_loop, not at the top level.
   private val statusResponse = Response.json(
     """{
       |  "id":1,
       |  "result":{
       |    "mode":"play",
-      |    "title":"Purple Rain",
-      |    "artist":"Prince",
-      |    "album":"Purple Rain",
+      |    "player_name":"Living Room",
+      |    "power":1,
+      |    "time":45.6,
+      |    "duration":251.4,
+      |    "playlist_cur_index":10,
+      |    "playlist_tracks":19,
+      |    "playlist shuffle":0,
+      |    "playlist repeat":0,
+      |    "playlist_loop":[
+      |      {"title":"Purple Rain","artist":"Prince","album":"Purple Rain","playlist index":10}
+      |    ],
       |    "_mixer volume":75,
       |    "mixer volume":75
       |  }
@@ -510,7 +519,10 @@ object LyrionSkillSpec extends ZIOSpecDefault {
           case Json.Obj(fields) =>
             assertTrue(fields.exists { case ("title", Json.Str("Purple Rain")) => true; case _ => false }) &&
             assertTrue(fields.exists { case ("artist", Json.Str("Prince")) => true; case _ => false }) &&
-            assertTrue(fields.exists { case ("mode", Json.Str("play")) => true; case _ => false })
+            assertTrue(fields.exists { case ("mode", Json.Str("play")) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("playerName", Json.Str("Living Room")) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("power", Json.Bool(true)) => true; case _ => false }) &&
+            assertTrue(fields.exists { case ("positionSecs", Json.Num(n)) => n.doubleValue == 45.6; case _ => false })
           case _ => assertTrue(false)
         }
       }.provide(Server.defaultWith(_.port(0)), Client.default),

@@ -463,7 +463,7 @@ object UsersPage {
                                 ).setSize("small").asInstanceOf[Chip.Props],
                             )(),
                           ),
-                          TableCell()(user.createdAt.toString.take(19)),
+                          TableCell()(PageUtils.formatTimestamp(user.createdAt)),
                           TableCell()(
                             Box.withProps(
                               BoxOwnProps[Theme]()

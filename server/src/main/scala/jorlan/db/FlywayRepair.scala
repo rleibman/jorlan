@@ -38,32 +38,37 @@ object FlywayRepair extends ZIOAppDefault {
       .flatMap(AppConfig.read)
 
   override def run: ZIO[Any, Any, Any] =
-    (for {
-      _      <- ZIO.logInfo("Starting Flyway repair...")
-      config <- loadConfig
-      flyway <- ZIO.attempt(
-        Flyway
-          .configure()
-          .dataSource(makeDataSource(config.jorlan.db))
-          .locations(config.jorlan.flyway.locations*)
-          .cleanDisabled(config.jorlan.flyway.cleanDisabled)
-          .baselineOnMigrate(config.jorlan.flyway.baselineOnMigrate)
-          .baselineVersion(config.jorlan.flyway.baselineVersion)
-          .baselineDescription(config.jorlan.flyway.baselineDescription)
-          .load(),
+    ZIO
+      .scoped(
+        for {
+          _      <- ZIO.logInfo("Starting Flyway repair...")
+          config <- loadConfig
+          // Scoped, so the pool closes when the repair finishes. It used to be `makeDataSource`, which is unmanaged.
+          dataSource <- managedDataSource(config.jorlan.db)
+          flyway     <- ZIO.attempt(
+            Flyway
+              .configure()
+              .dataSource(dataSource)
+              .locations(config.jorlan.flyway.locations*)
+              .cleanDisabled(config.jorlan.flyway.cleanDisabled)
+              .baselineOnMigrate(config.jorlan.flyway.baselineOnMigrate)
+              .baselineVersion(config.jorlan.flyway.baselineVersion)
+              .baselineDescription(config.jorlan.flyway.baselineDescription)
+              .load(),
+          )
+          _      <- ZIO.logInfo("Running Flyway repair to fix schema history mismatches...")
+          result <- ZIO.attempt(flyway.repair())
+          _      <- ZIO.logInfo(
+            s"Flyway repair completed successfully!\n" +
+              s"  Removed failed migrations: ${result.migrationsRemoved.size()}\n" +
+              s"  Deleted missing migrations: ${result.migrationsDeleted.size()}\n" +
+              s"  Aligned applied migrations: ${result.migrationsAligned.size()}\n" +
+              s"\nYou can now start the application normally.",
+          )
+          _ <- ZIO.logInfo("\nRepair Details:")
+          _ <- ZIO.foreachDiscard(result.repairActions.asScala)(action => ZIO.logInfo(s"  - $action"))
+        } yield (),
       )
-      _      <- ZIO.logInfo("Running Flyway repair to fix schema history mismatches...")
-      result <- ZIO.attempt(flyway.repair())
-      _      <- ZIO.logInfo(
-        s"Flyway repair completed successfully!\n" +
-          s"  Removed failed migrations: ${result.migrationsRemoved.size()}\n" +
-          s"  Deleted missing migrations: ${result.migrationsDeleted.size()}\n" +
-          s"  Aligned applied migrations: ${result.migrationsAligned.size()}\n" +
-          s"\nYou can now start the application normally.",
-      )
-      _ <- ZIO.logInfo("\nRepair Details:")
-      _ <- ZIO.foreachDiscard(result.repairActions.asScala)(action => ZIO.logInfo(s"  - $action"))
-    } yield ())
       .tapError(error =>
         ZIO.logError(s"Flyway repair failed: ${error.getMessage}") *>
           ZIO.logErrorCause("Repair error details:", Cause.fail(error)),

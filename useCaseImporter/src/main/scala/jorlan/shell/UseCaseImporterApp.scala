@@ -269,6 +269,7 @@ object UseCaseImporterApp extends ZIOApp {
               url = srv.url,
               enabled = srv.enabled,
               keywords = srv.keywords,
+              headers = srv.headers.map(h => McpEnvVarInfo(h.key, h.value)),
             ),
           )
           _ <- logStep("OK", s"mcp server '${srv.name}'")
@@ -355,14 +356,23 @@ object UseCaseImporterApp extends ZIOApp {
         reportFailure("trigger", ()) {
           for {
             repo     <- ZIO.service[ZIOClientRepositories]
-            existing <- repo.scheduler
-              .searchTriggers(TriggerSearch(job.id))
-              .map(_.exists(tr => tr.triggerType == t.triggerType && tr.expression == t.expression))
+            existing <- repo.scheduler.searchTriggers(TriggerSearch(job.id))
+            matches = existing.filter(tr => tr.triggerType == t.triggerType && tr.expression == t.expression)
+            // Overwrite semantics: the manifest is the source of truth, so the job ends with exactly the
+            // manifest's trigger. Drop every trigger that doesn't match (a changed schedule from a prior
+            // import) plus any duplicate matches, keeping at most one.
+            stale = existing.diff(matches.take(1))
+            _ <- ZIO.foreachDiscard(stale)(tr => repo.deleteTrigger(tr.id))
             _ <-
-              if (existing) logStep("SKIP", "trigger", "already exists")
-              else
-                repo.addTrigger(job.id, t.triggerType, t.expression) *>
-                  logStep("OK", "trigger", s"${t.triggerType} ${t.expression}")
+              if (matches.nonEmpty) {
+                val note = if (stale.isEmpty) "already exists" else s"kept, removed ${stale.size} stale"
+                logStep("SKIP", "trigger", note)
+              } else {
+                val note =
+                  if (stale.isEmpty) s"${t.triggerType} ${t.expression}"
+                  else s"${t.triggerType} ${t.expression} (replaced ${stale.size} stale)"
+                repo.addTrigger(job.id, t.triggerType, t.expression) *> logStep("OK", "trigger", note)
+              }
           } yield ()
         }
       case _ => ZIO.unit

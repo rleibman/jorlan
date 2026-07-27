@@ -191,7 +191,7 @@ object SessionsPage {
                             )(),
                           ),
                           TableCell()(session.modelId.map(_.value).getOrElse("—")),
-                          TableCell()(session.createdAt.toString.take(19)),
+                          TableCell()(PageUtils.formatTimestamp(session.createdAt)),
                           TableCell()(
                             if (session.status == SessionStatus.Active)
                               MuiButton

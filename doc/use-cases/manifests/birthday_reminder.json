@@ -3,35 +3,100 @@
   "sourceDoc": "doc/use-cases/birthday-reminder.md",
   "role": {
     "name": "birthday-reminder-agent-role",
-    "description": "Capabilities for the daily birthday reminder agent (Gramps genealogy data via shell export)",
+    "description": "Capabilities for the daily birthday reminder agent (Gramps genealogy data via the grampsweb MCP)",
     "capabilities": [
-      { "capability": "shell.run" },
-      { "capability": "google_contacts.search_contacts" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "notify.send" }
+      {
+        "capability": "mcp.call"
+      },
+      {
+        "capability": "google_contacts.search_contacts"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
   "agent": {
     "name": "birthday-reminder-agent",
-    "description": "Daily birthday agent: reads upcoming birthdays from the Gramps family tree export and sends reminders, skipping deceased individuals and avoiding duplicate reminders.",
+    "description": "Daily birthday agent: finds upcoming family birthdays from the Gramps family tree (via the grampsweb MCP) and sends reminders, skipping deceased individuals and avoiding duplicate reminders.",
     "trustLevel": 0,
-    "prioritizedSkills": ["shell", "memory", "google_contacts"],
-    "invariants": { "role": "attentive family assistant" }
+    "prioritizedSkills": [
+      "mcp.grampsweb",
+      "memory",
+      "google_contacts"
+    ],
+    "invariants": {
+      "role": "attentive family assistant"
+    }
   },
-  "memorySeeds": [],
-  "mcpServers": [],
+  "memorySeeds": [
+    {
+      "key": "gramps.gql_syntax",
+      "text": "Gramps GQL syntax for mcp.grampsweb.gramps_search (verified against the live tree). gramps_search needs BOTH 'query' (GQL) and 'entity_type' (people, families, events, places, sources, citations, repositories, media, notes). Living people: 'death_ref_index < 0' -- somebody with no death record has death_ref_index = -1. Never write 'death_ref_index = -1': GQL cannot parse a negative number after '=' and the server answers 422. Gender: 'gender = 1' is male, 'gender = 0' is female. Substring match uses '~', e.g. 'primary_name.surname_list[0].surname ~ Smith' or 'primary_name.first_name ~ Rob'. Combine terms with 'and' / 'or', e.g. 'death_ref_index < 0 and gender = 1'. A 422 from gramps_search always means the GQL failed to parse, and the MCP server hides the reason -- so do not retry variations of a query that 422s. Fall back to gramps_find (plain full-text search, no GQL) or gramps_list (whole entity type, paged).",
+      "scope": "User"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "grampsweb",
+      "transport": "Stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-grampsweb"
+      ],
+      "env": [
+        {
+          "key": "GRAMPS_API_URL",
+          "value": "https://ancestry.leibmanland.com"
+        },
+        {
+          "key": "GRAMPS_USERNAME",
+          "value": "admin"
+        },
+        {
+          "key": "GRAMPS_PASSWORD",
+          "value": "CHANGE_ME"
+        },
+        {
+          "key": "GRAMPS_TREE_ID",
+          "value": ""
+        }
+      ],
+      "enabled": false,
+      "keywords": [
+        "gramps",
+        "genealogy",
+        "family tree",
+        "birthday",
+        "ancestry",
+        "relatives",
+        "ancestors",
+        "descendants"
+      ]
+    }
+  ],
   "declarativeSkills": [],
   "job": {
     "name": "birthday-daily-check",
     "steps": [
       {
         "name": "get-birthdays",
-        "systemPrompt": "You find upcoming family birthdays. Call shell.run once with command '/opt/jorlan/scripts/gramps-birthdays.sh' (it prints JSON: name, birthday, living status). If the script fails or is missing, output exactly: BIRTHDAY DATA UNAVAILABLE -- and stop.\n\nOutput format -- one line per person with a birthday today or tomorrow, nothing else:\nYYYY-MM-DD: <name> | turning <age> | living: <yes/no/unknown>\nOr exactly 'No birthdays today or tomorrow.'",
-        "userPrompt": "{{now}} -- Check for upcoming birthdays now.",
-        "tools": ["shell.run"],
+        "systemPrompt": "You find upcoming family birthdays from the Gramps family tree. Use the grampsweb MCP tools (gramps_search / gramps_find / gramps_get) to find people whose birthday (month and day) falls today or tomorrow relative to the current date. For each, determine their age this year and whether they are living (skip clearly deceased people; flag 'unknown' living status separately).\n\nGQL rules for gramps_search -- it takes BOTH 'query' (GQL) and 'entity_type'. Living people are 'death_ref_index < 0'; never write 'death_ref_index = -1', which is a parse error. Gender is 'gender = 1' (male) or 'gender = 0' (female). Substring match uses '~', e.g. 'primary_name.surname_list[0].surname ~ Smith'. Combine with 'and' / 'or'. A 422 means your GQL did not parse and the server will not tell you why -- do NOT retry variations of it; switch to gramps_find (full-text, no GQL) or gramps_list instead.\n\nIf the gramps tools are unavailable or return nothing, output exactly: BIRTHDAY DATA UNAVAILABLE -- and stop.\n\nOutput format -- one line per person with a birthday today or tomorrow, nothing else:\nYYYY-MM-DD: <name> | turning <age> | living: <yes/no/unknown>\nOr exactly 'No birthdays today or tomorrow.'",
+        "userPrompt": "{{now}} -- Find family birthdays for today and tomorrow now.",
+        "tools": [
+          "mcp.grampsweb"
+        ],
         "mode": "ReactLoop",
         "outputVar": "birthdays",
         "retryOnFail": 1
@@ -40,7 +105,11 @@
         "name": "send-reminders",
         "systemPrompt": "You send birthday reminders. For each living person in the list, first call memory.search for 'birthday reminder sent <name>' to avoid duplicates, then call notify.user once per new reminder (pass only 'message', never userId) with the person's name, age, and a suggestion to reach out. For 'living: unknown' entries, include them in a separate 'please verify' line. Finally call memory.remember once per reminder sent, key 'birthday.sent.<name>.<date>'.\n\nOutput: one line per reminder sent, or 'nothing to send'.",
         "userPrompt": "Birthday list:\n{{steps.birthdays.output}}\n\nSend any needed reminders now.",
-        "tools": ["notify.user", "memory.search", "memory.remember"],
+        "tools": [
+          "notify.user",
+          "memory.search",
+          "memory.remember"
+        ],
         "mode": "ReactLoop",
         "outputVar": "reminders",
         "retryOnFail": 1

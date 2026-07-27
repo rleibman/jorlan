@@ -1597,18 +1597,32 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true) { name transport url } }""",
+          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true, headers: []) { name transport url } }""",
         )
       } yield assertTrue(
         result.errors.isEmpty,
         result.data.toString.contains("test-mcp"),
       )
     }.provideLayer(makeAppLayer()),
+    test("upsertMcpServer round-trips headers, which is how an HTTP MCP server is authenticated") {
+      for {
+        interp <- ZIO.service[Interp]
+        _      <- interp.execute(
+          """mutation { upsertMcpServer(name: "auth-mcp", transport: "Http", url: "http://localhost:8077/mcp", args: [], env: [], keywords: [], enabled: true, headers: [{ key: "Authorization", value: "Bearer tok" }]) { name } }""",
+        )
+        result <- interp.execute("""query { mcpServers { name headers { key value } } }""")
+        text   = result.data.toString
+      } yield assertTrue(
+        result.errors.isEmpty,
+        text.contains("Authorization"),
+        text.contains("Bearer tok"),
+      )
+    }.provideLayer(makeAppLayer()),
     test("upsertMcpServer fails when unauthenticated") {
       for {
         interp <- ZIO.service[Interp]
         result <- interp.execute(
-          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true) { name transport } }""",
+          """mutation { upsertMcpServer(name: "test-mcp", transport: "HttpSse", url: "http://localhost:9999", args: [], env: [], keywords: [], enabled: true, headers: []) { name transport } }""",
         )
       } yield assertTrue(result.errors.nonEmpty)
     }.provideLayer(makeAppLayer(session = unauthSessionLayer)),
@@ -1616,7 +1630,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         _      <- interp.execute(
-          """mutation { upsertMcpServer(name: "test-mcp2", transport: "HttpSse", url: "http://localhost:9998", args: [], env: [], keywords: [], enabled: true) { name } }""",
+          """mutation { upsertMcpServer(name: "test-mcp2", transport: "HttpSse", url: "http://localhost:9998", args: [], env: [], keywords: [], enabled: true, headers: []) { name } }""",
         )
         result <- interp.execute("""mutation { deleteMcpServer(value: "test-mcp2") }""")
       } yield assertTrue(
@@ -1751,7 +1765,7 @@ object JorlanAPISpec extends ZIOSpecDefault {
       for {
         interp <- ZIO.service[Interp]
         _      <- interp.execute(
-          """mutation { upsertMcpServer(name: "admin-test-mcp", transport: "Stdio", command: "/bin/tool", args: [], env: [], keywords: ["k1"], enabled: true) { name } }""",
+          """mutation { upsertMcpServer(name: "admin-test-mcp", transport: "Stdio", command: "/bin/tool", args: [], env: [], keywords: ["k1"], enabled: true, headers: []) { name } }""",
         )
         result <- interp.execute("""{ mcpServers { name transport enabled keywords } }""")
       } yield assertTrue(

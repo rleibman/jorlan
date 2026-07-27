@@ -262,7 +262,7 @@ object MemoryPage {
                               if (v.length > 60) v.take(60) + "…" else v,
                             ),
                           ),
-                          TableCell()(mem.createdAt.toString.take(19)),
+                          TableCell()(PageUtils.formatTimestamp(mem.createdAt)),
                           TableCell()(
                             Box.withProps(
                               BoxOwnProps[Theme]()

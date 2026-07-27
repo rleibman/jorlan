@@ -5,27 +5,42 @@
     "name": "music-coach-agent-role",
     "description": "Capabilities for the daily music practice coach",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "search.web" },
-      { "capability": "workspace.read" },
-      { "capability": "workspace.write" },
-      { "capability": "notify.send" }
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "docs.read"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
   "agent": {
     "name": "music-coach-agent",
-    "description": "Daily music practice coach: builds a focused practice plan from the player profile and repertoire, checks the calendar for upcoming performances or jams, and delivers the plan each morning.",
+    "description": "Daily drum practice coach: builds each session by following the reference training methodology (read section-by-section, not wholesale), the student's profile, and the calendar, then delivers the plan.",
     "trustLevel": 0,
-    "prioritizedSkills": ["memory", "calendar", "search", "workspace"],
-    "invariants": { "role": "experienced, motivating music teacher" }
+    "prioritizedSkills": [
+      "docs",
+      "memory",
+      "calendar",
+      "notify"
+    ],
+    "invariants": {
+      "role": "expert drum teacher managing a long-term, progressive training program"
+    }
   },
   "memorySeeds": [
     {
       "key": "music.profile",
-      "text": "Music learner profile: EDIT ME -- instrument(s), current level, repertoire in progress, technique goals (e.g. rudiments, scales), available daily practice time.",
+      "text": "Drum student profile: current level: intermediate, I have 30 minutes to practice a day; goals: just want to rebuild my chops. Preferred genres, rock, odd rythms, full drum set is available",
       "scope": "User"
     }
   ],
@@ -36,17 +51,31 @@
     "steps": [
       {
         "name": "gather-music-context",
-        "systemPrompt": "You prepare context for today's practice plan. Call memory.search once with query 'music' for the player profile and recent practice notes, then calendar.listEvents once for the next 14 days to spot performances, lessons, or jam sessions.\n\nOutput format:\nProfile: <one-line summary>\nRecent practice: <what was practiced lately, or 'unknown'>\nUpcoming events: <one line per relevant event with date, or 'none'>",
+        "systemPrompt": "You prepare context for today's practice session. Call memory.search once with query 'music' for the student profile and recent practice notes, then calendar.listEvents once for the next 14 days to spot performances, lessons, or jam sessions.\n\nOutput format:\nProfile: <one-line summary: level, time, goals, genres, equipment, limitations>\nRecent practice: <what was practiced lately, or 'unknown'>\nUpcoming events: <one line per relevant event with date, or 'none'>",
         "userPrompt": "{{now}} -- Gather practice context now.",
-        "tools": ["memory.search", "calendar.listEvents"],
+        "tools": [
+          "memory.search",
+          "calendar.listEvents"
+        ],
         "mode": "ReactLoop",
         "outputVar": "music_context",
         "retryOnFail": 1
       },
       {
+        "name": "study-methodology",
+        "systemPrompt": "You retrieve the governing teaching methodology for today's plan -- only the relevant parts, never the whole document. First call docs.list to see the documents and their section headings. Then, from 'drums-training-program', call docs.read for the 'Practice Session Structure' section, plus the one or two sections most relevant to the student's current goals and focus in the context (choose from sections like 'Technique', 'Time & Groove', 'Vocabulary', 'Musical Application', 'Difficulty Adjustment', 'Tempo Rules', 'Practice Rotation'). Output the retrieved section text verbatim, each under its heading. Do NOT summarize or invent guidance.",
+        "userPrompt": "Student context:\n{{steps.music_context.output}}\n\nRetrieve the relevant methodology sections now.",
+        "tools": [
+          "docs"
+        ],
+        "mode": "ReactLoop",
+        "outputVar": "methodology",
+        "retryOnFail": 1
+      },
+      {
         "name": "plan-practice",
-        "systemPrompt": "You are an experienced, motivating music teacher. Write today's practice plan sized to the player's available time: warm-up, technique focus, repertoire work (prioritize pieces needed for upcoming events), and one specific goal for the session. Under 200 words.",
-        "userPrompt": "Context:\n{{steps.music_context.output}}\n\nWrite today's practice plan now.",
+        "systemPrompt": "You are an expert drum teacher managing a long-term, progressive training program. Build today's practice session by following the retrieved methodology exactly, sized to the student's available practice time. Include elements of musicality, technique, and vocabulary as the methodology directs, weighted toward the student's prioritized goals. Structure the session per the 'Practice Session Structure' guidance (warm-up through cool-down). Give specific exercises, tempos, and durations. Under 300 words.",
+        "userPrompt": "Methodology sections:\n{{steps.methodology.output}}\n\nStudent context:\n{{steps.music_context.output}}\n\nWrite today's practice session now.",
         "tools": [],
         "mode": "SingleCall",
         "outputVar": "practice_plan",
@@ -54,9 +83,12 @@
       },
       {
         "name": "deliver-plan",
-        "systemPrompt": "You deliver the practice plan. Call notify.user exactly once, passing only 'message' (never userId) with the plan. Then call memory.remember once with key 'music.practice.<date>' noting the session focus in one line.\n\nOutput: one line confirming delivery.",
+        "systemPrompt": "You deliver the practice plan. Call notify.user exactly once, passing only 'message' (never userId) with the plan. Then call memory.remember once with key 'music.practice.<date>' noting the session focus in one line so future sessions can build on it.\n\nOutput: one line confirming delivery.",
         "userPrompt": "Plan:\n{{steps.practice_plan.output}}\n\nDeliver it now.",
-        "tools": ["notify.user", "memory.remember"],
+        "tools": [
+          "notify.user",
+          "memory.remember"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -70,7 +102,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 30 15 ? * *"
+      "expression": "0 30 8 ? * *"
     }
   }
 }

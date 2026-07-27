@@ -135,7 +135,7 @@ object EventLogPage {
                       scala.List[VdomElement](
                         TableRow
                           .withKey(event.id.value.toString)(
-                            TableCell()(event.occurredAt.toString.take(19)),
+                            TableCell()(PageUtils.formatTimestamp(event.occurredAt)),
                             TableCell()(
                               Chip.withProps(
                                 ChipOwnProps()

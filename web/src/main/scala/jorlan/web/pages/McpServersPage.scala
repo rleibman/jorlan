@@ -38,6 +38,7 @@ object McpServersPage {
     env:       List[EnvVarDraft] = List.empty,
     enabled:   Boolean = true,
     keywords:  String = "",
+    headers:   List[EnvVarDraft] = List.empty,
   )
 
   case class State(
@@ -64,6 +65,7 @@ object McpServersPage {
       env = s.env.map(e => EnvVarDraft(e.key, e.value)),
       enabled = s.enabled,
       keywords = s.keywords.mkString(", "),
+      headers = s.headers.map(h => EnvVarDraft(h.key, h.value)),
     )
 
   val component =
@@ -144,6 +146,10 @@ object McpServersPage {
                   env = f.env.filter(e => e.key.trim.nonEmpty).map(e => McpEnvVarInfo(e.key.trim, e.value)),
                   enabled = f.enabled,
                   keywords = f.keywords.split(",").map(_.trim).filter(_.nonEmpty).toList,
+                  headers =
+                    if (f.transport == "Http" || f.transport == "HttpSse")
+                      f.headers.filter(h => h.key.trim.nonEmpty).map(h => McpEnvVarInfo(h.key.trim, h.value))
+                    else List.empty,
                 )
                 .flatMap { _ =>
                   val msg =
@@ -259,6 +265,25 @@ object McpServersPage {
             state.modState(s =>
               s.copy(form = s.form.copy(env = s.form.env.zipWithIndex.map { case (e, i) =>
                 if (i == idx) EnvVarDraft(key, value) else e
+              })),
+            )
+
+          def addHeader(): Callback =
+            state.modState(s => s.copy(form = s.form.copy(headers = s.form.headers :+ EnvVarDraft("", ""))))
+
+          def removeHeader(idx: Int): Callback =
+            state.modState(s =>
+              s.copy(form = s.form.copy(headers = s.form.headers.zipWithIndex.filterNot(_._2 == idx).map(_._1))),
+            )
+
+          def updateHeader(
+            idx:   Int,
+            key:   String,
+            value: String,
+          ): Callback =
+            state.modState(s =>
+              s.copy(form = s.form.copy(headers = s.form.headers.zipWithIndex.map { case (h, i) =>
+                if (i == idx) EnvVarDraft(key, value) else h
               })),
             )
 
@@ -444,6 +469,47 @@ object McpServersPage {
                 MuiButton
                   .size("small")
                   .onClick(() => addEnvVar().runNow())("+ Add Env Var"),
+                // Headers are sent on every request to an HTTP MCP server -- typically `Authorization: Bearer <token>`.
+                // Meaningless for Stdio, which is configured through env vars instead.
+                if (f.transport == "Http" || f.transport == "HttpSse")
+                  <.div(
+                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
+                      "HTTP Headers",
+                    ),
+                    f.headers.zipWithIndex.toVdomArray { case (hd, idx) =>
+                      <.div(
+                        ^.key := idx.toString,
+                        Box.withProps(
+                          BoxOwnProps()
+                            .setSx(
+                              js.Dynamic.literal(display = "flex", gap = 1, mb = 1).asInstanceOf[SxProps[Any]],
+                            )
+                            .asInstanceOf[Box.Props],
+                        )(
+                          MuiTextField
+                            .label("Header")
+                            .value(hd.key)
+                            .size("small")
+                            .variant("outlined")
+                            .onChange(e => updateHeader(idx, e.target.value.asInstanceOf[String], hd.value).runNow()),
+                          MuiTextField
+                            .label("Value")
+                            .value(hd.value)
+                            .size("small")
+                            .variant("outlined")
+                            .onChange(e => updateHeader(idx, hd.key, e.target.value.asInstanceOf[String]).runNow()),
+                          MuiButton
+                            .color("error")
+                            .size("small")
+                            .onClick(() => removeHeader(idx).runNow())("✕"),
+                        ),
+                      )
+                    },
+                    MuiButton
+                      .size("small")
+                      .onClick(() => addHeader().runNow())("+ Add Header"),
+                  )
+                else EmptyVdom,
                 Box.withProps(
                   BoxOwnProps()
                     .setSx(

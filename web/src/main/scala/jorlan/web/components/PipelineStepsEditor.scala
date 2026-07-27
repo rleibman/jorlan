@@ -43,41 +43,9 @@ object PipelineStepsEditor {
     onChange:    (List[PipelineStep], Option[Int]) => Callback,
   )
 
-  /** An entry in the tool transfer list: either a whole skill (namespace prefix, covers every tool in the skill) or a
-    * single exact tool name.
-    */
-  private case class ToolChoice(
-    value:   String,
-    label:   String,
-    isSkill: Boolean,
-  )
-
   val component =
-    ScalaFnComponent
-      .withHooks[Props]
-      .useState(List.empty[SkillInfo])
-      .useState(Option.empty[String]) // highlighted entry in the "available" list
-      .useState(Option.empty[String]) // highlighted entry in the "selected" list
-      .useEffectOnMountBy {
-        (
-          _,
-          skills,
-          _,
-          _,
-        ) =>
-          AsyncCallbackRepositories.skill
-            .listSkills()
-            .flatMap(s => skills.setState(s.filter(_.enabled).sortBy(_.name)).asAsyncCallback)
-            .toCallback
-      }
-      .render {
-        (
-          props,
-          skillsState,
-          availableSel,
-          selectedSel,
-        ) =>
-          val editingStep = props.editingStep.flatMap(i => props.steps.lift(i))
+    ScalaFnComponent[Props] { props =>
+      val editingStep = props.editingStep.flatMap(i => props.steps.lift(i))
 
         <.div(
           Box.withProps(
@@ -241,119 +209,8 @@ object PipelineStepsEditor {
                 }(),
               Typography.withProps(
                 TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props],
-              )("Tools available to this step (empty = the step runs with no tools)"), {
-                val selected = step.tools
-                def coveredByPrefix(tool: String): Boolean =
-                  selected.exists(p => tool == p || tool.startsWith(p + "."))
-                val available: List[ToolChoice] = skillsState.value.flatMap { skill =>
-                  val skillEntry = Option.when(!selected.contains(skill.name))(
-                    ToolChoice(skill.name, s"${skill.name} — all tools", isSkill = true),
-                  )
-                  val toolEntries = skill.tools
-                    .filterNot(t => coveredByPrefix(t.name))
-                    .map(t => ToolChoice(t.name, t.name, isSkill = false))
-                  skillEntry.toList ++ toolEntries
-                }
-
-                def listBox(
-                  title:      String,
-                  entries:    List[ToolChoice],
-                  highlight:  Option[String],
-                  onSelect:   String => Callback,
-                  emptyLabel: String,
-                ): VdomElement =
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(
-                            border = "1px solid #ccc",
-                            borderRadius = 1,
-                            width = 280,
-                            height = 220,
-                            overflowY = "auto",
-                            p = 1,
-                          )
-                          .asInstanceOf[SxProps[Theme]],
-                      ).asInstanceOf[Box.Props],
-                  )(
-                    Typography.withProps(
-                      TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props],
-                    )(title),
-                    if (entries.isEmpty) <.div(<.em(emptyLabel))
-                    else
-                      MuiList()(
-                        entries.map { choice =>
-                          ListItem
-                            .withProps(
-                              ListItemOwnProps().setDisablePadding(true).asInstanceOf[ListItem.Props],
-                            ).withKey(choice.value)(
-                              MuiListItemButton
-                                .selected(highlight.contains(choice.value))
-                                .onClick(() => onSelect(choice.value).runNow())(
-                                  ListItemText.primary(choice.label)(),
-                                ),
-                            )
-                        }*,
-                      ),
-                  )
-
-                Box.withProps(
-                  BoxOwnProps[Theme]()
-                    .setSx(
-                      js.Dynamic
-                        .literal(display = "flex", gap = 1, alignItems = "center")
-                        .asInstanceOf[SxProps[Theme]],
-                    ).asInstanceOf[Box.Props],
-                )(
-                  listBox(
-                    "Available (pick a skill for all of its tools, or a single tool)",
-                    available,
-                    availableSel.value,
-                    v => availableSel.setState(Some(v)),
-                    "All tools are already selected.",
-                  ),
-                  Box.withProps(
-                    BoxOwnProps[Theme]()
-                      .setSx(
-                        js.Dynamic
-                          .literal(display = "flex", flexDirection = "column", gap = 1)
-                          .asInstanceOf[SxProps[Theme]],
-                      ).asInstanceOf[Box.Props],
-                  )(
-                    MuiButton
-                      .variant("outlined")
-                      .size("small")
-                      .disabled(availableSel.value.isEmpty)
-                      .onClick(() =>
-                        availableSel.value.foreach { v =>
-                          (updateStep(step.copy(tools = step.tools :+ v)) >>
-                            availableSel.setState(None)).runNow()
-                        },
-                      )("▶"),
-                    MuiButton
-                      .variant("outlined")
-                      .size("small")
-                      .disabled(selectedSel.value.isEmpty)
-                      .onClick(() =>
-                        selectedSel.value.foreach { v =>
-                          (updateStep(step.copy(tools = step.tools.filterNot(_ == v))) >>
-                            selectedSel.setState(None)).runNow()
-                        },
-                      )("◀"),
-                  ),
-                  listBox(
-                    "Selected",
-                    selected.map { v =>
-                      val isSkill = skillsState.value.exists(_.name == v)
-                      ToolChoice(v, if (isSkill) s"$v — all tools" else v, isSkill)
-                    },
-                    selectedSel.value,
-                    v => selectedSel.setState(Some(v)),
-                    "No tools selected — this step will run without tools.",
-                  ),
-                )
-              },
+              )("Tools available to this step (none selected = the step runs with no tools)"),
+              ToolSelector(step.tools, ts => updateStep(step.copy(tools = ts))),
               MuiTextField
                 .label("Retry on Fail")
                 .value(step.retryOnFail.toString)

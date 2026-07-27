@@ -11,7 +11,7 @@ import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTextField}
+import jorlan.web.components.{MuiButton, MuiTextField, ToolSelector}
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
@@ -41,11 +41,32 @@ object ChatPage {
     pendingQueue: List[String],
     micActive:    Boolean,
     ttsEnabled:   Boolean,
+    // None = the "all tools" default (server-side relevance filtering); Some(list) pins the chat to
+    // exactly these tools/skill prefixes. Persisted in localStorage across sessions.
+    allowedTools:    Option[List[String]],
+    showToolsDialog: Boolean,
   ) {
 
     def sessionId: Option[AgentSessionId] = session.map(_.id)
 
   }
+
+  private val AllowedToolsStorageKey = "jorlan.chat.allowedTools"
+
+  /** Reads the persisted tool selection; absent or unparseable means the "all tools" default. */
+  private def loadAllowedTools(): Option[List[String]] =
+    Option(org.scalajs.dom.window.localStorage.getItem(AllowedToolsStorageKey)).flatMap { raw =>
+      import zio.json.*
+      raw.fromJson[List[String]].toOption
+    }
+
+  private def persistAllowedTools(selection: Option[List[String]]): Unit =
+    selection match {
+      case None       => org.scalajs.dom.window.localStorage.removeItem(AllowedToolsStorageKey)
+      case Some(list) =>
+        import zio.json.*
+        org.scalajs.dom.window.localStorage.setItem(AllowedToolsStorageKey, list.toJson)
+    }
 
   val component =
     ScalaFnComponent
@@ -62,6 +83,8 @@ object ChatPage {
           pendingQueue = List.empty,
           micActive = false,
           ttsEnabled = false,
+          allowedTools = loadAllowedTools(),
+          showToolsDialog = false,
         ),
       )
       .useRef(Option.empty[WebSocketHandler])
@@ -131,7 +154,7 @@ object ChatPage {
                                   } >> nextMsgOpt.fold(Callback.empty) { nextMsg =>
                                     Callback {
                                       AsyncCallbackRepositories.agent
-                                        .submitMessage(sid, nextMsg)
+                                        .submitMessage(sid, nextMsg, state.value.allowedTools)
                                         .completeWith(
                                           PageUtils
                                             .onError(err => state.modState(_.copy(streaming = false, error = err))),
@@ -273,7 +296,7 @@ object ChatPage {
                 state.value.sessionId.fold(Callback.empty) { sessionId =>
                   Callback {
                     AsyncCallbackRepositories.agent
-                      .submitMessage(sessionId, text)
+                      .submitMessage(sessionId, text, state.value.allowedTools)
                       .completeWith(
                         PageUtils.onError(err => state.modState(_.copy(streaming = false, error = err))),
                       )
@@ -348,7 +371,9 @@ object ChatPage {
                   <.div(
                     ^.key   := i.toString,
                     ^.style := js.Dynamic.literal(marginBottom = "4px"),
-                    <.span(^.style := js.Dynamic.literal(color = "#9ca3af", fontSize = "0.75rem"))(msg.ts.take(19)),
+                    <.span(^.style := js.Dynamic.literal(color = "#9ca3af", fontSize = "0.75rem"))(
+                      PageUtils.formatIsoTimestamp(msg.ts),
+                    ),
                     " ",
                     <.span(^.style := js.Dynamic.literal(color = color))(prefix),
                     " ",
@@ -412,6 +437,18 @@ object ChatPage {
                     ),
                 )
               else EmptyVdom,
+              Tooltip.withProps(
+                js.Dynamic
+                  .literal(title = "Choose which tools the agent may use for your messages")
+                  .asInstanceOf[Tooltip.Props],
+              )(
+                MuiButton
+                  .variant(if (state.value.allowedTools.isDefined) "contained" else "outlined")
+                  .size("small")
+                  .onClick(() => state.modState(_.copy(showToolsDialog = true)).runNow())(
+                    state.value.allowedTools.fold("🛠 All")(ts => s"🛠 ${ts.size}"),
+                  ),
+              ),
               MuiButton
                 .variant("contained")
                 .disabled(state.value.input.trim.isEmpty || state.value.sessionId.isEmpty)
@@ -419,6 +456,47 @@ object ChatPage {
                   if (queueCount > 0) s"Queue ($queueCount)" else "Send",
                 ),
             ),
+            if (state.value.showToolsDialog)
+              Dialog(true)
+                .fullWidth(true)
+                .maxWidth(net.leibman.jorlan.muiSystem.muiSystemStrings.sm)(
+                  DialogTitle()("Tools for this chat"),
+                  DialogContent()(
+                    FormControlLabel.withProps(
+                      js.Dynamic
+                        .literal(
+                          label = "All tools (default — the server picks the most relevant ones)",
+                          control = Checkbox
+                            .checked(state.value.allowedTools.isEmpty)
+                            .onChange {
+                              (
+                                _,
+                                checked,
+                              ) =>
+                                val next = if (checked) None else Some(List.empty[String])
+                                Callback(persistAllowedTools(next)) >>
+                                  state.modState(_.copy(allowedTools = next))
+                            }()
+                            .rawElement,
+                        )
+                        .asInstanceOf[FormControlLabel.Props],
+                    )(),
+                    state.value.allowedTools.fold(EmptyVdom: VdomNode) { selection =>
+                      ToolSelector(
+                        selection,
+                        newSelection =>
+                          Callback(persistAllowedTools(Some(newSelection))) >>
+                            state.modState(_.copy(allowedTools = Some(newSelection))),
+                      )
+                    },
+                  ),
+                  DialogActions()(
+                    MuiButton
+                      .variant("contained")
+                      .onClick(() => state.modState(_.copy(showToolsDialog = false)).runNow())("Done"),
+                  ),
+                )
+            else EmptyVdom,
           )
       }
 

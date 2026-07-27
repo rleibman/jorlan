@@ -5,15 +5,33 @@
     "name": "home-maintenance-agent-role",
     "description": "Capabilities for the home maintenance manager (chore skill pending; memory-based approximation)",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "workspace.read" },
-      { "capability": "workspace.write" },
-      { "capability": "calendar.createEvent" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "workspace.read"
+      },
+      {
+        "capability": "workspace.write"
+      },
+      {
+        "capability": "calendar.createEvent"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -21,8 +39,15 @@
     "name": "home-maintenance-agent",
     "description": "Home maintenance manager: tracks recurring chores and seasonal maintenance in memory (until the native chore skill exists), reminds weekly, and keeps an asset/maintenance record.",
     "trustLevel": 0,
-    "prioritizedSkills": ["memory", "calendar", "scheduler", "workspace"],
-    "invariants": { "role": "practical, organized home maintenance planner" }
+    "prioritizedSkills": [
+      "memory",
+      "calendar",
+      "scheduler",
+      "workspace"
+    ],
+    "invariants": {
+      "role": "practical, organized home maintenance planner"
+    }
   },
   "memorySeeds": [
     {
@@ -45,7 +70,9 @@
         "name": "review-chores",
         "systemPrompt": "You review household chores. Call memory.search once with query 'chore' to get all chore records (each has frequency and last-done date). Compute which are due or overdue relative to today.\n\nOutput format -- one line per due/overdue chore, nothing else:\n<chore name> | due since <date> | priority <level>\nOr exactly 'Nothing due this week.'",
         "userPrompt": "{{now}} -- Review the chore list now.",
-        "tools": ["memory.search"],
+        "tools": [
+          "memory.search"
+        ],
         "mode": "ReactLoop",
         "outputVar": "due_chores",
         "retryOnFail": 1
@@ -54,7 +81,9 @@
         "name": "send-chore-reminders",
         "systemPrompt": "You deliver the weekly maintenance reminder. Call notify.user exactly once, passing only 'message' (never userId), titled 'Home maintenance this week' with the due-chore list (or a short all-clear note).\n\nOutput: one line confirming delivery.",
         "userPrompt": "Due chores:\n{{steps.due_chores.output}}\n\nSend the reminder now.",
-        "tools": ["notify.user"],
+        "tools": [
+          "notify.user"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -68,7 +97,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 16 ? * 6"
+      "expression": "0 0 9 ? * 5"
     }
   }
 }

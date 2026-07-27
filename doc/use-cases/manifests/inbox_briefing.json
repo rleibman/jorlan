@@ -63,7 +63,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 14 ? * *"
+      "expression": "0 0 7 ? * *"
     }
   }
 }

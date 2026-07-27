@@ -5,17 +5,42 @@
     "name": "project-manager-agent-role",
     "description": "Capabilities for the personal project manager agent",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "workspace.read" },
-      { "capability": "workspace.write" },
-      { "capability": "calendar.createEvent" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "email.read" },
-      { "capability": "search.web" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "mcp.call"
+      },
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "workspace.read"
+      },
+      {
+        "capability": "workspace.write"
+      },
+      {
+        "capability": "calendar.createEvent"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "email.read"
+      },
+      {
+        "capability": "search.web"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -23,8 +48,18 @@
     "name": "project-manager-agent",
     "description": "Personal project manager: tracks project goals, decisions, risks, and open tasks in memory/workspace; sends a weekly status review with stalled items and next actions.",
     "trustLevel": 0,
-    "prioritizedSkills": ["memory", "workspace", "calendar", "email", "search", "scheduler"],
-    "invariants": { "role": "pragmatic project manager focused on unblocking progress" }
+    "prioritizedSkills": [
+      "mcp.github",
+      "memory",
+      "workspace",
+      "calendar",
+      "email",
+      "search",
+      "scheduler"
+    ],
+    "invariants": {
+      "role": "pragmatic project manager focused on unblocking progress"
+    }
   },
   "memorySeeds": [
     {
@@ -38,12 +73,23 @@
       "name": "github",
       "transport": "Stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
       "env": [
-        { "key": "GITHUB_PERSONAL_ACCESS_TOKEN", "value": "CHANGE_ME" }
+        {
+          "key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "value": "CHANGE_ME"
+        }
       ],
       "enabled": false,
-      "keywords": ["github", "issues", "pull requests", "repository"]
+      "keywords": [
+        "github",
+        "issues",
+        "pull requests",
+        "repository"
+      ]
     }
   ],
   "declarativeSkills": [],
@@ -54,7 +100,9 @@
         "name": "review-projects",
         "systemPrompt": "You review active projects. Call memory.search once with query 'project' to get the project registry and recent decisions/tasks.\n\nOutput format -- one line per project, nothing else:\n<project> | status: <one line> | stalled: <yes/no> | next action: <one line>",
         "userPrompt": "{{now}} -- Review the project portfolio now.",
-        "tools": ["memory.search"],
+        "tools": [
+          "memory.search"
+        ],
         "mode": "ReactLoop",
         "outputVar": "portfolio",
         "retryOnFail": 1
@@ -63,7 +111,9 @@
         "name": "send-status",
         "systemPrompt": "You deliver the weekly project status. Call notify.user exactly once, passing only 'message' (never userId), titled 'Weekly project review': the portfolio list, with stalled projects flagged first and a suggested next action for each.\n\nOutput: one line confirming delivery.",
         "userPrompt": "Portfolio:\n{{steps.portfolio.output}}\n\nSend the status now.",
-        "tools": ["notify.user"],
+        "tools": [
+          "notify.user"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -77,7 +127,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 15 ? * 1"
+      "expression": "0 0 8 ? * 0"
     }
   }
 }

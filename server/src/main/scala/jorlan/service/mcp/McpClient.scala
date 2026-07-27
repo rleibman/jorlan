@@ -38,6 +38,9 @@ trait McpClient {
   *
   * On the first `initialize` request the server returns a `mcp-session-id` response header. All subsequent requests
   * must echo that value back in a `mcp-session-id` request header.
+  *
+  * `headers` are the configured static headers (see `McpServerConfig.headers`) and are sent on every request. They are
+  * how a remote server is authenticated, e.g. `Authorization: Bearer …`.
   */
 class HttpMcpClient private[mcp] (
   httpClient:  Client,
@@ -45,6 +48,7 @@ class HttpMcpClient private[mcp] (
   idRef:       Ref[Int],
   initialized: Ref[Boolean],
   sessionId:   Ref[Option[String]],
+  headers:     Map[String, String] = Map.empty,
 ) extends McpClient {
 
   private def nextId: UIO[Int] = idRef.getAndUpdate(_ + 1)
@@ -60,7 +64,8 @@ class HttpMcpClient private[mcp] (
       base = Request
         .post(parsedUrl, Body.fromString(reqBody, java.nio.charset.Charset.forName("UTF-8")))
         .addHeader(Header.ContentType(MediaType.application.json))
-      req = sid.fold(base)(id => base.addHeader(McpSessionIdHeader, id))
+      withHeaders = headers.foldLeft(base) { case (r, (k, v)) => r.addHeader(k, v) }
+      req = sid.fold(withHeaders)(id => withHeaders.addHeader(McpSessionIdHeader, id))
     } yield req
   }
 
@@ -181,12 +186,13 @@ object HttpMcpClient {
   def make(
     httpClient: Client,
     url:        String,
+    headers:    Map[String, String] = Map.empty,
   ): UIO[HttpMcpClient] = {
     for {
       idRef      <- Ref.make(1)
       initRef    <- Ref.make(false)
       sessionRef <- Ref.make(Option.empty[String])
-    } yield new HttpMcpClient(httpClient, url, idRef, initRef, sessionRef)
+    } yield new HttpMcpClient(httpClient, url, idRef, initRef, sessionRef, headers)
   }
 
 }
@@ -206,6 +212,7 @@ object HttpSseMcpClient {
   def make(
     httpClient: Client,
     sseUrl:     String,
+    headers:    Map[String, String] = Map.empty,
   ): IO[JorlanError, HttpMcpClient] = {
     for {
       parsedUrl <- ZIO
@@ -214,9 +221,13 @@ object HttpSseMcpClient {
       messagesUrl <- ZIO.scoped {
         httpClient
           .batched(
-            Request
-              .get(parsedUrl)
-              .addHeader(Header.Accept(MediaType.text.`event-stream`)),
+            // The configured headers must ride on the SSE GET too: an authenticated server rejects the handshake
+            // outright, and no messages endpoint is ever returned.
+            headers.foldLeft(
+              Request
+                .get(parsedUrl)
+                .addHeader(Header.Accept(MediaType.text.`event-stream`)),
+            ) { case (r, (k, v)) => r.addHeader(k, v) },
           )
           .mapError(e => JorlanError(s"MCP HTTP+SSE: failed to connect to '$sseUrl': ${e.getMessage}", Some(e)))
           .flatMap { resp =>
@@ -248,7 +259,7 @@ object HttpSseMcpClient {
       idRef      <- Ref.make(1)
       initRef    <- Ref.make(true) // skip initialize — SSE handshake counts
       sessionRef <- Ref.make(sessionIdOpt)
-    } yield new HttpMcpClient(httpClient, resolvedUrl, idRef, initRef, sessionRef)
+    } yield new HttpMcpClient(httpClient, resolvedUrl, idRef, initRef, sessionRef, headers)
   }
 
   private def findEndpointPath(lines: List[String]): Option[String] = {
@@ -367,7 +378,15 @@ class StdioMcpClient private (
 
 object StdioMcpClient {
 
-  def make(config: McpServerConfig): ZIO[Scope, JorlanError, StdioMcpClient] = {
+  /** Longest to wait for the server's `initialize` response before giving up on the handshake and using the client
+    * anyway. Overridable so tests need not wait the full production budget.
+    */
+  private val defaultInitTimeout: Duration = Duration.fromSeconds(10)
+
+  def make(
+    config:      McpServerConfig,
+    initTimeout: Duration = defaultInitTimeout,
+  ): ZIO[Scope, JorlanError, StdioMcpClient] = {
     for {
       stdinQ  <- Queue.unbounded[Chunk[Byte]]
       outputQ <- Queue.unbounded[String]
@@ -383,33 +402,46 @@ object StdioMcpClient {
       baseCmd = Command(cmdName, cmdArgs*)
       cmdWithEnv = if (config.env.isEmpty) baseCmd else baseCmd.env(config.env)
       cmdWithStdin = cmdWithEnv.stdin(ProcessInput.fromQueue(stdinQ))
-      process <- ZIO.acquireRelease(
-        cmdWithStdin.run.mapError(e => JorlanError(s"MCP stdio: failed to start process: ${e.getMessage}", Some(e))),
-      )(proc => proc.isAlive.flatMap(alive => ZIO.when(alive)(proc.killForcibly)).orDie)
-      // Fork a fiber to drain stdout lines into outputQueue; includes non-JSON startup banners which readResponse skips
-      _ <- ZIO.acquireRelease(
-        process.stdout.linesStream
-          .mapError(e => JorlanError(s"MCP stdio: stdout error: ${e.getMessage}", Some(e)))
-          .foreach(line =>
-            ZIO.logDebug(s"MCP stdio [${config.name}] stdout: $line") *>
-              outputQ.offer(line).unit,
-          )
-          .forkDaemon,
-      )(_.interrupt)
-      // Drain stderr to prevent the process from blocking on a full pipe; log at warn level but never enqueue
-      _ <- ZIO.acquireRelease(
-        process.stderr.linesStream
-          .foreach(line => ZIO.logWarning(s"MCP stderr [${config.name}]: $line"))
-          .orDie
-          .forkDaemon,
-      )(_.interrupt)
+      // The subprocess and the two fibers draining its stdout/stderr are acquired as a single resource so that
+      // the release order is ours to choose. The drain fibers park in a blocking `InputStream.read()` on the
+      // process's pipes, which ZIO cannot preempt: interrupting them while the process is alive and quiet never
+      // completes. The pipes only unblock when the process dies, so the release must kill it *first* and only
+      // then interrupt the readers — otherwise closing the scope (which every MCP reload does) hangs forever.
+      process <- ZIO
+        .acquireRelease(
+          for {
+            proc <- cmdWithStdin.run
+              .mapError(e => JorlanError(s"MCP stdio: failed to start process: ${e.getMessage}", Some(e)))
+            // stdout carries JSON-RPC responses plus any non-JSON startup banners, which readResponse skips.
+            outFiber <- proc.stdout.linesStream
+              .foreach(line =>
+                ZIO.logDebug(s"MCP stdio [${config.name}] stdout: $line") *>
+                  outputQ.offer(line).unit,
+              )
+              .catchAll(e => ZIO.logWarning(s"MCP stdio [${config.name}]: stdout error: ${e.getMessage}"))
+              .forkDaemon
+            // stderr is drained purely so a full pipe cannot block the process; it is logged, never enqueued.
+            errFiber <- proc.stderr.linesStream
+              .foreach(line => ZIO.logWarning(s"MCP stderr [${config.name}]: $line"))
+              .catchAll(e => ZIO.logWarning(s"MCP stdio [${config.name}]: stderr error: ${e.getMessage}"))
+              .forkDaemon
+          } yield (proc, outFiber, errFiber),
+        ) { case (proc, outFiber, errFiber) =>
+          for {
+            _ <- proc.isAlive.flatMap(alive => ZIO.when(alive)(proc.killForcibly)).orDie
+            // Both readers observe EOF the moment the process dies, so this returns promptly; the timeout is
+            // only there so a pathological process can never wedge a scope close.
+            _ <- (outFiber.interrupt *> errFiber.interrupt).timeout(Duration.fromSeconds(5))
+            _ <- stdinQ.shutdown
+          } yield ()
+        }
+        .map(_._1)
       idRef     <- Ref.make(1)
       semaphore <- Semaphore.make(1)
       client = new StdioMcpClient(stdinQ, outputQ, idRef, semaphore)
       initId <- idRef.getAndUpdate(_ + 1)
       initReq =
         s"""{"jsonrpc":"2.0","id":$initId,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"jorlan","version":"1.0"}}}"""
-      initTimeoutSeconds = 10L
       _ <- semaphore
         .withPermit {
           client.writeRequest(initReq) *> client.readResponse.flatMap {
@@ -427,11 +459,13 @@ object StdioMcpClient {
             case _ => ZIO.fail(JorlanError("MCP stdio: initialize returned unexpected response shape"))
           }
         }
-        .timeout(Duration.fromSeconds(initTimeoutSeconds))
+        .timeout(initTimeout)
         .flatMap {
           case Some(_) => ZIO.unit
           case None    =>
-            ZIO.logWarning(s"MCP stdio [${config.name}]: initialize timed out after ${initTimeoutSeconds}s — continuing without confirmation")
+            ZIO.logWarning(
+              s"MCP stdio [${config.name}]: initialize timed out after ${initTimeout.render} — continuing without confirmation",
+            )
         }
       // Send initialized notification (no response expected)
       notifReq = s"""{"jsonrpc":"2.0","method":"notifications/initialized"}"""

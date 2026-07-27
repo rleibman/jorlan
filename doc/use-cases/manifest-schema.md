@@ -97,14 +97,21 @@ no tools (fine for pure-reasoning steps; consider `SingleCall` mode for those in
 
 Use-case docs write cron expressions in standard 5-field form (`0 9 * * 3` = 09:00 every Wednesday). The
 server parses triggers with **cron4s**, which uses 6 fields with `?` for whichever of day-of-month /
-day-of-week is unused (per `JorlanAPI.scala`'s own error-message example: `'0 0 9 ? * 1-5'` = 09:00 on
-weekdays, `1=Monday`). Translate every 5-field expression by inserting a leading `0` (seconds) and using
-`?` for day-of-month when specifying day-of-week:
+day-of-week is unused. Two traps:
 
-| 5-field (doc) | 6-field (manifest) | Meaning |
+1. **Day-of-week is `0=Monday .. 6=Sunday`** — NOT the standard cron `0=Sunday` or Quartz `1=Sunday`.
+   `7` is invalid and makes the whole expression fail to parse (the trigger is silently never created).
+2. **Expressions are evaluated in the server's local timezone** — write the time you mean locally, no
+   UTC conversion.
+
+Translate every 5-field expression by inserting a leading `0` (seconds), using `?` for day-of-month when
+specifying day-of-week, and shifting day-of-week down by one from standard-cron's Monday=1:
+
+| 5-field (standard) | 6-field (cron4s manifest) | Meaning |
 |---|---|---|
-| `0 9 * * 3` | `0 0 9 ? * 3` | 09:00 every Wednesday |
-| `0 9 * * 1-5` | `0 0 9 ? * 1-5` | 09:00 every weekday |
+| `0 9 * * 3` | `0 0 9 ? * 2` | 09:00 every Wednesday |
+| `0 9 * * 1-5` | `0 0 9 ? * 0-4` | 09:00 every weekday (Mon-Fri) |
+| `0 9 * * 0` | `0 0 9 ? * 6` | 09:00 every Sunday |
 | `0 9 1 * *` | `0 0 9 1 * ?` | 09:00 on the 1st of every month |
 
 ## Idempotency

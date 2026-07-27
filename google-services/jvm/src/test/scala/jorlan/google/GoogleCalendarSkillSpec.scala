@@ -131,7 +131,7 @@ object GoogleCalendarSkillSpec extends ZIOSpecDefault {
           case _ => assert(false)(isTrue)
         }
       },
-      test("calendar.listEvents accepts timeMin with no zone offset, assuming UTC") {
+      test("calendar.listEvents accepts timeMin with no zone offset, interpreted in the server timezone") {
         for {
           skill  <- makeSkill()
           result <- skill.invoke(
@@ -139,7 +139,7 @@ object GoogleCalendarSkillSpec extends ZIOSpecDefault {
             "calendar.listEvents",
             Json.Obj(
               "calendarId" -> Json.Str(calId),
-              "timeMin"    -> Json.Str("2026-06-01T11:30:00"),
+              "timeMin"    -> Json.Str("2026-06-02T12:00:00"),
             ),
           )
         } yield result match {
@@ -168,7 +168,7 @@ object GoogleCalendarSkillSpec extends ZIOSpecDefault {
           case _ => assert(false)(isTrue)
         }
       },
-      test("calendar.listEvents accepts a bare date for timeMin, assuming midnight UTC") {
+      test("calendar.listEvents accepts a bare date for timeMin, local midnight") {
         for {
           skill  <- makeSkill()
           result <- skill.invoke(
@@ -176,7 +176,7 @@ object GoogleCalendarSkillSpec extends ZIOSpecDefault {
             "calendar.listEvents",
             Json.Obj(
               "calendarId" -> Json.Str(calId),
-              "timeMin"    -> Json.Str("2026-06-02"),
+              "timeMin"    -> Json.Str("2026-06-03"),
             ),
           )
         } yield result match {
