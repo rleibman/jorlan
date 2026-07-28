@@ -73,6 +73,8 @@ object JorlanSchema {
   )
   inline def qEventLogs = quote(querySchema[EventLogRow]("eventLog"))
 
+  inline def qMcpServers = quote(querySchema[McpServerRow]("mcpServer"))
+
   inline def qSchedulerJobs = quote(querySchema[SchedulerJob]("schedulerJob"))
 
   inline def qSchedulerTriggers = quote(querySchema[SchedulerTrigger]("schedulerTrigger"))
@@ -168,7 +170,8 @@ class QuillRepositories(qc: QuillCtx) extends ZIORepositories {
 
   override def permission: ZIOPermissionRepository = QuillPermissionRepository(qc)
 
-  override def setting: ZIOServerSettingsRepository = QuillServerSettingsRepository(qc)
+  override def setting:   ZIOServerSettingsRepository = QuillServerSettingsRepository(qc)
+  override def mcpServer: ZIOMcpServerRepository = QuillMcpServerRepository(qc)
 
   override def extCredential: ZIOExternalCredentialRepository = QuillExternalCredentialRepository(qc)
 
@@ -442,8 +445,9 @@ private class QuillAgentRepository(qc: QuillCtx) extends QuillRepoBase(qc) with 
   override def availableModels(): RepositoryTask[List[ModelInfo]] =
     ZIO.fail(RepositoryError("availableModels not implemented in QuillAgentRepository"))
   override def submitMessage(
-    sessionId: AgentSessionId,
-    content:   String,
+    sessionId:    AgentSessionId,
+    content:      String,
+    allowedTools: Option[List[String]] = None,
   ): RepositoryTask[Unit] =
     ZIO.fail(RepositoryError("submitMessage not implemented in QuillAgentRepository"))
 
@@ -1700,6 +1704,9 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
     ).unit.mapError(RepositoryError.apply)
   }
 
+  override def delete(key: String): IO[RepositoryError, Unit] =
+    exec(qc.ctx.run(qServerSettings.filter(_.settingKey == lift(key)).delete)).unit.mapError(RepositoryError.apply)
+
   override def serverPersonality(): IO[RepositoryError, Option[Personality]] =
     get(ZIOServerSettingsRepository.PersonalityKey).map(_.flatMap(_.as[Personality].toOption))
 
@@ -1716,6 +1723,108 @@ private class QuillServerSettingsRepository(qc: QuillCtx) extends QuillRepoBase(
       .flatMap(json => set(ZIOServerSettingsRepository.PersonalityKey, json).as(Some(p)))
       .mapError(RepositoryError.apply)
   }
+
+}
+
+// ─── MCP servers ──────────────────────────────────────────────────────────────
+
+/** Row shape for the `mcpServer` table. List/map fields are stored as JSON text; `transport` as the enum name. */
+private[repository] case class McpServerRow(
+  name:      String,
+  transport: String,
+  command:   Option[String],
+  args:      String,
+  env:       String,
+  url:       Option[String],
+  enabled:   Boolean,
+  keywords:  String,
+  headers:   String,
+)
+
+private object McpServerRow {
+
+  def fromConfig(c: McpServerConfig): McpServerRow =
+    McpServerRow(
+      name = c.name,
+      transport = c.transport.toString,
+      command = c.command,
+      args = c.args.toJson,
+      env = c.env.toJson,
+      url = c.url,
+      enabled = c.enabled,
+      keywords = c.keywords.toJson,
+      headers = c.headers.toJson,
+    )
+
+  def toConfig(r: McpServerRow): McpServerConfig =
+    McpServerConfig(
+      name = r.name,
+      transport = McpTransport.values.find(_.toString == r.transport).getOrElse(McpTransport.Stdio),
+      command = r.command,
+      args = r.args.fromJson[List[String]].getOrElse(List.empty),
+      env = r.env.fromJson[Map[String, String]].getOrElse(Map.empty),
+      url = r.url,
+      enabled = r.enabled,
+      keywords = r.keywords.fromJson[List[String]].getOrElse(List.empty),
+      headers = r.headers.fromJson[Map[String, String]].getOrElse(Map.empty),
+    )
+
+}
+
+private class QuillMcpServerRepository(qc: QuillCtx) extends QuillRepoBase(qc) with ZIOMcpServerRepository {
+
+  import JorlanSchema.*
+  import qc.ctx.*
+
+  override def listMcpServers(): RepositoryTask[List[McpServerConfig]] =
+    exec(qc.ctx.run(qMcpServers)).map(_.map(McpServerRow.toConfig)).mapError(RepositoryError.apply)
+
+  override def upsertMcpServer(config: McpServerConfig): RepositoryTask[McpServerConfig] = {
+    val row = McpServerRow.fromConfig(config)
+    exec(
+      qc.ctx.run(
+        qMcpServers
+          .insertValue(lift(row))
+          .onConflictUpdate(
+            (
+              t,
+              e,
+            ) => t.transport -> e.transport,
+            (
+              t,
+              e,
+            ) => t.command -> e.command,
+            (
+              t,
+              e,
+            ) => t.args -> e.args,
+            (
+              t,
+              e,
+            ) => t.env -> e.env,
+            (
+              t,
+              e,
+            ) => t.url -> e.url,
+            (
+              t,
+              e,
+            ) => t.enabled -> e.enabled,
+            (
+              t,
+              e,
+            ) => t.keywords -> e.keywords,
+            (
+              t,
+              e,
+            ) => t.headers -> e.headers,
+          ),
+      ),
+    ).as(config).mapError(RepositoryError.apply)
+  }
+
+  override def deleteMcpServer(name: String): RepositoryTask[Boolean] =
+    exec(qc.ctx.run(qMcpServers.filter(_.name == lift(name)).delete)).map(_ > 0L).mapError(RepositoryError.apply)
 
 }
 

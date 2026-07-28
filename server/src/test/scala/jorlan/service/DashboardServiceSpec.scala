@@ -122,19 +122,19 @@ object DashboardServiceSpec extends ZIOSpecDefault {
           _     <- repos.eventLog.append(
             makeEvent(
               EventType.SkillInvoked,
-              Some(Json.Obj("toolName" -> Json.Str("units.convert"))),
+              Some(Json.Obj("tool" -> Json.Str("units.convert"))),
             ),
           )
           _ <- repos.eventLog.append(
             makeEvent(
               EventType.SkillInvoked,
-              Some(Json.Obj("toolName" -> Json.Str("units.convert"))),
+              Some(Json.Obj("tool" -> Json.Str("units.convert"))),
             ),
           )
           _ <- repos.eventLog.append(
             makeEvent(
               EventType.SkillInvoked,
-              Some(Json.Obj("toolName" -> Json.Str("calendar.listEvents"))),
+              Some(Json.Obj("tool" -> Json.Str("calendar.listEvents"))),
             ),
           )
           svc   <- ZIO.service[DashboardService]

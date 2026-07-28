@@ -16,7 +16,7 @@ import jorlan.*
 import jorlan.connector.{HasDashboardData, Skill}
 import jorlan.db.repository.*
 import jorlan.service.*
-import jorlan.service.mcp.{McpManager, McpServerConfig, McpTransport}
+import jorlan.service.mcp.McpManager
 import jorlan.service.skills.SkillRegistry
 import jorlan.service.skills.declarative.LifecycleResult
 import zio.*
@@ -738,10 +738,16 @@ object JorlanAPI {
     modelId: Option[ModelId] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** Input for `submitMessage` — sends a user message to the active agent session. */
+  /** Input for `submitMessage` — sends a user message to the active agent session.
+    *
+    * @param allowedTools
+    *   When set, the model sees only tools matching these names/namespace prefixes for this turn (empty list = no
+    *   tools). Omitted/null means the default: all tools, relevance-filtered.
+    */
   case class SubmitMessageInput(
-    sessionId: AgentSessionId,
-    content:   String,
+    sessionId:    AgentSessionId,
+    content:      String,
+    allowedTools: Option[List[String]] = None,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Necessary because you can't have simple options
@@ -841,13 +847,13 @@ object JorlanAPI {
     configJson: String,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** A single key/value pair in an MCP server's environment map. */
+  /** A single key/value pair in an MCP server's environment or header map. */
   case class McpEnvVar(
     key:   String,
     value: String,
   ) derives Schema.SemiAuto, ArgBuilder
 
-  /** GQL-safe view of a configured MCP server. */
+  /** GQL-safe view of a configured MCP server. `env` applies to the Stdio transport, `headers` to the HTTP ones. */
   case class McpServerView(
     name:      String,
     transport: String,
@@ -857,6 +863,7 @@ object JorlanAPI {
     url:       Option[String],
     enabled:   Boolean,
     keywords:  List[String],
+    headers:   List[McpEnvVar],
   ) derives Schema.SemiAuto
 
   /** Input for `upsertMcpServer` — add or replace a server config entry. */
@@ -869,6 +876,7 @@ object JorlanAPI {
     url:       Option[String] = None,
     enabled:   Boolean = true,
     keywords:  List[String] = List.empty,
+    headers:   List[McpEnvVar] = List.empty,
   ) derives Schema.SemiAuto, ArgBuilder
 
   /** Input for `rejectSkillVersion` — resets an AwaitingApproval version to Draft with an admin note. */
@@ -1154,6 +1162,7 @@ object JorlanAPI {
       url = cfg.url,
       enabled = cfg.enabled,
       keywords = cfg.keywords,
+      headers = cfg.headers.map { case (k, v) => McpEnvVar(k, v) }.toList,
     )
 
   private def toSkillVersionView(
@@ -1467,11 +1476,7 @@ object JorlanAPI {
           mcpServers = for {
             actorId <- actorIdFromSession
             _       <- requireCapability("admin.settings", actorId)
-            json    <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
-            configs <- json match {
-              case None    => ZIO.succeed(List.empty)
-              case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
-            }
+            configs <- ZIO.serviceWithZIO[ZIORepositories](_.mcpServer.listMcpServers()).mapError(JorlanError(_))
           } yield configs.map(mcpServerToView),
           allKnownCapabilities = for {
             actorId <- actorIdFromSession
@@ -1686,7 +1691,14 @@ object JorlanAPI {
               actorId <- actorIdFromSession
               _       <- requireCapability("agent.message", actorId)
               _       <- ZIO
-                .serviceWithZIO[AgentRunner](_.processMessage(input.sessionId, input.content, Some(actorId)))
+                .serviceWithZIO[AgentRunner](
+                  _.processMessage(
+                    input.sessionId,
+                    input.content,
+                    Some(actorId),
+                    allowedToolPrefixes = input.allowedTools,
+                  ),
+                )
                 .forkDaemon
             } yield (),
           updatePersonality = input =>
@@ -1778,7 +1790,8 @@ object JorlanAPI {
                       JorlanError(
                         s"Invalid cron expression '${input.expression}': $e. " +
                           "cron4s requires 6 fields (sec min hr dom mon dow) and uses '?' for the unused dom/dow field. " +
-                          "Examples: '0 0 18 ? * 6' = 18:00 every Saturday, '0 0 9 ? * 1-5' = 09:00 weekdays, " +
+                          "Day-of-week is 0=Monday..6=Sunday, evaluated in the server's local timezone. " +
+                          "Examples: '0 0 18 ? * 5' = 18:00 every Saturday, '0 0 9 ? * 0-4' = 09:00 weekdays, " +
                           "'0 0 9 * * ?' = 09:00 every day",
                       ),
                     ).unit
@@ -2062,36 +2075,22 @@ object JorlanAPI {
                 url = input.url,
                 enabled = input.enabled,
                 keywords = input.keywords,
+                headers = input.headers.map(h => h.key -> h.value).toMap,
               )
-              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
-              existing <- json match {
-                case None    => ZIO.succeed(List.empty)
-                case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
-              }
-              updated = existing.filterNot(_.name == newCfg.name) :+ newCfg
-              updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
-              _           <- ZIO
-                .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
-                .mapError(JorlanError(_))
+              _   <- ZIO.serviceWithZIO[ZIORepositories](_.mcpServer.upsertMcpServer(newCfg)).mapError(JorlanError(_))
               _   <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore
               now <- Clock.instant
               _   <- logEvent(EventType.McpServerUpserted, Some(actorId), None, now)
             } yield mcpServerToView(newCfg),
           deleteMcpServer = name =>
             for {
-              actorId  <- actorIdFromSession
-              _        <- requireCapability("admin.settings", actorId)
-              json     <- ZIO.serviceWithZIO[ZIORepositories](_.setting.get("mcp.servers")).mapError(JorlanError(_))
-              existing <- json match {
-                case None    => ZIO.succeed(List.empty)
-                case Some(j) => ZIO.fromEither(j.as[List[McpServerConfig]]).mapError(e => JorlanError(e))
-              }
-              updated = existing.filterNot(_.name == name)
-              updatedJson <- ZIO.fromEither(updated.toJsonAST).mapError(e => JorlanError(s"Encoding error: $e"))
-              _           <- ZIO
-                .serviceWithZIO[ZIORepositories](_.setting.set("mcp.servers", updatedJson))
+              actorId <- actorIdFromSession
+              _       <- requireCapability("admin.settings", actorId)
+              removed <- ZIO
+                .serviceWithZIO[ZIORepositories](_.mcpServer.deleteMcpServer(name))
                 .mapError(JorlanError(_))
-            } yield existing.exists(_.name == name),
+              _ <- ZIO.when(removed)(ZIO.serviceWithZIO[McpManager](_.loadAndRegister).ignore)
+            } yield removed,
           enableSkill = name =>
             for {
               actorId <- actorIdFromSession

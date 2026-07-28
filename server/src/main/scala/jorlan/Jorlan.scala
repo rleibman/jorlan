@@ -167,7 +167,18 @@ object Jorlan extends ZIOApp {
           .get("skill.workspace")
           .mapError(e => new Throwable(e.msg))
           .map(_.flatMap(_.as[WorkspaceSettings].toOption).getOrElse(WorkspaceSettings()))
-      workRoot <- ZIO.attempt(Paths.get(workspaceCfg.root).toAbsolutePath.normalize())
+      workRoot     <- ZIO.attempt(Paths.get(workspaceCfg.root).toAbsolutePath.normalize())
+      documentsCfg <-
+        repos.setting
+          .get("skill.documents")
+          .mapError(e => new Throwable(e.msg))
+          .map(_.flatMap(_.as[DocumentsSettings].toOption).getOrElse(DocumentsSettings()))
+      documentsRoot <- ZIO.attempt {
+        val raw =
+          if (documentsCfg.root.nonEmpty) documentsCfg.root
+          else s"${java.lang.System.getProperty("user.home", ".")}/.jorlan/documents"
+        Paths.get(raw).toAbsolutePath.normalize()
+      }
       shellCfg <-
         repos.setting
           .get("skill.shell")
@@ -181,6 +192,7 @@ object Jorlan extends ZIOApp {
       _ <- registry.register(MemorySkill(memService, embeddingStore, embeddingModel))
       _ <- registry.register(SchedulerSkill(jobManager))
       _ <- registry.register(WorkspaceSkill(workRoot, workspaceCfg))
+      _ <- registry.register(DocumentsSkill(documentsRoot))
       _ <- registry.register(ShellSkill(shellCfg, repos))
       _ <- registry.register(NotifySkill(notifRouter))
       // ── Plugin JARs: skills loaded dynamically from pluginsDir ───────────────
@@ -413,6 +425,9 @@ object Jorlan extends ZIOApp {
       lifecycleSvc <- ZIO.service[jorlan.service.skills.declarative.SkillLifecycleService]
       _            <- registry.register(SkillAuthoringSkill(lifecycleSvc))
       // ── MCP servers ───────────────────────────────────────────────────────────
+      _ <- ZIO.serviceWithZIO[ZIORepositories](repos =>
+        jorlan.service.mcp.McpServerMigration.run.provideEnvironment(zio.ZEnvironment(repos)),
+      )
       _ <- ZIO.serviceWithZIO[McpManager](_.loadAndRegister)
       // ── Apply explicit skill.disabled list from server_settings ───────────────
       _ <- repos.setting.get("skill.disabled").mapError(e => new Throwable(e.msg)).flatMap {

@@ -145,7 +145,7 @@ object ApprovalsPage {
                             )(),
                           ),
                           TableCell()(approval.agentId.map(_.value.toString).getOrElse("—")),
-                          TableCell()(approval.createdAt.toString.take(19)),
+                          TableCell()(PageUtils.formatTimestamp(approval.createdAt)),
                           TableCell()(
                             Box.withProps(
                               BoxOwnProps[Theme]()

@@ -52,27 +52,39 @@ class McpManagerImpl(
         .catchAll(_ => ZIO.none)
 
     workspaceCfg.flatMap { wsCfg =>
-      settings
-        .get("mcp.servers").flatMap {
-          case None =>
-            registry.unregisterWhere(_.startsWith("mcp.")) *>
-              ZIO.logDebug("No MCP servers configured (set 'mcp.servers' in server_settings to enable)")
-          case Some(json) =>
-            json.as[List[McpServerConfig]] match {
-              case Left(err) =>
-                ZIO.logWarning(s"Skipping all MCP servers: could not parse config: $err")
-              case Right(configs) =>
-                registry.unregisterWhere(_.startsWith("mcp.")) *>
-                  ZIO.foreachDiscard(configs.filter(_.enabled)) { cfg =>
-                    makeAdapter(cfg, wsCfg)
-                      .flatMap(adapter => registry.register(adapter))
-                      .tapError(e => ZIO.logWarning(s"Skipping MCP server '${cfg.name}': ${e.msg}"))
-                      .ignore
-                  }
-            }
-        }.catchAll(e => ZIO.logWarning(s"MCP loadAndRegister error: ${e.msg}"))
+      repos.mcpServer
+        .listMcpServers()
+        .flatMap { configs =>
+          val enabled = configs.filter(_.enabled)
+          // Register servers in the background, in parallel, each individually bounded: a server that fails to
+          // initialize (bad command, unreachable endpoint, npx 404, hang) must never block or slow server
+          // startup — it is logged and skipped, and the rest still come up. Its tools simply appear a moment
+          // after the HTTP server does.
+          registry.unregisterWhere(_.startsWith("mcp.")) *> {
+            if (enabled.isEmpty) ZIO.logDebug("No enabled MCP servers configured")
+            else ZIO.foreachParDiscard(enabled)(cfg => registerServer(cfg, wsCfg)).forkScoped.unit
+          }
+        }
+        .catchAll(e => ZIO.logWarning(s"MCP loadAndRegister error: ${e.msg}"))
     }
   }
+
+  /** Longest a single MCP server may take to connect + list its tools before it is treated as unavailable and skipped.
+    * Generous enough for a valid server whose package `npx`/`docker` must first download.
+    */
+  private val serverInitTimeout: Duration = Duration.fromSeconds(45)
+
+  private def registerServer(
+    cfg:   McpServerConfig,
+    wsCfg: Option[WorkspaceSettings],
+  ): ZIO[Scope, Nothing, Unit] =
+    makeAdapter(cfg, wsCfg)
+      .flatMap(adapter => registry.register(adapter))
+      .timeoutFail(JorlanError(s"initialization timed out after ${serverInitTimeout.getSeconds}s"))(serverInitTimeout)
+      .foldZIO(
+        e => ZIO.logWarning(s"Skipping MCP server '${cfg.name}': ${e.msg}"),
+        _ => ZIO.logInfo(s"MCP server '${cfg.name}' registered"),
+      )
 
   private def makeAdapter(
     cfg:   McpServerConfig,
@@ -84,7 +96,7 @@ class McpManagerImpl(
           case None =>
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP transport requires 'url'"))
           case Some(url) =>
-            HttpMcpClient.make(client, url).flatMap { httpClient =>
+            HttpMcpClient.make(client, url, cfg.headers).flatMap { httpClient =>
               httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, wsCfg))
             }
         }
@@ -93,7 +105,7 @@ class McpManagerImpl(
           case None =>
             ZIO.fail(JorlanError(s"MCP server '${cfg.name}': HTTP+SSE transport requires 'url'"))
           case Some(url) =>
-            HttpSseMcpClient.make(client, url).flatMap { httpClient =>
+            HttpSseMcpClient.make(client, url, cfg.headers).flatMap { httpClient =>
               httpClient.listTools.map(tools => McpSkillAdapter(cfg.name, tools, httpClient, cfg.keywords, wsCfg))
             }
         }

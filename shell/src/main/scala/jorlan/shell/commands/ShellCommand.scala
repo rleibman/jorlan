@@ -162,6 +162,7 @@ enum ShellCommand {
     url:       Option[String],
     enabled:   Boolean,
     keywords:  List[String],
+    headers:   List[McpEnvVarInfo],
   )
   case McpEdit(
     name:      String,
@@ -172,6 +173,7 @@ enum ShellCommand {
     url:       Option[String],
     enabled:   Option[Boolean],
     keywords:  Option[List[String]],
+    headers:   Option[List[McpEnvVarInfo]],
   )
   case McpDelete(name: String)
   case McpReload
@@ -215,6 +217,7 @@ object ShellCommand {
     url:       Option[String] = None,
     enabled:   Option[Boolean] = None,
     keywords:  List[String] = Nil,
+    headers:   List[McpEnvVarInfo] = Nil,
   )
 
   @annotation.tailrec
@@ -233,6 +236,13 @@ object ShellCommand {
           case _             => acc.env
         }
         parseMcpFlags(rest, acc.copy(env = newEnv))
+      // Split on the first ':' so header values containing ':' survive, e.g. --header "Authorization: Bearer x".
+      case "--header" :: kv :: rest =>
+        val newHeaders = kv.split(":", 2).toList match {
+          case k :: v :: Nil => acc.headers :+ McpEnvVarInfo(k.trim, v.trim)
+          case _             => acc.headers
+        }
+        parseMcpFlags(rest, acc.copy(headers = newHeaders))
       case "--keywords" :: v :: rest =>
         parseMcpFlags(rest, acc.copy(keywords = v.split(",").map(_.trim).filter(_.nonEmpty).toList))
       case "--disabled" :: rest => parseMcpFlags(rest, acc.copy(enabled = Some(false)))
@@ -407,7 +417,7 @@ object ShellCommand {
         case "mcp" :: "list" :: _                                   => McpList
         case "mcp" :: "add" :: name :: transport :: rest            =>
           val f = parseMcpFlags(rest)
-          McpAdd(name, transport, f.command, f.args, f.env, f.url, f.enabled.getOrElse(true), f.keywords)
+          McpAdd(name, transport, f.command, f.args, f.env, f.url, f.enabled.getOrElse(true), f.keywords, f.headers)
         case "mcp" :: "edit" :: name :: rest =>
           val f = parseMcpFlags(rest)
           McpEdit(
@@ -419,6 +429,7 @@ object ShellCommand {
             f.url,
             f.enabled,
             Some(f.keywords).filter(_.nonEmpty),
+            Some(f.headers).filter(_.nonEmpty),
           )
         case "mcp" :: "delete" :: name :: _                          => McpDelete(name)
         case "mcp" :: "reload" :: _                                  => McpReload

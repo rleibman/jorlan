@@ -5,13 +5,27 @@
     "name": "language-coach-agent-role",
     "description": "Capabilities for the daily language practice coach",
     "capabilities": [
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "search.web" },
-      { "capability": "calendar.listEvents" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "search.web"
+      },
+      {
+        "capability": "calendar.listEvents"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -19,8 +33,15 @@
     "name": "language-coach-agent",
     "description": "Daily language coach: delivers a short practice lesson each morning based on the learner profile, tracks vocabulary with approximate spaced repetition in memory, and adapts topics to upcoming travel.",
     "trustLevel": 0,
-    "prioritizedSkills": ["memory", "search", "calendar", "scheduler"],
-    "invariants": { "role": "encouraging, patient language teacher" }
+    "prioritizedSkills": [
+      "memory",
+      "search",
+      "calendar",
+      "scheduler"
+    ],
+    "invariants": {
+      "role": "encouraging, patient language teacher"
+    }
   },
   "memorySeeds": [
     {
@@ -38,7 +59,9 @@
         "name": "review-progress",
         "systemPrompt": "You prepare context for today's language lesson. Call memory.search once with query 'language' to retrieve the learner profile and recent lesson notes, and once with query 'vocab' for vocabulary items due for review.\n\nOutput format:\nProfile: <one-line summary>\nRecent lessons: <topics covered recently, or 'none'>\nDue vocabulary: <comma-separated words, or 'none'>",
         "userPrompt": "{{now}} -- Gather the learner context now.",
-        "tools": ["memory.search"],
+        "tools": [
+          "memory.search"
+        ],
         "mode": "ReactLoop",
         "outputVar": "learner_context",
         "retryOnFail": 1
@@ -56,7 +79,10 @@
         "name": "deliver-lesson",
         "systemPrompt": "You deliver the daily language lesson. Call notify.user exactly once, passing only 'message' (never userId) with the lesson text. Then call memory.remember once with key 'language.lesson.<date>' summarizing today's topic in one line.\n\nOutput: one line confirming delivery.",
         "userPrompt": "Lesson:\n{{steps.lesson.output}}\n\nDeliver it now.",
-        "tools": ["notify.user", "memory.remember"],
+        "tools": [
+          "notify.user",
+          "memory.remember"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -70,7 +96,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 15 ? * *"
+      "expression": "0 0 8 ? * *"
     }
   }
 }

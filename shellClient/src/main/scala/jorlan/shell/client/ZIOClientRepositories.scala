@@ -197,10 +197,11 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
         .run(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))
         .map(_.getOrElse(List.empty).map(toModelInfo))
     override def submitMessage(
-      sessionId: AgentSessionId,
-      content:   String,
+      sessionId:    AgentSessionId,
+      content:      String,
+      allowedTools: Option[List[String]] = None,
     ): IO[String, Unit] =
-      gqlClient.run(JorlanClient.Mutations.submitMessage(sessionId, content)).unit
+      gqlClient.run(JorlanClient.Mutations.submitMessage(sessionId, content, allowedTools)).unit
 
   }
 
@@ -601,7 +602,8 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def set(
         key:   String,
         value: Json,
-      ): IO[String, Unit] = ZIO.unit
+      ):                                IO[String, Unit] = ZIO.unit
+      override def delete(key: String): IO[String, Unit] = ZIO.unit
 
       override def serverPersonality(): IO[String, Option[Personality]] =
         gqlClient
@@ -676,6 +678,15 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       override def removeBySkillId(skillId:     SkillId): IO[String, Unit] = ZIO.unit
       override def removeBySkillName(skillName: String):  IO[String, Unit] = ZIO.unit
       override def keepOnly(skillNames: Set[String]): IO[String, Unit] = ZIO.unit
+    }
+
+  // ── Sub-repo: McpServer (client-side no-op; the shell manages MCP servers via GraphQL, not this repo) ──
+
+  override val mcpServer: McpServerRepository[[A] =>> IO[String, A]] =
+    new McpServerRepository[[A] =>> IO[String, A]] {
+      override def listMcpServers():                         IO[String, List[McpServerConfig]] = ZIO.succeed(List.empty)
+      override def upsertMcpServer(config: McpServerConfig): IO[String, McpServerConfig] = ZIO.succeed(config)
+      override def deleteMcpServer(name:   String):          IO[String, Boolean] = ZIO.succeed(false)
     }
 
   // ── Conversion helpers ─────────────────────────────────────────────────────
@@ -828,7 +839,10 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
   // ── MCP ────────────────────────────────────────────────────────────────────
 
   private def toMcpServerInfo(
-    v: JorlanClient.McpServerView.McpServerViewView[JorlanClient.McpEnvVar.McpEnvVarView],
+    v: JorlanClient.McpServerView.McpServerViewView[
+      JorlanClient.McpEnvVar.McpEnvVarView,
+      JorlanClient.McpEnvVar.McpEnvVarView,
+    ],
   ): jorlan.McpServerInfo =
     jorlan.McpServerInfo(
       v.name,
@@ -839,16 +853,21 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
       v.url,
       v.enabled,
       v.keywords,
+      v.headers.map(h => McpEnvVarInfo(h.key, h.value)),
     )
 
   // ── MCP server configuration ────────────────────────────────────────────
   override def listMcpServers(): IO[String, List[jorlan.McpServerInfo]] =
     gqlClient
-      .run(JorlanClient.Queries.mcpServers(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)))
+      .run(
+        JorlanClient.Queries
+          .mcpServers(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view, JorlanClient.McpEnvVar.view)),
+      )
       .map(_.getOrElse(List.empty).map(toMcpServerInfo))
 
   override def upsertMcpServer(server: jorlan.McpServerInfo): IO[String, jorlan.McpServerInfo] = {
     val envInputs = server.env.map(e => JorlanClient.McpEnvVarInput(e.key, e.value))
+    val headerInputs = server.headers.map(h => JorlanClient.McpEnvVarInput(h.key, h.value))
     gqlClient
       .run(
         JorlanClient.Mutations.upsertMcpServer(
@@ -860,7 +879,8 @@ private class ZIOClientRepositoriesLive(gqlClient: GraphQLClient) extends ZIOCli
           server.url,
           server.enabled,
           server.keywords,
-        )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)),
+          headerInputs,
+        )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view, JorlanClient.McpEnvVar.view)),
       )
       .flatMap(r => ZIO.fromOption(r).orElseFail("upsertMcpServer returned nothing"))
       .map(toMcpServerInfo)

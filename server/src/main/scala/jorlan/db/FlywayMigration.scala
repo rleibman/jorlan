@@ -27,8 +27,7 @@ object FlywayMigration {
     } else {
 // $COVERAGE-OFF$
       ZIO.logInfo("Starting Flyway database migrations...") *>
-        ZIO
-          .attempt(createFlyway(flywayConfig, dbConfig).migrate())
+        withFlyway(flywayConfig, dbConfig)(_.migrate())
           .flatMap { result =>
             ZIO.logInfo(
               s"Flyway migrations complete: ${result.migrationsExecuted} executed, " +
@@ -42,27 +41,43 @@ object FlywayMigration {
     flywayConfig: FlywayConfig,
     dbConfig:     DatabaseConfig,
   ): Task[Unit] =
-    ZIO.attempt(createFlyway(flywayConfig, dbConfig).validate()) *> ZIO.logInfo("Flyway validation passed")
+    withFlyway(flywayConfig, dbConfig)(_.validate()) *> ZIO.logInfo("Flyway validation passed")
 
   def info(
     flywayConfig: FlywayConfig,
     dbConfig:     DatabaseConfig,
   ): Task[Unit] =
-    ZIO
-      .attempt(createFlyway(flywayConfig, dbConfig).info().all().toList)
+    withFlyway(flywayConfig, dbConfig)(_.info().all().toList)
       .flatMap { migrations =>
         ZIO.foreachDiscard(migrations) { m =>
           ZIO.logInfo(s"  [${m.getState}] V${m.getVersion} — ${m.getDescription}")
         }
       }
 
-  private def createFlyway(
+  /** Runs one Flyway command against a pool that exists only for as long as the command does.
+    *
+    * `createFlyway` used to call `makeDataSource` inline, which hands Flyway an *unmanaged* HikariDataSource that
+    * nobody ever closes. Migration is a startup thing, but the pool it opened was not: it kept `minimumIdle`
+    * connections alive, and its housekeeping thread kept the pool itself from ever being collected, for the entire life
+    * of the process — a second pool, permanently, next to the application's real one.
+    */
+  private def withFlyway[A](
     flywayConfig: FlywayConfig,
     dbConfig:     DatabaseConfig,
+  )(
+    command: Flyway => A,
+  ): Task[A] =
+    ZIO.scoped {
+      managedDataSource(dbConfig).flatMap(ds => ZIO.attempt(command(createFlyway(flywayConfig, ds))))
+    }
+
+  private def createFlyway(
+    flywayConfig: FlywayConfig,
+    dataSource:   javax.sql.DataSource,
   ): Flyway = {
     val fb = Flyway
       .configure()
-      .dataSource(makeDataSource(dbConfig))
+      .dataSource(dataSource)
       .locations(flywayConfig.locations*)
       .cleanDisabled(flywayConfig.cleanDisabled)
       .validateOnMigrate(flywayConfig.validateOnMigrate)

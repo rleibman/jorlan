@@ -40,13 +40,16 @@
       },
       {
         "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "mcp.call"
       }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
   "agent": {
     "name": "food-calendar-agent",
-    "description": "Weekly meal-planning agent: builds a 7-day dinner plan, adds it to Google Calendar, generates a shopping list, and sends prep reminders.",
+    "description": "Weekly meal-planning agent: builds a 7-day dinner plan from the meal-o-rama recipe library plus new web recipes, scales every recipe to the household size, adds the plan to Google Calendar, pushes a shopping list to OurGroceries, and sends prep reminders.",
     "trustLevel": 0,
     "prioritizedSkills": [
       "calendar",
@@ -55,7 +58,9 @@
       "http_fetch",
       "telegram",
       "memory",
-      "scheduler"
+      "scheduler",
+      "mcp.mealorama",
+      "mcp.ourgroceries"
     ],
     "invariants": {
       "role": "expert executive chef and meal planner"
@@ -64,7 +69,7 @@
   "memorySeeds": [
     {
       "key": "calendar",
-      "text" : "We store meal items in the calendar called \"Dinner Meals\" (gfmac24kt66m1un7432ausem3o@group.calendar.google.com)",
+      "text": "We store meal items in the calendar called \"Dinner Meals\" (gfmac24kt66m1un7432ausem3o@group.calendar.google.com)",
       "scope": "User"
     },
     {
@@ -86,15 +91,42 @@
       "key": "food_calendar.weekend_cooking",
       "text": "Weekend cooking: Fridays and weekends are when we cook more complex recipes. Weeknight dinners (Mon-Thu) should be 45 minutes or under unless it is a slow cooker or overnight prep.",
       "scope": "User"
+    },
+    {
+      "key": "food_calendar.recipe_library",
+      "text": "Our recipe library lives in meal-o-rama, reachable through the mcp.mealorama tools. Recipes we cook are imported there and scaled to 2 servings, so the meal-o-rama link for a dish is always the one to share -- it is already sized for us. Recipes that could not be imported are unverified: we have not checked their ingredients or serving size.",
+      "scope": "User"
     }
   ],
   "mcpServers": [
+    {
+      "name": "mealorama",
+      "transport": "Http",
+      "url": "http://localhost:8077/api/mcp",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer CHANGE_ME"
+        }
+      ],
+      "enabled": true,
+      "keywords": [
+        "recipe",
+        "recipes",
+        "meal",
+        "cooking",
+        "ingredients",
+        "servings",
+        "scale",
+        "meal-o-rama"
+      ]
+    },
     {
       "name": "ourgroceries",
       "transport": "Stdio",
       "command": "node",
       "args": [
-        "/opt/jorlan-mcp/ourgroceries-mcp/index.js"
+        "/opt/ourgroceries-mcp/build/cli.js"
       ],
       "env": [
         {
@@ -120,11 +152,12 @@
     "steps": [
       {
         "name": "gather-context",
-        "systemPrompt": "You gather planning context for next week's dinners. Make exactly two tool calls: ONE calendar.listEvents call covering the past 7 days through the next 7 days (a single 14-day window), and ONE weather.forecast call with NO location parameter (the server default is our home). Use calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com'.\n\nOutput format -- one line per day for the next 7 days, then two extra lines:\nYYYY-MM-DD (Weekday): evening event: <title or 'none'>; vacation: <yes/no>\nRecent meals: <dish names from the past 7 days, or 'none found'>\nWeather: <one sentence>",
+        "systemPrompt": "You gather planning context for next week's dinners. Make exactly three tool calls: ONE calendar.listEvents call covering the next 7 days, ONE weather.forecast call with NO location parameter (the server default is our home), and ONE mcp.mealorama.recent_meals call covering the past 21 days (this is what we have eaten recently -- use it, do not guess from calendar titles). Use calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com'.\n\nOutput format -- one line per day for the next 7 days, then two extra lines:\nYYYY-MM-DD (Weekday): evening event: <title or 'none'>; vacation: <yes/no>\nRecent meals: <dish names from the past 21 days, or 'none found'>\nWeather: <one sentence>",
         "userPrompt": "{{now}} -- Gather this week's planning context now.",
         "tools": [
           "calendar.listEvents",
-          "weather.forecast"
+          "weather.forecast",
+          "mcp.mealorama.recent_meals"
         ],
         "mode": "ReactLoop",
         "outputVar": "context",
@@ -132,7 +165,7 @@
       },
       {
         "name": "plan-meals",
-        "systemPrompt": "You are an expert executive chef and meal planner. Using the planning context and these household rules -- {{invariants.dietary_rules}} {{invariants.schedule_rules}} {{invariants.seasonal_hints}} -- decide on one dinner for each of the next 7 days. Skip vacation days entirely. Give variety in cuisine and meal type across the week, and avoid repeating the recent meals listed in the context.\n\nOutput format -- exactly one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish name> | <cuisine> | <main ingredient> | <simple-30min / moderate / complex>",
+        "systemPrompt": "You are an expert executive chef and meal planner. Using the planning context and these household rules -- {{invariants.dietary_rules}} {{invariants.schedule_rules}} {{invariants.seasonal_hints}} -- decide on one dinner for each of the next 7 days. Skip vacation days entirely. Give variety in cuisine and meal type across the week, and avoid repeating the recent meals listed in the context.\n\nAbout {{invariants.new_recipe_percent}}% of the week's dinners should be NEW dishes we have not cooked before (we will look these up on the web); the rest should be marked LIBRARY, meaning we will pull a recipe we already have. Round to whole days. Put the NEW dishes on the days with the most cooking time available -- a new recipe on a rushed weeknight is a bad trade.\n\nOutput format -- exactly one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish name> | <cuisine> | <main ingredient> | <simple-30min / moderate / complex> | <NEW or LIBRARY>",
         "userPrompt": "Planning context:\n{{steps.context.output}}\n\nPropose the week's dinner plan now, following the household rules and the output format exactly.",
         "tools": [],
         "mode": "SingleCall",
@@ -140,19 +173,31 @@
         "retryOnFail": 0
       },
       {
-        "name": "research-recipes",
-        "systemPrompt": "You find a real recipe for each planned dish. Per day, make exactly ONE search.web call, e.g. '<dish name> recipe' (prefer results from: {{invariants.preferred_sites}}). Use only titles and URLs that appeared in the search results -- never fabricate a URL. List the dish's key ingredients from your own culinary knowledge. Mark 'LONG PREP' only for dishes needing overnight marinating or slow cooking.\n\nOutput format -- one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish> | <recipe title> | <URL> | ingredients: <5-10 items> | <total time>[ | LONG PREP]",
-        "userPrompt": "Meal plan:\n{{steps.meal_plan.output}}\n\nFind a recipe for each day's dish now: one search per dish, then produce the output list.",
+        "name": "source-recipes",
+        "systemPrompt": "You find a real, usable recipe for each planned dish. Our recipe library is meal-o-rama; work through each day in order and follow this procedure exactly.\n\nLIBRARY day -- two calls, both required:\n1. mcp.mealorama.search_recipes with query = the dish name, excludeIngredients = the list [{{invariants.cruciferous_list}}] (pass it as a LIST of separate ingredient names, not one string), maxTotalMinutes = the day's time budget from the plan, and limit 5. This tool does NOT take a servings argument, and what it returns is a SUMMARY: ingredient names only, and a link that is NOT sized for us.\n2. Take the best match's id and call mcp.mealorama.get_recipe with that id and servings {{invariants.household_servings}}. This is the call that scales the recipe and returns a link already sized for us. Always use the link from get_recipe, never the one from search_recipes.\nThe dish is then VERIFIED.\n\nNEW day: make ONE search.web call ('<dish name> recipe'; prefer results from {{invariants.preferred_sites}}). Take the most promising result URL and call mcp.mealorama.import_recipe with that url and servings {{invariants.household_servings}}. On success the dish is VERIFIED -- use the meal-o-rama link it returns, NOT the original site URL.\n\nOn failure, the error text contains a 'reason'. Let it decide your next move:\n- Blocked or Paywalled: the SITE refused us, so another page on that same site will fail too. Try a result from a DIFFERENT site. Do NOT call mark_recipe_unparsable -- a human can still rescue this page later with the browser extension.\n- EmptyParse, NotARecipe or BadUrl: that PAGE is no good. Call mcp.mealorama.mark_recipe_unparsable with the url, then try the next result.\nMake at most 3 import attempts per day.\n\nIf every import attempt fails, fall back to the LIBRARY procedure above (both calls) and use that recipe instead -- a verified library recipe always beats an unverified web page. Only if the library fallback ALSO finds nothing may you use the raw source URL, and then the day is UNVERIFIED: we have not checked its ingredients, serving size or prep time against our dietary rules, and it is not scaled.\n\nSCALING CHECK, on every recipe from get_recipe or import_recipe: read the 'scaled' field. If it is false, the recipe does not say how many servings it makes and so could NOT be resized -- its amounts are as published. Mark that day NOT SCALED. Otherwise mark it SCALED. A NOT SCALED recipe is still VERIFIED; the two are independent.\n\nNever invent a URL. Every link must come from a tool result. Mark 'LONG PREP' only for dishes needing overnight marinating or slow cooking.\n\nOutput format -- one line per day, nothing else:\nYYYY-MM-DD (Weekday): <dish> | <recipe title> | <link> | <VERIFIED or UNVERIFIED> | <SCALED or NOT SCALED> | recipeId: <meal-o-rama id, or 'none'> | ingredients: <5-10 items> | <total time>[ | LONG PREP]",
+        "userPrompt": "Meal plan:\n{{steps.meal_plan.output}}\n\nSource a recipe for each day's dish now, following the procedure exactly.",
         "tools": [
-          "search.web"
+          "search.web",
+          "mcp.mealorama"
         ],
         "mode": "ReactLoop",
         "outputVar": "recipes",
         "retryOnFail": 1
       },
       {
+        "name": "schedule-meals",
+        "systemPrompt": "You record the week's plan in meal-o-rama so it becomes part of our meal history. For each line in the recipe list, call mcp.mealorama.schedule_meal once: date = that day, mealType = 'dinner', servings = {{invariants.household_servings}}, and recipeId = the recipeId from the line. If the line has recipeId 'none', pass the dish name as recipeTitle instead. If a call fails, note it and move on -- this step is a record, not a blocker.\n\nOutput: one line per day: YYYY-MM-DD: <dish name> -- recorded (or the error).",
+        "userPrompt": "Recipes to record:\n{{steps.recipes.output}}\n\nRecord each day's meal in meal-o-rama now.",
+        "tools": [
+          "mcp.mealorama.schedule_meal"
+        ],
+        "mode": "ReactLoop",
+        "outputVar": "mealorama_result",
+        "retryOnFail": 1
+      },
+      {
         "name": "update-calendar",
-        "systemPrompt": "You add planned dinners to the household's Google Calendar. For each line in the recipe list, call calendar.createEvent once: calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com', summary = the dish name, description = the recipe URL and ingredients, start = that date at 6 PM, end = 7 PM.\n\nWhen done, output one line per event: YYYY-MM-DD: <dish name> -- created (or the error).",
+        "systemPrompt": "You add planned dinners to the household's Google Calendar. For each line in the recipe list, call calendar.createEvent once: calendarId 'gfmac24kt66m1un7432ausem3o@group.calendar.google.com', summary = the dish name, start = that date at 6 PM, end = 7 PM.\n\nThe description is the recipe link followed by the ingredients. For a line marked UNVERIFIED, the description must ALSO begin with this exact warning on its own line: {{invariants.unverified_note}}\nFor a line marked NOT SCALED, the description must ALSO begin with this exact warning on its own line: {{invariants.unscaled_note}}\nA line can be both; in that case include both warnings.\n\nWhen done, output one line per event: YYYY-MM-DD: <dish name> -- created (or the error).",
         "userPrompt": "Recipes to add:\n{{steps.recipes.output}}\n\nCreate one calendar event per line now.",
         "tools": [
           "calendar.createEvent"
@@ -163,10 +208,11 @@
       },
       {
         "name": "shopping-list",
-        "systemPrompt": "You build a consolidated grocery list from the week's recipe ingredients. Combine duplicates, then group items under: Produce, Meat & Seafood, Dairy, Pantry, Other. If an Ourgroceries tool is available, add the items to it; if not, just output the list -- it is sent to the user in the next step.\n\nOutput: the grouped list only, one item per line.",
-        "userPrompt": "Recipes:\n{{steps.recipes.output}}\n\nBuild the consolidated shopping list now.",
+        "systemPrompt": "You build the week's grocery list and put it in OurGroceries. FIRST call mcp.mealorama.build_shopping_list once, passing every recipeId from the recipe list (skip lines whose recipeId is 'none') and servings {{invariants.household_servings}} -- it returns the combined quantities already grouped by aisle. THEN add those items to OurGroceries with the mcp.ourgroceries tools.\n\nFor any day whose recipeId is 'none', add its ingredients to the list by hand from the recipe line, since meal-o-rama does not know that recipe.\n\nThe result may carry an 'unscaledWarn' list naming recipes that could not be resized to our household. Their quantities on this list are as published, so they will be too large. Repeat that warning verbatim at the end of your output under the heading 'Quantities not scaled:'.\n\nIf OurGroceries is unavailable, just output the list -- it is sent to the user in the next step.\n\nOutput: the grouped list, one item per line, then any 'Quantities not scaled:' warning.",
+        "userPrompt": "Recipes:\n{{steps.recipes.output}}\n\nBuild the consolidated shopping list now, then add it to OurGroceries.",
         "tools": [
-          "ourgroceries"
+          "mcp.mealorama.build_shopping_list",
+          "mcp.ourgroceries"
         ],
         "mode": "ReactLoop",
         "outputVar": "shopping_list",
@@ -174,7 +220,7 @@
       },
       {
         "name": "notify-and-schedule",
-        "systemPrompt": "You wrap up the week's meal planning. FIRST call notify.user once: pass only 'message' (plain text) with the full weekly summary -- the day-by-day dinner plan with recipe URLs, then the shopping list. Do NOT pass userId. THEN, only for lines marked LONG PREP (if any), call scheduler.create_job to schedule a one-shot reminder for the evening before that dinner. If a reminder fails, note it and move on.\n\nOutput: one line confirming the summary was sent, plus one line per reminder (or 'no long-prep reminders needed').",
+        "systemPrompt": "You wrap up the week's meal planning. FIRST call notify.user once: pass only 'message' (plain text) with the full weekly summary -- the day-by-day dinner plan with its recipe links, then the shopping list. Call out any day marked UNVERIFIED explicitly, so we know that recipe was not checked against our dietary rules, and any day marked NOT SCALED, so we know its quantities are as published rather than sized for us. Do NOT pass userId. THEN, only for lines marked LONG PREP (if any), call scheduler.create_job to schedule a one-shot reminder for the evening before that dinner. If a reminder fails, note it and move on.\n\nOutput: one line confirming the summary was sent, plus one line per reminder (or 'no long-prep reminders needed').",
         "userPrompt": "Dinner plan with recipes:\n{{steps.recipes.output}}\n\nShopping list:\n{{steps.shopping_list.output}}\n\nSend the weekly summary now, then schedule any LONG PREP reminders.",
         "tools": [
           "notify.user",
@@ -189,7 +235,12 @@
       "dietary_rules": "Sarah cannot eat cruciferous vegetables (cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy). Limit red meat to once a week maximum. Enjoy variety across cuisines.",
       "schedule_rules": "Thursday is grocery night: keep Thursday dinner to 30 minutes or less. Fridays and weekends can be more complex/adventurous. Weeknight dinners (Mon-Thu) should be 45 minutes or under unless it's a slow cooker or overnight prep. If there's an evening calendar event with no other dinner plan, keep that day's meal to 30 minutes or less. Skip days we're on vacation.",
       "seasonal_hints": "In summer, favor ceviches and gazpacho. In winter, favor hearty soups and stews.",
-      "preferred_sites": "delicious.com, seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com"
+      "preferred_sites": "delicious.com, seriouseats.com, cooking.nytimes.com, bonappetit.com, thekitchn.com, allrecipes.com, food52.com",
+      "cruciferous_list": "cauliflower, broccoli, cabbage, Brussels sprouts, kale, bok choy",
+      "household_servings": "2",
+      "new_recipe_percent": "40",
+      "unverified_note": "⚠️ Unverified recipe: this one could not be imported into meal-o-rama, so its ingredients, serving size and prep time were NOT checked against our dietary rules, and it is NOT scaled to 2 servings. Read it over before shopping.",
+      "unscaled_note": "⚠️ Not scaled: this recipe does not say how many servings it makes, so meal-o-rama could not resize it. The amounts are as published and are probably for more than 2 people."
     },
     "personality": null,
     "maxRetries": 1,
@@ -198,7 +249,7 @@
     "missedRunPolicy": "RunOnce",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 16 ? * 3"
+      "expression": "0 0 9 ? * 2"
     }
   }
 }

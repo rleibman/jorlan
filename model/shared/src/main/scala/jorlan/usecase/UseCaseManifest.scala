@@ -60,6 +60,10 @@ case class ManifestMcpEnvVar(
   value: String,
 ) derives JsonCodec
 
+/** `transport` must match an `McpTransport` case name exactly -- `Stdio`, `Http`, `HttpSse`. `env` applies to `Stdio`
+  * (the subprocess environment); `headers` applies to the HTTP transports and is how a remote server is authenticated,
+  * e.g. `Authorization: Bearer <token>`.
+  */
 case class ManifestMcpServer(
   name:      String,
   transport: String,
@@ -69,6 +73,7 @@ case class ManifestMcpServer(
   url:       Option[String] = None,
   enabled:   Boolean = true,
   keywords:  List[String] = List.empty,
+  headers:   List[ManifestMcpEnvVar] = List.empty,
 ) derives JsonCodec
 
 /** Declarative HTTP skill manifests are passed through as raw JSON text -- `DeclarativeSkillManifest` already has its

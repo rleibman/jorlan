@@ -54,83 +54,85 @@ object CommandHandler {
           text,
           scope.flatMap(s => MemoryScope.values.find(_.toString.equalsIgnoreCase(s))).getOrElse(MemoryScope.User),
         )
-      case ShellCommand.MemoryCheckpoint                           => requestCheckpoint
-      case ShellCommand.MemoryPolicyShow                           => showCheckpointPolicy
-      case ShellCommand.MemoryPolicySetInterval(n)                 => setCheckpointInterval(n)
-      case ShellCommand.MemoryPolicyToggle(t, e)                   => toggleCheckpointTrigger(t, e)
-      case ShellCommand.Skills                                     => showSkills
-      case ShellCommand.SkillsEnable(name)                         => enableSkill(name)
-      case ShellCommand.SkillsDisable(name)                        => disableSkill(name)
-      case ShellCommand.SkillsGetConfig(name)                      => getSkillConfig(name)
-      case ShellCommand.SkillsSetConfig(name, json)                => setSkillConfig(name, json)
-      case ShellCommand.ContactsFind(name)                         => findContacts(name)
-      case ShellCommand.Capabilities                               => showCapabilities
-      case ShellCommand.AgentsList                                 => listAgents
-      case ShellCommand.AgentsStop(id)                             => stopAgent(id)
-      case ShellCommand.ApprovalsList                              => listApprovals
-      case ShellCommand.ApprovalsApprove(id)                       => decideApproval(id, approved = true)
-      case ShellCommand.ApprovalsDeny(id)                          => decideApproval(id, approved = false)
-      case ShellCommand.UsersList(active)                          => listUsers(active)
-      case ShellCommand.UsersCreate(name, email)                   => createUser(name, email)
-      case ShellCommand.UsersDeactivate(id)                        => deactivateUser(id)
-      case ShellCommand.UsersUpdate(id, field, v)                  => updateUser(id, field, v)
-      case ShellCommand.UsersCapabilities(uid)                     => listUserCapabilities(uid)
-      case ShellCommand.UsersGrantCapability(uid, cap, mode)       => grantUserCapability(uid, cap, mode)
-      case ShellCommand.UsersRevokeGrant(gid)                      => revokeCapabilityGrant(gid)
-      case ShellCommand.UsersRoles(uid)                            => listUserRoles(uid)
-      case ShellCommand.UsersAssignRole(uid, rid)                  => assignUserRole(uid, rid)
-      case ShellCommand.UsersRevokeRole(uid, rid)                  => revokeUserRole(uid, rid)
-      case ShellCommand.UsersIdentities(uid)                       => listUserIdentities(uid)
-      case ShellCommand.UsersLinkIdentity(uid, chType, chUserId)   => linkUserIdentity(uid, chType, chUserId)
-      case ShellCommand.UsersUnlinkIdentity(iid)                   => unlinkUserIdentity(iid)
-      case ShellCommand.RolesList                                  => listRoles
-      case ShellCommand.RolesCreate(name, desc)                    => createRole(name, desc)
-      case ShellCommand.RolesUpdate(id, field, v)                  => updateRole(id, field, v)
-      case ShellCommand.RolesDelete(id)                            => deleteRole(id)
-      case ShellCommand.RolesCapabilities(id)                      => listRoleCapabilities(id)
-      case ShellCommand.RolesGrantCapability(id, cap, mode)        => grantRoleCapability(id, cap, mode)
-      case ShellCommand.RolesRevokeGrant(gid)                      => revokeCapabilityGrant(gid)
-      case ShellCommand.UsersReactivate(id)                        => reactivateUser(id)
-      case ShellCommand.SchedulerList                              => listSchedulerJobs
-      case ShellCommand.SchedulerResult(id)                        => showSchedulerResult(id)
-      case ShellCommand.SchedulerCreate(name, prompt)              => createSchedulerJob(name, prompt)
-      case ShellCommand.SchedulerUpdate(id, field, v)              => updateSchedulerJob(id, field, v)
-      case ShellCommand.SchedulerDelete(id)                        => deleteSchedulerJob(id)
-      case ShellCommand.SchedulerPause(id)                         => pauseSchedulerJob(id)
-      case ShellCommand.SchedulerResume(id)                        => resumeSchedulerJob(id)
-      case ShellCommand.SchedulerCancel(id)                        => cancelSchedulerJob(id)
-      case ShellCommand.SchedulerRun(id)                           => runSchedulerJobNow(id)
-      case ShellCommand.SchedulerTriggers(id)                      => listSchedulerTriggers(id)
-      case ShellCommand.SchedulerTriggerAdd(id, tt, expr)          => addSchedulerTrigger(id, tt, expr)
-      case ShellCommand.SchedulerTriggerDelete(tid)                => deleteSchedulerTrigger(tid)
-      case ShellCommand.McpList                                    => listMcpServers
-      case ShellCommand.McpAdd(n, t, cmd, args, env, url, en, kw)  => addMcpServer(n, t, cmd, args, env, url, en, kw)
-      case ShellCommand.McpEdit(n, t, cmd, args, env, url, en, kw) => editMcpServer(n, t, cmd, args, env, url, en, kw)
-      case ShellCommand.McpDelete(name)                            => deleteMcpServer(name)
-      case ShellCommand.McpReload                                  => reloadMcpServers
-      case ShellCommand.McpEnable(name)                            => setMcpEnabled(name, enabled = true)
-      case ShellCommand.McpDisable(name)                           => setMcpEnabled(name, enabled = false)
-      case ShellCommand.SkillsDocs(name)                           => showSkillDocs(name)
-      case ShellCommand.SkillsValidate(name)                       => validateSkill(name)
-      case ShellCommand.SkillsListCustom                           => listCustomSkills
-      case ShellCommand.SkillsListPending                          => listPendingSkills
-      case ShellCommand.SkillsVersions(skillId)                    => listSkillVersions(skillId)
-      case ShellCommand.SkillsCreate(file)                         => createSkillDraft(file)
-      case ShellCommand.SkillsAdvance(vid)                         => advanceSkillLifecycle(vid)
-      case ShellCommand.SkillsApprove(vid)                         => approveSkillVersion(vid)
-      case ShellCommand.SkillsReject(vid, reason)                  => rejectSkillVersion(vid, reason)
-      case ShellCommand.EventsTail                                 => eventsTail
-      case ShellCommand.EventsList(count)                          => eventsList(count)
-      case ShellCommand.Dashboard                                  => showDashboard
-      case ShellCommand.OAuthStatus(provider)                      => showOAuthStatus(provider)
-      case ShellCommand.OAuthConnect(provider)                     => connectOAuth(provider)
-      case ShellCommand.OAuthRevoke(provider)                      => revokeOAuth(provider)
-      case ShellCommand.OAuthList                                  => listOAuthProviders
-      case ShellCommand.EmailList(maxResults)                      => emailList(maxResults)
-      case ShellCommand.EmailRead(messageId)                       => emailRead(messageId)
-      case ShellCommand.EmailSearch(query)                         => emailSearch(query)
-      case ShellCommand.CalendarToday                              => calendarToday
-      case ShellCommand.CalendarList(date)                         => calendarList(date)
+      case ShellCommand.MemoryCheckpoint                              => requestCheckpoint
+      case ShellCommand.MemoryPolicyShow                              => showCheckpointPolicy
+      case ShellCommand.MemoryPolicySetInterval(n)                    => setCheckpointInterval(n)
+      case ShellCommand.MemoryPolicyToggle(t, e)                      => toggleCheckpointTrigger(t, e)
+      case ShellCommand.Skills                                        => showSkills
+      case ShellCommand.SkillsEnable(name)                            => enableSkill(name)
+      case ShellCommand.SkillsDisable(name)                           => disableSkill(name)
+      case ShellCommand.SkillsGetConfig(name)                         => getSkillConfig(name)
+      case ShellCommand.SkillsSetConfig(name, json)                   => setSkillConfig(name, json)
+      case ShellCommand.ContactsFind(name)                            => findContacts(name)
+      case ShellCommand.Capabilities                                  => showCapabilities
+      case ShellCommand.AgentsList                                    => listAgents
+      case ShellCommand.AgentsStop(id)                                => stopAgent(id)
+      case ShellCommand.ApprovalsList                                 => listApprovals
+      case ShellCommand.ApprovalsApprove(id)                          => decideApproval(id, approved = true)
+      case ShellCommand.ApprovalsDeny(id)                             => decideApproval(id, approved = false)
+      case ShellCommand.UsersList(active)                             => listUsers(active)
+      case ShellCommand.UsersCreate(name, email)                      => createUser(name, email)
+      case ShellCommand.UsersDeactivate(id)                           => deactivateUser(id)
+      case ShellCommand.UsersUpdate(id, field, v)                     => updateUser(id, field, v)
+      case ShellCommand.UsersCapabilities(uid)                        => listUserCapabilities(uid)
+      case ShellCommand.UsersGrantCapability(uid, cap, mode)          => grantUserCapability(uid, cap, mode)
+      case ShellCommand.UsersRevokeGrant(gid)                         => revokeCapabilityGrant(gid)
+      case ShellCommand.UsersRoles(uid)                               => listUserRoles(uid)
+      case ShellCommand.UsersAssignRole(uid, rid)                     => assignUserRole(uid, rid)
+      case ShellCommand.UsersRevokeRole(uid, rid)                     => revokeUserRole(uid, rid)
+      case ShellCommand.UsersIdentities(uid)                          => listUserIdentities(uid)
+      case ShellCommand.UsersLinkIdentity(uid, chType, chUserId)      => linkUserIdentity(uid, chType, chUserId)
+      case ShellCommand.UsersUnlinkIdentity(iid)                      => unlinkUserIdentity(iid)
+      case ShellCommand.RolesList                                     => listRoles
+      case ShellCommand.RolesCreate(name, desc)                       => createRole(name, desc)
+      case ShellCommand.RolesUpdate(id, field, v)                     => updateRole(id, field, v)
+      case ShellCommand.RolesDelete(id)                               => deleteRole(id)
+      case ShellCommand.RolesCapabilities(id)                         => listRoleCapabilities(id)
+      case ShellCommand.RolesGrantCapability(id, cap, mode)           => grantRoleCapability(id, cap, mode)
+      case ShellCommand.RolesRevokeGrant(gid)                         => revokeCapabilityGrant(gid)
+      case ShellCommand.UsersReactivate(id)                           => reactivateUser(id)
+      case ShellCommand.SchedulerList                                 => listSchedulerJobs
+      case ShellCommand.SchedulerResult(id)                           => showSchedulerResult(id)
+      case ShellCommand.SchedulerCreate(name, prompt)                 => createSchedulerJob(name, prompt)
+      case ShellCommand.SchedulerUpdate(id, field, v)                 => updateSchedulerJob(id, field, v)
+      case ShellCommand.SchedulerDelete(id)                           => deleteSchedulerJob(id)
+      case ShellCommand.SchedulerPause(id)                            => pauseSchedulerJob(id)
+      case ShellCommand.SchedulerResume(id)                           => resumeSchedulerJob(id)
+      case ShellCommand.SchedulerCancel(id)                           => cancelSchedulerJob(id)
+      case ShellCommand.SchedulerRun(id)                              => runSchedulerJobNow(id)
+      case ShellCommand.SchedulerTriggers(id)                         => listSchedulerTriggers(id)
+      case ShellCommand.SchedulerTriggerAdd(id, tt, expr)             => addSchedulerTrigger(id, tt, expr)
+      case ShellCommand.SchedulerTriggerDelete(tid)                   => deleteSchedulerTrigger(tid)
+      case ShellCommand.McpList                                       => listMcpServers
+      case ShellCommand.McpAdd(n, t, cmd, args, env, url, en, kw, hs) =>
+        addMcpServer(n, t, cmd, args, env, url, en, kw, hs)
+      case ShellCommand.McpEdit(n, t, cmd, args, env, url, en, kw, hs) =>
+        editMcpServer(n, t, cmd, args, env, url, en, kw, hs)
+      case ShellCommand.McpDelete(name)           => deleteMcpServer(name)
+      case ShellCommand.McpReload                 => reloadMcpServers
+      case ShellCommand.McpEnable(name)           => setMcpEnabled(name, enabled = true)
+      case ShellCommand.McpDisable(name)          => setMcpEnabled(name, enabled = false)
+      case ShellCommand.SkillsDocs(name)          => showSkillDocs(name)
+      case ShellCommand.SkillsValidate(name)      => validateSkill(name)
+      case ShellCommand.SkillsListCustom          => listCustomSkills
+      case ShellCommand.SkillsListPending         => listPendingSkills
+      case ShellCommand.SkillsVersions(skillId)   => listSkillVersions(skillId)
+      case ShellCommand.SkillsCreate(file)        => createSkillDraft(file)
+      case ShellCommand.SkillsAdvance(vid)        => advanceSkillLifecycle(vid)
+      case ShellCommand.SkillsApprove(vid)        => approveSkillVersion(vid)
+      case ShellCommand.SkillsReject(vid, reason) => rejectSkillVersion(vid, reason)
+      case ShellCommand.EventsTail                => eventsTail
+      case ShellCommand.EventsList(count)         => eventsList(count)
+      case ShellCommand.Dashboard                 => showDashboard
+      case ShellCommand.OAuthStatus(provider)     => showOAuthStatus(provider)
+      case ShellCommand.OAuthConnect(provider)    => connectOAuth(provider)
+      case ShellCommand.OAuthRevoke(provider)     => revokeOAuth(provider)
+      case ShellCommand.OAuthList                 => listOAuthProviders
+      case ShellCommand.EmailList(maxResults)     => emailList(maxResults)
+      case ShellCommand.EmailRead(messageId)      => emailRead(messageId)
+      case ShellCommand.EmailSearch(query)        => emailSearch(query)
+      case ShellCommand.CalendarToday             => calendarToday
+      case ShellCommand.CalendarList(date)        => calendarList(date)
       case ShellCommand.Unknown(raw) => screen(_.addMessage(MessageKind.Error, s"Unknown command: $raw  — try /help"))
     }
   }
@@ -1549,8 +1551,11 @@ object CommandHandler {
     url:       Option[String],
     enabled:   Boolean,
     keywords:  List[String],
+    headers:   List[McpEnvVarInfo],
   ): ZIO[Env, Nothing, Unit] =
-    repo(_.upsertMcpServer(McpServerInfo(name, transport, command, args, env, url, enabled, keywords))).foldZIO(
+    repo(
+      _.upsertMcpServer(McpServerInfo(name, transport, command, args, env, url, enabled, keywords, headers)),
+    ).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Add MCP server failed: $err")),
       s => screen(_.addMessage(MessageKind.System, s"MCP server '${s.name}' saved.")),
     )
@@ -1564,6 +1569,7 @@ object CommandHandler {
     url:       Option[String],
     enabled:   Option[Boolean],
     keywords:  Option[List[String]],
+    headers:   Option[List[McpEnvVarInfo]],
   ): ZIO[Env, Nothing, Unit] =
     repo(_.listMcpServers()).foldZIO(
       err => screen(_.addMessage(MessageKind.Error, s"Could not fetch MCP servers: $err")),
@@ -1579,6 +1585,7 @@ object CommandHandler {
               url = url.orElse(existing.url),
               enabled = enabled.getOrElse(existing.enabled),
               keywords = keywords.getOrElse(existing.keywords),
+              headers = headers.getOrElse(existing.headers),
             )
             repo(_.upsertMcpServer(updated)).foldZIO(
               err => screen(_.addMessage(MessageKind.Error, s"Edit MCP server failed: $err")),

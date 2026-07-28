@@ -14,9 +14,11 @@ Manifests whose core is blocked ship with `"trigger": null` (job exists, runs ma
 
 ## Per-use-case gaps
 
-### birthday_reminder (trigger disabled until script exists)
-- [ ] **Script**: `/opt/jorlan/scripts/gramps-birthdays.sh` — export Gramps DB to XML and emit JSON of upcoming birthdays (doc Option A). Enable the job's daily trigger (suggested cron `0 0 15 ? * *` = 8 AM PT) after testing.
-- [ ] **Native skill** (nicer long-term): `gramps` — `list_upcoming_birthdays`, `get_person`, `data_quality_report`.
+### birthday_reminder (trigger disabled until the grampsweb MCP is live)
+- [x] **MCP**: `grampsweb` registered in the manifest (disabled) — `npx -y mcp-grampsweb` over stdio, env `GRAMPS_API_URL` (set to https://ancestry.leibmanland.com), `GRAMPS_USERNAME`, `GRAMPS_PASSWORD`, `GRAMPS_TREE_ID`. Fill the `CHANGE_ME` credentials and enable it. NOTE: the server authenticates eagerly at launch, so it must have valid creds before enabling or McpManager's launch will fail. Exposes `gramps_search`/`gramps_find`/`gramps_get`/`gramps_get_ancestors`/`gramps_get_descendants`/`gramps_recent_changes` + create tools (all gated on the single `mcp.call` capability, namespaced `mcp.grampsweb.*`).
+- [ ] **Verify the birthday query**: the MCP is general genealogy CRUD/search, not a purpose-built "upcoming birthdays" query, so the `get-birthdays` step drives `gramps_search` to find people with a birthday today/tomorrow — needs testing with a capable model, and likely a Gramps QL query refinement. Enable the daily trigger (`0 0 8 ? * *`) once it reliably returns birthdays.
+- [x] **GQL guidance seeded**: `mcp-grampsweb` reports a failed GQL query as a bare `[422] UNPROCESSABLE ENTITY`, throwing away the Gramps API's actual explanation (`{"error":{"message":"Expected end of text, found '=' (at char 16)"}}`). Blind, the model just guesses new syntax until the tool budget runs out. The manifest now seeds the verified GQL rules as a user-scoped memory and repeats them in the `get-birthdays` step prompt: living = `death_ref_index < 0` (`= -1` is a parse error — GQL cannot take a negative literal after `=`), `gender = 1`/`0`, `~` for substring, `and`/`or` to combine, and "a 422 means bad GQL, fall back to `gramps_find`". Upstream fix would be for `mcp-grampsweb` to pass the 422 body through.
+- [ ] **Native skill** (nicer long-term, optional now the MCP exists): `gramps` — `list_upcoming_birthdays`, `get_person`, `data_quality_report`.
 
 ### travel_planning (no scheduled job; interactive agent only)
 - [ ] **MCP**: google-maps placeholder registered (disabled) — set `GOOGLE_MAPS_API_KEY`, enable.
@@ -108,6 +110,6 @@ sbt "useCaseImporter/runMain jorlan.shell.UseCaseImporterApp doc/use-cases/manif
 ```
 
 Recommended order: start with the coach/review jobs (language_coach, music_coach, project_manager) once a
-cloud model is the daily driver — they're one-notification-a-day/week jobs and cheap to run. All crons are
-UTC (Pacific +7 in summer): e.g. `0 0 15 ? * *` = 8 AM PDT daily. Edit every `EDIT ME` memory seed and
-`CHANGE_ME` credential after import.
+cloud model is the daily driver — they're one-notification-a-day/week jobs and cheap to run. Crons are
+evaluated in the server's local timezone (day-of-week: 0=Monday..6=Sunday): e.g. `0 0 8 ? * *` = 8 AM
+daily. Edit every `EDIT ME` memory seed and `CHANGE_ME` credential after import.

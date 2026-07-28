@@ -56,13 +56,18 @@ case class DashboardStats(
   jobOutcomeCounts:       List[DashboardNamedCount],
 ) derives JsonCodec
 
-/** A single environment variable for an MCP server. */
+/** A single key/value pair for an MCP server — an environment variable, or an HTTP header. GraphQL has no map type, so
+  * maps cross the wire as lists of these.
+  */
 case class McpEnvVarInfo(
   key:   String,
   value: String,
 ) derives JsonCodec
 
-/** An MCP server configuration entry visible via the API. */
+/** An MCP server configuration entry visible via the API.
+  *
+  * `env` applies to the Stdio transport; `headers` to the HTTP transports (see `McpServerConfig`).
+  */
 case class McpServerInfo(
   name:      String,
   transport: String,
@@ -72,6 +77,7 @@ case class McpServerInfo(
   url:       Option[String] = None,
   enabled:   Boolean = true,
   keywords:  List[String] = List.empty,
+  headers:   List[McpEnvVarInfo] = List.empty,
 ) derives JsonCodec
 
 /** Result of a skill configuration validation check. */

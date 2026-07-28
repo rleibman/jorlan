@@ -42,7 +42,7 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 
 ## Technology
 
-- **Language**: Scala 3.8.3 with `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
+- **Language**: Latest Scala 3.x `-Yexplicit-nulls`, `-no-indent`, `-old-syntax`, `-Werror`
 - **Effects**: ZIO 2.x throughout
 - **Database**: MariaDB via Quill (quill-jdbc-zio) + Flyway migrations
 - **API**: Caliban (GraphQL) as primary external API

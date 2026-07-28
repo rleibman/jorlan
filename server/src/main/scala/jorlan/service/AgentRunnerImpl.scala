@@ -88,6 +88,13 @@ class AgentRunnerImpl(
   // a two-week calendar.listEvents JSON easily exceeds 2000 chars, and truncating mid-JSON makes the
   // model conclude the tool returned nothing useful.
   maxToolResultChars: Int = 6000,
+  // A tool that keeps failing is usually failing for a reason the model cannot guess its way out of (bad
+  // credentials, an unparseable query language, an endpoint that is simply down). Left alone, models will
+  // happily burn the entire tool budget on variations of the same doomed call and then answer with nothing.
+  // After `softToolFailureStreak` consecutive failures of one tool the model is told to stop varying it;
+  // after `hardToolFailureStreak` the tool budget is withdrawn entirely and it must answer in prose.
+  softToolFailureStreak: Int = 3,
+  hardToolFailureStreak: Int = 5,
 ) extends AgentRunner {
 
   private val seeded = runnerState.seeded
@@ -186,10 +193,49 @@ class AgentRunnerImpl(
     systemMsgs :+ UserMsg(userContent)
   }
 
+  /** Consecutive failures of a single tool, carried across loop iterations. Reset whenever a call succeeds or the model
+    * switches tools.
+    */
+  private case class FailureStreak(
+    tool:  String,
+    count: Int,
+  )
+
+  private def nextStreak(
+    current: Option[FailureStreak],
+    tool:    String,
+    isError: Boolean,
+  ): Option[FailureStreak] =
+    if (!isError) None
+    else
+      current match {
+        case Some(s) if s.tool == tool => Some(s.copy(count = s.count + 1))
+        case _                         => Some(FailureStreak(tool, 1))
+      }
+
+  /** Advice appended to a failing tool result once the model has clearly stopped making progress with it. It rides
+    * along on the tool result rather than as a separate message so that every provider accepts it.
+    */
+  private def streakGuidance(
+    streak: Option[FailureStreak],
+    tool:   String,
+    giveUp: Boolean,
+  ): String =
+    streak.map(_.count) match {
+      case Some(c) if giveUp =>
+        s"\n\n[Jorlan] '$tool' has now failed $c times in a row and no further tool calls are available. " +
+          "Answer the user directly: say what you were trying to do, that the tool kept failing, and quote the error."
+      case Some(c) if c >= softToolFailureStreak =>
+        s"\n\n[Jorlan] '$tool' has now failed $c times in a row. Retrying it with another variation of the same " +
+          "arguments will not help. Either use a different tool, or stop and tell the user what failed and why."
+      case _ => ""
+    }
+
   private def reactLoop(
     env:       ReactLoopEnv,
     messages:  List[AgentMessage],
     stepsLeft: Int,
+    streak:    Option[FailureStreak] = None,
   ): IO[JorlanError, Unit] = {
     import env.*
     if (stepsLeft <= 0) {
@@ -274,9 +320,18 @@ class AgentRunnerImpl(
                   if (resultJsonStr.length > maxToolResultChars)
                     resultJsonStr.take(maxToolResultChars) + s"""...[truncated, ${resultJsonStr.length} chars total]"""
                   else resultJsonStr
+                newStreak = nextStreak(streak, name, isError)
+                giveUp = newStreak.exists(_.count >= hardToolFailureStreak)
+                observation = truncatedResult + streakGuidance(newStreak, name, giveUp)
+                _ <- ZIO
+                  .logWarning(
+                    s"[react:${sessionId.value}] '$name' has failed ${newStreak.fold(0)(_.count)} times in a row" +
+                      (if (giveUp) " — withdrawing tools and forcing a final answer"
+                       else " — telling the model to stop retrying it"),
+                  ).when(newStreak.exists(_.count >= softToolFailureStreak))
                 newMessages = messages ++ List(
                   ToolCallMsg(id, name, argsJson),
-                  ToolResultMsg(id, name, truncatedResult),
+                  ToolResultMsg(id, name, observation),
                 )
                 calledNames = newMessages.collect { case ToolCallMsg(_, n, _) => n }.distinct
                 newTools <-
@@ -288,7 +343,12 @@ class AgentRunnerImpl(
                       recentToolNames = calledNames,
                       prioritizedSkills = env.prioritizedSkills,
                     )
-                _ <- reactLoop(env.copy(tools = newTools), newMessages, stepsLeft - 1)
+                // Withdrawing the tools leaves the model nothing to call, so the next step must be prose: the
+                // user gets a real explanation of what failed instead of a silent, empty response.
+                _ <-
+                  if (giveUp)
+                    reactLoop(env.copy(tools = List.empty, pinnedTools = true), newMessages, stepsLeft = 1, None)
+                  else reactLoop(env.copy(tools = newTools), newMessages, stepsLeft - 1, newStreak)
               } yield ()
           }
     }

@@ -98,4 +98,6 @@ type ZIOServerInfoRepository = ServerInfoRepository[RepositoryTask]
 
 type ZIOSkillIndexRepository = SkillIndexRepository[RepositoryTask]
 
+type ZIOMcpServerRepository = McpServerRepository[RepositoryTask]
+
 type ZIORepositories = Repositories[RepositoryTask]

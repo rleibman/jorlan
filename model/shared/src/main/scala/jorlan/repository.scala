@@ -245,9 +245,15 @@ trait AgentRepository[F[_]] {
   def createSession(modelId:      Option[ModelId]):    F[Option[AgentSession]]
   def terminateSession(sessionId: AgentSessionId):     F[Unit]
   def availableModels():                               F[List[ModelInfo]]
+
+  /** @param allowedTools
+    *   When set, the model sees only tools matching these names/namespace prefixes for this turn (empty = no tools);
+    *   `None` means the default relevance-filtered selection over all tools.
+    */
   def submitMessage(
-    sessionId: AgentSessionId,
-    content:   String,
+    sessionId:    AgentSessionId,
+    content:      String,
+    allowedTools: Option[List[String]] = None,
   ): F[Unit]
 
 }
@@ -527,6 +533,9 @@ trait ServerSettingsRepository[F[_]] {
     value: Json,
   ): F[Unit]
 
+  /** Removes `key` if present. No-op when absent. */
+  def delete(key: String): F[Unit]
+
   /** Reads and decodes the server [[Personality]], or `None` if not yet configured. */
   def serverPersonality(): F[Option[Personality]]
 
@@ -613,5 +622,21 @@ trait Repositories[F[_]] {
   def extCredential: ExternalCredentialRepository[F]
   def serverInfo:    ServerInfoRepository[F]
   def skillIndex:    SkillIndexRepository[F]
+  def mcpServer:     McpServerRepository[F]
+
+}
+
+/** CRUD for [[McpServerConfig]] entries, keyed by unique `name`. Replaces the former `server_settings['mcp.servers']`
+  * JSON blob with a dedicated table.
+  */
+trait McpServerRepository[F[_]] {
+
+  def listMcpServers(): F[List[McpServerConfig]]
+
+  /** Insert or replace the server with `config.name`. Returns the stored config. */
+  def upsertMcpServer(config: McpServerConfig): F[McpServerConfig]
+
+  /** Delete by name. Returns `true` if a row was removed. */
+  def deleteMcpServer(name: String): F[Boolean]
 
 }

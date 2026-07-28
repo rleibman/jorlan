@@ -5,18 +5,45 @@
     "name": "expense-tracker-agent-role",
     "description": "Capabilities for the expense and budget tracking agent",
     "capabilities": [
-      { "capability": "email.read" },
-      { "capability": "memory.remember" },
-      { "capability": "memory.search" },
-      { "capability": "memory.search_semantic" },
-      { "capability": "workspace.read" },
-      { "capability": "workspace.write" },
-      { "capability": "drive.listFiles" },
-      { "capability": "drive.readFile" },
-      { "capability": "shell.run" },
-      { "capability": "search.web" },
-      { "capability": "scheduler.create_job" },
-      { "capability": "notify.send" }
+      {
+        "capability": "mcp.call"
+      },
+      {
+        "capability": "email.read"
+      },
+      {
+        "capability": "memory.remember"
+      },
+      {
+        "capability": "memory.search"
+      },
+      {
+        "capability": "memory.search_semantic"
+      },
+      {
+        "capability": "workspace.read"
+      },
+      {
+        "capability": "workspace.write"
+      },
+      {
+        "capability": "drive.listFiles"
+      },
+      {
+        "capability": "drive.readFile"
+      },
+      {
+        "capability": "shell.run"
+      },
+      {
+        "capability": "search.web"
+      },
+      {
+        "capability": "scheduler.create_job"
+      },
+      {
+        "capability": "notify.send"
+      }
     ]
   },
   "assignRoleToUser": "roberto@leibman.net",
@@ -24,8 +51,18 @@
     "name": "expense-tracker-agent",
     "description": "Expense tracker: scans email weekly for receipts, invoices, and order confirmations; summarizes spending by category; alerts on unusual charges. Read-only on email; records findings in memory/workspace.",
     "trustLevel": 0,
-    "prioritizedSkills": ["email", "memory", "workspace", "drive", "shell", "scheduler"],
-    "invariants": { "role": "careful, skeptical bookkeeper; flag anything unusual rather than guessing" }
+    "prioritizedSkills": [
+      "mcp.markitdown",
+      "email",
+      "memory",
+      "workspace",
+      "drive",
+      "shell",
+      "scheduler"
+    ],
+    "invariants": {
+      "role": "careful, skeptical bookkeeper; flag anything unusual rather than guessing"
+    }
   },
   "memorySeeds": [
     {
@@ -38,11 +75,20 @@
     {
       "name": "markitdown",
       "transport": "Stdio",
-      "command": "npx",
-      "args": ["-y", "markitdown-mcp"],
+      "command": "pipx",
+      "args": [
+        "run",
+        "markitdown-mcp"
+      ],
       "env": [],
       "enabled": false,
-      "keywords": ["pdf", "document", "convert", "statement", "receipt"]
+      "keywords": [
+        "pdf",
+        "document",
+        "convert",
+        "statement",
+        "receipt"
+      ]
     }
   ],
   "declarativeSkills": [],
@@ -53,7 +99,9 @@
         "name": "scan-receipts",
         "systemPrompt": "You scan email for financial activity. Make exactly ONE email.search call with query 'receipt OR invoice OR order confirmation OR payment' and since = the ISO 8601 datetime exactly 7 days before now (never words like 'last week').\n\nOutput format -- one line per financial email, nothing else:\nYYYY-MM-DD: <merchant/sender> | <amount if visible, else 'amount unknown'> | <category guess>\nOr exactly 'No financial emails in the last 7 days.'",
         "userPrompt": "{{now}} -- Scan for receipts and invoices now.",
-        "tools": ["email.search"],
+        "tools": [
+          "email.search"
+        ],
         "mode": "ReactLoop",
         "outputVar": "receipts",
         "retryOnFail": 1
@@ -71,7 +119,10 @@
         "name": "send-expense-report",
         "systemPrompt": "You deliver the weekly expense report. Call notify.user exactly once, passing only 'message' (never userId), titled 'Weekly spending summary' with the summary text. Then call memory.remember once with key 'expense.week.<date>' storing the one-line total.\n\nOutput: one line confirming delivery.",
         "userPrompt": "Summary:\n{{steps.spending_summary.output}}\n\nSend the report now.",
-        "tools": ["notify.user", "memory.remember"],
+        "tools": [
+          "notify.user",
+          "memory.remember"
+        ],
         "mode": "ReactLoop",
         "outputVar": "delivery",
         "retryOnFail": 1
@@ -87,7 +138,7 @@
     "missedRunPolicy": "Skip",
     "trigger": {
       "triggerType": "Cron",
-      "expression": "0 0 16 ? * 7"
+      "expression": "0 0 9 ? * 6"
     }
   }
 }

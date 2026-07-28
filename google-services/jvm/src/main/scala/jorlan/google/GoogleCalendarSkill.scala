@@ -14,7 +14,7 @@ import zio.*
 import zio.json.ast.Json
 import zio.json.literal.*
 
-import java.time.{Instant, LocalDate, LocalDateTime, OffsetDateTime, ZoneOffset}
+import java.time.{Instant, LocalDate, LocalDateTime, OffsetDateTime, ZoneId}
 import scala.util.Try
 
 /** Built-in skill for reading and managing Google Calendar events.
@@ -87,7 +87,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.listEvents",
         description = "List events in a calendar within an optional time range.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field (e.g. 'primary' or 'abc123@group.calendar.google.com'). Do NOT use the calendar display name."},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format, e.g. 2026-07-01T00:00:00Z (UTC assumed if no zone offset is given)"},"timeMax":{"type":"string","description":"End time in ISO 8601 format, e.g. 2026-07-01T23:59:59Z (UTC assumed if no zone offset is given)"}}}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field (e.g. 'primary' or 'abc123@group.calendar.google.com'). Do NOT use the calendar display name."},"maxResults":{"type":"integer","description":"Maximum number of events (default 10)"},"timeMin":{"type":"string","description":"Start time in ISO 8601 format, e.g. 2026-07-01T00:00:00Z (server-local time assumed if no offset is given)"},"timeMax":{"type":"string","description":"End time in ISO 8601 format, e.g. 2026-07-01T23:59:59Z (server-local time assumed if no offset is given)"}}}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.read")),
         examplePrompts = List(
@@ -110,7 +110,7 @@ class GoogleCalendarSkill(
       ToolDescriptor(
         name = "calendar.createEvent",
         description = "Create a new calendar event.",
-        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format, e.g. 2026-07-01T00:00:00Z (UTC assumed if no zone offset is given)"},"end":{"type":"string","description":"End time in ISO 8601 format, e.g. 2026-07-01T23:59:59Z (UTC assumed if no zone offset is given)"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}""",
+        inputSchema = json"""{"type":"object","properties":{"calendarId":{"type":"string","description":"Calendar ID from calendar.listCalendars `id` field. Do NOT use the calendar display name."},"summary":{"type":"string","description":"Event title"},"description":{"type":"string"},"location":{"type":"string"},"start":{"type":"string","description":"Start time in ISO 8601 format, e.g. 2026-07-01T00:00:00Z (server-local time assumed if no offset is given)"},"end":{"type":"string","description":"End time in ISO 8601 format, e.g. 2026-07-01T23:59:59Z (server-local time assumed if no offset is given)"},"attendees":{"type":"array","items":{"type":"string"},"description":"Attendee email addresses"}},"required":["calendarId","summary","start","end"]}""",
         outputSchema = Json.Obj("type" -> Json.Str("object")),
         requiredCapabilities = List(CapabilityName("calendar.write")),
         examplePrompts = List(
@@ -176,16 +176,16 @@ class GoogleCalendarSkill(
 
   /** Parses a model-supplied date/time string as an [[Instant]]. Accepts a full instant (`2026-07-01T00:00:00Z`), an
     * offset date-time (`2026-07-01T18:00:00-07:00`), a local date-time with no zone offset (`2026-07-01T00:00:00`,
-    * assumed UTC), or a bare date (`2026-07-01`, midnight UTC) — the model frequently omits or varies the zone
-    * designator despite being asked for "ISO 8601", so all four are treated as valid rather than rejecting anything but
-    * a strict instant.
+    * interpreted in the server's local timezone), or a bare date (`2026-07-01`, local midnight) — the model frequently
+    * omits or varies the zone designator despite being asked for "ISO 8601", so all four are treated as valid rather
+    * than rejecting anything but a strict instant.
     */
   private def parseInstant(s: String): Either[JorlanError, Instant] = {
     val attempts: List[String => Try[Instant]] = List(
       str => Try(Instant.parse(str)),
       str => Try(OffsetDateTime.parse(str).toInstant),
-      str => Try(LocalDateTime.parse(str).toInstant(ZoneOffset.UTC)),
-      str => Try(LocalDate.parse(str).atStartOfDay(ZoneOffset.UTC).toInstant),
+      str => Try(LocalDateTime.parse(str).atZone(ZoneId.systemDefault()).toInstant),
+      str => Try(LocalDate.parse(str).atStartOfDay(ZoneId.systemDefault()).toInstant),
     )
     attempts.iterator.map(_(s)).collectFirst { case scala.util.Success(i) => i } match {
       case Some(i) => Right(i)

@@ -23,6 +23,17 @@ import scala.language.unsafeNulls
   */
 object TemplateEngine {
 
+  /** Renders `{{now}}` in the server's local timezone with the day of week and zone spelled out, e.g.
+    * `2026-07-10T09:30:15-07:00 (Friday, America/Los_Angeles)`. Models plan household schedules in local time; handing
+    * them a bare UTC instant makes them create events and reason about "today" in the wrong timezone.
+    */
+  private def formatNow(now: Instant): String = {
+    val zdt = java.time.ZonedDateTime.ofInstant(now, java.time.ZoneId.systemDefault())
+    val base = zdt.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"))
+    val dow = zdt.getDayOfWeek.toString.toLowerCase.capitalize
+    s"$base ($dow, ${zdt.getZone})"
+  }
+
   /** Substitute all `{{...}}` variables in `template` using the supplied resolution function. */
   private def substitute(
     template: String,
@@ -73,7 +84,7 @@ object TemplateEngine {
         val varName = key.stripPrefix("steps.").stripSuffix(".status")
         Some(if (stepContext.contains(varName)) "success" else "not_run")
       } else if (key == "pipeline.run_id") Some(runId.value.toString)
-      else if (key == "now") Some(now.toString)
+      else if (key == "now") Some(formatNow(now))
       else if (key == "run.context") runContext
       else None
 

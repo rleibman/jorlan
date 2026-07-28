@@ -56,10 +56,13 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
         .asyncCalibanCallWithAuth(JorlanClient.Queries.availableModels(JorlanClient.ModelInfo.view))
         .map(_.getOrElse(List.empty).map(toModelInfo))
     override def submitMessage(
-      sessionId: AgentSessionId,
-      content:   String,
+      sessionId:    AgentSessionId,
+      content:      String,
+      allowedTools: Option[List[String]] = None,
     ): AsyncCallback[Unit] =
-      adapter.asyncCalibanCallWithAuth(JorlanClient.Mutations.submitMessage(sessionId, content)).map(_ => ())
+      adapter
+        .asyncCalibanCallWithAuth(JorlanClient.Mutations.submitMessage(sessionId, content, allowedTools))
+        .map(_ => ())
 
   }
 
@@ -647,7 +650,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       adapter
         .asyncCalibanCallWithAuth(
           JorlanClient.Queries.mcpServers(
-            JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view),
+            JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view, JorlanClient.McpEnvVar.view),
           ),
         )
         .map(_.getOrElse(List.empty).map(toMcpServerInfo))
@@ -661,6 +664,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       url:       Option[String],
       enabled:   Boolean,
       keywords:  List[String] = List.empty,
+      headers:   List[McpEnvVarInfo] = List.empty,
     ): AsyncCallback[Option[McpServerInfo]] =
       adapter
         .asyncCalibanCallWithAuth(
@@ -673,7 +677,8 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
             url = url,
             enabled = enabled,
             keywords = keywords,
-          )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view)),
+            headers = headers.map(h => JorlanClient.McpEnvVarInput(h.key, h.value)),
+          )(JorlanClient.McpServerView.view(JorlanClient.McpEnvVar.view, JorlanClient.McpEnvVar.view)),
         )
         .map(_.map(toMcpServerInfo))
 
@@ -778,7 +783,8 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def set(
       key:   String,
       value: Json,
-    ): AsyncCallback[Unit] = AsyncCallback.pure(())
+    ):                                AsyncCallback[Unit] = AsyncCallback.pure(())
+    override def delete(key: String): AsyncCallback[Unit] = AsyncCallback.pure(())
 
     override def serverPersonality(): AsyncCallback[Option[Personality]] =
       adapter
@@ -855,6 +861,14 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     override def removeBySkillId(skillId:     SkillId):     AsyncCallback[Unit] = AsyncCallback.pure(())
     override def removeBySkillName(skillName: String):      AsyncCallback[Unit] = AsyncCallback.pure(())
     override def keepOnly(skillNames:         Set[String]): AsyncCallback[Unit] = AsyncCallback.pure(())
+  }
+
+  // The web UI manages MCP servers through the GraphQL mcpServers/upsertMcpServer/deleteMcpServer
+  // operations, not this repo, so these are inert stubs.
+  override val mcpServer: McpServerRepository[AsyncCallback] = new McpServerRepository[AsyncCallback] {
+    override def listMcpServers(): AsyncCallback[List[McpServerConfig]] = AsyncCallback.pure(List.empty)
+    override def upsertMcpServer(config: McpServerConfig): AsyncCallback[McpServerConfig] = AsyncCallback.pure(config)
+    override def deleteMcpServer(name:   String):          AsyncCallback[Boolean] = AsyncCallback.pure(false)
   }
 
   // ── Subscription helpers ───────────────────────────────────────────────────
@@ -1080,7 +1094,10 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
     )
 
   private def toMcpServerInfo(
-    v: JorlanClient.McpServerView.McpServerViewView[JorlanClient.McpEnvVar.McpEnvVarView],
+    v: JorlanClient.McpServerView.McpServerViewView[
+      JorlanClient.McpEnvVar.McpEnvVarView,
+      JorlanClient.McpEnvVar.McpEnvVarView,
+    ],
   ): McpServerInfo =
     McpServerInfo(
       name = v.name,
@@ -1091,6 +1108,7 @@ object AsyncCallbackRepositories extends Repositories[AsyncCallback] {
       url = v.url,
       enabled = v.enabled,
       keywords = v.keywords,
+      headers = v.headers.map(h => McpEnvVarInfo(h.key, h.value)),
     )
 
   private def toSkillInfo(

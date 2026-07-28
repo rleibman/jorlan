@@ -428,7 +428,7 @@ object SchedulerPage {
                                       ).asInstanceOf[Chip.Props],
                                   )(),
                               ),
-                              TableCell()(job.scheduledAt.toString.take(19)),
+                              TableCell()(PageUtils.formatTimestamp(job.scheduledAt)),
                               TableCell()(s"${job.retryCount}/${job.maxRetries}"),
                               TableCell()(
                                 Box.withProps(
@@ -686,11 +686,14 @@ object SchedulerPage {
                                                                                    TableCell()(run.id.value.toString),
                                                                                    TableCell()(run.status.toString),
                                                                                    TableCell()(
-                                                                                     run.startedAt.toString.take(19),
+                                                                                     PageUtils
+                                                                                       .formatTimestamp(run.startedAt),
                                                                                    ),
                                                                                    TableCell()(
                                                                                      run.finishedAt
-                                                                                       .fold("-")(_.toString.take(19)),
+                                                                                       .fold("-")(
+                                                                                         PageUtils.formatTimestamp(_),
+                                                                                       ),
                                                                                    ),
                                                                                    TableCell()(
                                                                                      run.failedStep.getOrElse("-"),

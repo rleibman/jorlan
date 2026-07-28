@@ -357,6 +357,7 @@ type McpServerView {
   url: String
   enabled: Boolean!
   keywords: [String!]!
+  headers: [McpEnvVar!]!
 }
 
 type MemoryRecord {
@@ -392,7 +393,7 @@ type Mutations {
   grantPermission(resource: String!, action: String!, userId: UserId, roleId: RoleId): Permission
   revokePermission(value: PermissionId!): Long
   createSession(modelId: ModelId): AgentSession
-  submitMessage(sessionId: AgentSessionId!, content: String!): Unit
+  submitMessage(sessionId: AgentSessionId!, content: String!, allowedTools: [String!]): Unit
   updatePersonality(name: String!, formality: Formality!, languages: [String!]!, expertise: [String!]!, prompt: String!): Personality
   storeMemory(key: String!, text: String!, scope: MemoryScope!): MemoryRecord
   forgetMemory(value: MemoryRecordId!): Boolean
@@ -422,7 +423,7 @@ type Mutations {
   requestCheckpoint(value: AgentSessionId!): Boolean
   updateCheckpointPolicy(onSessionEnd: Boolean!, onUserRequest: Boolean!, timedIntervalTurns: Int, beforeExternalEffect: Boolean!): CheckpointPolicyConfig
   reloadMcpServers(value: Unit!): Boolean
-  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!, keywords: [String!]!): McpServerView
+  upsertMcpServer(name: String!, transport: String!, command: String, args: [String!]!, env: [McpEnvVarInput!]!, url: String, enabled: Boolean!, keywords: [String!]!, headers: [McpEnvVarInput!]!): McpServerView
   deleteMcpServer(value: String!): Boolean
   enableSkill(value: String!): Boolean
   disableSkill(value: String!): Boolean
