@@ -169,6 +169,21 @@ lazy val disableExplicitDepsForScalaJs = Seq(
 // incidentally in almost every module. They always arrive with dev.zio %% zio / zio-http /
 // zio-json — which every module already declares — so we exclude them from the "undeclared"
 // report rather than forcing an explicit, version-coupled declaration in each module.
+// zio-auth has to be declared with an explicit "_3" suffix and a single "%": the jar published by
+// `publishLocal` is named zio-auth_3.jar, and "%%" makes coursier look for zio-auth.jar in the Ivy
+// local repository, which fails to resolve. The cost is that the declared ModuleID (name
+// "zio-auth_3", no cross-version) never matches what sbt-explicit-dependencies derives from the
+// resolved artifact, so the module lands in both reports:
+//   - on CI it resolves from GitHub Packages, whose pom gives artifactId "zio-auth_3"; the plugin
+//     strips the "_3" and reports a cross-versioned "zio-auth" as *undeclared*;
+//   - locally the Ivy layout is unreadable to the plugin (no version in the jar filename, pom in a
+//     sibling directory), so nothing is derived and the declaration itself looks *unused*.
+// Neither is real, so silence both sides wherever zio-auth is on the compile classpath.
+lazy val zioAuthExplicitDepsWorkaround = Seq(
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth")),
+  unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth_3")),
+)
+
 lazy val explicitDepsIgnoredTransitives = Seq(
   undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "izumi-reflect")),
   undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-stacktracer")),
@@ -210,7 +225,7 @@ lazy val model =
         },
       ),
       libraryDependencies ++= Seq(
-        "net.leibman" % "zio-auth_3" % zioAuth withSources (), // I don't know why %% isn't working.
+        "net.leibman" % "zio-auth_3" % zioAuth withSources (), // %% resolves the wrong Ivy artifact name, see below.
       ),
     )
     .jvmSettings(
@@ -219,10 +234,7 @@ lazy val model =
       Test / fork := true,
       // Exclude macro-only packages; their code runs at compile time and is never instrumented.
       coverageExcludedPackages := "zio\\.json\\.literal.*",
-      // zio-auth is declared with an explicit "_3" suffix and single "%" (see comment below), so the
-      // plugin cannot match the declared ModuleID to the resolved jar and wrongly reports it unused
-      // even though session.scala imports it. Exclude it from the unused report.
-      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth_3")),
+      zioAuthExplicitDepsWorkaround,
       libraryDependencies ++= Seq(
         "dev.zio"     %% "zio"              % zioVersion withSources (),
         "dev.zio"     %% "zio-json"         % zioJsonVersion withSources (),
@@ -623,7 +635,10 @@ lazy val server = project
     undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-engine")),
     undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-jdbc")),
     undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-sql")),
+    zioAuthExplicitDepsWorkaround,
     libraryDependencies ++= Seq(
+      // Auth — JorlanAuthServer builds directly on auth.AuthServer / auth.AuthConfig
+      "net.leibman" % "zio-auth_3" % zioAuth withSources (),
       // DB
       "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion % Runtime withSources (),
       "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),

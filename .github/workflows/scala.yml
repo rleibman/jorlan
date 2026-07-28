@@ -64,7 +64,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "undeclaredCompileDependenciesTest; unusedCompileDependenciesTest"
+      # --warn rather than --error: sbt-explicit-dependencies logs the offending modules at warn
+      # level, so --error fails the build without ever saying which dependencies are at fault.
+      run: sbt --warn "undeclaredCompileDependenciesTest; unusedCompileDependenciesTest"
 
   build:
 
