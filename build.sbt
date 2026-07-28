@@ -173,7 +173,10 @@ lazy val explicitDepsIgnoredTransitives = Seq(
   undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "izumi-reflect")),
   undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-stacktracer")),
   undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-streams")),
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.softwaremill.magnolia1_3", name = "magnolia")),
+  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
+    organization = "com.softwaremill.magnolia1_3",
+    name = "magnolia",
+  )),
 )
 
 lazy val commonSettings = explicitDepsIgnoredTransitives ++ Seq(
@@ -458,10 +461,17 @@ lazy val emailConnector =
       // cats-core / cats-effect-kernel are referenced only through zio-interop-cats' and emil's
       // signatures, never imported directly, so we don't force an explicit declaration.
       undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-core")),
-      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-effect-kernel")),
+      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
+        organization = "org.typelevel",
+        name = "cats-effect-kernel",
+      )),
       // bcpg is not referenced yet — PgpService is currently a null-object stub — but the artifact is
       // kept on the classpath for the forthcoming PGP implementation.
       unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.bouncycastle", name = "bcpg-jdk18on")),
+      // just-semver arrives from skillModule's shared JVM settings, where every module that implements a
+      // Skill needs it for the version field. Email has no Skill implementation yet (only the provider,
+      // config and UI), so it is genuinely unused here.
+      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.kevinlee", name = "just-semver-core")),
       libraryDependencies ++= Seq(
         "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
         "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
@@ -557,15 +567,15 @@ lazy val googleServices =
       coverageExcludedFiles :=
         ".*GoogleCalendarProvider.*;.*GmailProvider.*;.*GoogleDriveProvider.*;.*GoogleContactsProvider.*;.*GoogleApiProvider.*",
       libraryDependencies ++= Seq(
-        "com.google.api-client" % "google-api-client"                % googleApiClientVersion withSources (),
-        "com.google.apis"       % "google-api-services-gmail"        % googleApisGmailVersion withSources (),
-        "com.google.apis"       % "google-api-services-calendar"     % googleApisCalendarVersion withSources (),
-        "com.google.apis"       % "google-api-services-drive"        % googleApisDriveVersion withSources (),
-        "com.google.apis"       % "google-api-services-people"       % googleApisPeopleVersion withSources (),
-        "com.google.auth"       % "google-auth-library-oauth2-http"  % googleAuthLibraryVersion withSources (),
-        "com.google.auth"       % "google-auth-library-credentials"  % googleAuthLibraryVersion withSources (),
-        "com.google.http-client" % "google-http-client"             % googleHttpClientVersion withSources (),
-        "com.google.http-client" % "google-http-client-gson"        % googleHttpClientVersion withSources (),
+        "com.google.api-client"  % "google-api-client"               % googleApiClientVersion withSources (),
+        "com.google.apis"        % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
+        "com.google.apis"        % "google-api-services-calendar"    % googleApisCalendarVersion withSources (),
+        "com.google.apis"        % "google-api-services-drive"       % googleApisDriveVersion withSources (),
+        "com.google.apis"        % "google-api-services-people"      % googleApisPeopleVersion withSources (),
+        "com.google.auth"        % "google-auth-library-oauth2-http" % googleAuthLibraryVersion withSources (),
+        "com.google.auth"        % "google-auth-library-credentials" % googleAuthLibraryVersion withSources (),
+        "com.google.http-client" % "google-http-client"              % googleHttpClientVersion withSources (),
+        "com.google.http-client" % "google-http-client-gson"         % googleHttpClientVersion withSources (),
         "dev.zio"               %% "zio-http"                        % zioHttpVersion withSources (),
       ),
     )
@@ -619,7 +629,7 @@ lazy val server = project
       "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
       "com.zaxxer"       % "HikariCP"            % hikariVersion withSources (),
       "org.flywaydb"     % "flyway-core"         % flywayVersion withSources (),
-      "org.flywaydb"     % "flyway-mysql"        % flywayVersion % Runtime withSources (),
+      "org.flywaydb"     % "flyway-mysql"        % flywayVersion  % Runtime withSources (),
       // Log
       "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime withSources (),
       // ZIO
@@ -745,11 +755,11 @@ lazy val useCaseImporter = project
     name                := "jorlan-use-case-importer",
     Compile / mainClass := Some("jorlan.shell.UseCaseImporterApp"),
     libraryDependencies ++= Seq(
-      "dev.zio"       %% "zio"                % zioVersion withSources (),
-      "dev.zio"       %% "zio-json"           % zioJsonVersion withSources (),
-      "dev.zio"       %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
+      "dev.zio" %% "zio"                % zioVersion withSources (),
+      "dev.zio" %% "zio-json"           % zioJsonVersion withSources (),
+      "dev.zio" %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
       // logback is the runtime SLF4J backend; it is never referenced at compile time.
-      "ch.qos.logback" % "logback-classic"   % logbackVersion % Runtime withSources (),
+      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime withSources (),
     ),
     fork                := true,
     run / fork          := true,
@@ -951,15 +961,15 @@ lazy val ai = project
     // never imported directly, so we don't force an explicit declaration.
     undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.google.guava", name = "guava")),
     libraryDependencies ++= Seq(
-      "dev.zio"                    %% "zio"                 % zioVersion withSources (),
-      "dev.zio"                    %% "zio-streams"         % zioVersion withSources (),
-      "dev.langchain4j"             % "langchain4j-core"    % langchainCoreVersion withSources (),
-      "dev.langchain4j"             % "langchain4j"         % langchainCoreVersion withSources (),
-      "dev.langchain4j"             % "langchain4j-ollama"  % langchain4jOllamaVersion withSources (),
-      "dev.langchain4j"             % "langchain4j-qdrant"  % langchainLibrariesVersion withSources (),
-      "dev.langchain4j"             % "langchain4j-mariadb" % langchainLibrariesVersion withSources (),
-      "io.qdrant"                   % "client"              % qdrantClientVersion withSources (),
-      "com.fasterxml.jackson.core"  % "jackson-databind"    % jacksonDatabindVersion withSources (),
+      "dev.zio"                   %% "zio"                 % zioVersion withSources (),
+      "dev.zio"                   %% "zio-streams"         % zioVersion withSources (),
+      "dev.langchain4j"            % "langchain4j-core"    % langchainCoreVersion withSources (),
+      "dev.langchain4j"            % "langchain4j"         % langchainCoreVersion withSources (),
+      "dev.langchain4j"            % "langchain4j-ollama"  % langchain4jOllamaVersion withSources (),
+      "dev.langchain4j"            % "langchain4j-qdrant"  % langchainLibrariesVersion withSources (),
+      "dev.langchain4j"            % "langchain4j-mariadb" % langchainLibrariesVersion withSources (),
+      "io.qdrant"                  % "client"              % qdrantClientVersion withSources (),
+      "com.fasterxml.jackson.core" % "jackson-databind"    % jacksonDatabindVersion withSources (),
       // Testing
       "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
       "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),

@@ -105,20 +105,34 @@ object ToolSupportSpec extends ZIOSpecDefault {
         )
       },
       // MCP servers express nullable fields as `"type": ["string", "null"]`; treating that union as the literal
-      // type name would fall through to a plain string schema and lose the declared type.
-      test("union types like [\"string\",\"null\"] resolve to the non-null member") {
+      // type name would fall through to a plain string schema and lose the declared type. The union stays nullable
+      // (anyOf with a null branch) even when the property is required — that is what the declaration says.
+      test("union types like [\"string\",\"null\"] keep the declared type and stay nullable") {
         val union =
           """{"type":"object","properties":{
             |  "father_handle":{"type":["string","null"],"description":"father"},
-            |  "count":{"type":["integer","null"]}
+            |  "count":{"type":["integer","null"]},
+            |  "note":{"type":["string","null"]}
             |},"required":["father_handle","count"]}""".stripMargin
 
         val params = ToolSupport.buildToolSpecification(ScalaToolSpec("gramps.update", "update", union)).parameters()
         val props = params.properties().asScala
 
+        def branches(name: String): List[JsonSchemaElement] =
+          props(name) match {
+            case a: JsonAnyOfSchema => a.anyOf().asScala.toList
+            case other => List(other)
+          }
+
         assertTrue(
-          props("father_handle").isInstanceOf[JsonStringSchema],
-          props("count").isInstanceOf[JsonIntegerSchema],
+          branches("father_handle").exists(_.isInstanceOf[JsonStringSchema]),
+          branches("father_handle").exists(_.isInstanceOf[JsonNullSchema]),
+          branches("count").exists(_.isInstanceOf[JsonIntegerSchema]),
+          branches("count").exists(_.isInstanceOf[JsonNullSchema]),
+          // `note` is both optional and declared nullable; it must be wrapped once, not twice.
+          branches("note").exists(_.isInstanceOf[JsonStringSchema]),
+          branches("note").exists(_.isInstanceOf[JsonNullSchema]),
+          !branches("note").exists(_.isInstanceOf[JsonAnyOfSchema]),
         )
       },
     )

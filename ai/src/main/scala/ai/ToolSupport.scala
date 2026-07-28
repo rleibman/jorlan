@@ -89,7 +89,7 @@ object ToolSupport {
         // whole tool call with a schema-validation 400. Every skill's arg parsing already treats a
         // `null` field identically to an absent one.
         val element: JsonSchemaElement =
-          if (requiredNames.contains(propName)) base
+          if (requiredNames.contains(propName) || isNullable(base)) base
           else
             JsonAnyOfSchema
               .builder()
@@ -105,6 +105,16 @@ object ToolSupport {
 
     builder.build()
   }
+
+  /** True when the element already admits `null`, i.e. it is an `anyOf` with a null branch. A property declared
+    * `["string","null"]` is built that way by [[buildElement]], so if it is also optional it must not be wrapped a
+    * second time — strict providers reject the resulting `anyOf(anyOf(string, null), null)`.
+    */
+  private def isNullable(element: JsonSchemaElement): Boolean =
+    element match {
+      case a: JsonAnyOfSchema => a.anyOf().asScala.exists(_.isInstanceOf[JsonNullSchema])
+      case _ => false
+    }
 
   private def buildElement(node: JsonNode): JsonSchemaElement = {
     val desc = Option(node.get("description")).map(_.asText).orNull
