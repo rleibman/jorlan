@@ -2,8 +2,7 @@
 // Common Stuff
 
 import org.apache.commons.io.FileUtils
-import scalajs.esbuild.ScalaJSEsbuildPlugin.autoImport.*
-import scalajs.esbuild.web.ScalaJSEsbuildWebPlugin
+import org.scalajs.linker.interface.ModuleSplitStyle
 import sbtcrossproject.CrossProject
 
 import scala.concurrent.duration.*
@@ -12,6 +11,36 @@ lazy val buildTime: SettingKey[String] = SettingKey[String]("buildTime", "time o
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Global stuff
+// All the keys sbt's lintUnused reports are defined by PLUGINS, not by this build: sbt-git sets
+// gitDescribedVersion/useGitDescribe on projects that do not version off git, and sbt-native-packager wires up
+// the Rpm/Debian/Universal-docs/Universal-src scopes even though only a .deb is ever built.
+Global / excludeLintKeys ++= Set(
+  com.github.sbt.git.SbtGit.GitKeys.gitDescribedVersion,
+  com.github.sbt.git.SbtGit.GitKeys.useGitDescribe,
+  daemonUser,
+  daemonUserUid,
+  daemonGroup,
+  daemonGroupGid,
+  executableScriptName,
+  javaOptions,
+  name,
+  // Same story for the shell project: sbt-native-packager derives Debian/Rpm sourceDirectory, the Rpm daemon log
+  // file and the Rpm scriptlets directory from settings this build sets, but only a .deb is ever produced, so
+  // nothing downstream reads them. Note `sourceDirectory` is a core sbt key, so listing it here silences the
+  // unused-key lint for it build-wide -- it does not disable or change the key itself anywhere.
+  sourceDirectory,
+  daemonStdoutLogFile,
+  rpmScriptsDirectory,
+)
+
+// NOT benign: jorlan-stlib was generated against scalajs-react 2.1.3 while web asks for 4.0.0 -- a major-version
+// straddle. Declared rather than failing the build, so sbt 2's stricter evictionErrorLevel still catches anything
+// NEW. The real fix is regenerating stlib against 4.0.0. `%%` would only cover the JVM artifact, hence _sjs1_3.
+ThisBuild / libraryDependencySchemes ++= Seq(
+  "com.github.japgolly.scalajs-react" % "core_sjs1_3"  % VersionScheme.Always,
+  "com.github.japgolly.scalajs-react" % "extra_sjs1_3" % VersionScheme.Always,
+)
+
 ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
 ThisBuild / resolvers += "GitHub Packages rleibman/zio-auth" at "https://maven.pkg.github.com/rleibman/zio-auth"
 ThisBuild / resolvers += "GitHub Packages rleibman/jorlan" at "https://maven.pkg.github.com/rleibman/jorlan"
@@ -22,7 +51,7 @@ ThisBuild / credentials += Credentials(
   sys.env.getOrElse("GITHUB_TOKEN", ""),
 )
 
-lazy val SCALA = "3.8.4"
+lazy val SCALA = "3.9.0"
 Global / onChangedBuildSource := ReloadOnSourceChanges
 scalaVersion                  := SCALA
 Global / scalaVersion         := SCALA
@@ -36,14 +65,18 @@ ThisBuild / excludeDependencies += ExclusionRule("com.sun.mail", "javax.mail")
 
 Global / watchAntiEntropy := 1.second
 
+// zio-json: `%%` only covers the JVM artifact (zio-json_3). sttp-client4's zio-json module still depends on
+// zio-json 0.9.0 on both platforms, so the Scala.js coordinate needs its own scheme entry or the sjs1 eviction
+// check fails the build.
 ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always
+ThisBuild / libraryDependencySchemes += "dev.zio" % "zio-json_sjs1_3" % VersionScheme.Always
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared settings
 
 lazy val start = TaskKey[Unit]("start")
-lazy val dist = TaskKey[File]("dist")
-lazy val debugDist = TaskKey[File]("debugDist")
+lazy val webDist = TaskKey[File]("webDist")
+lazy val webDebugDist = TaskKey[File]("webDebugDist")
 
 def webDistImpl(
   assets:       File,
@@ -51,7 +84,7 @@ def webDistImpl(
   outputFolder: File,
 ): File = {
   outputFolder.mkdirs()
-  // Copy static assets, skipping index.html (that comes from esbuild output)
+  // Copy static assets, skipping index.html (that comes from the vite output)
   if (assets.exists()) {
     assets.listFiles().foreach { f =>
       if (f.getName != "index.html") {
@@ -61,12 +94,50 @@ def webDistImpl(
     }
   }
   if (bundleOutput.exists()) {
-    println(s"Copying esbuild output from: $bundleOutput")
+    println(s"Copying vite output from: $bundleOutput")
     FileUtils.copyDirectory(bundleOutput, outputFolder, true)
   } else {
-    println(s"esbuild output directory does not exist: $bundleOutput")
+    println(s"vite output directory does not exist: $bundleOutput")
   }
   outputFolder
+}
+
+/** Runs `vite build` over the Scala.js linker output, into a staging directory under the project target.
+  *
+  * sbt drives vite, not the reverse. @scala-js/vite-plugin-scalajs -- the setup every tutorial shows -- resolves
+  * the linker output by spawning `sbt print fastLinkJSOutput` from inside vite; calling that from a task that
+  * already has the path in hand would mean sbt re-entering sbt and contending for its own server lock. So the
+  * two paths vite needs are handed over in the environment and web/vite.config.js reads them from there.
+  *
+  * Note that under sbt 2 the linker output lands in <repo>/target/out/sjs1/..., far from web/node_modules, so the
+  * bare imports inside it do not resolve on their own -- see the scalajs-bare-imports plugin in web/vite.config.js.
+  */
+def runViteBuild(
+  viteRoot:       File,
+  scalaJSOutput:  File,
+  stagingDir:     File,
+  mode:           String,
+  log:            Logger,
+): File = {
+  import scala.sys.process.*
+
+  if (!(viteRoot / "node_modules").exists()) {
+    log.info(s"node_modules missing, running `npm ci` in $viteRoot")
+    val installed = Process("npm" :: "ci" :: Nil, viteRoot).!
+    if (installed != 0) sys.error(s"npm ci failed in $viteRoot (exit code $installed)")
+  }
+
+  val env = Seq(
+    "SCALAJS_OUTPUT_DIR" -> scalaJSOutput.getAbsolutePath,
+    "VITE_OUT_DIR"       -> stagingDir.getAbsolutePath,
+    // Rollup exhausts the default node heap on a bundle this size and dies with
+    // "Reached heap limit ... JavaScript heap out of memory" (exit 134), surfacing only as a vite failure.
+    "NODE_OPTIONS"       -> s"${sys.env.getOrElse("NODE_OPTIONS", "")} --max-old-space-size=8192".trim,
+  )
+  log.info(s"vite build --mode $mode (scala.js output: $scalaJSOutput)")
+  val built = Process("npx" :: "vite" :: "build" :: "--mode" :: mode :: Nil, viteRoot, env*).!
+  if (built != 0) sys.error(s"vite build failed in $viteRoot (exit code $built)")
+  stagingDir
 }
 
 lazy val scala3Opts = Seq(
@@ -98,41 +169,41 @@ enablePlugins(
 val emilVersion = "0.20.0"
 val zioInteropCatsVersion = "23.1.0.13"
 val bouncyCastleVersion = "1.85"
-val googleApiClientVersion = "2.9.0"
-val googleApisGmailVersion = "v1-rev20260525-2.0.0"
+val googleApiClientVersion = "2.9.1"
+val googleApisGmailVersion = "v1-rev20260727-2.0.0"
 val googleApisCalendarVersion = "v3-rev20260708-2.0.0"
-val googleApisDriveVersion = "v3-rev20260712-2.0.0"
+val googleApisDriveVersion = "v3-rev20260901-2.0.0"
 val googleApisPeopleVersion = "v1-rev20251117-2.0.0"
-val googleAuthLibraryVersion = "1.49.0"
-val googleHttpClientVersion = "2.1.1"
-val telegramiumVersion = "10.1000.0"
+val googleAuthLibraryVersion = "1.52.0"
+val googleHttpClientVersion = "2.2.0"
+val telegramiumVersion = "10.1002.0"
 val calibanClientVersion = "3.1.5"
 val calibanVersion = "3.1.5"
-val circeVersion = "0.14.15"
+val circeVersion = "0.14.16"
 val commonsCodecVersion = "1.21.0"
 val courierVersion = "4.0.0-RC1"
 val cron4sVersion = "0.8.2"
-val hikariVersion = "5.1.0"
-val jacksonDatabindVersion = "2.22.1"
-val qdrantClientVersion = "1.17.0"
-val slf4jVersion = "2.0.18"
-val sttpModelVersion = "1.7.17"
+val hikariVersion = "7.1.0"
+val jacksonDatabindVersion = "2.22.2"
+val qdrantClientVersion = "1.19.0"
+val slf4jVersion = "2.0.19"
+val sttpModelVersion = "1.7.18"
 val sttpSharedVersion = "1.5.2"
 val typesafeConfigVersion = "1.4.9"
 val dispatchHttpVersion = "2.0.0"
-val flywayVersion = "13.0.0"
-val izumiReflectVersion = "3.0.9"
+val flywayVersion = "13.5.0"
+val izumiReflectVersion = "3.0.10"
 val jaxbApiVersion = "2.3.1"
-val jsoniterVersion = "2.39.1"
+val jsoniterVersion = "2.40.1"
 val justSemverCoreVersion = "1.3.0"
 val jwtCirceVersion = "11.0.4"
 val jwtZioJsonVersion = "11.0.4"
-val langchain4jOllamaVersion = "1.18.0"
-val langchainCoreVersion = "1.18.0"
-val langchainLibrariesVersion = "1.18.0-beta28"
+val langchain4jOllamaVersion = "1.20.0"
+val langchainCoreVersion = "1.20.0"
+val langchainLibrariesVersion = "1.20.0-beta30"
 val lanternaVersion = "3.1.5"
-val logbackVersion = "1.6.0"
-val mariadbVersion = "3.5.9"
+val logbackVersion = "1.6.3"
+val mariadbVersion = "3.5.10"
 val openPdfVersion = "3.0.3"
 val qdrantVersion = "1.21.4"
 val quillVersion = "4.8.6"
@@ -145,54 +216,45 @@ val scalatagsVersion = "0.13.1"
 val stlibVersion = "1.5.0"
 val sttpClient4Version = "4.0.26"
 val testContainerVersion = "0.44.1"
-val zioAuth = "3.1.6"
+val zioAuth = "3.1.7"
 val zioCacheVersion = "0.2.8"
 val zioConfigVersion = "4.0.8"
-val zioHttpVersion = "3.11.3"
-val zioJsonVersion = "0.9.2"
+val zioHttpVersion = "3.11.4"
+val zioJsonVersion = "1.0.0"
 val zioLoggingSlf4j2Version = "2.5.3"
 val zioNioVersion = "2.0.2"
-val zioPreludeVersion = "1.0.0-RC47"
+val zioPreludeVersion = "1.0.0-RC48"
 val zioProcessVersion = "0.8.0"
 val zioVersion = "2.1.26"
 
 // sbt-explicit-dependencies analyzes the JVM compilation classpath and does not work correctly
 // for Scala.js compilation units. Disable both checks on Scala.js projects by installing a module
 // filter that matches nothing (the plugin only reports modules for which the filter returns true).
-lazy val disableExplicitDepsForScalaJs = Seq(
-  unusedCompileDependenciesFilter     := moduleFilter(organization = NothingFilter),
-  undeclaredCompileDependenciesFilter := moduleFilter(organization = NothingFilter),
-)
+// These three were all sbt-explicit-dependencies tuning. That plugin has no sbt2 build, so its keys
+// (unusedCompileDependenciesFilter / undeclaredCompileDependenciesFilter) no longer exist and the settings cannot
+// compile. They are kept as empty Seqs rather than deleted, because roughly ten call sites reference them and the
+// reasoning below is worth preserving for whenever the plugin returns.
+//
+// disableExplicitDepsForScalaJs: the plugin miscomputes Scala.js `%%%` artifact names, reporting every
+// %%%-declared library as both undeclared and unused, so the check was meaningless for a Scala.js module.
+lazy val disableExplicitDepsForScalaJs = Seq.empty[Setting[?]]
 
-// The ZIO and zio-json ecosystems bring in a handful of internal artifacts transitively
-// (Tag machinery, ZStream, JSON-derivation macros) that the compiled bytecode references
-// incidentally in almost every module. They always arrive with dev.zio %% zio / zio-http /
-// zio-json — which every module already declares — so we exclude them from the "undeclared"
-// report rather than forcing an explicit, version-coupled declaration in each module.
-// zio-auth has to be declared with an explicit "_3" suffix and a single "%": the jar published by
-// `publishLocal` is named zio-auth_3.jar, and "%%" makes coursier look for zio-auth.jar in the Ivy
-// local repository, which fails to resolve. The cost is that the declared ModuleID (name
-// "zio-auth_3", no cross-version) never matches what sbt-explicit-dependencies derives from the
-// resolved artifact, so the module lands in both reports:
-//   - on CI it resolves from GitHub Packages, whose pom gives artifactId "zio-auth_3"; the plugin
-//     strips the "_3" and reports a cross-versioned "zio-auth" as *undeclared*;
-//   - locally the Ivy layout is unreadable to the plugin (no version in the jar filename, pom in a
-//     sibling directory), so nothing is derived and the declaration itself looks *unused*.
-// Neither is real, so silence both sides wherever zio-auth is on the compile classpath.
-lazy val zioAuthExplicitDepsWorkaround = Seq(
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth")),
-  unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "net.leibman", name = "zio-auth_3")),
-)
+// zioAuthExplicitDepsWorkaround: zio-auth has to be declared with an explicit "_3" suffix and a single "%",
+// because the jar published by `publishLocal` is named zio-auth_3.jar and "%%" makes coursier look for
+// zio-auth.jar in the Ivy local repository, which fails to resolve. The cost was that the declared ModuleID never
+// matched what the plugin derived from the resolved artifact, so the module landed in both reports:
+//   - on CI it resolves from GitHub Packages, whose pom gives artifactId "zio-auth_3"; the plugin stripped the
+//     "_3" and reported a cross-versioned "zio-auth" as *undeclared*;
+//   - locally the Ivy layout is unreadable to the plugin, so nothing was derived and the declaration itself
+//     looked *unused*.
+// Neither was real.
+lazy val zioAuthExplicitDepsWorkaround = Seq.empty[Setting[?]]
 
-lazy val explicitDepsIgnoredTransitives = Seq(
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "izumi-reflect")),
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-stacktracer")),
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-streams")),
-  undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
-    organization = "com.softwaremill.magnolia1_3",
-    name = "magnolia",
-  )),
-)
+// explicitDepsIgnoredTransitives: the ZIO and zio-json ecosystems bring in internal artifacts transitively (Tag
+// machinery, ZStream, JSON-derivation macros) that the compiled bytecode references incidentally in almost every
+// module. They always arrive with dev.zio %% zio / zio-http / zio-json -- which every module already declares --
+// so they were excluded from the "undeclared" report rather than forcing a version-coupled declaration in each.
+lazy val explicitDepsIgnoredTransitives = Seq.empty[Setting[?]]
 
 lazy val commonSettings = explicitDepsIgnoredTransitives ++ Seq(
   organization     := "net.leibman",
@@ -225,7 +287,7 @@ lazy val model =
         },
       ),
       libraryDependencies ++= Seq(
-        "net.leibman" % "zio-auth_3" % zioAuth withSources (), // %% resolves the wrong Ivy artifact name, see below.
+        ("net.leibman" % "zio-auth_3" % zioAuth).withSources(), // %% resolves the wrong Ivy artifact name, see below.
       ),
     )
     .jvmSettings(
@@ -236,12 +298,12 @@ lazy val model =
       coverageExcludedPackages := "zio\\.json\\.literal.*",
       zioAuthExplicitDepsWorkaround,
       libraryDependencies ++= Seq(
-        "dev.zio"     %% "zio"              % zioVersion withSources (),
-        "dev.zio"     %% "zio-json"         % zioJsonVersion withSources (),
-        "dev.zio"     %% "zio-http"         % zioHttpVersion withSources (),
-        "io.kevinlee" %% "just-semver-core" % justSemverCoreVersion withSources (),
-        "dev.zio"     %% "zio-test"         % zioVersion % Test withSources (),
-        "dev.zio"     %% "zio-test-sbt"     % zioVersion % Test withSources (),
+        ("dev.zio"     %% "zio"              % zioVersion).withSources(),
+        ("dev.zio"     %% "zio-json"         % zioJsonVersion).withSources(),
+        ("dev.zio"     %% "zio-http"         % zioHttpVersion).withSources(),
+        ("io.kevinlee" %% "just-semver-core" % justSemverCoreVersion).withSources(),
+        ("dev.zio"     %% "zio-test"         % zioVersion % Test).withSources(),
+        ("dev.zio"     %% "zio-test-sbt"     % zioVersion % Test).withSources(),
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
@@ -250,13 +312,13 @@ lazy val model =
       disableExplicitDepsForScalaJs,
       scalacOptions ++= scala3Opts,
       libraryDependencies ++= Seq(
-        "net.leibman"               % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %% isn't working.
-        "dev.zio" %%% "zio"         % zioVersion withSources (),
-        "dev.zio" %%% "zio-json"    % zioJsonVersion withSources (),
-        "dev.zio" %%% "zio-prelude" % zioPreludeVersion withSources (),
-        "io.kevinlee" %%% "just-semver-core"                                % justSemverCoreVersion withSources (),
-        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-core"   % jsoniterVersion,
-        "com.github.plokhotnyuk.jsoniter-scala" %%% "jsoniter-scala-macros" % jsoniterVersion,
+        ("net.leibman"               % "zio-auth_sjs1_3" % zioAuth).withSources(), // I don't know why %% isn't working.
+        ("dev.zio" %% "zio"         % zioVersion).withSources(),
+        ("dev.zio" %% "zio-json"    % zioJsonVersion).withSources(),
+        ("dev.zio" %% "zio-prelude" % zioPreludeVersion).withSources(),
+        ("io.kevinlee" %% "just-semver-core"                                % justSemverCoreVersion).withSources(),
+        "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"   % jsoniterVersion,
+        "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % jsoniterVersion,
       ),
     )
 
@@ -270,19 +332,21 @@ lazy val gqlClient =
       coverageEnabled := false,
       disableExplicitDepsForScalaJs,
       libraryDependencies ++= Seq(
-        "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
-        "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
+        ("com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion).withSources(),
+        ("com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion).withSources(),
       ),
     )
     .settings(
       scalacOptions ++= scala3Opts :+ "-Werror",
-      name := "jorlan-connector-api",
+      // NOT "jorlan-connector-api" -- that is skillApi's name, and this was a copy-paste of it. sbt 2 derives
+      // each project's output directory from its name, so the two collided ("Overlapping output directories").
+      name := "jorlan-gql-client",
       libraryDependencies ++= Seq(
-        "dev.zio"               %% "zio-json"       % zioJsonVersion withSources (),
-        "com.github.ghostdogpr" %% "caliban-client" % calibanClientVersion withSources (),
+        ("dev.zio"               %% "zio-json"       % zioJsonVersion).withSources(),
+        ("com.github.ghostdogpr" %% "caliban-client" % calibanClientVersion).withSources(),
         // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+        ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
+        ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),
       ),
     )
 
@@ -299,33 +363,33 @@ lazy val skillApi =
       coverageEnabled := false,
       disableExplicitDepsForScalaJs,
       libraryDependencies ++= Seq(
-        "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
-        "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
-        "org.scala-js" %%% "scalajs-dom"                % scalajsDomVersion withSources (),
-        "com.olvind" %%% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
-        "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
-        "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
-        "com.lihaoyi" %%% "scalatags"                   % scalatagsVersion withSources (),
-        "com.github.japgolly.scalacss" %%% "core"       % scalacssVersion withSources (),
-        "com.github.japgolly.scalacss" %%% "ext-react"  % scalacssVersion withSources (),
+        ("io.github.cquiroz" %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
+        ("io.github.cquiroz" %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
+        ("org.scala-js" %% "scalajs-dom"                % scalajsDomVersion).withSources(),
+        "com.olvind" %% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
+        ("com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion).withSources(),
+        ("com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion).withSources(),
+        ("com.lihaoyi" %% "scalatags"                   % scalatagsVersion).withSources(),
+        ("com.github.japgolly.scalacss" %% "core"       % scalacssVersion).withSources(),
+        ("com.github.japgolly.scalacss" %% "ext-react"  % scalacssVersion).withSources(),
       ),
     )
     .settings(
       scalacOptions ++= scala3Opts :+ "-Werror",
       name := "jorlan-connector-api",
       libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+        ("dev.zio" %% "zio"      % zioVersion).withSources(),
+        ("dev.zio" %% "zio-json" % zioJsonVersion).withSources(),
         // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+        ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
+        ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     )
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "dev.zio"     %% "zio-http"         % zioHttpVersion withSources (),
-        "io.kevinlee" %% "just-semver-core" % justSemverCoreVersion withSources (),
+        ("dev.zio"     %% "zio-http"         % zioHttpVersion).withSources(),
+        ("io.kevinlee" %% "just-semver-core" % justSemverCoreVersion).withSources(),
       ),
     )
 
@@ -349,7 +413,7 @@ lazy val skillModule: CrossProject => CrossProject =
       scalaJSUseMainModuleInitializer := true,
       // Compile skill JS and copy to the global debugDist/skills or dist/skills directories.
       // Each skill's JS file is served at /skills/<name>-skill.js.
-      debugDist := {
+      webDebugDist := Def.uncached {
         val _ = (Compile / fastLinkJS).value
         val srcDir = (Compile / fastLinkJS / scalaJSLinkerOutputDirectory).value
         val outDir = (ThisBuild / baseDirectory).value / "debugDist" / "skills"
@@ -358,7 +422,7 @@ lazy val skillModule: CrossProject => CrossProject =
         (srcDir * GlobFilter("*-skill.map")).get().foreach(f => IO.copyFile(f, outDir / f.name))
         outDir
       },
-      dist := {
+      webDist := Def.uncached {
         val _ = (Compile / fullLinkJS).value
         val srcDir = (Compile / fullLinkJS / scalaJSLinkerOutputDirectory).value
         val outDir = (ThisBuild / baseDirectory).value / "dist" / "skills"
@@ -373,11 +437,11 @@ lazy val skillModule: CrossProject => CrossProject =
       buildInfoPackage := "jorlan.skill",
       scalacOptions ++= scala3Opts :+ "-Werror",
       libraryDependencies ++= Seq(
-        "dev.zio" %% "zio"      % zioVersion withSources (),
-        "dev.zio" %% "zio-json" % zioJsonVersion withSources (),
+        ("dev.zio" %% "zio"      % zioVersion).withSources(),
+        ("dev.zio" %% "zio-json" % zioJsonVersion).withSources(),
         // Testing
-        "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-        "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+        ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
+        ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),
       ),
       Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
       Test / fork := false,
@@ -386,7 +450,7 @@ lazy val skillModule: CrossProject => CrossProject =
       // Fork JVM tests so scoverage 2.x measurement files are flushed on JVM exit.
       Test / fork := true,
       // Every skill's JVM code references SemVer (from the shared model API), so declare it here.
-      libraryDependencies += "io.kevinlee" %% "just-semver-core" % justSemverCoreVersion withSources (),
+      libraryDependencies += ("io.kevinlee" %% "just-semver-core" % justSemverCoreVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -399,10 +463,10 @@ lazy val telegramConnector =
     .settings(name := "jorlan-telegram")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
-        "dev.zio"               %% "zio-http"         % zioHttpVersion withSources (),
-        "io.circe"              %% "circe-core"       % circeVersion withSources (),
-        "io.circe"              %% "circe-parser"     % circeVersion withSources (),
+        ("io.github.apimorphism" %% "telegramium-core" % telegramiumVersion).withSources(),
+        ("dev.zio"               %% "zio-http"         % zioHttpVersion).withSources(),
+        ("io.circe"              %% "circe-core"       % circeVersion).withSources(),
+        ("io.circe"              %% "circe-parser"     % circeVersion).withSources(),
       ),
     )
 
@@ -416,7 +480,7 @@ lazy val discordConnector =
     .settings(name := "jorlan-discord")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "net.dv8tion" % "JDA" % "6.5.0" exclude ("club.minnced", "opus-java"),
+        "net.dv8tion" % "JDA" % "6.6.0" exclude ("club.minnced", "opus-java"),
       ),
       coverageExcludedFiles := ".*DiscordApiClient.*",
     )
@@ -431,7 +495,7 @@ lazy val calculatorSkill =
     .settings(name := "jorlan-calculator")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1" withSources (),
+        ("org.mariuszgromada.math" % "MathParser.org-mXparser" % "6.1.1").withSources(),
       ),
     )
 
@@ -444,7 +508,7 @@ lazy val lyrionSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-lyrion")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -456,7 +520,7 @@ lazy val rssFeedSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-rss-feed")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -472,23 +536,27 @@ lazy val emailConnector =
       coverageExcludedPackages := "jorlan\\.email.*",
       // cats-core / cats-effect-kernel are referenced only through zio-interop-cats' and emil's
       // signatures, never imported directly, so we don't force an explicit declaration.
-      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-core")),
-      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
-        organization = "org.typelevel",
-        name = "cats-effect-kernel",
-      )),
+      // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+      // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-core")),
+      // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+      // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
+        // organization = "org.typelevel",
+        // name = "cats-effect-kernel",
+      // )),
       // bcpg is not referenced yet — PgpService is currently a null-object stub — but the artifact is
       // kept on the classpath for the forthcoming PGP implementation.
-      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.bouncycastle", name = "bcpg-jdk18on")),
+      // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+      // unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.bouncycastle", name = "bcpg-jdk18on")),
       // just-semver arrives from skillModule's shared JVM settings, where every module that implements a
       // Skill needs it for the version field. Email has no Skill implementation yet (only the provider,
       // config and UI), so it is genuinely unused here.
-      unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.kevinlee", name = "just-semver-core")),
+      // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+      // unusedCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.kevinlee", name = "just-semver-core")),
       libraryDependencies ++= Seq(
-        "com.github.eikek" %% "emil-common"      % emilVersion withSources (),
-        "com.github.eikek" %% "emil-javamail"    % emilVersion withSources (),
-        "dev.zio"          %% "zio-interop-cats" % zioInteropCatsVersion withSources (),
-        "org.bouncycastle"  % "bcpg-jdk18on"     % bouncyCastleVersion withSources (),
+        ("com.github.eikek" %% "emil-common"      % emilVersion).withSources(),
+        ("com.github.eikek" %% "emil-javamail"    % emilVersion).withSources(),
+        ("dev.zio"          %% "zio-interop-cats" % zioInteropCatsVersion).withSources(),
+        ("org.bouncycastle"  % "bcpg-jdk18on"     % bouncyCastleVersion).withSources(),
       ),
     )
 
@@ -502,7 +570,7 @@ lazy val unitConversionSkill =
     .settings(name := "jorlan-unit-conversion")
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "org.typelevel" %% "squants" % "1.8.3" withSources (),
+        ("org.typelevel" %% "squants" % "1.8.3").withSources(),
       ),
     )
 
@@ -515,9 +583,10 @@ lazy val httpFetchSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-http-fetch")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
       // zio-schema is referenced only through zio-http's endpoint signatures, not directly.
-      undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
+      // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+      // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -529,7 +598,7 @@ lazy val weatherSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-weather")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -550,7 +619,7 @@ lazy val marketDataSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-market-data")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -562,7 +631,7 @@ lazy val searchSkill =
     .configureCross(skillModule)
     .settings(name := "jorlan-search")
     .jvmSettings(
-      libraryDependencies += "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
+      libraryDependencies += ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
     )
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -579,16 +648,16 @@ lazy val googleServices =
       coverageExcludedFiles :=
         ".*GoogleCalendarProvider.*;.*GmailProvider.*;.*GoogleDriveProvider.*;.*GoogleContactsProvider.*;.*GoogleApiProvider.*",
       libraryDependencies ++= Seq(
-        "com.google.api-client"  % "google-api-client"               % googleApiClientVersion withSources (),
-        "com.google.apis"        % "google-api-services-gmail"       % googleApisGmailVersion withSources (),
-        "com.google.apis"        % "google-api-services-calendar"    % googleApisCalendarVersion withSources (),
-        "com.google.apis"        % "google-api-services-drive"       % googleApisDriveVersion withSources (),
-        "com.google.apis"        % "google-api-services-people"      % googleApisPeopleVersion withSources (),
-        "com.google.auth"        % "google-auth-library-oauth2-http" % googleAuthLibraryVersion withSources (),
-        "com.google.auth"        % "google-auth-library-credentials" % googleAuthLibraryVersion withSources (),
-        "com.google.http-client" % "google-http-client"              % googleHttpClientVersion withSources (),
-        "com.google.http-client" % "google-http-client-gson"         % googleHttpClientVersion withSources (),
-        "dev.zio"               %% "zio-http"                        % zioHttpVersion withSources (),
+        ("com.google.api-client"  % "google-api-client"               % googleApiClientVersion).withSources(),
+        ("com.google.apis"        % "google-api-services-gmail"       % googleApisGmailVersion).withSources(),
+        ("com.google.apis"        % "google-api-services-calendar"    % googleApisCalendarVersion).withSources(),
+        ("com.google.apis"        % "google-api-services-drive"       % googleApisDriveVersion).withSources(),
+        ("com.google.apis"        % "google-api-services-people"      % googleApisPeopleVersion).withSources(),
+        ("com.google.auth"        % "google-auth-library-oauth2-http" % googleAuthLibraryVersion).withSources(),
+        ("com.google.auth"        % "google-auth-library-credentials" % googleAuthLibraryVersion).withSources(),
+        ("com.google.http-client" % "google-http-client"              % googleHttpClientVersion).withSources(),
+        ("com.google.http-client" % "google-http-client-gson"         % googleHttpClientVersion).withSources(),
+        ("dev.zio"               %% "zio-http"                        % zioHttpVersion).withSources(),
       ),
     )
 
@@ -631,50 +700,54 @@ lazy val server = project
     // zio-schema and the quill engine/sql/jdbc modules are referenced only through the signatures of
     // zio-http and quill-jdbc-zio respectively (quill-engine even resolves to a different version), so
     // we don't force explicit declarations of them.
-    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
-    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-engine")),
-    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-jdbc")),
-    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-sql")),
+    // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+    // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "dev.zio", name = "zio-schema")),
+    // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+    // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-engine")),
+    // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+    // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-jdbc")),
+    // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+    // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "io.getquill", name = "quill-sql")),
     zioAuthExplicitDepsWorkaround,
     libraryDependencies ++= Seq(
       // Auth — JorlanAuthServer builds directly on auth.AuthServer / auth.AuthConfig
-      "net.leibman" % "zio-auth_3" % zioAuth withSources (),
+      ("net.leibman" % "zio-auth_3" % zioAuth).withSources(),
       // DB
-      "org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion % Runtime withSources (),
-      "io.getquill"     %% "quill-jdbc-zio"      % quillVersion withSources (),
-      "com.zaxxer"       % "HikariCP"            % hikariVersion withSources (),
-      "org.flywaydb"     % "flyway-core"         % flywayVersion withSources (),
-      "org.flywaydb"     % "flyway-mysql"        % flywayVersion  % Runtime withSources (),
+      ("org.mariadb.jdbc" % "mariadb-java-client" % mariadbVersion % Runtime).withSources(),
+      ("io.getquill"     %% "quill-jdbc-zio"      % quillVersion).withSources(),
+      ("com.zaxxer"       % "HikariCP"            % hikariVersion).withSources(),
+      ("org.flywaydb"     % "flyway-core"         % flywayVersion).withSources(),
+      ("org.flywaydb"     % "flyway-mysql"        % flywayVersion  % Runtime).withSources(),
       // Log
-      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime withSources (),
+      ("ch.qos.logback" % "logback-classic" % logbackVersion % Runtime).withSources(),
       // ZIO
-      "dev.zio"                       %% "zio"                   % zioVersion withSources (),
-      "dev.zio"                       %% "zio-config-derivation" % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-config-magnolia"   % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-config-typesafe"   % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-logging"           % zioLoggingSlf4j2Version withSources (),
-      "dev.zio"                       %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version withSources (),
-      "dev.zio"                       %% "izumi-reflect"         % izumiReflectVersion withSources (),
-      "com.github.ghostdogpr"         %% "caliban"               % calibanVersion withSources (),
-      "com.github.ghostdogpr"         %% "caliban-quick"         % calibanVersion withSources (),
-      "dev.zio"                       %% "zio-http"              % zioHttpVersion withSources (),
-      "dev.zio"                       %% "zio-json"              % zioJsonVersion withSources (),
-      "dev.zio"                       %% "zio-process"           % zioProcessVersion withSources (),
-      "com.github.alonsodomin.cron4s" %% "cron4s-core"           % cron4sVersion withSources (),
-      "com.typesafe"                   % "config"                % typesafeConfigVersion withSources (),
-      "io.kevinlee"                   %% "just-semver-core"      % justSemverCoreVersion withSources (),
+      ("dev.zio"                       %% "zio"                   % zioVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-derivation" % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-magnolia"   % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-typesafe"   % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-logging"           % zioLoggingSlf4j2Version).withSources(),
+      ("dev.zio"                       %% "zio-logging-slf4j2"    % zioLoggingSlf4j2Version).withSources(),
+      ("dev.zio"                       %% "izumi-reflect"         % izumiReflectVersion).withSources(),
+      ("com.github.ghostdogpr"         %% "caliban"               % calibanVersion).withSources(),
+      ("com.github.ghostdogpr"         %% "caliban-quick"         % calibanVersion).withSources(),
+      ("dev.zio"                       %% "zio-http"              % zioHttpVersion).withSources(),
+      ("dev.zio"                       %% "zio-json"              % zioJsonVersion).withSources(),
+      ("dev.zio"                       %% "zio-process"           % zioProcessVersion).withSources(),
+      ("com.github.alonsodomin.cron4s" %% "cron4s-core"           % cron4sVersion).withSources(),
+      ("com.typesafe"                   % "config"                % typesafeConfigVersion).withSources(),
+      ("io.kevinlee"                   %% "just-semver-core"      % justSemverCoreVersion).withSources(),
       // LLM (langchain4j classes referenced directly by the model gateways and vector store)
-      "dev.langchain4j" % "langchain4j-core"    % langchainCoreVersion withSources (),
-      "dev.langchain4j" % "langchain4j"         % langchainCoreVersion withSources (),
-      "dev.langchain4j" % "langchain4j-ollama"  % langchain4jOllamaVersion withSources (),
-      "dev.langchain4j" % "langchain4j-open-ai" % langchainCoreVersion withSources (),
-      "dev.langchain4j" % "langchain4j-mariadb" % langchainLibrariesVersion withSources (),
+      ("dev.langchain4j" % "langchain4j-core"    % langchainCoreVersion).withSources(),
+      ("dev.langchain4j" % "langchain4j"         % langchainCoreVersion).withSources(),
+      ("dev.langchain4j" % "langchain4j-ollama"  % langchain4jOllamaVersion).withSources(),
+      ("dev.langchain4j" % "langchain4j-open-ai" % langchainCoreVersion).withSources(),
+      ("dev.langchain4j" % "langchain4j-mariadb" % langchainLibrariesVersion).withSources(),
       // Testing
-      "com.github.jwt-scala" %% "jwt-circe"                    % jwtCirceVersion      % Test withSources (),
-      "com.github.jwt-scala" %% "jwt-zio-json"                 % jwtZioJsonVersion    % Test withSources (),
-      "com.dimafeng"         %% "testcontainers-scala-mariadb" % testContainerVersion % Test withSources (),
-      "dev.zio"              %% "zio-test"                     % zioVersion           % Test withSources (),
-      "dev.zio"              %% "zio-test-sbt"                 % zioVersion           % Test withSources (),
+      ("com.github.jwt-scala" %% "jwt-circe"                    % jwtCirceVersion      % Test).withSources(),
+      ("com.github.jwt-scala" %% "jwt-zio-json"                 % jwtZioJsonVersion    % Test).withSources(),
+      ("com.dimafeng"         %% "testcontainers-scala-mariadb" % testContainerVersion % Test).withSources(),
+      ("dev.zio"              %% "zio-test"                     % zioVersion           % Test).withSources(),
+      ("dev.zio"              %% "zio-test-sbt"                 % zioVersion           % Test).withSources(),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
@@ -700,21 +773,21 @@ lazy val integration = project
     Test / unmanagedResourceDirectories += (server / Compile / resourceDirectory).value,
     libraryDependencies ++= Seq(
       // DB — used only by the Testcontainers-backed integration tests
-      "org.mariadb.jdbc" % "mariadb-java-client"          % mariadbVersion       % Test withSources (),
-      "org.flywaydb"     % "flyway-core"                  % flywayVersion        % Test withSources (),
-      "org.flywaydb"     % "flyway-mysql"                 % flywayVersion        % Test withSources (),
-      "com.dimafeng"    %% "testcontainers-scala-mariadb" % testContainerVersion % Test withSources (),
+      ("org.mariadb.jdbc" % "mariadb-java-client"          % mariadbVersion       % Test).withSources(),
+      ("org.flywaydb"     % "flyway-core"                  % flywayVersion        % Test).withSources(),
+      ("org.flywaydb"     % "flyway-mysql"                 % flywayVersion        % Test).withSources(),
+      ("com.dimafeng"    %% "testcontainers-scala-mariadb" % testContainerVersion % Test).withSources(),
       // Log — runtime SLF4J backend
-      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime withSources (),
+      ("ch.qos.logback" % "logback-classic" % logbackVersion % Runtime).withSources(),
       // ZIO
-      "dev.zio" %% "zio"      % zioVersion withSources (),
-      "dev.zio" %% "zio-http" % zioHttpVersion withSources (),
-      "dev.zio" %% "zio-json" % zioJsonVersion % Test withSources (),
+      ("dev.zio" %% "zio"      % zioVersion).withSources(),
+      ("dev.zio" %% "zio-http" % zioHttpVersion).withSources(),
+      ("dev.zio" %% "zio-json" % zioJsonVersion % Test).withSources(),
       // other
-      "io.github.apimorphism" %% "telegramium-core" % telegramiumVersion withSources (),
+      ("io.github.apimorphism" %% "telegramium-core" % telegramiumVersion).withSources(),
       // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % Test withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % Test withSources (),
+      ("dev.zio" %% "zio-test"     % zioVersion % Test).withSources(),
+      ("dev.zio" %% "zio-test-sbt" % zioVersion % Test).withSources(),
     ),
     // Integration tests are only in the Test configuration
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
@@ -737,19 +810,19 @@ lazy val shellClient = project
     scalacOptions ++= scala3Opts :+ "-Werror",
     name := "jorlan-shell-client",
     libraryDependencies ++= Seq(
-      "dev.zio"                       %% "zio"                   % zioVersion withSources (),
-      "dev.zio"                       %% "zio-config-derivation" % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-config-magnolia"   % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-config-typesafe"   % zioConfigVersion withSources (),
-      "dev.zio"                       %% "zio-json"              % zioJsonVersion withSources (),
-      "com.typesafe"                   % "config"                % typesafeConfigVersion withSources (),
-      "com.github.ghostdogpr"         %% "caliban-client"        % calibanClientVersion withSources (),
-      "com.softwaremill.sttp.client4" %% "core"                  % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.client4" %% "zio"                   % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.model"   %% "core"                  % sttpModelVersion withSources (),
-      "com.softwaremill.sttp.shared"  %% "zio"                   % sttpSharedVersion withSources (),
-      "dev.zio"                       %% "zio-test"              % zioVersion % Test withSources (),
-      "dev.zio"                       %% "zio-test-sbt"          % zioVersion % Test withSources (),
+      ("dev.zio"                       %% "zio"                   % zioVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-derivation" % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-magnolia"   % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-config-typesafe"   % zioConfigVersion).withSources(),
+      ("dev.zio"                       %% "zio-json"              % zioJsonVersion).withSources(),
+      ("com.typesafe"                   % "config"                % typesafeConfigVersion).withSources(),
+      ("com.github.ghostdogpr"         %% "caliban-client"        % calibanClientVersion).withSources(),
+      ("com.softwaremill.sttp.client4" %% "core"                  % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.client4" %% "zio"                   % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.model"   %% "core"                  % sttpModelVersion).withSources(),
+      ("com.softwaremill.sttp.shared"  %% "zio"                   % sttpSharedVersion).withSources(),
+      ("dev.zio"                       %% "zio-test"              % zioVersion % Test).withSources(),
+      ("dev.zio"                       %% "zio-test-sbt"          % zioVersion % Test).withSources(),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     coverageExcludedFiles := ".*JorlanClient.*;.*ZIOClientRepositories.*;.*AuthClient.*",
@@ -770,11 +843,11 @@ lazy val useCaseImporter = project
     name                := "jorlan-use-case-importer",
     Compile / mainClass := Some("jorlan.shell.UseCaseImporterApp"),
     libraryDependencies ++= Seq(
-      "dev.zio" %% "zio"                % zioVersion withSources (),
-      "dev.zio" %% "zio-json"           % zioJsonVersion withSources (),
-      "dev.zio" %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
+      ("dev.zio" %% "zio"                % zioVersion).withSources(),
+      ("dev.zio" %% "zio-json"           % zioJsonVersion).withSources(),
+      ("dev.zio" %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version).withSources(),
       // logback is the runtime SLF4J backend; it is never referenced at compile time.
-      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime withSources (),
+      ("ch.qos.logback" % "logback-classic" % logbackVersion % Runtime).withSources(),
     ),
     fork                := true,
     run / fork          := true,
@@ -799,21 +872,21 @@ lazy val shell = project
     name                := "jorlan-shell",
     Compile / mainClass := Some("jorlan.shell.JorlanShell"),
     libraryDependencies ++= Seq(
-      "dev.zio"                       %% "zio"                % zioVersion withSources (),
-      "dev.zio"                       %% "zio-json"           % zioJsonVersion withSources (),
-      "dev.zio"                       %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version withSources (),
-      "com.github.ghostdogpr"         %% "caliban-client"     % calibanClientVersion withSources (),
-      "com.softwaremill.sttp.client4" %% "core"               % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.client4" %% "zio"                % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.model"   %% "core"               % sttpModelVersion withSources (),
-      "com.softwaremill.sttp.shared"  %% "zio"                % sttpSharedVersion withSources (),
-      "com.softwaremill.sttp.shared"  %% "ws"                 % sttpSharedVersion withSources (),
-      "org.slf4j"                      % "slf4j-api"          % slf4jVersion withSources (),
-      "com.googlecode.lanterna"        % "lanterna"           % lanternaVersion withSources (),
-      "ch.qos.logback"                 % "logback-classic"    % logbackVersion withSources (),
+      ("dev.zio"                       %% "zio"                % zioVersion).withSources(),
+      ("dev.zio"                       %% "zio-json"           % zioJsonVersion).withSources(),
+      ("dev.zio"                       %% "zio-logging-slf4j2" % zioLoggingSlf4j2Version).withSources(),
+      ("com.github.ghostdogpr"         %% "caliban-client"     % calibanClientVersion).withSources(),
+      ("com.softwaremill.sttp.client4" %% "core"               % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.client4" %% "zio"                % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.model"   %% "core"               % sttpModelVersion).withSources(),
+      ("com.softwaremill.sttp.shared"  %% "zio"                % sttpSharedVersion).withSources(),
+      ("com.softwaremill.sttp.shared"  %% "ws"                 % sttpSharedVersion).withSources(),
+      ("org.slf4j"                      % "slf4j-api"          % slf4jVersion).withSources(),
+      ("com.googlecode.lanterna"        % "lanterna"           % lanternaVersion).withSources(),
+      ("ch.qos.logback"                 % "logback-classic"    % logbackVersion).withSources(),
       // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % Test withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % Test withSources (),
+      ("dev.zio" %% "zio-test"     % zioVersion % Test).withSources(),
+      ("dev.zio" %% "zio-test-sbt" % zioVersion % Test).withSources(),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the shell process owns the TTY; connectInput passes stdin through
@@ -859,28 +932,34 @@ lazy val debianSettings =
     ),
     // Map templates into the universal (tarball) layout
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "templates" / "application.conf") -> "conf/application.conf"
+      conv.toVirtualFile((src / "templates" / "application.conf").toPath) -> "conf/application.conf"
     },
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "templates" / "logback.xml") -> "conf/logback.xml"
+      conv.toVirtualFile((src / "templates" / "logback.xml").toPath) -> "conf/logback.xml"
     },
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "templates" / "server.env") -> "conf/server.env"
+      conv.toVirtualFile((src / "templates" / "server.env").toPath) -> "conf/server.env"
     },
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "templates" / "io.jorlan.server.plist") -> "launchd/io.jorlan.server.plist"
+      conv.toVirtualFile((src / "templates" / "io.jorlan.server.plist").toPath) -> "launchd/io.jorlan.server.plist"
     },
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "main" / "scripts" / "init-db.sh") -> "scripts/init-db.sh"
+      conv.toVirtualFile((src / "main" / "scripts" / "init-db.sh").toPath) -> "scripts/init-db.sh"
     },
     Universal / mappings += {
+      val conv = fileConverter.value
       val src = sourceDirectory.value
-      (src / "main" / "scripts" / "install-macos.sh") -> "scripts/install-macos.sh"
+      conv.toVirtualFile((src / "main" / "scripts" / "install-macos.sh").toPath) -> "scripts/install-macos.sh"
     },
     // Install config files to /etc/jorlan-server/ — marked .withConfig() so dpkg does not
     // overwrite them on upgrade if the admin has modified them.
@@ -908,18 +987,19 @@ lazy val debianSettings =
     // Install web frontend assets so the server can serve them directly.
     // Depends on web/dist so packaging always uses a fresh build.
     Debian / linuxPackageMappings += Def.task {
-      val distDir = (web / dist).value
+      val distDir = (web / webDist).value
       packageMapping(
-        (distDir.allPaths --- distDir).get.map { f =>
+        (distDir.allPaths --- distDir).get().map { f =>
           f -> s"/usr/lib/jorlan-server/www/${Path.relativeTo(distDir)(f).get}"
-        }: _*,
+        }*,
       ).withUser("jorlan").withGroup("jorlan")
     }.value,
     // Include web frontend in the universal (macOS) tarball under www/
     Universal / mappings ++= Def.task {
-      val distDir = (web / dist).value
-      (distDir.allPaths --- distDir).get.map { f =>
-        f -> s"www/${Path.relativeTo(distDir)(f).get}"
+      val conv = fileConverter.value
+      val distDir = (web / webDist).value
+      (distDir.allPaths --- distDir).get().map { f =>
+        conv.toVirtualFile(f.toPath) -> s"www/${Path.relativeTo(distDir)(f).get}"
       }
     }.value,
     // postinst: create log directory and set permissions
@@ -974,20 +1054,21 @@ lazy val ai = project
     commonSettings,
     // guava is referenced only through the qdrant gRPC client's method signatures (ListenableFuture),
     // never imported directly, so we don't force an explicit declaration.
-    undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.google.guava", name = "guava")),
+    // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
+    // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "com.google.guava", name = "guava")),
     libraryDependencies ++= Seq(
-      "dev.zio"                   %% "zio"                 % zioVersion withSources (),
-      "dev.zio"                   %% "zio-streams"         % zioVersion withSources (),
-      "dev.langchain4j"            % "langchain4j-core"    % langchainCoreVersion withSources (),
-      "dev.langchain4j"            % "langchain4j"         % langchainCoreVersion withSources (),
-      "dev.langchain4j"            % "langchain4j-ollama"  % langchain4jOllamaVersion withSources (),
-      "dev.langchain4j"            % "langchain4j-qdrant"  % langchainLibrariesVersion withSources (),
-      "dev.langchain4j"            % "langchain4j-mariadb" % langchainLibrariesVersion withSources (),
-      "io.qdrant"                  % "client"              % qdrantClientVersion withSources (),
-      "com.fasterxml.jackson.core" % "jackson-databind"    % jacksonDatabindVersion withSources (),
+      ("dev.zio"                   %% "zio"                 % zioVersion).withSources(),
+      ("dev.zio"                   %% "zio-streams"         % zioVersion).withSources(),
+      ("dev.langchain4j"            % "langchain4j-core"    % langchainCoreVersion).withSources(),
+      ("dev.langchain4j"            % "langchain4j"         % langchainCoreVersion).withSources(),
+      ("dev.langchain4j"            % "langchain4j-ollama"  % langchain4jOllamaVersion).withSources(),
+      ("dev.langchain4j"            % "langchain4j-qdrant"  % langchainLibrariesVersion).withSources(),
+      ("dev.langchain4j"            % "langchain4j-mariadb" % langchainLibrariesVersion).withSources(),
+      ("io.qdrant"                  % "client"              % qdrantClientVersion).withSources(),
+      ("com.fasterxml.jackson.core" % "jackson-databind"    % jacksonDatabindVersion).withSources(),
       // Testing
-      "dev.zio" %% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %% "zio-test-sbt" % zioVersion % "test" withSources (),
+      ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
+      ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),
     ),
     Test / testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     // Fork so the JVM shutdown hook flushes Scala 3 coverage measurements to disk.
@@ -1001,28 +1082,30 @@ lazy val commonWeb: Project => Project =
   _.settings(
     disableExplicitDepsForScalaJs,
     libraryDependencies ++= Seq(
-      "net.leibman" %%% "jorlan-stlib" % stlibVersion withSources (),
-      "net.leibman" % "zio-auth_sjs1_3" % zioAuth withSources (), // I don't know why %%% isn't working.
-      "com.github.ghostdogpr" %%% "caliban-client"    % calibanClientVersion withSources (),
-      "dev.zio" %%% "zio"                             % zioVersion withSources (),
-      "com.softwaremill.sttp.client4" %%% "core"      % sttpClient4Version withSources (),
-      "com.softwaremill.sttp.client4" %%% "zio-json"  % sttpClient4Version withSources (),
-      "io.github.cquiroz" %%% "scala-java-time"       % scalaJavaTimeVersion withSources (),
-      "io.github.cquiroz" %%% "scala-java-time-tzdb"  % scalaJavaTimeVersion withSources (),
-      "org.scala-js" %%% "scalajs-dom"                % scalajsDomVersion withSources (),
-      "com.olvind" %%% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
-      "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion withSources (),
-      "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion withSources (),
-      "com.lihaoyi" %%% "scalatags"                   % scalatagsVersion withSources (),
-      "com.github.japgolly.scalacss" %%% "core"       % scalacssVersion withSources (),
-      "com.github.japgolly.scalacss" %%% "ext-react"  % scalacssVersion withSources (),
+      // Hand-suffixed: this jar comes from ~/.ivy2/local, where coursier cross-versions the module *directory*
+      // to jorlan-stlib_sjs1_3 but derives the *jar* name as jorlan-stlib_3.jar, which does not exist.
+      ("net.leibman" % "jorlan-stlib_sjs1_3" % stlibVersion).withSources(),
+      ("net.leibman" % "zio-auth_sjs1_3" % zioAuth).withSources(), // I don't know why %% isn't working.
+      ("com.github.ghostdogpr" %% "caliban-client"    % calibanClientVersion).withSources(),
+      ("dev.zio" %% "zio"                             % zioVersion).withSources(),
+      ("com.softwaremill.sttp.client4" %% "core"      % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.client4" %% "zio-json"  % sttpClient4Version).withSources(),
+      ("io.github.cquiroz" %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
+      ("io.github.cquiroz" %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
+      ("org.scala-js" %% "scalajs-dom"                % scalajsDomVersion).withSources(),
+      "com.olvind" %% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
+      ("com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion).withSources(),
+      ("com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion).withSources(),
+      ("com.lihaoyi" %% "scalatags"                   % scalatagsVersion).withSources(),
+      ("com.github.japgolly.scalacss" %% "core"       % scalacssVersion).withSources(),
+      ("com.github.japgolly.scalacss" %% "ext-react"  % scalacssVersion).withSources(),
       // Testing
-      "dev.zio" %%% "zio-test"     % zioVersion % "test" withSources (),
-      "dev.zio" %%% "zio-test-sbt" % zioVersion % "test" withSources (),
+      ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
+      ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),
     ),
     dependencyOverrides ++= Seq(
-      "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion,
-      "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion,
+      "com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion,
+      "com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion,
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     organizationName                     := "Roberto Leibman",
@@ -1039,10 +1122,14 @@ lazy val web: Project = project
     // AutomateHeaderPlugin,
     com.github.sbt.git.GitVersioning,
     ScalaJSPlugin,
-    ScalaJSEsbuildWebPlugin,
   )
   .settings(
     scalacOptions ++= scala3Opts,
+    // scalajs-react's StBuildingComponent is `inline`, so its body -- including a call to the deprecated
+    // scala.scalajs.runtime.linkingInfo -- is reported at every one of our call sites. Nothing here can fix it;
+    // it goes away when scalajs-react stops using the deprecated alias. Narrowly matched so any other
+    // deprecation still warns.
+    scalacOptions += "-Wconf:msg=linkingInfo in package scala.scalajs.runtime is deprecated:s",
     name := "jorlan-web",
     // The entire web module compiles to JavaScript (Scala.js) and requires a
     // browser runtime — there are no JVM-runnable tests. Disable scoverage so it
@@ -1053,22 +1140,42 @@ lazy val web: Project = project
     Compile / scalaJSUseMainModuleInitializer := true,
     Test / scalaJSUseMainModuleInitializer    := false,
     libraryDependencies ++= Seq(
-      "dev.zio" %%% "zio"      % zioVersion withSources (),
-      "dev.zio" %%% "zio-json" % zioJsonVersion withSources (),
+      ("dev.zio" %% "zio"      % zioVersion).withSources(),
+      ("dev.zio" %% "zio-json" % zioJsonVersion).withSources(),
     ),
-    debugDist := {
-      val _ = (Compile / fastLinkJS / esbuildBundle).value
+    // ES modules, the only module kind vite consumes directly -- what the esbuild plugin used to set for us.
+    scalaJSLinkerConfig ~= {
+      _.withModuleKind(ModuleKind.ESModule)
+        .withModuleSplitStyle(ModuleSplitStyle.SmallModulesFor(List("jorlan")))
+        .withSourceMap(true)
+    },
+    // webDebugDist: readable stack traces (unminified, mapped back to .scala, React's development build)
+    webDebugDist := Def.uncached {
+      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
       webDistImpl(
-        assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
-        bundleOutput = (Compile / esbuildBundle / crossTarget).value,
+        assets = assets,
+        bundleOutput = runViteBuild(
+          viteRoot = baseDirectory.value,
+          scalaJSOutput = (Compile / fastLinkJSOutput).value,
+          stagingDir = target.value / "vite" / "debugDist",
+          mode = "development",
+          log = streams.value.log,
+        ),
         outputFolder = (ThisBuild / baseDirectory).value / "debugDist",
       )
     },
-    dist := {
-      val _ = (Compile / fullLinkJS / esbuildBundle).value
+    // webDist: minified, but keeps the source map so production stack traces stay decipherable
+    webDist := Def.uncached {
+      val assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web"
       webDistImpl(
-        assets = (ThisBuild / baseDirectory).value / "web" / "src" / "main" / "web",
-        bundleOutput = (Compile / esbuildBundle / crossTarget).value,
+        assets = assets,
+        bundleOutput = runViteBuild(
+          viteRoot = baseDirectory.value,
+          scalaJSOutput = (Compile / fullLinkJSOutput).value,
+          stagingDir = target.value / "vite" / "dist",
+          mode = "production",
+          log = streams.value.log,
+        ),
         outputFolder = (ThisBuild / baseDirectory).value / "dist",
       )
     },

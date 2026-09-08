@@ -71,3 +71,6 @@ dist
 /.claude/.claude/worktrees/phase-14.16/
 /stLib/node_modules/
 .bloop
+
+# npm project for the vite frontend build
+web/node_modules/
