@@ -1139,6 +1139,14 @@ lazy val web: Project = project
     Global / scalaJSStage                     := FastOptStage,
     Compile / scalaJSUseMainModuleInitializer := true,
     Test / scalaJSUseMainModuleInitializer    := false,
+    // Scala.js tests run under plain Node, with no vite in the loop, so the bare imports in the linked test
+    // output (react, @mui/material, ...) are resolved by Node walking UP from wherever that output sits. Under
+    // sbt 2 it defaults to <root>/target/out/sjs1/..., which has no node_modules above it, and the web tests
+    // die with "Cannot find package". Linking the test bundle under web/ puts web/node_modules on that path.
+    Test / fastLinkJS / scalaJSLinkerOutputDirectory :=
+      baseDirectory.value / "target" / "scalajs-test" / "fastopt",
+    Test / fullLinkJS / scalaJSLinkerOutputDirectory :=
+      baseDirectory.value / "target" / "scalajs-test" / "opt",
     libraryDependencies ++= Seq(
       ("dev.zio" %% "zio"      % zioVersion).withSources(),
       ("dev.zio" %% "zio-json" % zioJsonVersion).withSources(),
