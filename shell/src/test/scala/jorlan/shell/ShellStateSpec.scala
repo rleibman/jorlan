@@ -143,10 +143,14 @@ object ShellStateSpec extends ZIOSpecDefault {
         ) @@ TestAspect.withLiveClock,
         test("LiveSession.start puts Left error in queue when subscription fails") {
           for {
-            ls    <- LiveSession.start(sessionId)
-            _     <- ZIO.sleep(100.millis)
+            ls <- LiveSession.start(sessionId)
+            // Wait for the error to actually arrive rather than sleeping a fixed 100ms and hoping. The queue is
+            // filled by the subscription fiber, so a fixed sleep is a race: it passed on an idle machine and
+            // failed under the load of the full suite, which is what made this test flaky in CI.
             items <- ls.tokenQueue.takeAll
-            _     <- ls.subscriptionFiber.interrupt
+              .repeatUntil(_.exists(_.isLeft))
+              .timeoutFail(new AssertionError("no Left arrived in the token queue"))(5.seconds)
+            _ <- ls.subscriptionFiber.interrupt
           } yield assertTrue(items.exists(_.isLeft))
         }.provide(
           ShellState.live ++

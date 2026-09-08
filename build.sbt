@@ -68,8 +68,8 @@ Global / watchAntiEntropy := 1.second
 // zio-json: `%%` only covers the JVM artifact (zio-json_3). sttp-client4's zio-json module still depends on
 // zio-json 0.9.0 on both platforms, so the Scala.js coordinate needs its own scheme entry or the sjs1 eviction
 // check fails the build.
-ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always
-ThisBuild / libraryDependencySchemes += "dev.zio" % "zio-json_sjs1_3" % VersionScheme.Always
+ThisBuild / libraryDependencySchemes += "dev.zio" %% "zio-json"        % VersionScheme.Always
+ThisBuild / libraryDependencySchemes += "dev.zio"  % "zio-json_sjs1_3" % VersionScheme.Always
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared settings
@@ -104,20 +104,20 @@ def webDistImpl(
 
 /** Runs `vite build` over the Scala.js linker output, into a staging directory under the project target.
   *
-  * sbt drives vite, not the reverse. @scala-js/vite-plugin-scalajs -- the setup every tutorial shows -- resolves
-  * the linker output by spawning `sbt print fastLinkJSOutput` from inside vite; calling that from a task that
-  * already has the path in hand would mean sbt re-entering sbt and contending for its own server lock. So the
-  * two paths vite needs are handed over in the environment and web/vite.config.js reads them from there.
+  * sbt drives vite, not the reverse. @scala-js/vite-plugin-scalajs -- the setup every tutorial shows -- resolves the
+  * linker output by spawning `sbt print fastLinkJSOutput` from inside vite; calling that from a task that already has
+  * the path in hand would mean sbt re-entering sbt and contending for its own server lock. So the two paths vite needs
+  * are handed over in the environment and web/vite.config.js reads them from there.
   *
-  * Note that under sbt 2 the linker output lands in <repo>/target/out/sjs1/..., far from web/node_modules, so the
-  * bare imports inside it do not resolve on their own -- see the scalajs-bare-imports plugin in web/vite.config.js.
+  * Note that under sbt 2 the linker output lands in <repo>/target/out/sjs1/..., far from web/node_modules, so the bare
+  * imports inside it do not resolve on their own -- see the scalajs-bare-imports plugin in web/vite.config.js.
   */
 def runViteBuild(
-  viteRoot:       File,
-  scalaJSOutput:  File,
-  stagingDir:     File,
-  mode:           String,
-  log:            Logger,
+  viteRoot:      File,
+  scalaJSOutput: File,
+  stagingDir:    File,
+  mode:          String,
+  log:           Logger,
 ): File = {
   import scala.sys.process.*
 
@@ -132,10 +132,10 @@ def runViteBuild(
     "VITE_OUT_DIR"       -> stagingDir.getAbsolutePath,
     // Rollup exhausts the default node heap on a bundle this size and dies with
     // "Reached heap limit ... JavaScript heap out of memory" (exit 134), surfacing only as a vite failure.
-    "NODE_OPTIONS"       -> s"${sys.env.getOrElse("NODE_OPTIONS", "")} --max-old-space-size=8192".trim,
+    "NODE_OPTIONS" -> s"${sys.env.getOrElse("NODE_OPTIONS", "")} --max-old-space-size=8192".trim,
   )
   log.info(s"vite build --mode $mode (scala.js output: $scalaJSOutput)")
-  val built = Process("npx" :: "vite" :: "build" :: "--mode" :: mode :: Nil, viteRoot, env*).!
+  val built = Process("npx" :: "vite" :: "build" :: "--mode" :: mode :: Nil, viteRoot, env *).!
   if (built != 0) sys.error(s"vite build failed in $viteRoot (exit code $built)")
   stagingDir
 }
@@ -312,11 +312,11 @@ lazy val model =
       disableExplicitDepsForScalaJs,
       scalacOptions ++= scala3Opts,
       libraryDependencies ++= Seq(
-        ("net.leibman"               % "zio-auth_sjs1_3" % zioAuth).withSources(), // I don't know why %% isn't working.
-        ("dev.zio" %% "zio"         % zioVersion).withSources(),
-        ("dev.zio" %% "zio-json"    % zioJsonVersion).withSources(),
-        ("dev.zio" %% "zio-prelude" % zioPreludeVersion).withSources(),
-        ("io.kevinlee" %% "just-semver-core"                                % justSemverCoreVersion).withSources(),
+        ("net.leibman"  % "zio-auth_sjs1_3"  % zioAuth).withSources(), // I don't know why %% isn't working.
+        ("dev.zio"     %% "zio"              % zioVersion).withSources(),
+        ("dev.zio"     %% "zio-json"         % zioJsonVersion).withSources(),
+        ("dev.zio"     %% "zio-prelude"      % zioPreludeVersion).withSources(),
+        ("io.kevinlee" %% "just-semver-core" % justSemverCoreVersion).withSources(),
         "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"   % jsoniterVersion,
         "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % jsoniterVersion,
       ),
@@ -363,15 +363,15 @@ lazy val skillApi =
       coverageEnabled := false,
       disableExplicitDepsForScalaJs,
       libraryDependencies ++= Seq(
-        ("io.github.cquiroz" %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
-        ("io.github.cquiroz" %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
-        ("org.scala-js" %% "scalajs-dom"                % scalajsDomVersion).withSources(),
-        "com.olvind" %% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
-        ("com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion).withSources(),
-        ("com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion).withSources(),
-        ("com.lihaoyi" %% "scalatags"                   % scalatagsVersion).withSources(),
-        ("com.github.japgolly.scalacss" %% "core"       % scalacssVersion).withSources(),
-        ("com.github.japgolly.scalacss" %% "ext-react"  % scalacssVersion).withSources(),
+        ("io.github.cquiroz"                 %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
+        ("io.github.cquiroz"                 %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
+        ("org.scala-js"                      %% "scalajs-dom"           % scalajsDomVersion).withSources(),
+        "com.olvind"                         %% "scalablytyped-runtime" % scalablytypedRuntimeVersion,
+        ("com.github.japgolly.scalajs-react" %% "core"                  % scalajsReactVersion).withSources(),
+        ("com.github.japgolly.scalajs-react" %% "extra"                 % scalajsReactVersion).withSources(),
+        ("com.lihaoyi"                       %% "scalatags"             % scalatagsVersion).withSources(),
+        ("com.github.japgolly.scalacss"      %% "core"                  % scalacssVersion).withSources(),
+        ("com.github.japgolly.scalacss"      %% "ext-react"             % scalacssVersion).withSources(),
       ),
     )
     .settings(
@@ -540,8 +540,8 @@ lazy val emailConnector =
       // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(organization = "org.typelevel", name = "cats-core")),
       // sbt-explicit-dependencies has no sbt2 build, so this filter has nowhere to go:
       // undeclaredCompileDependenciesFilter ~= (_ - moduleFilter(
-        // organization = "org.typelevel",
-        // name = "cats-effect-kernel",
+      // organization = "org.typelevel",
+      // name = "cats-effect-kernel",
       // )),
       // bcpg is not referenced yet — PgpService is currently a null-object stub — but the artifact is
       // kept on the classpath for the forthcoming PGP implementation.
@@ -991,7 +991,7 @@ lazy val debianSettings =
       packageMapping(
         (distDir.allPaths --- distDir).get().map { f =>
           f -> s"/usr/lib/jorlan-server/www/${Path.relativeTo(distDir)(f).get}"
-        }*,
+        } *,
       ).withUser("jorlan").withGroup("jorlan")
     }.value,
     // Include web frontend in the universal (macOS) tarball under www/
@@ -1084,21 +1084,21 @@ lazy val commonWeb: Project => Project =
     libraryDependencies ++= Seq(
       // Hand-suffixed: this jar comes from ~/.ivy2/local, where coursier cross-versions the module *directory*
       // to jorlan-stlib_sjs1_3 but derives the *jar* name as jorlan-stlib_3.jar, which does not exist.
-      ("net.leibman" % "jorlan-stlib_sjs1_3" % stlibVersion).withSources(),
-      ("net.leibman" % "zio-auth_sjs1_3" % zioAuth).withSources(), // I don't know why %% isn't working.
-      ("com.github.ghostdogpr" %% "caliban-client"    % calibanClientVersion).withSources(),
-      ("dev.zio" %% "zio"                             % zioVersion).withSources(),
-      ("com.softwaremill.sttp.client4" %% "core"      % sttpClient4Version).withSources(),
-      ("com.softwaremill.sttp.client4" %% "zio-json"  % sttpClient4Version).withSources(),
-      ("io.github.cquiroz" %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
-      ("io.github.cquiroz" %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
-      ("org.scala-js" %% "scalajs-dom"                % scalajsDomVersion).withSources(),
-      "com.olvind" %% "scalablytyped-runtime"        % scalablytypedRuntimeVersion,
-      ("com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion).withSources(),
-      ("com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion).withSources(),
-      ("com.lihaoyi" %% "scalatags"                   % scalatagsVersion).withSources(),
-      ("com.github.japgolly.scalacss" %% "core"       % scalacssVersion).withSources(),
-      ("com.github.japgolly.scalacss" %% "ext-react"  % scalacssVersion).withSources(),
+      ("net.leibman"            % "jorlan-stlib_sjs1_3" % stlibVersion).withSources(),
+      ("net.leibman"            % "zio-auth_sjs1_3"     % zioAuth).withSources(), // I don't know why %% isn't working.
+      ("com.github.ghostdogpr" %% "caliban-client"      % calibanClientVersion).withSources(),
+      ("dev.zio"               %% "zio"                 % zioVersion).withSources(),
+      ("com.softwaremill.sttp.client4"     %% "core"                  % sttpClient4Version).withSources(),
+      ("com.softwaremill.sttp.client4"     %% "zio-json"              % sttpClient4Version).withSources(),
+      ("io.github.cquiroz"                 %% "scala-java-time"       % scalaJavaTimeVersion).withSources(),
+      ("io.github.cquiroz"                 %% "scala-java-time-tzdb"  % scalaJavaTimeVersion).withSources(),
+      ("org.scala-js"                      %% "scalajs-dom"           % scalajsDomVersion).withSources(),
+      "com.olvind"                         %% "scalablytyped-runtime" % scalablytypedRuntimeVersion,
+      ("com.github.japgolly.scalajs-react" %% "core"                  % scalajsReactVersion).withSources(),
+      ("com.github.japgolly.scalajs-react" %% "extra"                 % scalajsReactVersion).withSources(),
+      ("com.lihaoyi"                       %% "scalatags"             % scalatagsVersion).withSources(),
+      ("com.github.japgolly.scalacss"      %% "core"                  % scalacssVersion).withSources(),
+      ("com.github.japgolly.scalacss"      %% "ext-react"             % scalacssVersion).withSources(),
       // Testing
       ("dev.zio" %% "zio-test"     % zioVersion % "test").withSources(),
       ("dev.zio" %% "zio-test-sbt" % zioVersion % "test").withSources(),

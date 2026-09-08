@@ -1,16 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////////
 // Common stuff
-addSbtPlugin("com.github.sbt"    % "sbt-git"                   % "2.1.0")
-addSbtPlugin("com.github.sbt"    % "sbt-header"                % "5.11.0")
-addSbtPlugin("com.github.sbt"    % "sbt-native-packager"       % "1.11.7")
-addSbtPlugin("com.eed3si9n"      % "sbt-buildinfo"             % "0.13.1")
-addSbtPlugin("org.scalameta"     % "sbt-scalafmt"              % "2.6.2")
+addSbtPlugin("com.github.sbt" % "sbt-git"             % "2.1.0")
+addSbtPlugin("com.github.sbt" % "sbt-header"          % "5.11.0")
+addSbtPlugin("com.github.sbt" % "sbt-native-packager" % "1.11.7")
+addSbtPlugin("com.eed3si9n"   % "sbt-buildinfo"       % "0.13.1")
+addSbtPlugin("org.scalameta"  % "sbt-scalafmt"        % "2.6.2")
 // sbt2: sbt-scalafmt brings its own scalafmt-dynamic. Pinning it here drags in _2.13 artifacts alongside the
 // build's _3 ones and fails the load with "Conflicting cross-version suffixes: scala-xml, jsoniter-scala-core".
 // libraryDependencies += "org.scalameta" %% "scalafmt-dynamic" % "3.11.4"
 // No sbt2 build of sbt-explicit-dependencies.
 // addSbtPlugin("com.github.cb372"  % "sbt-explicit-dependencies" % "0.3.1")
-addSbtPlugin("com.typesafe"      % "sbt-mima-plugin"           % "1.1.6")
+addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "1.1.6")
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Web client
