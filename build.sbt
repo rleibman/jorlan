@@ -130,9 +130,15 @@ def runViteBuild(
   val env = Seq(
     "SCALAJS_OUTPUT_DIR" -> scalaJSOutput.getAbsolutePath,
     "VITE_OUT_DIR"       -> stagingDir.getAbsolutePath,
-    // Rollup exhausts the default node heap on a bundle this size and dies with
-    // "Reached heap limit ... JavaScript heap out of memory" (exit 134), surfacing only as a vite failure.
-    "NODE_OPTIONS" -> s"${sys.env.getOrElse("NODE_OPTIONS", "")} --max-old-space-size=8192".trim,
+    // Rollup runs out of the default node heap on a bundle this size and dies with
+    // "FATAL ERROR: Reached heap limit ... JavaScript heap out of memory" (exit 134), which surfaces only as a
+    // vite build failure. 6 GB fits a GitHub runner (7 GB total) -- asking for 8 GB there got the job SIGTERMed
+    // by the OOM killer instead. If NODE_OPTIONS already names a heap size, leave it entirely alone.
+    "NODE_OPTIONS" -> {
+      val existing = sys.env.getOrElse("NODE_OPTIONS", "")
+      if (existing.contains("max-old-space-size")) existing
+      else s"$existing --max-old-space-size=6144".trim
+    },
   )
   log.info(s"vite build --mode $mode (scala.js output: $scalaJSOutput)")
   val built = Process("npx" :: "vite" :: "build" :: "--mode" :: mode :: Nil, viteRoot, env *).!
