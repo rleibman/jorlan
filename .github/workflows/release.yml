@@ -75,11 +75,14 @@ jobs:
     - name: Collect release artifacts
       run: |
         mkdir -p release-artifacts
-        find server/target -name '*.deb' -exec cp {} release-artifacts/ \;
-        find shell/target -name '*.deb' -exec cp {} release-artifacts/ \;
-        find server/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
-        find shell/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
+        # sbt 2 relocated build output: artifacts now land under <root>/target/out/<platform>/<scala>/<project>/
+        # rather than <project>/target/, so these searched a directory that no longer exists and silently
+        # collected nothing.
+        find target/out -name '*.deb' -exec cp {} release-artifacts/ \;
+        find target/out -name '*.tgz' -exec cp {} release-artifacts/ \;
         ls -la release-artifacts/
+        # Fail loudly rather than publishing an empty release.
+        [ -n "$(ls -A release-artifacts/)" ] || { echo "No release artifacts were produced"; exit 1; }
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2

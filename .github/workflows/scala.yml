@@ -124,12 +124,12 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: jorlan-server-deb
-        path: server/target/**/*.deb
+        path: target/out/**/jorlan-server*.deb
         if-no-files-found: error
 
     - name: Upload jorlan-shell .deb
       uses: actions/upload-artifact@v4
       with:
         name: jorlan-shell-deb
-        path: shell/target/**/*.deb
+        path: target/out/**/jorlan-shell*.deb
         if-no-files-found: error
