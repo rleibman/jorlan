@@ -64,13 +64,13 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "server/debian:packageBin; shell/debian:packageBin"
+      run: sbt --error "server/Debian/packageBin; shell/Debian/packageBin"
 
-    - name: Build macOS tarballs (includes web frontend via server/universal:packageZipTarball)
+    - name: Build macOS tarballs (includes web frontend via server/Universal/packageZipTarball)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "server/universal:packageZipTarball; shell/universal:packageZipTarball"
+      run: sbt --error "server/Universal/packageZipTarball; shell/Universal/packageZipTarball"
 
     - name: Collect release artifacts
       run: |

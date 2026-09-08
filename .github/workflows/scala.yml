@@ -118,7 +118,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "server/debian:packageBin; shell/debian:packageBin"
+      run: sbt --error "server/Debian/packageBin; shell/Debian/packageBin"
 
     - name: Upload jorlan-server .deb
       uses: actions/upload-artifact@v4
