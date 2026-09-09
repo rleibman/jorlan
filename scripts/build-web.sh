@@ -8,5 +8,5 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Building web frontend (full-opt)..."
-sbtn --error "web/dist"
+sbtn --error "web/webDist"
 echo "Web bundle written to dist/"

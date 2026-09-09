@@ -52,34 +52,37 @@ jobs:
         JORLAN_DB_PASSWORD: jorlan
       run: sbt --error test
 
-    - name: Cache npm dependencies (esbuild)
+    - name: Cache npm dependencies (vite)
       uses: actions/cache@v4
       with:
-        path: web/target/scala-3.8.4/esbuild/main/node_modules
-        key: ${{ runner.os }}-npm-esbuild-${{ hashFiles('web/esbuild/package.json') }}
+        path: web/node_modules
+        key: ${{ runner.os }}-npm-vite-${{ hashFiles('web/package-lock.json') }}
         restore-keys: |
-          ${{ runner.os }}-npm-esbuild-
+          ${{ runner.os }}-npm-vite-
 
-    - name: Build Debian packages (includes web frontend via web/dist)
+    - name: Build Debian packages (includes web frontend via web/webDist)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "server/debian:packageBin; shell/debian:packageBin"
+      run: sbt --error "server/Debian/packageBin; shell/Debian/packageBin"
 
-    - name: Build macOS tarballs (includes web frontend via server/universal:packageZipTarball)
+    - name: Build macOS tarballs (includes web frontend via server/Universal/packageZipTarball)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_ACTOR: ${{ github.actor }}
-      run: sbt --error "server/universal:packageZipTarball; shell/universal:packageZipTarball"
+      run: sbt --error "server/Universal/packageZipTarball; shell/Universal/packageZipTarball"
 
     - name: Collect release artifacts
       run: |
         mkdir -p release-artifacts
-        find server/target -name '*.deb' -exec cp {} release-artifacts/ \;
-        find shell/target -name '*.deb' -exec cp {} release-artifacts/ \;
-        find server/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
-        find shell/target/universal -name '*.tgz' -exec cp {} release-artifacts/ \;
+        # sbt 2 relocated build output: artifacts now land under <root>/target/out/<platform>/<scala>/<project>/
+        # rather than <project>/target/, so these searched a directory that no longer exists and silently
+        # collected nothing.
+        find target/out -name '*.deb' -exec cp {} release-artifacts/ \;
+        find target/out -name '*.tgz' -exec cp {} release-artifacts/ \;
         ls -la release-artifacts/
+        # Fail loudly rather than publishing an empty release.
+        [ -n "$(ls -A release-artifacts/)" ] || { echo "No release artifacts were produced"; exit 1; }
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2

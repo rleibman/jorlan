@@ -407,7 +407,7 @@ object ChatPage {
                 .variant("outlined")
                 .size("small")
                 .onChange(e => state.modState(_.copy(input = e.target.value.asInstanceOf[String])).runNow())
-                .onKeyDown(handleKeyDown)
+                .onKeyDown(e => handleKeyDown(e))
                 .disabled(state.value.sessionId.isEmpty),
               if (hasSpeechRecognition)
                 Tooltip.withProps(

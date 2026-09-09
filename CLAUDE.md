@@ -66,7 +66,7 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 ## SBT Usage
 
 - Always use `--error` option: `sbtn --error compile`
-- Any time you're going to compile two modules or more, please use `sbtn --error compile test:compile`
+- Any time you're going to compile two modules or more, please use `sbtn --error compile Test/compile`
 - Use `sbtn test` to run all tests
 
 ## Scala Style
@@ -90,7 +90,7 @@ Multi-agent tech-debt reports, written after implementation using `doc/phase_rev
 - **NEVER run `git commit` or `git push` without explicit user approval.** Present the diff/summary and wait for the
   user to say "commit", "push", or equivalent. Not even as a "finishing touch". Not even when the task is clearly
   complete. No exceptions.
-- When finalizing a phase, run `sbt --error test` (or at minimum `test:compile`), then report results. (don't worry
+- When finalizing a phase, run `sbt --error test` (or at minimum `Test/compile`), then report results. (don't worry
   about scalafmtall, I run that myself)
 
 ## Open Design Issues (do not silently assume)

@@ -40,7 +40,7 @@ sudo dpkg -i jorlan-shell_<version>_all.deb
 ```bash
 git clone https://github.com/rleibman/jorlan.git
 cd jorlan
-sbt server/debian:packageBin
+sbt server/Debian/packageBin
 sudo dpkg -i server/target/jorlan-server_*.deb
 ```
 
