@@ -6,6 +6,9 @@
 
 package jorlan.web.components
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -57,21 +60,20 @@ object PipelineStepsEditor {
             ).asInstanceOf[Box.Props],
         )(
           Typography.withProps(
-            TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props],
+            TypographyOwnProps().setVariant(MuiStrings.subtitle1).asInstanceOf[Typography.Props],
           )("Steps"),
-          MuiButton
-            .variant("outlined")
-            .size("small")
-            .onClick(() =>
+          Button
+            .variant(MuiStrings.outlined)
+            .size(MuiStrings.small)
+            .onClick(_ =>
               props
-                .onChange(props.steps :+ defaultStep, Some(props.steps.size))
-                .runNow(),
+                .onChange(props.steps :+ defaultStep, Some(props.steps.size)),
             )("+ Add Step"),
         ),
         if (props.steps.isEmpty)
           <.span("No steps yet. Add a step to define this pipeline.")
         else
-          Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+          Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
             TableHead()(
               TableRow()(
                 TableCell()("#"),
@@ -96,33 +98,33 @@ object PipelineStepsEditor {
                             js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
                           ).asInstanceOf[Box.Props],
                       )(
-                        MuiButton
-                          .size("small")
-                          .variant("outlined")
+                        Button
+                          .size(MuiStrings.small)
+                          .variant(MuiStrings.outlined)
                           .disabled(idx == 0)
-                          .onClick(() => {
+                          .onClick(_ => {
                             val swapped = props.steps.updated(idx, props.steps(idx - 1)).updated(idx - 1, step)
-                            props.onChange(swapped, props.editingStep).runNow()
+                            props.onChange(swapped, props.editingStep)
                           })("▲"),
-                        MuiButton
-                          .size("small")
-                          .variant("outlined")
+                        Button
+                          .size(MuiStrings.small)
+                          .variant(MuiStrings.outlined)
                           .disabled(idx == props.steps.size - 1)
-                          .onClick(() => {
+                          .onClick(_ => {
                             val swapped = props.steps.updated(idx, props.steps(idx + 1)).updated(idx + 1, step)
-                            props.onChange(swapped, props.editingStep).runNow()
+                            props.onChange(swapped, props.editingStep)
                           })("▼"),
-                        MuiButton
-                          .size("small")
-                          .variant("outlined")
-                          .onClick(() => props.onChange(props.steps, Some(idx)).runNow())("Edit"),
-                        MuiButton
-                          .size("small")
-                          .variant("outlined")
-                          .color("error")
-                          .onClick(() => {
+                        Button
+                          .size(MuiStrings.small)
+                          .variant(MuiStrings.outlined)
+                          .onClick(_ => props.onChange(props.steps, Some(idx)))("Edit"),
+                        Button
+                          .size(MuiStrings.small)
+                          .variant(MuiStrings.outlined)
+                          .color(MuiStrings.error)
+                          .onClick(_ => {
                             val remaining = props.steps.patch(idx, Nil, 1)
-                            props.onChange(remaining, None).runNow()
+                            props.onChange(remaining, None)
                           })("Delete"),
                       ),
                     ),
@@ -151,41 +153,45 @@ object PipelineStepsEditor {
               ).asInstanceOf[Box.Props],
           )(
             Typography.withProps(
-              TypographyOwnProps().setVariant("subtitle2").asInstanceOf[Typography.Props],
+              TypographyOwnProps().setVariant(MuiStrings.subtitle2).asInstanceOf[Typography.Props],
             )(s"Editing Step ${idx + 1}"),
-            MuiTextField
+            TextField
               .label("Step Name")
               .value(step.name)
               .fullWidth(true)
               .onChange { e =>
                 val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                updateStep(step.copy(name = v)).runNow()
+                updateStep(step.copy(name = v))
               }(),
-            MuiTextField
+            TextField
               .label("Output Variable")
               .value(step.outputVar)
               .fullWidth(true)
               .onChange { e =>
                 val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                updateStep(step.copy(outputVar = v)).runNow()
+                updateStep(step.copy(outputVar = v))
               }(),
             Typography.withProps(
-              TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props],
+              TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props],
             )("Step Mode"),
-            MuiSelect
+            OutlinedSelect
               .value(step.mode.toString)
               .fullWidth(true)
-              .onChange { e =>
-                val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                val m = StepMode.values.find(_.toString == v).getOrElse(StepMode.ReactLoop)
-                updateStep(step.copy(mode = m)).runNow()
+              .onChange {
+                (
+                  e,
+                  _,
+                ) =>
+                  val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                  val m = StepMode.values.find(_.toString == v).getOrElse(StepMode.ReactLoop)
+                  updateStep(step.copy(mode = m))
               }(
-                MuiMenuItem.value("ReactLoop")("ReactLoop — full tool-using ReAct loop"): VdomNode,
-                MuiMenuItem.value("SingleCall")(
+                MenuItem.value("ReactLoop")("ReactLoop — full tool-using ReAct loop"): VdomNode,
+                MenuItem.value("SingleCall")(
                   "SingleCall — single LLM call, no tools (pure reasoning)",
                 ): VdomNode,
               ),
-            MuiTextField
+            TextField
               .label("System Prompt")
               .value(step.systemPrompt)
               .fullWidth(true)
@@ -193,9 +199,9 @@ object PipelineStepsEditor {
               .rows(4)
               .onChange { e =>
                 val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                updateStep(step.copy(systemPrompt = v)).runNow()
+                updateStep(step.copy(systemPrompt = v))
               }(),
-            MuiTextField
+            TextField
               .label(
                 "User Prompt (supports {{invariants.KEY}}, {{steps.NAME.output}}, {{now}}, {{run.context}})",
               )
@@ -205,25 +211,25 @@ object PipelineStepsEditor {
               .rows(4)
               .onChange { e =>
                 val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                updateStep(step.copy(userPrompt = v)).runNow()
+                updateStep(step.copy(userPrompt = v))
               }(),
             Typography.withProps(
-              TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props],
+              TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props],
             )("Tools available to this step (none selected = the step runs with no tools)"),
             ToolSelector(step.tools, ts => updateStep(step.copy(tools = ts))),
-            MuiTextField
+            TextField
               .label("Retry on Fail")
               .value(step.retryOnFail.toString)
               .`type`("number")
               .fullWidth(true)
               .onChange { e =>
                 val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                updateStep(step.copy(retryOnFail = v.toIntOption.getOrElse(0))).runNow()
+                updateStep(step.copy(retryOnFail = v.toIntOption.getOrElse(0)))
               }(),
-            MuiButton
-              .size("small")
-              .variant("outlined")
-              .onClick(() => props.onChange(props.steps, None).runNow())("Done editing step"),
+            Button
+              .size(MuiStrings.small)
+              .variant(MuiStrings.outlined)
+              .onClick(_ => props.onChange(props.steps, None))("Done editing step"),
           )
         },
       )

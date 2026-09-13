@@ -6,6 +6,9 @@
 
 package jorlan.web.components
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -232,9 +235,10 @@ object CreateSkillWizard {
             sv.step match {
               case 0 =>
                 <.div(
-                  Typography.withProps(TypographyOwnProps().setVariant("body1").asInstanceOf[Typography.Props])(
-                    "Choose how the skill executes its tools:",
-                  ),
+                  Typography
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.body1).asInstanceOf[Typography.Props])(
+                      "Choose how the skill executes its tools:",
+                    ),
                   <.div(
                     ^.style := js.Dynamic.literal(marginTop = "16px"),
                     <.label(
@@ -264,92 +268,92 @@ object CreateSkillWizard {
               case 1 =>
                 <.div(
                   columnFlex(
-                    MuiTextField
+                    TextField
                       .label("Skill Name (lowercase, e.g. weather)")
                       .value(sv.skillName)
                       .fullWidth(true)
-                      .onChange(e => setField(_.copy(skillName = e.target.value.toString)).runNow()),
-                    MuiTextField
+                      .onChange(e => setField(_.copy(skillName = e.target.value.toString))),
+                    TextField
                       .label("Version")
                       .value(sv.skillVersion)
                       .fullWidth(true)
-                      .onChange(e => setField(_.copy(skillVersion = e.target.value.toString)).runNow()),
-                    MuiTextField
+                      .onChange(e => setField(_.copy(skillVersion = e.target.value.toString))),
+                    TextField
                       .label("Description")
                       .value(sv.description)
                       .fullWidth(true)
                       .multiline(true)
                       .rows(2)
-                      .onChange(e => setField(_.copy(description = e.target.value.toString)).runNow()),
-                    MuiTextField
+                      .onChange(e => setField(_.copy(description = e.target.value.toString))),
+                    TextField
                       .label("Keywords (comma-separated)")
                       .value(sv.keywords)
                       .fullWidth(true)
-                      .onChange(e => setField(_.copy(keywords = e.target.value.toString)).runNow()),
+                      .onChange(e => setField(_.copy(keywords = e.target.value.toString))),
                   ),
                 )
 
               case 2 =>
                 <.div(
                   columnFlex(
-                    MuiTextField
+                    TextField
                       .label(s"Tool Name (auto-prefixed with ${sv.skillName}.)")
                       .value(sv.toolName)
                       .fullWidth(true)
-                      .onChange(e => setField(_.copy(toolName = e.target.value.toString)).runNow()),
-                    MuiTextField
+                      .onChange(e => setField(_.copy(toolName = e.target.value.toString))),
+                    TextField
                       .label("Tool Description")
                       .value(sv.toolDescription)
                       .fullWidth(true)
                       .multiline(true)
                       .rows(2)
-                      .onChange(e => setField(_.copy(toolDescription = e.target.value.toString)).runNow()),
+                      .onChange(e => setField(_.copy(toolDescription = e.target.value.toString))),
                     if (sv.executorType == "http_api") {
                       <.div(
                         columnFlex(
-                          MuiTextField
+                          TextField
                             .label("HTTP Method (GET, POST, PUT, DELETE)")
                             .value(sv.httpMethod)
                             .fullWidth(true)
-                            .onChange(e => setField(_.copy(httpMethod = e.target.value.toString)).runNow()),
-                          MuiTextField
+                            .onChange(e => setField(_.copy(httpMethod = e.target.value.toString))),
+                          TextField
                             .label("URL (use {{param}} for substitution)")
                             .value(sv.httpUrl)
                             .fullWidth(true)
-                            .onChange(e => setField(_.copy(httpUrl = e.target.value.toString)).runNow()),
-                          MuiTextField
+                            .onChange(e => setField(_.copy(httpUrl = e.target.value.toString))),
+                          TextField
                             .label("Headers (one per line: Key: Value)")
                             .value(sv.httpHeaders)
                             .fullWidth(true)
                             .multiline(true)
                             .rows(3)
-                            .onChange(e => setField(_.copy(httpHeaders = e.target.value.toString)).runNow()),
-                          MuiTextField
+                            .onChange(e => setField(_.copy(httpHeaders = e.target.value.toString))),
+                          TextField
                             .label("Body Template (optional, use {{param}})")
                             .value(sv.httpBody)
                             .fullWidth(true)
                             .multiline(true)
                             .rows(3)
-                            .onChange(e => setField(_.copy(httpBody = e.target.value.toString)).runNow()),
+                            .onChange(e => setField(_.copy(httpBody = e.target.value.toString))),
                         ),
                       )
                     } else {
                       <.div(
                         columnFlex(
-                          MuiTextField
+                          TextField
                             .label("System Prompt")
                             .value(sv.systemPrompt)
                             .fullWidth(true)
                             .multiline(true)
                             .rows(3)
-                            .onChange(e => setField(_.copy(systemPrompt = e.target.value.toString)).runNow()),
-                          MuiTextField
+                            .onChange(e => setField(_.copy(systemPrompt = e.target.value.toString))),
+                          TextField
                             .label("User Prompt Template (use {{param}})")
                             .value(sv.userPrompt)
                             .fullWidth(true)
                             .multiline(true)
                             .rows(3)
-                            .onChange(e => setField(_.copy(userPrompt = e.target.value.toString)).runNow()),
+                            .onChange(e => setField(_.copy(userPrompt = e.target.value.toString))),
                         ),
                       )
                     },
@@ -359,18 +363,18 @@ object CreateSkillWizard {
               case 3 =>
                 <.div(
                   columnFlex(
-                    MuiTextField
+                    TextField
                       .label("Required Capabilities (comma-separated)")
                       .value(sv.capabilities)
                       .fullWidth(true)
-                      .onChange(e => setField(_.copy(capabilities = e.target.value.toString)).runNow()),
-                    MuiTextField
+                      .onChange(e => setField(_.copy(capabilities = e.target.value.toString))),
+                    TextField
                       .label("Example Prompts (one per line)")
                       .value(sv.examplePrompts)
                       .fullWidth(true)
                       .multiline(true)
                       .rows(4)
-                      .onChange(e => setField(_.copy(examplePrompts = e.target.value.toString)).runNow()),
+                      .onChange(e => setField(_.copy(examplePrompts = e.target.value.toString))),
                   ),
                 )
 
@@ -385,9 +389,10 @@ object CreateSkillWizard {
                           .asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    Typography.withProps(TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props])(
-                      "Manifest Preview:",
-                    ),
+                    Typography
+                      .withProps(TypographyOwnProps().setVariant(MuiStrings.subtitle1).asInstanceOf[Typography.Props])(
+                        "Manifest Preview:",
+                      ),
                     <.pre(
                       ^.style := js.Dynamic.literal(
                         background = "#f5f5f5",
@@ -398,11 +403,11 @@ object CreateSkillWizard {
                       ),
                       manifest,
                     ),
-                    sv.error.fold(EmptyVdom)(e => Alert.severity("error")(e)),
-                    sv.lifecycleErrors.toTagMod(e => Alert.severity("error")(e)),
-                    sv.lifecycleInfo.toTagMod(i => Alert.severity("info")(i)),
+                    sv.error.fold(EmptyVdom)(e => Alert.severity(MuiStrings.error)(e)),
+                    sv.lifecycleErrors.toTagMod(e => Alert.severity(MuiStrings.error)(e)),
+                    sv.lifecycleInfo.toTagMod(i => Alert.severity(MuiStrings.info)(i)),
                     sv.lifecycleStatus.fold(EmptyVdom) { status =>
-                      Alert.severity("success")(s"Status: $status")
+                      Alert.severity(MuiStrings.success)(s"Status: $status")
                     },
                     Box.withProps(
                       BoxOwnProps[Theme]()
@@ -413,19 +418,19 @@ object CreateSkillWizard {
                         ).asInstanceOf[Box.Props],
                     )(
                       if (sv.createdVersionId.isEmpty) {
-                        MuiButton
-                          .variant("contained")
+                        Button
+                          .variant(MuiStrings.contained)
                           .disabled(sv.saving)
-                          .onClick(() => createDraft().runNow())("Create Draft")
+                          .onClick(_ => createDraft())("Create Draft")
                       } else {
                         val canAdvance = sv.lifecycleStatus.exists(s =>
                           s == SkillStatus.Draft || s == SkillStatus.Validated ||
                             s == SkillStatus.PermissionReviewed || s == SkillStatus.SandboxTested,
                         )
-                        MuiButton
-                          .variant("contained")
+                        Button
+                          .variant(MuiStrings.contained)
                           .disabled(sv.advancing || !canAdvance)
-                          .onClick(() => advance().runNow())("Advance")
+                          .onClick(_ => advance())("Advance")
                       },
                     ),
                   ),
@@ -451,14 +456,14 @@ object CreateSkillWizard {
               ),
             ),
             DialogActions()(
-              MuiButton.onClick(() => props.onClose.runNow())("Cancel"),
+              Button.onClick(_ => props.onClose)("Cancel"),
               if (sv.step > 0 && sv.step < stepLabels.length - 1) {
-                MuiButton.onClick(() => prevStep().runNow())("Back")
+                Button.onClick(_ => prevStep())("Back")
               } else EmptyVdom,
               if (sv.step < stepLabels.length - 1) {
-                MuiButton
-                  .variant("contained")
-                  .onClick(() => nextStep().runNow())("Next")
+                Button
+                  .variant(MuiStrings.contained)
+                  .onClick(_ => nextStep())("Next")
               } else EmptyVdom,
             ),
           )

@@ -6,6 +6,7 @@
 
 package jorlan.web
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
 import auth.{AuthClient, LoginRouter, OAuthProviderUI}
 import caliban.ScalaJSClientAdapter
 import japgolly.scalajs.react.*
@@ -20,11 +21,7 @@ import sttp.model.Uri
 
 import scala.language.unsafeNulls
 import scala.scalajs.js
-import scala.scalajs.js.annotation.{JSExport, JSImport}
-
-@js.native
-@JSImport("react", JSImport.Namespace)
-private object ReactModule extends js.Object
+import scala.scalajs.js.annotation.JSExport
 
 object JorlanWebApp {
 
@@ -101,7 +98,7 @@ object JorlanWebApp {
             CssBaseline(),
             // OAuth callback result banner — shown when redirected back from Google with ?oauth=success/error
             oauthToast.value.fold(EmptyVdom) { result =>
-              Alert.severity(if (result == "success") "success" else "error")(
+              Alert.severity(if (result == "success") MuiStrings.success else MuiStrings.error)(
                 if (result == "success") "Account connected successfully."
                 else "Failed to connect account. Please try again.",
               )
@@ -127,7 +124,7 @@ object JorlanWebApp {
   @JSExport
   def main(args: Array[String]): Unit = {
     // Expose bundled React as window.React so skill scripts (NoModule) can reference it as a global.
-    dom.window.asInstanceOf[js.Dynamic].React = ReactModule.asInstanceOf[js.Dynamic]
+    dom.window.asInstanceOf[js.Dynamic].React = japgolly.scalajs.react.facade.React.asInstanceOf[js.Dynamic]
     val container = dom.document.getElementById("content")
     val root = ReactDOMClient.createRoot(container)
     root.render(component())

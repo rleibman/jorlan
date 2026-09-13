@@ -6,6 +6,9 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -150,14 +153,15 @@ object CustomSkillsPage {
               }
             }
 
-          def statusChipColor(status: SkillStatus): String =
+          def statusChipColor(status: SkillStatus)
+            : MuiStrings.default | MuiStrings.warning | MuiStrings.success | MuiStrings.error =
             status match {
               case SkillStatus.Draft | SkillStatus.Validated | SkillStatus.PermissionReviewed |
                   SkillStatus.SandboxTested =>
-                "default"
-              case SkillStatus.AwaitingApproval                 => "warning"
-              case SkillStatus.Active                           => "success"
-              case SkillStatus.Deprecated | SkillStatus.Revoked => "error"
+                MuiStrings.default
+              case SkillStatus.AwaitingApproval                 => MuiStrings.warning
+              case SkillStatus.Active                           => MuiStrings.success
+              case SkillStatus.Deprecated | SkillStatus.Revoked => MuiStrings.error
             }
 
           <.div(
@@ -170,23 +174,23 @@ object CustomSkillsPage {
                     .asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])(
+              Typography.withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])(
                 "Custom Skills",
               ),
-              MuiButton
-                .variant("contained")
-                .onClick(() => state.modState(_.copy(showWizard = true)).runNow())(
+              Button
+                .variant(MuiStrings.contained)
+                .onClick(_ => state.modState(_.copy(showWizard = true)))(
                   "+ Create Custom Skill",
                 ),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading) {
               CircularProgress()
             } else {
               <.div(
                 if (state.value.pending.nonEmpty) {
                   <.div(
-                    Typography.withProps(TypographyOwnProps().setVariant("h6").asInstanceOf[Typography.Props])(
+                    Typography.withProps(TypographyOwnProps().setVariant(MuiStrings.h6).asInstanceOf[Typography.Props])(
                       "Pending Approval",
                     ),
                     TableContainer()(
@@ -216,22 +220,21 @@ object CustomSkillsPage {
                                         .asInstanceOf[SxProps[Theme]],
                                     ).asInstanceOf[Box.Props],
                                 )(
-                                  MuiButton
-                                    .variant("contained")
-                                    .color("success")
-                                    .size("small")
+                                  Button
+                                    .variant(MuiStrings.contained)
+                                    .color(MuiStrings.success)
+                                    .size(MuiStrings.small)
                                     .disabled(state.value.approving.isDefined)
-                                    .onClick(() => approve(sv.id).runNow())("Approve"),
-                                  MuiButton
-                                    .variant("outlined")
-                                    .color("error")
-                                    .size("small")
-                                    .onClick(() =>
+                                    .onClick(_ => approve(sv.id))("Approve"),
+                                  Button
+                                    .variant(MuiStrings.outlined)
+                                    .color(MuiStrings.error)
+                                    .size(MuiStrings.small)
+                                    .onClick(_ =>
                                       state
                                         .modState(
                                           _.copy(rejectTarget = Some(sv.id), rejectReason = ""),
-                                        )
-                                        .runNow(),
+                                        ),
                                     )("Reject"),
                                 ),
                               ),
@@ -242,11 +245,11 @@ object CustomSkillsPage {
                     ),
                   )
                 } else EmptyVdom,
-                Typography.withProps(TypographyOwnProps().setVariant("h6").asInstanceOf[Typography.Props])(
+                Typography.withProps(TypographyOwnProps().setVariant(MuiStrings.h6).asInstanceOf[Typography.Props])(
                   "All Custom Skills",
                 ),
                 if (state.value.allCustom.isEmpty) {
-                  Alert.severity("info")("No custom skills yet. Create one to get started.")
+                  Alert.severity(MuiStrings.info)("No custom skills yet. Create one to get started.")
                 } else {
                   TableContainer()(
                     Table()(
@@ -270,7 +273,7 @@ object CustomSkillsPage {
                                 ChipOwnProps()
                                   .setLabel(sv.status.toString)
                                   .setColor(statusChipColor(sv.status))
-                                  .setSize("small")
+                                  .setSize(MuiStrings.small)
                                   .asInstanceOf[Chip.Props],
                               )(),
                             ),
@@ -286,22 +289,22 @@ object CustomSkillsPage {
             Dialog(state.value.rejectTarget.isDefined)(
               DialogTitle()("Reject Skill Version"),
               DialogContent()(
-                MuiTextField
+                TextField
                   .label("Rejection Reason")
                   .value(state.value.rejectReason)
                   .fullWidth(true)
                   .multiline(true)
                   .rows(3)
-                  .onChange(e => state.modState(_.copy(rejectReason = e.target.value.toString)).runNow()),
+                  .onChange(e => state.modState(_.copy(rejectReason = e.target.value.toString))),
               ),
               DialogActions()(
-                MuiButton
-                  .onClick(() => state.modState(_.copy(rejectTarget = None, rejectReason = "")).runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
-                  .color("error")
+                Button
+                  .onClick(_ => state.modState(_.copy(rejectTarget = None, rejectReason = "")))("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
+                  .color(MuiStrings.error)
                   .disabled(state.value.rejecting || state.value.rejectReason.trim.isEmpty)
-                  .onClick(() => reject().runNow())("Reject"),
+                  .onClick(_ => reject())("Reject"),
               ),
             ),
             if (state.value.showWizard) {

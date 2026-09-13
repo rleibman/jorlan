@@ -6,11 +6,14 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TablePagination, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField, *}
+import jorlan.web.components.{OutlinedSelect, *}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
@@ -214,26 +217,27 @@ object MemoryPage {
                     .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Memory"),
-              MuiButton
-                .variant("contained")
-                .size("small")
-                .onClick(() => state.modState(_.copy(showStore = true)).runNow())("+ Remember"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Memory"),
+              Button
+                .variant(MuiStrings.contained)
+                .size(MuiStrings.small)
+                .onClick(_ => state.modState(_.copy(showStore = true)))("+ Remember"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
-            MuiTextField
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
+            TextField
               .label("Search")
               .value(state.value.search)
-              .variant("outlined")
-              .size("small")
-              .sx(js.Dynamic.literal(mb = 2, width = 300))
+              .variant(MuiStrings.outlined)
+              .size(MuiStrings.small)
+              .sxStyle(js.Dynamic.literal(mb = 2, width = 300))
               .onChange(e => {
                 val q = e.target.value.asInstanceOf[String]
-                (state.modState(_.copy(search = q, loading = true)) >> runSearch(q)).runNow()
+                state.modState(_.copy(search = q, loading = true)) >> runSearch(q)
               }),
             if (state.value.loading) CircularProgress()
             else if (state.value.memories.isEmpty)
-              Alert.severity("info")("No memories found.")
+              Alert.severity(MuiStrings.info)("No memories found.")
             else
               <.div(
                 TableContainer()(
@@ -254,7 +258,8 @@ object MemoryPage {
                           TableCell()(mem.recordKey),
                           TableCell()(
                             Chip.withProps(
-                              ChipOwnProps().setLabel(mem.scope.toString).setSize("small").asInstanceOf[Chip.Props],
+                              ChipOwnProps()
+                                .setLabel(mem.scope.toString).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                             )(),
                           ),
                           TableCell()(
@@ -271,20 +276,20 @@ object MemoryPage {
                                 ).asInstanceOf[Box.Props],
                             )(
                               if (mem.scope != MemoryScope.Shared)
-                                MuiButton
-                                  .variant("outlined")
-                                  .size("small")
-                                  .onClick(() => markShared(mem.id).runNow())("Share")
+                                Button
+                                  .variant(MuiStrings.outlined)
+                                  .size(MuiStrings.small)
+                                  .onClick(_ => markShared(mem.id))("Share")
                               else
-                                MuiButton
-                                  .variant("outlined")
-                                  .size("small")
-                                  .onClick(() => markPrivate(mem.id).runNow())("Privatize"),
-                              MuiButton
-                                .variant("outlined")
-                                .color("error")
-                                .size("small")
-                                .onClick(() => forget(mem.id).runNow())("Forget"),
+                                Button
+                                  .variant(MuiStrings.outlined)
+                                  .size(MuiStrings.small)
+                                  .onClick(_ => markPrivate(mem.id))("Privatize"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .color(MuiStrings.error)
+                                .size(MuiStrings.small)
+                                .onClick(_ => forget(mem.id))("Forget"),
                             ),
                           ),
                         )
@@ -292,51 +297,45 @@ object MemoryPage {
                     ),
                   ),
                 ),
-                MuiTablePagination
-                  .component("div")
-                  .count(state.value.memories.size)
-                  .page(state.value.page)
-                  .rowsPerPage(state.value.rowsPerPage)
-                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
-                  .onPageChange(
-                    (
-                      _,
-                      p,
-                    ) => state.modState(_.copy(page = p)).runNow(),
-                  )
-                  .onRowsPerPageChange(e =>
-                    state
-                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
-                      .runNow(),
-                  )(),
+                TablePagination(
+                  count = state.value.memories.size,
+                  onPageChange = (
+                    _,
+                    p,
+                  ) => state.modState(_.copy(page = p.toInt)),
+                  page = state.value.page,
+                  rowsPerPage = state.value.rowsPerPage,
+                ).set("component", "div")
+                  .rowsPerPageOptionsVarargs(5.0, 10.0, 25.0, 50.0)
+                  .onRowsPerPageChange(e => state.modState(_.copy(rowsPerPage = e.target.value.toInt, page = 0)))(),
               ),
             // Store Memory dialog
             Dialog(state.value.showStore)(
               DialogTitle()("Remember"),
               DialogContent()(
-                MuiTextField
+                TextField
                   .label("Key")
                   .value(state.value.storeForm.key)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .size("small")
-                  .sx(js.Dynamic.literal(mt = 1, mb = 2))
+                  .variant(MuiStrings.outlined)
+                  .size(MuiStrings.small)
+                  .sxStyle(js.Dynamic.literal(mt = 1, mb = 2))
                   .onChange { e =>
                     val v = e.target.value.asInstanceOf[String]
-                    state.modState(s => s.copy(storeForm = s.storeForm.copy(key = v))).runNow()
+                    state.modState(s => s.copy(storeForm = s.storeForm.copy(key = v)))
                   },
-                MuiTextField
+                TextField
                   .label("Text")
                   .value(state.value.storeForm.text)
                   .fullWidth(true)
                   .multiline(true)
                   .rows(4)
-                  .variant("outlined")
-                  .size("small")
-                  .sx(js.Dynamic.literal(mb = 2))
+                  .variant(MuiStrings.outlined)
+                  .size(MuiStrings.small)
+                  .sxStyle(js.Dynamic.literal(mb = 2))
                   .onChange { e =>
                     val v = e.target.value.asInstanceOf[String]
-                    state.modState(s => s.copy(storeForm = s.storeForm.copy(text = v))).runNow()
+                    state.modState(s => s.copy(storeForm = s.storeForm.copy(text = v)))
                   },
                 FormControl.withProps(
                   js.Dynamic
@@ -346,34 +345,37 @@ object MemoryPage {
                   InputLabel.withProps(
                     js.Dynamic.literal(id = "scope-label").asInstanceOf[InputLabel.Props],
                   )("Scope"),
-                  MuiSelect
+                  OutlinedSelect
                     .value(state.value.storeForm.scope.toString)
                     .label("Scope")
                     .fullWidth(true)
-                    .size("small")
-                    .onChange { e =>
-                      val scope = MemoryScope.values
-                        .find(_.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim))
-                        .getOrElse(MemoryScope.User)
-                      state
-                        .modState(s => s.copy(storeForm = s.storeForm.copy(scope = scope)))
-                        .runNow()
+                    .size(MuiStrings.small)
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        val scope = MemoryScope.values
+                          .find(_.toString.equalsIgnoreCase(e.target.value.asInstanceOf[String].trim))
+                          .getOrElse(MemoryScope.User)
+                        state
+                          .modState(s => s.copy(storeForm = s.storeForm.copy(scope = scope)))
                     }(
-                      MuiMenuItem.value(MemoryScope.User.toString)("User (permanent — private to you)"),
-                      MuiMenuItem.value(MemoryScope.Shared.toString)("Shared (permanent — visible to all agents)"),
-                      MuiMenuItem.value(MemoryScope.Workspace.toString)("Workspace (permanent — this workspace only)"),
-                      MuiMenuItem.value(MemoryScope.Private.toString)(
+                      MenuItem.value(MemoryScope.User.toString)("User (permanent — private to you)"),
+                      MenuItem.value(MemoryScope.Shared.toString)("Shared (permanent — visible to all agents)"),
+                      MenuItem.value(MemoryScope.Workspace.toString)("Workspace (permanent — this workspace only)"),
+                      MenuItem.value(MemoryScope.Private.toString)(
                         "Private (ephemeral — this agent session only)",
                       ),
                     ),
                 ),
               ),
               DialogActions()(
-                MuiButton.onClick(() => state.modState(_.copy(showStore = false)).runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
+                Button.onClick(_ => state.modState(_.copy(showStore = false)))("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.storeForm.key.trim.isEmpty || state.value.storeForm.text.trim.isEmpty)
-                  .onClick(() => storeMemory().runNow())("Remember"),
+                  .onClick(_ => storeMemory())("Remember"),
               ),
             ),
           )

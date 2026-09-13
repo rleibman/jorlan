@@ -6,6 +6,9 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -304,29 +307,29 @@ object McpServersPage {
                 .asInstanceOf[Box.Props],
             )(
               Typography.withProps(
-                TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props],
+                TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props],
               )("MCP Servers"),
               Box.withProps(
                 BoxOwnProps()
                   .setSx(js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Any]])
                   .asInstanceOf[Box.Props],
               )(
-                MuiButton
-                  .variant("outlined")
+                Button
+                  .variant(MuiStrings.outlined)
                   .disabled(state.value.reloading)
-                  .onClick(() => doReload().runNow())(
+                  .onClick(_ => doReload())(
                     if (state.value.reloading) "Reloading…" else "Reload",
                   ),
-                MuiButton
-                  .variant("contained")
-                  .onClick(() => openAdd().runNow())("+ Add Server"),
+                Button
+                  .variant(MuiStrings.contained)
+                  .onClick(_ => openAdd())("+ Add Server"),
               ),
             ),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.servers.isEmpty)
               Typography.withProps(
-                TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props],
               )("No MCP servers configured.")
             else
               TableContainer()(
@@ -357,19 +360,19 @@ object McpServersPage {
                             Chip.withProps(
                               ChipOwnProps()
                                 .setLabel(if (server.enabled) "Enabled" else "Disabled")
-                                .setColor(if (server.enabled) "success" else "default")
-                                .setSize("small")
+                                .setColor(if (server.enabled) MuiStrings.success else MuiStrings.default)
+                                .setSize(MuiStrings.small)
                                 .asInstanceOf[Chip.Props],
                             )(),
                           ),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .onClick(() => openEdit(server).runNow())("Edit"),
-                            MuiButton
-                              .size("small")
-                              .color("error")
-                              .onClick(() => confirmDelete(server.name).runNow())("Delete"),
+                            Button
+                              .size(MuiStrings.small)
+                              .onClick(_ => openEdit(server))("Edit"),
+                            Button
+                              .size(MuiStrings.small)
+                              .color(MuiStrings.error)
+                              .onClick(_ => confirmDelete(server.name))("Delete"),
                           ),
                         )
                     },
@@ -380,63 +383,69 @@ object McpServersPage {
             Dialog(state.value.showDialog)(
               DialogTitle()(if (state.value.editingName.isDefined) "Edit MCP Server" else "Add MCP Server"),
               DialogContent()(
-                MuiTextField
+                TextField
                   .label("Name")
                   .value(f.name)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .size("small")
+                  .variant(MuiStrings.outlined)
+                  .size(MuiStrings.small)
                   .disabled(state.value.editingName.isDefined)
-                  .sx(js.Dynamic.literal(mt = 1, mb = 2))
-                  .onChange(e => updateForm(f.copy(name = e.target.value.asInstanceOf[String])).runNow()),
-                Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                  "Transport",
-                ),
-                MuiSelect
+                  .sxStyle(js.Dynamic.literal(mt = 1, mb = 2))
+                  .onChange(e => updateForm(f.copy(name = e.target.value.asInstanceOf[String]))),
+                Typography
+                  .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                    "Transport",
+                  ),
+                OutlinedSelect
                   .value(f.transport)
                   .fullWidth(true)
-                  .sx(js.Dynamic.literal(mb = 2))
-                  .onChange { e =>
-                    val v = e.target.value.asInstanceOf[String]
-                    updateForm(f.copy(transport = v)).runNow()
+                  .sxStyle(js.Dynamic.literal(mb = 2))
+                  .onChange {
+                    (
+                      e,
+                      _,
+                    ) =>
+                      val v = e.target.value.asInstanceOf[String]
+                      updateForm(f.copy(transport = v))
                   }(
-                    MuiMenuItem.value("Stdio")("Stdio — local subprocess via stdin/stdout"):            VdomNode,
-                    MuiMenuItem.value("Http")("Http — Streamable HTTP (MCP 2025-03-26)"):               VdomNode,
-                    MuiMenuItem.value("HttpSse")("HttpSse — HTTP+SSE (MCP 2024-11-05, legacy servers"): VdomNode,
+                    MenuItem.value("Stdio")("Stdio — local subprocess via stdin/stdout"):            VdomNode,
+                    MenuItem.value("Http")("Http — Streamable HTTP (MCP 2025-03-26)"):               VdomNode,
+                    MenuItem.value("HttpSse")("HttpSse — HTTP+SSE (MCP 2024-11-05, legacy servers"): VdomNode,
                   ),
                 if (f.transport == "Stdio")
                   <.div(
-                    MuiTextField
+                    TextField
                       .label("Command")
                       .value(f.command)
                       .fullWidth(true)
-                      .variant("outlined")
-                      .size("small")
-                      .sx(js.Dynamic.literal(mb = 2))
-                      .onChange(e => updateForm(f.copy(command = e.target.value.asInstanceOf[String])).runNow()),
-                    MuiTextField
+                      .variant(MuiStrings.outlined)
+                      .size(MuiStrings.small)
+                      .sxStyle(js.Dynamic.literal(mb = 2))
+                      .onChange(e => updateForm(f.copy(command = e.target.value.asInstanceOf[String]))),
+                    TextField
                       .label("Arguments (one per line)")
                       .value(f.args)
                       .fullWidth(true)
                       .multiline(true)
                       .rows(3)
-                      .variant("outlined")
-                      .size("small")
-                      .sx(js.Dynamic.literal(mb = 2))
-                      .onChange(e => updateForm(f.copy(args = e.target.value.asInstanceOf[String])).runNow()),
+                      .variant(MuiStrings.outlined)
+                      .size(MuiStrings.small)
+                      .sxStyle(js.Dynamic.literal(mb = 2))
+                      .onChange(e => updateForm(f.copy(args = e.target.value.asInstanceOf[String]))),
                   )
                 else
-                  MuiTextField
+                  TextField
                     .label("URL")
                     .value(f.url)
                     .fullWidth(true)
-                    .variant("outlined")
-                    .size("small")
-                    .sx(js.Dynamic.literal(mb = 2))
-                    .onChange(e => updateForm(f.copy(url = e.target.value.asInstanceOf[String])).runNow()),
-                Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                  "Environment Variables",
-                ),
+                    .variant(MuiStrings.outlined)
+                    .size(MuiStrings.small)
+                    .sxStyle(js.Dynamic.literal(mb = 2))
+                    .onChange(e => updateForm(f.copy(url = e.target.value.asInstanceOf[String]))),
+                Typography
+                  .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                    "Environment Variables",
+                  ),
                 f.env.zipWithIndex.toVdomArray { case (ev, idx) =>
                   <.div(
                     ^.key := idx.toString,
@@ -447,35 +456,36 @@ object McpServersPage {
                         )
                         .asInstanceOf[Box.Props],
                     )(
-                      MuiTextField
+                      TextField
                         .label("Key")
                         .value(ev.key)
-                        .size("small")
-                        .variant("outlined")
-                        .onChange(e => updateEnvVar(idx, e.target.value.asInstanceOf[String], ev.value).runNow()),
-                      MuiTextField
+                        .size(MuiStrings.small)
+                        .variant(MuiStrings.outlined)
+                        .onChange(e => updateEnvVar(idx, e.target.value.asInstanceOf[String], ev.value)),
+                      TextField
                         .label("Value")
                         .value(ev.value)
-                        .size("small")
-                        .variant("outlined")
-                        .onChange(e => updateEnvVar(idx, ev.key, e.target.value.asInstanceOf[String]).runNow()),
-                      MuiButton
-                        .color("error")
-                        .size("small")
-                        .onClick(() => removeEnvVar(idx).runNow())("✕"),
+                        .size(MuiStrings.small)
+                        .variant(MuiStrings.outlined)
+                        .onChange(e => updateEnvVar(idx, ev.key, e.target.value.asInstanceOf[String])),
+                      Button
+                        .color(MuiStrings.error)
+                        .size(MuiStrings.small)
+                        .onClick(_ => removeEnvVar(idx))("✕"),
                     ),
                   )
                 },
-                MuiButton
-                  .size("small")
-                  .onClick(() => addEnvVar().runNow())("+ Add Env Var"),
+                Button
+                  .size(MuiStrings.small)
+                  .onClick(_ => addEnvVar())("+ Add Env Var"),
                 // Headers are sent on every request to an HTTP MCP server -- typically `Authorization: Bearer <token>`.
                 // Meaningless for Stdio, which is configured through env vars instead.
                 if (f.transport == "Http" || f.transport == "HttpSse")
                   <.div(
-                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                      "HTTP Headers",
-                    ),
+                    Typography
+                      .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                        "HTTP Headers",
+                      ),
                     f.headers.zipWithIndex.toVdomArray { case (hd, idx) =>
                       <.div(
                         ^.key := idx.toString,
@@ -486,28 +496,28 @@ object McpServersPage {
                             )
                             .asInstanceOf[Box.Props],
                         )(
-                          MuiTextField
+                          TextField
                             .label("Header")
                             .value(hd.key)
-                            .size("small")
-                            .variant("outlined")
-                            .onChange(e => updateHeader(idx, e.target.value.asInstanceOf[String], hd.value).runNow()),
-                          MuiTextField
+                            .size(MuiStrings.small)
+                            .variant(MuiStrings.outlined)
+                            .onChange(e => updateHeader(idx, e.target.value.asInstanceOf[String], hd.value)),
+                          TextField
                             .label("Value")
                             .value(hd.value)
-                            .size("small")
-                            .variant("outlined")
-                            .onChange(e => updateHeader(idx, hd.key, e.target.value.asInstanceOf[String]).runNow()),
-                          MuiButton
-                            .color("error")
-                            .size("small")
-                            .onClick(() => removeHeader(idx).runNow())("✕"),
+                            .size(MuiStrings.small)
+                            .variant(MuiStrings.outlined)
+                            .onChange(e => updateHeader(idx, hd.key, e.target.value.asInstanceOf[String])),
+                          Button
+                            .color(MuiStrings.error)
+                            .size(MuiStrings.small)
+                            .onClick(_ => removeHeader(idx))("✕"),
                         ),
                       )
                     },
-                    MuiButton
-                      .size("small")
-                      .onClick(() => addHeader().runNow())("+ Add Header"),
+                    Button
+                      .size(MuiStrings.small)
+                      .onClick(_ => addHeader())("+ Add Header"),
                   )
                 else EmptyVdom,
                 Box.withProps(
@@ -529,28 +539,29 @@ object McpServersPage {
                       )
                       .asInstanceOf[SwitchProps],
                   )(),
-                  Typography.withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])(
-                    if (f.enabled) "Enabled" else "Disabled",
-                  ),
+                  Typography
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props])(
+                      if (f.enabled) "Enabled" else "Disabled",
+                    ),
                 ),
-                MuiTextField
+                TextField
                   .label("Keywords (comma-separated)")
                   .value(f.keywords)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .size("small")
-                  .sx(js.Dynamic.literal(mt = 2))
+                  .variant(MuiStrings.outlined)
+                  .size(MuiStrings.small)
+                  .sxStyle(js.Dynamic.literal(mt = 2))
                   .helperText(
                     "Optional tags to help the AI find this server's tools (e.g. \"pubmed, research, medical\")",
                   )
-                  .onChange(e => updateForm(f.copy(keywords = e.target.value.asInstanceOf[String])).runNow()),
+                  .onChange(e => updateForm(f.copy(keywords = e.target.value.asInstanceOf[String]))),
               ),
               DialogActions()(
-                MuiButton.onClick(() => closeDialog().runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
+                Button.onClick(_ => closeDialog())("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.saving || f.name.trim.isEmpty)
-                  .onClick(() => saveServer().runNow())(
+                  .onClick(_ => saveServer())(
                     if (state.value.saving) "Saving…" else "Save",
                   ),
               ),
@@ -561,19 +572,20 @@ object McpServersPage {
               DialogContent()(
                 state.value.deleteTarget match {
                   case Some(name) =>
-                    Typography.withProps(TypographyOwnProps().setVariant("body1").asInstanceOf[Typography.Props])(
-                      s"Are you sure you want to delete '$name'?",
-                    )
+                    Typography
+                      .withProps(TypographyOwnProps().setVariant(MuiStrings.body1).asInstanceOf[Typography.Props])(
+                        s"Are you sure you want to delete '$name'?",
+                      )
                   case None => EmptyVdom
                 },
               ),
               DialogActions()(
-                MuiButton.onClick(() => cancelDelete().runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
-                  .color("error")
+                Button.onClick(_ => cancelDelete())("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
+                  .color(MuiStrings.error)
                   .disabled(state.value.deleting)
-                  .onClick(() => state.value.deleteTarget.foreach(doDelete(_).runNow()))(
+                  .onClick(_ => state.value.deleteTarget.fold(Callback.empty)(doDelete))(
                     if (state.value.deleting) "Deleting…" else "Delete",
                   ),
               ),

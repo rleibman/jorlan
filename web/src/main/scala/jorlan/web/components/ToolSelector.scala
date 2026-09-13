@@ -6,6 +6,8 @@
 
 package jorlan.web.components
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, ListItemButton}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -108,16 +110,16 @@ object ToolSelector {
                       .asInstanceOf[SxProps[Theme]],
                   ).asInstanceOf[Box.Props],
               )(
-                MuiButton
-                  .size("small")
-                  .variant("outlined")
-                  .onClick(() => setSelected(allToolNames).runNow())("Select all"),
-                MuiButton
-                  .size("small")
-                  .variant("outlined")
-                  .onClick(() => setSelected(Set.empty).runNow())("Select none"),
+                Button
+                  .size(MuiStrings.small)
+                  .variant(MuiStrings.outlined)
+                  .onClick(_ => setSelected(allToolNames))("Select all"),
+                Button
+                  .size(MuiStrings.small)
+                  .variant(MuiStrings.outlined)
+                  .onClick(_ => setSelected(Set.empty))("Select none"),
                 Typography.withProps(
-                  TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props],
+                  TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props],
                 )(s"${selected.size} of ${allToolNames.size} tools selected"),
               ),
               MuiList()(
@@ -142,11 +144,10 @@ object ToolSelector {
                             if (checked) setSelected(selected ++ toolNames)
                             else setSelected(selected -- toolNames)
                         }(),
-                      MuiListItemButton
-                        .onClick(() =>
+                      ListItemButton
+                        .onClick(_ =>
                           expandedState
-                            .modState(e => if (e.contains(skill.name)) e - skill.name else e + skill.name)
-                            .runNow(),
+                            .modState(e => if (e.contains(skill.name)) e - skill.name else e + skill.name),
                         )(
                           ListItemText.primary(s"${skill.name} ($selectedCount/${toolNames.size})")(),
                           <.span(if (isExpanded) "▲" else "▼"),
@@ -168,7 +169,7 @@ object ToolSelector {
                                   .asInstanceOf[Box.Props],
                               )(
                                 Checkbox
-                                  .size("small")
+                                  .size(MuiStrings.small)
                                   .checked(selected.contains(tool.name))
                                   .onChange {
                                     (

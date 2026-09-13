@@ -6,6 +6,7 @@
 
 package jorlan.web.components
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import net.leibman.jorlan.muiMaterial.components.{Alert, Snackbar}
@@ -35,12 +36,13 @@ object Toast {
 
   val component =
     ScalaFnComponent[Props] { props =>
-      val severityStr = props.message.map(_.severity) match {
-        case Some(ToastSeverity.Success) => "success"
-        case Some(ToastSeverity.Warning) => "warning"
-        case Some(ToastSeverity.Error)   => "error"
-        case _                           => "info"
-      }
+      val severity: MuiStrings.success | MuiStrings.warning | MuiStrings.error | MuiStrings.info =
+        props.message.map(_.severity) match {
+          case Some(ToastSeverity.Success) => MuiStrings.success
+          case Some(ToastSeverity.Warning) => MuiStrings.warning
+          case Some(ToastSeverity.Error)   => MuiStrings.error
+          case _                           => MuiStrings.info
+        }
 
       Snackbar
         .open(props.message.isDefined)
@@ -52,7 +54,7 @@ object Toast {
           ) => props.onClose,
         )(
           Alert
-            .severity(severityStr)(
+            .severity(severity)(
               props.message.map(_.message).getOrElse(""),
             ),
         )

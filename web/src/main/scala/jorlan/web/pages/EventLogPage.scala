@@ -6,12 +6,13 @@
 
 package jorlan.web.pages
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.Button
 import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import zio.json.ast.Json
 
@@ -92,31 +93,35 @@ object EventLogPage {
                     .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Event Log"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Event Log"),
               if (state.value.running)
                 Chip.withProps(
-                  ChipOwnProps().setLabel("Live").setColor("success").setSize("small").asInstanceOf[Chip.Props],
+                  ChipOwnProps()
+                    .setLabel("Live").setColor(MuiStrings.success).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                 )()
               else
                 Chip.withProps(
-                  ChipOwnProps().setLabel("Disconnected").setColor("default").setSize("small").asInstanceOf[Chip.Props],
+                  ChipOwnProps()
+                    .setLabel("Disconnected").setColor(MuiStrings.default).setSize(MuiStrings.small).asInstanceOf[
+                      Chip.Props,
+                    ],
                 )(),
               state.value.wsHandler.fold[VdomNode](EmptyVdom) { handler =>
-                MuiButton
-                  .size("small")
-                  .variant("outlined")
-                  .color("warning")
-                  .onClick { () =>
+                Button
+                  .size(MuiStrings.small)
+                  .variant(MuiStrings.outlined)
+                  .color(MuiStrings.warning)
+                  .onClick { _ =>
                     handler
                       .close()
                       .flatMap(_ => state.modState(_.copy(running = false, wsHandler = None)))
-                      .runNow()
                   }("Disconnect")
               },
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.events.isEmpty)
-              Alert.severity("info")("Waiting for events…")
+              Alert.severity(MuiStrings.info)("Waiting for events…")
             else
               TableContainer()(
                 Table()(
@@ -139,16 +144,16 @@ object EventLogPage {
                             TableCell()(
                               Chip.withProps(
                                 ChipOwnProps()
-                                  .setLabel(event.eventType.toString).setSize("small").asInstanceOf[Chip.Props],
+                                  .setLabel(event.eventType.toString).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                               )(),
                             ),
                             TableCell()(event.actorId.map(_.value.toString).getOrElse("—")),
                             TableCell()(event.sessionId.map(_.value.toString).getOrElse("—")),
                             TableCell()(
                               if (event.payloadJson.isDefined)
-                                MuiButton
-                                  .size("small")
-                                  .onClick(() =>
+                                Button
+                                  .size(MuiStrings.small)
+                                  .onClick(_ =>
                                     state
                                       .modState(s =>
                                         s.copy(
@@ -156,8 +161,7 @@ object EventLogPage {
                                             if (s.expanded.contains(event.id)) s.expanded - event.id
                                             else s.expanded + event.id,
                                         ),
-                                      )
-                                      .runNow(),
+                                      ),
                                   )(if (isExpanded) "▲" else "▼")
                               else EmptyVdom,
                             ),

@@ -6,11 +6,12 @@
 
 package jorlan.web.pages
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.Button
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
@@ -105,9 +106,11 @@ object OAuthManagementPage {
                 ).asInstanceOf[Box.Props],
             )(
               Typography
-                .withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Connected Accounts"),
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])(
+                  "Connected Accounts",
+                ),
             ),
-            state.value.error.fold(EmptyVdom)(msg => Alert.severity("error")(msg)),
+            state.value.error.fold(EmptyVdom)(msg => Alert.severity(MuiStrings.error)(msg)),
             if (state.value.loading) {
               CircularProgress()
             } else {
@@ -130,22 +133,22 @@ object OAuthManagementPage {
                             Chip.withProps(
                               ChipOwnProps()
                                 .setLabel(if (connected) "Connected" else "Not connected")
-                                .setColor(if (connected) "success" else "default")
+                                .setColor(if (connected) MuiStrings.success else MuiStrings.default)
                                 .asInstanceOf[Chip.Props],
                             )(),
                           ),
                           TableCell(
                             if (connected) {
-                              MuiButton
-                                .variant("outlined")
-                                .color("error")
-                                .size("small")
-                                .onClick(() => handleRevoke(provider).runNow())("Disconnect")
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .color(MuiStrings.error)
+                                .size(MuiStrings.small)
+                                .onClick(_ => handleRevoke(provider))("Disconnect")
                             } else {
-                              MuiButton
-                                .variant("contained")
-                                .size("small")
-                                .onClick(() => handleConnect(provider).runNow())("Connect")
+                              Button
+                                .variant(MuiStrings.contained)
+                                .size(MuiStrings.small)
+                                .onClick(_ => handleConnect(provider))("Connect")
                             },
                           ),
                         ),
