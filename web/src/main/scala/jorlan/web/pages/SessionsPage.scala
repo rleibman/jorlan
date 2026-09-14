@@ -218,7 +218,7 @@ object SessionsPage {
                   ) => state.modState(_.copy(page = p.toInt)),
                   page = state.value.page,
                   rowsPerPage = state.value.rowsPerPage,
-                ).set("component", "div")
+                ).component("div")
                   .rowsPerPageOptionsVarargs(5.0, 10.0, 25.0, 50.0)
                   .onRowsPerPageChange(e => state.modState(_.copy(rowsPerPage = e.target.value.toInt, page = 0)))(),
               ),
