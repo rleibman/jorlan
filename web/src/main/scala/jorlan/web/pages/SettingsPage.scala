@@ -6,11 +6,14 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTextField}
+import jorlan.web.components.OutlinedSelect
 import net.leibman.jorlan.muiMaterial.components.*
 
 import net.leibman.jorlan.muiMaterial.formControlFormControlMod.FormControlOwnProps
@@ -108,11 +111,11 @@ object SettingsPage {
           <.div(
             Typography.withProps(
               TypographyOwnProps()
-                .setVariant("h5").setSx(js.Dynamic.literal(mb = 3).asInstanceOf[SxProps[Theme]]).asInstanceOf[
+                .setVariant(MuiStrings.h5).setSx(js.Dynamic.literal(mb = 3).asInstanceOf[SxProps[Theme]]).asInstanceOf[
                   Typography.Props,
                 ],
             )("Settings"),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading) CircularProgress()
             else
               state.value.personality.fold(<.div("No personality configured")) { p =>
@@ -120,30 +123,35 @@ object SettingsPage {
                   js.Dynamic.literal(direction = "column", spacing = 3).asInstanceOf[Stack.Props],
                 )(
                   Typography
-                    .withProps(TypographyOwnProps().setVariant("h6").asInstanceOf[Typography.Props])("Personality"),
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.h6).asInstanceOf[Typography.Props])(
+                      "Personality",
+                    ),
                   FormControl.withProps(FormControlOwnProps().setFullWidth(true).asInstanceOf[FormControl.Props])(
                     <.label("Formality"),
-                    MuiSelect
+                    OutlinedSelect
                       .value(p.formality.toString)
                       .label("Formality")
-                      .onChange(e =>
-                        state
-                          .modState(
-                            _.copy(
-                              personality = Some(
-                                p.copy(formality = Formality.valueOf(e.target.value.asInstanceOf[String])),
+                      .onChange(
+                        (
+                          e,
+                          _,
+                        ) =>
+                          state
+                            .modState(
+                              _.copy(
+                                personality = Some(
+                                  p.copy(formality = Formality.valueOf(e.target.value.asInstanceOf[String])),
+                                ),
+                                saved = false,
                               ),
-                              saved = false,
                             ),
-                          )
-                          .runNow(),
                       )(
                         Formality.values.toList.map { f =>
-                          MuiMenuItem.value(f.toString)(f.toString)
+                          MenuItem.value(f.toString)(f.toString)
                         }*,
                       ),
                   ),
-                  MuiTextField
+                  TextField
                     .label("Personality Description (auto-generated, read-only)")
                     .value(
                       if (p.formality == Formality.Custom) ""
@@ -152,45 +160,45 @@ object SettingsPage {
                     .multiline(true)
                     .rows(4)
                     .fullWidth(true)
-                    .variant("outlined")
+                    .variant(MuiStrings.outlined)
                     .slotProps(js.Dynamic.literal(input = js.Dynamic.literal(readOnly = true)))
-                    .sx(js.Dynamic.literal(backgroundColor = "action.hover")), {
+                    .sxStyle(js.Dynamic.literal(backgroundColor = "action.hover")), {
                     val langItems: Seq[VdomElement] = availableLanguages.map { lang =>
-                      MuiMenuItem
+                      MenuItem
                         .value(lang)
-                        .sx(js.Dynamic.literal(fontWeight = if (p.languages.contains(lang)) "bold" else "normal"))(
+                        .sxStyle(js.Dynamic.literal(fontWeight = if (p.languages.contains(lang)) "bold" else "normal"))(
                           lang,
                         ): VdomElement
                     }
                     FormControl.withProps(FormControlOwnProps().setFullWidth(true).asInstanceOf[FormControl.Props])(
                       <.label("Languages"),
-                      MuiSelect
+                      OutlinedSelect
                         .label("Languages")
                         .multiple(true)
                         .value(p.languages.toJSArray)
-                        .renderValue(
+                        .renderValue((selected: Any) => selected.asInstanceOf[js.Array[String]].toList.mkString(", "))
+                        .onChange(
                           (
-                            (selected: js.Any) => selected.asInstanceOf[js.Array[String]].toList.mkString(", "),
-                          ): js.Function1[js.Any, String],
-                        )
-                        .onChange(e => {
-                          val arr = e.target.value.asInstanceOf[js.Array[String]].toList
-                          state
-                            .modState(
-                              _.copy(
-                                personality = Some(p.copy(languages = arr)),
-                                saved = false,
-                              ),
-                            )
-                            .runNow()
-                        })(langItems*),
+                            e,
+                            _,
+                          ) => {
+                            val arr = e.target.value.asInstanceOf[js.Array[String]].toList
+                            state
+                              .modState(
+                                _.copy(
+                                  personality = Some(p.copy(languages = arr)),
+                                  saved = false,
+                                ),
+                              )
+                          },
+                        )(langItems*),
                     )
                   },
-                  MuiTextField
+                  TextField
                     .label("Expertise (comma-separated)")
                     .value(p.expertise.mkString(", "))
                     .fullWidth(true)
-                    .variant("outlined")
+                    .variant(MuiStrings.outlined)
                     .placeholder("e.g. Scala, functional programming, distributed systems")
                     .onChange(e => {
                       val raw = e.target.value.asInstanceOf[String]
@@ -202,15 +210,14 @@ object SettingsPage {
                             saved = false,
                           ),
                         )
-                        .runNow()
                     }),
-                  MuiTextField
+                  TextField
                     .label("Additional Personality Notes")
                     .value(p.prompt)
                     .multiline(true)
                     .rows(4)
                     .fullWidth(true)
-                    .variant("outlined")
+                    .variant(MuiStrings.outlined)
                     .onChange(e =>
                       state
                         .modState(
@@ -218,8 +225,7 @@ object SettingsPage {
                             personality = Some(p.copy(prompt = e.target.value.asInstanceOf[String])),
                             saved = false,
                           ),
-                        )
-                        .runNow(),
+                        ),
                     ),
                   Box.withProps(
                     BoxOwnProps[Theme]()
@@ -228,10 +234,10 @@ object SettingsPage {
                           .literal(display = "flex", gap = 2, alignItems = "center").asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    MuiButton
-                      .variant("contained")
-                      .onClick(() => update().runNow())("Save"),
-                    if (state.value.saved) Alert.severity("success")("Saved!") else EmptyVdom,
+                    Button
+                      .variant(MuiStrings.contained)
+                      .onClick(_ => update())("Save"),
+                    if (state.value.saved) Alert.severity(MuiStrings.success)("Saved!") else EmptyVdom,
                   ),
                 )
               },

@@ -6,11 +6,11 @@
 
 package jorlan.web
 
+import net.leibman.jorlan.muiMaterial.components.{IconButton, ListItemButton}
 import auth.AuthClient
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.User
-import jorlan.web.components.{MuiIconButton, MuiListItemButton}
 import net.leibman.jorlan.muiMaterial.appBarAppBarMod.AppBarOwnProps
 import net.leibman.jorlan.muiMaterial.components.*
 import net.leibman.jorlan.muiMaterial.listItemListItemMod.ListItemOwnProps
@@ -59,7 +59,7 @@ object AppShell {
             Toolbar()(
               Typography.withProps(
                 TypographyOwnProps()
-                  .setVariant("h6")
+                  .setVariant(MuiStrings.h6)
                   .setSx(js.Dynamic.literal(flexGrow = 1).asInstanceOf[SxProps[Theme]])
                   .asInstanceOf[Typography.Props],
               )(
@@ -67,20 +67,19 @@ object AppShell {
               ),
               Typography.withProps(
                 TypographyOwnProps()
-                  .setVariant("body2")
+                  .setVariant(MuiStrings.body2)
                   .setSx(js.Dynamic.literal(mr = 2).asInstanceOf[SxProps[Theme]])
                   .asInstanceOf[Typography.Props],
               )(
                 props.user.displayName,
               ),
-              MuiIconButton
-                .onClick(() =>
+              IconButton
+                .onClick(_ =>
                   AuthClient
                     .logout()
-                    .completeWith(_ => Callback(org.scalajs.dom.window.location.reload()))
-                    .runNow(),
+                    .completeWith(_ => Callback(org.scalajs.dom.window.location.reload())),
                 )
-                .color("inherit")(
+                .color(MuiStrings.inherit)(
                   <.span(^.className := "material-icons")("logout"),
                 ),
             ),
@@ -99,9 +98,9 @@ object AppShell {
                           .setDisablePadding(true)
                           .asInstanceOf[ListItem.Props],
                       ).withKey(page.hash)(
-                        MuiListItemButton
+                        ListItemButton
                           .selected(props.currentPage == page)
-                          .onClick(() => props.navigate(page).runNow())(
+                          .onClick(_ => props.navigate(page))(
                             ListItemIcon()(iconEl),
                             ListItemText.primary(page.label)(),
                           ),

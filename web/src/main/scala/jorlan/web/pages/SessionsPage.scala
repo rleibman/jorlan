@@ -6,11 +6,13 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, TablePagination}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTablePagination}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
@@ -151,17 +153,18 @@ object SessionsPage {
                     .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Sessions"),
-              MuiButton
-                .variant("contained")
-                .size("small")
-                .onClick(() => openCreateDialog().runNow())("+ New Session"),
-              MuiButton
-                .variant("outlined")
-                .size("small")
-                .onClick(() => reload().runNow())("Refresh"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Sessions"),
+              Button
+                .variant(MuiStrings.contained)
+                .size(MuiStrings.small)
+                .onClick(_ => openCreateDialog())("+ New Session"),
+              Button
+                .variant(MuiStrings.outlined)
+                .size(MuiStrings.small)
+                .onClick(_ => reload())("Refresh"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading)
               CircularProgress()
             else
@@ -187,18 +190,19 @@ object SessionsPage {
                           ),
                           TableCell()(
                             Chip.withProps(
-                              ChipOwnProps().setLabel(session.status.toString).setSize("small").asInstanceOf[Chip.Props],
+                              ChipOwnProps()
+                                .setLabel(session.status.toString).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                             )(),
                           ),
                           TableCell()(session.modelId.map(_.value).getOrElse("—")),
                           TableCell()(PageUtils.formatTimestamp(session.createdAt)),
                           TableCell()(
                             if (session.status == SessionStatus.Active)
-                              MuiButton
-                                .variant("outlined")
-                                .color("error")
-                                .size("small")
-                                .onClick(() => terminate(session.id).runNow())("Terminate")
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .color(MuiStrings.error)
+                                .size(MuiStrings.small)
+                                .onClick(_ => terminate(session.id))("Terminate")
                             else EmptyVdom,
                           ),
                         )
@@ -206,23 +210,17 @@ object SessionsPage {
                     ),
                   ),
                 ),
-                MuiTablePagination
-                  .component("div")
-                  .count(state.value.sessions.size)
-                  .page(state.value.page)
-                  .rowsPerPage(state.value.rowsPerPage)
-                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
-                  .onPageChange(
-                    (
-                      _,
-                      p,
-                    ) => state.modState(_.copy(page = p)).runNow(),
-                  )
-                  .onRowsPerPageChange(e =>
-                    state
-                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
-                      .runNow(),
-                  )(),
+                TablePagination(
+                  count = state.value.sessions.size,
+                  onPageChange = (
+                    _,
+                    p,
+                  ) => state.modState(_.copy(page = p.toInt)),
+                  page = state.value.page,
+                  rowsPerPage = state.value.rowsPerPage,
+                ).component("div")
+                  .rowsPerPageOptionsVarargs(5.0, 10.0, 25.0, 50.0)
+                  .onRowsPerPageChange(e => state.modState(_.copy(rowsPerPage = e.target.value.toInt, page = 0)))(),
               ),
             // Create Session dialog
             Dialog(state.value.showCreate)(
@@ -230,7 +228,9 @@ object SessionsPage {
               DialogContent()(
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("body2").setSx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]]).asInstanceOf[
+                    .setVariant(MuiStrings.body2).setSx(
+                      js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
+                    ).asInstanceOf[
                       Typography.Props,
                     ],
                 )("Model (optional):"),
@@ -250,10 +250,10 @@ object SessionsPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.onClick(() => state.modState(_.copy(showCreate = false)).runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
-                  .onClick(() => createSession().runNow())("Create"),
+                Button.onClick(_ => state.modState(_.copy(showCreate = false)))("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
+                  .onClick(_ => createSession())("Create"),
               ),
             ),
           )

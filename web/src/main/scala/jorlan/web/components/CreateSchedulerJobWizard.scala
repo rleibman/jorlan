@@ -6,6 +6,9 @@
 
 package jorlan.web.components
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -167,62 +170,72 @@ object CreateSchedulerJobWizard {
             sv.step match {
               case 0 =>
                 columnFlex(
-                  MuiTextField
+                  TextField
                     .label("Job Name")
                     .value(sv.name)
                     .fullWidth(true)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      setField(_.copy(name = v)).runNow()
+                      setField(_.copy(name = v))
                     }(),
-                  MuiTextField
+                  TextField
                     .label("Max Retries")
                     .value(sv.maxRetries.toString)
                     .`type`("number")
                     .fullWidth(true)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      setField(_.copy(maxRetries = v.toIntOption.getOrElse(0))).runNow()
+                      setField(_.copy(maxRetries = v.toIntOption.getOrElse(0)))
                     }(),
-                  MuiTextField
+                  TextField
                     .label("Backoff (seconds)")
                     .value(sv.backoffSeconds.toString)
                     .`type`("number")
                     .fullWidth(true)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      setField(_.copy(backoffSeconds = v.toIntOption.getOrElse(60))).runNow()
+                      setField(_.copy(backoffSeconds = v.toIntOption.getOrElse(60)))
                     }(),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Backoff Policy",
-                  ),
-                  MuiSelect
+                  Typography
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                      "Backoff Policy",
+                    ),
+                  OutlinedSelect
                     .value(sv.backoffPolicy.toString)
                     .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val policy = RetryBackoffPolicy.values.find(_.toString == v).getOrElse(RetryBackoffPolicy.Fixed)
-                      setField(_.copy(backoffPolicy = policy)).runNow()
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                        val policy = RetryBackoffPolicy.values.find(_.toString == v).getOrElse(RetryBackoffPolicy.Fixed)
+                        setField(_.copy(backoffPolicy = policy))
                     }(
-                      MuiMenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
-                      MuiMenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
+                      MenuItem.value("Fixed")("Fixed — retry after the same backoff interval each time"): VdomNode,
+                      MenuItem.value("Exponential")("Exponential — backoff doubles on each retry"):       VdomNode,
                     ),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Missed Run Policy",
-                  ),
-                  MuiSelect
+                  Typography
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                      "Missed Run Policy",
+                    ),
+                  OutlinedSelect
                     .value(sv.missedRunPolicy.toString)
                     .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
-                      setField(_.copy(missedRunPolicy = policy)).runNow()
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                        val policy = MissedRunPolicy.values.find(_.toString == v).getOrElse(MissedRunPolicy.Skip)
+                        setField(_.copy(missedRunPolicy = policy))
                     }(
-                      MuiMenuItem
+                      MenuItem
                         .value("Skip")("Skip — ignore missed windows, resume at next scheduled time"): VdomNode,
-                      MuiMenuItem
+                      MenuItem
                         .value("RunOnce")("Run Once — execute once immediately for all missed windows"): VdomNode,
-                      MuiMenuItem
+                      MenuItem
                         .value("RunAllMissed")("Run All Missed — queue one run per missed window (max 10)"): VdomNode,
                     ),
                 )
@@ -240,17 +253,17 @@ object CreateSchedulerJobWizard {
               case 2 =>
                 columnFlex(
                   Typography.withProps(
-                    TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props],
+                    TypographyOwnProps().setVariant(MuiStrings.subtitle1).asInstanceOf[Typography.Props],
                   )("Pipeline Invariants"),
                   Typography.withProps(
-                    TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                    TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props],
                   )(
                     "Key-value facts always injected into every step. Optional — agent-level invariants still apply.",
                   ),
                   if (sv.invariants.isEmpty)
                     <.span("No pipeline-level invariants.")
                   else
-                    Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                    Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                       TableHead()(
                         TableRow()(
                           TableCell()("Key"),
@@ -264,20 +277,20 @@ object CreateSchedulerJobWizard {
                             .withKey(k)(
                               TableCell()(<.code(k)),
                               TableCell()(
-                                MuiTextField
+                                TextField
                                   .value(v)
-                                  .size("small")
+                                  .size(MuiStrings.small)
                                   .fullWidth(true)
                                   .onChange { e =>
                                     val nv = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                                    setField(_.copy(invariants = sv.invariants + (k -> nv))).runNow()
+                                    setField(_.copy(invariants = sv.invariants + (k -> nv)))
                                   }(),
                               ),
                               TableCell()(
-                                MuiButton
-                                  .size("small")
-                                  .color("error")
-                                  .onClick(() => setField(_.copy(invariants = sv.invariants - k)).runNow())("×"),
+                                Button
+                                  .size(MuiStrings.small)
+                                  .color(MuiStrings.error)
+                                  .onClick(_ => setField(_.copy(invariants = sv.invariants - k)))("×"),
                               ),
                             ).build
                         }*,
@@ -291,36 +304,36 @@ object CreateSchedulerJobWizard {
                           .asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    MuiTextField
+                    TextField
                       .label("Key")
                       .value(sv.newKey)
-                      .size("small")
+                      .size(MuiStrings.small)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        setField(_.copy(newKey = v)).runNow()
+                        setField(_.copy(newKey = v))
                       }(),
-                    MuiTextField
+                    TextField
                       .label("Value")
                       .value(sv.newValue)
-                      .size("small")
+                      .size(MuiStrings.small)
                       .fullWidth(true)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        setField(_.copy(newValue = v)).runNow()
+                        setField(_.copy(newValue = v))
                       }(),
-                    MuiButton
-                      .variant("outlined")
-                      .size("small")
-                      .onClick(() => {
+                    Button
+                      .variant(MuiStrings.outlined)
+                      .size(MuiStrings.small)
+                      .onClick(_ => {
                         val k = sv.newKey.trim
                         val v = sv.newValue.trim
-                        if (k.nonEmpty)
-                          setField(s => s.copy(invariants = s.invariants + (k -> v), newKey = "", newValue = ""))
-                            .runNow()
+                        Callback.when(k.nonEmpty)(
+                          setField(s => s.copy(invariants = s.invariants + (k -> v), newKey = "", newValue = "")),
+                        )
                       })("+ Add"),
                   ),
                   Divider()(),
-                  MuiTextField
+                  TextField
                     .label("Personality (optional — blank uses accuracy mode)")
                     .value(sv.personality)
                     .fullWidth(true)
@@ -328,37 +341,42 @@ object CreateSchedulerJobWizard {
                     .rows(2)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      setField(_.copy(personality = v)).runNow()
+                      setField(_.copy(personality = v))
                     }(),
                 )
 
               case 3 =>
                 columnFlex(
                   Typography.withProps(
-                    TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                    TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props],
                   )("Optional — a trigger can also be added later from the job row."),
-                  Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                    "Trigger Type",
-                  ),
-                  MuiSelect
+                  Typography
+                    .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                      "Trigger Type",
+                    ),
+                  OutlinedSelect
                     .value(sv.triggerType.toString)
                     .fullWidth(true)
-                    .onChange { e =>
-                      val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                      val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
-                      setField(_.copy(triggerType = tt)).runNow()
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                        val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
+                        setField(_.copy(triggerType = tt))
                     }(
-                      MuiMenuItem
+                      MenuItem
                         .value("Cron")("Cron — schedule with a cron expression (e.g. 0 0 9 ? * 1-5)"): VdomNode,
-                      MuiMenuItem
+                      MenuItem
                         .value("Interval")("Interval — repeat on an ISO 8601 duration (e.g. PT1H, PT30M)"): VdomNode,
-                      MuiMenuItem.value("OneShot")(
+                      MenuItem.value("OneShot")(
                         "One Shot — run once at a specific datetime (e.g. 2026-07-01T09:00:00Z)",
                       ): VdomNode,
-                      MuiMenuItem
+                      MenuItem
                         .value("Event")("Event — fire on a named system event (e.g. agent.completed)"): VdomNode,
                     ),
-                  MuiTextField
+                  TextField
                     .label(
                       sv.triggerType match {
                         case TriggerType.Cron =>
@@ -372,15 +390,15 @@ object CreateSchedulerJobWizard {
                     .fullWidth(true)
                     .onChange { e =>
                       val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                      setField(_.copy(triggerExpr = v)).runNow()
+                      setField(_.copy(triggerExpr = v))
                     }(),
                 )
 
               case _ =>
                 columnFlex(
-                  sv.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+                  sv.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
                   Typography.withProps(
-                    TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props],
+                    TypographyOwnProps().setVariant(MuiStrings.subtitle1).asInstanceOf[Typography.Props],
                   )("Review"),
                   <.div(s"Name: ${sv.name}"),
                   <.div(s"Retries: ${sv.maxRetries} (${sv.backoffPolicy}, ${sv.backoffSeconds}s backoff)"),
@@ -423,21 +441,21 @@ object CreateSchedulerJobWizard {
                 ),
               ),
               DialogActions()(
-                MuiButton.disabled(sv.saving).onClick(() => props.onClose.runNow())("Cancel"),
+                Button.disabled(sv.saving).onClick(_ => props.onClose)("Cancel"),
                 if (sv.step > 0) {
-                  MuiButton.disabled(sv.saving).onClick(() => prevStep().runNow())("Back")
+                  Button.disabled(sv.saving).onClick(_ => prevStep())("Back")
                 } else EmptyVdom,
                 if (sv.step < stepLabels.length - 1) {
                   val disabled = sv.step == 1 && !canAdvanceFromSteps
-                  MuiButton
-                    .variant("contained")
+                  Button
+                    .variant(MuiStrings.contained)
                     .disabled(disabled)
-                    .onClick(() => nextStep().runNow())("Next")
+                    .onClick(_ => nextStep())("Next")
                 } else {
-                  MuiButton
-                    .variant("contained")
+                  Button
+                    .variant(MuiStrings.contained)
                     .disabled(sv.saving || sv.steps.isEmpty)
-                    .onClick(() => save().runNow())(if (props.editingJob.isDefined) "Save" else "Create")
+                    .onClick(_ => save())(if (props.editingJob.isDefined) "Save" else "Create")
                 },
               ),
             )

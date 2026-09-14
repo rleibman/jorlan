@@ -22,12 +22,20 @@ stFlavour        := Flavour.ScalajsReact
 
 externalNpm := baseDirectory.value
 
+// sbt 2 has cross-platform support built in: `%%` resolves the Scala.js (_sjs1_3) artifacts here.
 libraryDependencies ++= Seq(
-  "com.github.japgolly.scalajs-react" %%% "core"  % scalajsReactVersion,
-  "com.github.japgolly.scalajs-react" %%% "extra" % scalajsReactVersion,
+  "com.github.japgolly.scalajs-react" %% "core"  % scalajsReactVersion,
+  "com.github.japgolly.scalajs-react" %% "extra" % scalajsReactVersion,
 )
 
-dependencyOverrides += "com.github.japgolly.scalajs-react" %%% "core" % scalajsReactVersion
+dependencyOverrides += "com.github.japgolly.scalajs-react" %% "core" % scalajsReactVersion
+
+// The converter pins scalajs-react 2.1.3 in every generated facade, while we compile against 4.0.0. sbt 2 turns that
+// major-version eviction into an error (sbt 1 only warned).
+libraryDependencySchemes ++= Seq(
+  "com.github.japgolly.scalajs-react" % "core_sjs1_3"  % VersionScheme.Always,
+  "com.github.japgolly.scalajs-react" % "extra_sjs1_3" % VersionScheme.Always,
+)
 
 /* disabled because it somehow triggers many warnings */
 scalaJSLinkerConfig ~= (_.withSourceMap(false))
@@ -36,13 +44,14 @@ scalaJSLinkerConfig ~= (_.withSourceMap(false))
 stMinimize := Selection.AllExcept(
 //  "react-quill", "react-markdown",
   "@mui/material",
+  "marked",
   "react-apexcharts",
 )
 
 stIgnore ++= List(
 )
 
-licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
+licenses += ("MIT", uri("http://opensource.org/licenses/MIT"))
 
 doc / sources := Nil
 

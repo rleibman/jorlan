@@ -6,6 +6,9 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TablePagination, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -52,14 +55,17 @@ object SchedulerPage {
     runNowForm:       Option[RunNowForm],
   )
 
-  private def statusColor(s: JobStatus): String =
+  private def statusColor(
+    s: JobStatus,
+  ): MuiStrings.primary | MuiStrings.info | MuiStrings.success | MuiStrings.error | MuiStrings.default |
+    MuiStrings.warning =
     s match {
-      case JobStatus.Pending   => "primary"
-      case JobStatus.Running   => "info"
-      case JobStatus.Succeeded => "success"
-      case JobStatus.Failed    => "error"
-      case JobStatus.Cancelled => "default"
-      case JobStatus.Paused    => "warning"
+      case JobStatus.Pending   => MuiStrings.primary
+      case JobStatus.Running   => MuiStrings.info
+      case JobStatus.Succeeded => MuiStrings.success
+      case JobStatus.Failed    => MuiStrings.error
+      case JobStatus.Cancelled => MuiStrings.default
+      case JobStatus.Paused    => MuiStrings.warning
     }
 
   val component =
@@ -280,23 +286,28 @@ object SchedulerPage {
                           ]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    Typography.withProps(TypographyOwnProps().setVariant("caption").asInstanceOf[Typography.Props])(
-                      "Trigger Type",
-                    ),
-                    MuiSelect
+                    Typography
+                      .withProps(TypographyOwnProps().setVariant(MuiStrings.caption).asInstanceOf[Typography.Props])(
+                        "Trigger Type",
+                      ),
+                    OutlinedSelect
                       .value(af.triggerType.toString)
                       .fullWidth(true)
-                      .onChange { e =>
-                        val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
-                        val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
-                        state.modState(_.copy(addTriggerForm = Some(af.copy(triggerType = tt)))).runNow()
+                      .onChange {
+                        (
+                          e,
+                          _,
+                        ) =>
+                          val v = e.target.asInstanceOf[org.scalajs.dom.html.Select].value
+                          val tt = TriggerType.values.find(_.toString == v).getOrElse(TriggerType.Cron)
+                          state.modState(_.copy(addTriggerForm = Some(af.copy(triggerType = tt))))
                       }(
-                        MuiMenuItem.value("Cron")("Cron — cron expression (e.g. 0 0 9 ? * 1-5)"):        VdomNode,
-                        MuiMenuItem.value("Interval")("Interval — ISO 8601 duration (e.g. PT1H)"):       VdomNode,
-                        MuiMenuItem.value("OneShot")("One Shot — datetime (e.g. 2026-07-01T09:00:00Z)"): VdomNode,
-                        MuiMenuItem.value("Event")("Event — system event name (e.g. agent.completed)"):  VdomNode,
+                        MenuItem.value("Cron")("Cron — cron expression (e.g. 0 0 9 ? * 1-5)"):        VdomNode,
+                        MenuItem.value("Interval")("Interval — ISO 8601 duration (e.g. PT1H)"):       VdomNode,
+                        MenuItem.value("OneShot")("One Shot — datetime (e.g. 2026-07-01T09:00:00Z)"): VdomNode,
+                        MenuItem.value("Event")("Event — system event name (e.g. agent.completed)"):  VdomNode,
                       ),
-                    MuiTextField
+                    TextField
                       .label(
                         af.triggerType match {
                           case TriggerType.Cron =>
@@ -310,16 +321,16 @@ object SchedulerPage {
                       .fullWidth(true)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state.modState(_.copy(addTriggerForm = Some(af.copy(expression = v)))).runNow()
+                        state.modState(_.copy(addTriggerForm = Some(af.copy(expression = v))))
                       }(),
                   ),
                 ),
                 DialogActions()(
-                  MuiButton
-                    .onClick(() => state.modState(_.copy(addTriggerForm = None)).runNow())("Cancel"),
-                  MuiButton
-                    .variant("contained")
-                    .onClick(() => doAddTrigger().runNow())("Add"),
+                  Button
+                    .onClick(_ => state.modState(_.copy(addTriggerForm = None)))("Cancel"),
+                  Button
+                    .variant(MuiStrings.contained)
+                    .onClick(_ => doAddTrigger())("Add"),
                 ),
               )
             },
@@ -337,9 +348,9 @@ object SchedulerPage {
                       ).asInstanceOf[Box.Props],
                   )(
                     Typography.withProps(
-                      TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                      TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props],
                     )("Optionally provide run context instructions (passed to the agent for this run only):"),
-                    MuiTextField
+                    TextField
                       .label("Run Context (optional)")
                       .value(rf.runContext)
                       .fullWidth(true)
@@ -347,16 +358,16 @@ object SchedulerPage {
                       .rows(4)
                       .onChange { e =>
                         val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                        state.modState(_.copy(runNowForm = Some(rf.copy(runContext = v)))).runNow()
+                        state.modState(_.copy(runNowForm = Some(rf.copy(runContext = v))))
                       }(),
                   ),
                 ),
                 DialogActions()(
-                  MuiButton
-                    .onClick(() => state.modState(_.copy(runNowForm = None)).runNow())("Cancel"),
-                  MuiButton
-                    .variant("contained")
-                    .onClick(() => doRunNow().runNow())("Run"),
+                  Button
+                    .onClick(_ => state.modState(_.copy(runNowForm = None)))("Cancel"),
+                  Button
+                    .variant(MuiStrings.contained)
+                    .onClick(_ => doRunNow())("Run"),
                 ),
               )
             },
@@ -367,15 +378,16 @@ object SchedulerPage {
                     .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Scheduler"),
-              MuiButton
-                .variant("contained")
-                .size("small")
-                .onClick(() => state.modState(_.copy(showCreateWizard = true, error = None)).runNow())("+ New Job"),
-              MuiButton
-                .variant("outlined")
-                .size("small")
-                .onClick { () =>
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Scheduler"),
+              Button
+                .variant(MuiStrings.contained)
+                .size(MuiStrings.small)
+                .onClick(_ => state.modState(_.copy(showCreateWizard = true, error = None)))("+ New Job"),
+              Button
+                .variant(MuiStrings.outlined)
+                .size(MuiStrings.small)
+                .onClick { _ =>
                   Callback {
                     AsyncCallbackRepositories.scheduler
                       .listJobs(None, 200)
@@ -393,15 +405,15 @@ object SchedulerPage {
                   }
                 }("Refresh"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.jobs.isEmpty)
-              Alert.severity("info")("No scheduler jobs found.")
+              Alert.severity(MuiStrings.info)("No scheduler jobs found.")
             else
               <.div(
                 TableContainer()(
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Name"),
@@ -424,7 +436,7 @@ object SchedulerPage {
                                   .withProps(
                                     ChipOwnProps()
                                       .setLabel(job.status.toString).setColor(statusColor(job.status)).setSize(
-                                        "small",
+                                        MuiStrings.small,
                                       ).asInstanceOf[Chip.Props],
                                   )(),
                               ),
@@ -439,10 +451,10 @@ object SchedulerPage {
                                 )(
                                   job.status match {
                                     case JobStatus.Paused =>
-                                      MuiButton
-                                        .size("small")
-                                        .variant("outlined")
-                                        .onClick(() =>
+                                      Button
+                                        .size(MuiStrings.small)
+                                        .variant(MuiStrings.outlined)
+                                        .onClick(_ =>
                                           jobAction(
                                             AsyncCallbackRepositories.scheduler.resumeJob(job.id),
                                             s =>
@@ -452,13 +464,13 @@ object SchedulerPage {
                                                     if (j.id == job.id) j.copy(status = JobStatus.Pending) else j,
                                                   ),
                                               ),
-                                          ).runNow(),
+                                          ),
                                         )("Resume")
                                     case JobStatus.Running | JobStatus.Pending =>
-                                      MuiButton
-                                        .size("small")
-                                        .variant("outlined")
-                                        .onClick(() =>
+                                      Button
+                                        .size(MuiStrings.small)
+                                        .variant(MuiStrings.outlined)
+                                        .onClick(_ =>
                                           jobAction(
                                             AsyncCallbackRepositories.scheduler.pauseJob(job.id),
                                             s =>
@@ -468,16 +480,16 @@ object SchedulerPage {
                                                     if (j.id == job.id) j.copy(status = JobStatus.Paused) else j,
                                                   ),
                                               ),
-                                          ).runNow(),
+                                          ),
                                         )("Pause")
                                     case _ => EmptyVdom
                                   },
                                   if (job.status != JobStatus.Cancelled && job.status != JobStatus.Succeeded)
-                                    MuiButton
-                                      .size("small")
-                                      .variant("outlined")
-                                      .color("error")
-                                      .onClick(() =>
+                                    Button
+                                      .size(MuiStrings.small)
+                                      .variant(MuiStrings.outlined)
+                                      .color(MuiStrings.error)
+                                      .onClick(_ =>
                                         jobAction(
                                           AsyncCallbackRepositories.scheduler.cancelJob(job.id),
                                           s =>
@@ -486,41 +498,39 @@ object SchedulerPage {
                                                 if (j.id == job.id) j.copy(status = JobStatus.Cancelled) else j,
                                               ),
                                             ),
-                                        ).runNow(),
+                                        ),
                                       )("Cancel")
                                   else EmptyVdom,
-                                  MuiButton
-                                    .size("small")
-                                    .variant("outlined")
-                                    .onClick(() =>
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .variant(MuiStrings.outlined)
+                                    .onClick(_ =>
                                       state
                                         .modState(
                                           _.copy(
                                             error = None,
                                             runNowForm = Some(RunNowForm(job.id, "")),
                                           ),
-                                        )
-                                        .runNow(),
+                                        ),
                                     )("Run Now"),
-                                  MuiButton
-                                    .size("small")
-                                    .variant("outlined")
-                                    .onClick(() =>
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .variant(MuiStrings.outlined)
+                                    .onClick(_ =>
                                       state
-                                        .modState(_.copy(error = None, editingJob = Some(job)))
-                                        .runNow(),
+                                        .modState(_.copy(error = None, editingJob = Some(job))),
                                     )("Edit"),
-                                  MuiButton
-                                    .size("small")
-                                    .variant("outlined")
-                                    .color("error")
-                                    .onClick(() => deleteJob(job.id).runNow())("Delete"),
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .variant(MuiStrings.outlined)
+                                    .color(MuiStrings.error)
+                                    .onClick(_ => deleteJob(job.id))("Delete"),
                                 ),
                               ),
                               TableCell()(
-                                MuiButton
-                                  .size("small")
-                                  .onClick(() => toggleExpand(job.id).runNow())(if (isExpanded) "▲" else "▼"),
+                                Button
+                                  .size(MuiStrings.small)
+                                  .onClick(_ => toggleExpand(job.id))(if (isExpanded) "▲" else "▼"),
                               ),
                             ).build,
                         ) ++ (if (isExpanded) {
@@ -546,13 +556,13 @@ object SchedulerPage {
                                             )(
                                               Typography.withProps(
                                                 TypographyOwnProps()
-                                                  .setVariant("subtitle2").asInstanceOf[Typography.Props],
+                                                  .setVariant(MuiStrings.subtitle2).asInstanceOf[Typography.Props],
                                               )(
                                                 if (job.status == JobStatus.Failed) "Error" else "Result",
                                               ),
                                               Typography.withProps(
                                                 TypographyOwnProps()
-                                                  .setVariant("body2")
+                                                  .setVariant(MuiStrings.body2)
                                                   .setSx(
                                                     js.Dynamic
                                                       .literal(
@@ -580,12 +590,12 @@ object SchedulerPage {
                                           )(
                                             Typography.withProps(
                                               TypographyOwnProps()
-                                                .setVariant("subtitle2").asInstanceOf[Typography.Props],
+                                                .setVariant(MuiStrings.subtitle2).asInstanceOf[Typography.Props],
                                             )("Triggers"),
-                                            MuiButton
-                                              .size("small")
-                                              .variant("outlined")
-                                              .onClick(() =>
+                                            Button
+                                              .size(MuiStrings.small)
+                                              .variant(MuiStrings.outlined)
+                                              .onClick(_ =>
                                                 state
                                                   .modState(s =>
                                                     s.copy(
@@ -597,14 +607,15 @@ object SchedulerPage {
                                                           s.triggers + (job.id -> scala.List.empty)
                                                         else s.triggers,
                                                     ),
-                                                  )
-                                                  .runNow(),
+                                                  ),
                                               )("+ Add Trigger"),
                                           ),
                                           if (ts.isEmpty)
                                             <.span("No triggers configured.")
                                           else
-                                            Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                                            Table.withProps(
+                                              TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props],
+                                            )(
                                               TableHead()(
                                                 TableRow()(
                                                   TableCell()("Type"),
@@ -621,11 +632,11 @@ object SchedulerPage {
                                                       TableCell()(<.code(t.expression)),
                                                       TableCell()(if (t.enabled) "✓" else "✗"),
                                                       TableCell()(
-                                                        MuiButton
-                                                          .size("small")
-                                                          .variant("outlined")
-                                                          .color("error")
-                                                          .onClick(() => doDeleteTrigger(job.id, t.id).runNow())(
+                                                        Button
+                                                          .size(MuiStrings.small)
+                                                          .variant(MuiStrings.outlined)
+                                                          .color(MuiStrings.error)
+                                                          .onClick(_ => doDeleteTrigger(job.id, t.id))(
                                                             "Delete",
                                                           ),
                                                       ),
@@ -644,65 +655,74 @@ object SchedulerPage {
                                                                TableRow
                                                                  .withKey(s"${job.id.value}-pipeline-runs")(
                                                                    TableCell.colSpan(6)(
-                                                                     Box.withProps(
-                                                                       BoxOwnProps[Theme]()
-                                                                         .setSx(
-                                                                           js.Dynamic
-                                                                             .literal(pl = 4, pt = 1, pb = 1)
-                                                                             .asInstanceOf[SxProps[Theme]],
-                                                                         ).asInstanceOf[Box.Props],
-                                                                     )(
-                                                                       Typography.withProps(
-                                                                         TypographyOwnProps()
-                                                                           .setVariant("subtitle2")
+                                                                     Box
+                                                                       .withProps(
+                                                                         BoxOwnProps[Theme]()
                                                                            .setSx(
                                                                              js.Dynamic
-                                                                               .literal(mb = 1)
+                                                                               .literal(pl = 4, pt = 1, pb = 1)
                                                                                .asInstanceOf[SxProps[Theme]],
-                                                                           ).asInstanceOf[
-                                                                             Typography.Props,
-                                                                           ],
-                                                                       )("Pipeline Runs"),
-                                                                       if (runs.isEmpty)
-                                                                         <.span("No pipeline runs yet.")
-                                                                       else
-                                                                         Table.withProps(
-                                                                           TableOwnProps()
-                                                                             .setSize("small").asInstanceOf[Table.Props],
-                                                                         )(
-                                                                           TableHead()(
-                                                                             TableRow()(
-                                                                               TableCell()("Run ID"),
-                                                                               TableCell()("Status"),
-                                                                               TableCell()("Started"),
-                                                                               TableCell()("Finished"),
-                                                                               TableCell()("Failed Step"),
-                                                                             ),
-                                                                           ),
-                                                                           TableBody()(
-                                                                             runs.map { run =>
-                                                                               TableRow
-                                                                                 .withKey(run.id.value.toString)(
-                                                                                   TableCell()(run.id.value.toString),
-                                                                                   TableCell()(run.status.toString),
-                                                                                   TableCell()(
-                                                                                     PageUtils
-                                                                                       .formatTimestamp(run.startedAt),
-                                                                                   ),
-                                                                                   TableCell()(
-                                                                                     run.finishedAt
-                                                                                       .fold("-")(
-                                                                                         PageUtils.formatTimestamp(_),
+                                                                           ).asInstanceOf[Box.Props],
+                                                                       )(
+                                                                         Typography.withProps(
+                                                                           TypographyOwnProps()
+                                                                             .setVariant(MuiStrings.subtitle2)
+                                                                             .setSx(
+                                                                               js.Dynamic
+                                                                                 .literal(mb = 1)
+                                                                                 .asInstanceOf[SxProps[Theme]],
+                                                                             ).asInstanceOf[
+                                                                               Typography.Props,
+                                                                             ],
+                                                                         )("Pipeline Runs"),
+                                                                         if (runs.isEmpty)
+                                                                           <.span("No pipeline runs yet.")
+                                                                         else
+                                                                           Table
+                                                                             .withProps(
+                                                                               TableOwnProps()
+                                                                                 .setSize(
+                                                                                   MuiStrings.small,
+                                                                                 ).asInstanceOf[Table.Props],
+                                                                             )(
+                                                                               TableHead()(
+                                                                                 TableRow()(
+                                                                                   TableCell()("Run ID"),
+                                                                                   TableCell()("Status"),
+                                                                                   TableCell()("Started"),
+                                                                                   TableCell()("Finished"),
+                                                                                   TableCell()("Failed Step"),
+                                                                                 ),
+                                                                               ),
+                                                                               TableBody()(
+                                                                                 runs.map { run =>
+                                                                                   TableRow
+                                                                                     .withKey(run.id.value.toString)(
+                                                                                       TableCell()(
+                                                                                         run.id.value.toString,
                                                                                        ),
-                                                                                   ),
-                                                                                   TableCell()(
-                                                                                     run.failedStep.getOrElse("-"),
-                                                                                   ),
-                                                                                 ).build
-                                                                             }*,
-                                                                           ),
-                                                                         ),
-                                                                     ),
+                                                                                       TableCell()(run.status.toString),
+                                                                                       TableCell()(
+                                                                                         PageUtils
+                                                                                           .formatTimestamp(
+                                                                                             run.startedAt,
+                                                                                           ),
+                                                                                       ),
+                                                                                       TableCell()(
+                                                                                         run.finishedAt
+                                                                                           .fold("-")(
+                                                                                             PageUtils
+                                                                                               .formatTimestamp(_),
+                                                                                           ),
+                                                                                       ),
+                                                                                       TableCell()(
+                                                                                         run.failedStep.getOrElse("-"),
+                                                                                       ),
+                                                                                     ).build
+                                                                                 }*,
+                                                                               ),
+                                                                             ),
+                                                                       ),
                                                                    ),
                                                                  ).build,
                                                              )
@@ -711,23 +731,17 @@ object SchedulerPage {
                     ),
                   ),
                 ),
-                MuiTablePagination
-                  .component("div")
-                  .count(state.value.jobs.size)
-                  .page(state.value.page)
-                  .rowsPerPage(state.value.rowsPerPage)
-                  .rowsPerPageOptions(js.Array(5, 10, 25))
-                  .onPageChange(
-                    (
-                      _,
-                      p,
-                    ) => state.modState(_.copy(page = p)).runNow(),
-                  )
-                  .onRowsPerPageChange(e =>
-                    state
-                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
-                      .runNow(),
-                  )(),
+                TablePagination(
+                  count = state.value.jobs.size,
+                  onPageChange = (
+                    _,
+                    p,
+                  ) => state.modState(_.copy(page = p.toInt)),
+                  page = state.value.page,
+                  rowsPerPage = state.value.rowsPerPage,
+                ).component("div")
+                  .rowsPerPageOptionsVarargs(5.0, 10.0, 25.0)
+                  .onRowsPerPageChange(e => state.modState(_.copy(rowsPerPage = e.target.value.toInt, page = 0)))(),
               ),
           )
       }

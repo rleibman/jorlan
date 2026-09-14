@@ -6,11 +6,14 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TablePagination, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiMenuItem, MuiSelect, MuiTablePagination, MuiTextField}
+import jorlan.web.components.OutlinedSelect
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
@@ -430,13 +433,14 @@ object UsersPage {
                     .literal(display = "flex", alignItems = "center", mb = 2, gap = 2).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Users"),
-              MuiButton.variant("contained").onClick(() => openCreate().runNow())("Create User"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Users"),
+              Button.variant(MuiStrings.contained).onClick(_ => openCreate())("Create User"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading) CircularProgress()
             else if (state.value.users.isEmpty)
-              Alert.severity("info")("No users found.")
+              Alert.severity(MuiStrings.info)("No users found.")
             else
               <.div(
                 TableContainer()(
@@ -459,8 +463,8 @@ object UsersPage {
                             Chip.withProps(
                               ChipOwnProps()
                                 .setLabel(if (user.active) "Active" else "Inactive").setColor(
-                                  if (user.active) "success" else "default",
-                                ).setSize("small").asInstanceOf[Chip.Props],
+                                  if (user.active) MuiStrings.success else MuiStrings.default,
+                                ).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                             )(),
                           ),
                           TableCell()(PageUtils.formatTimestamp(user.createdAt)),
@@ -472,34 +476,34 @@ object UsersPage {
                                     .literal(display = "flex", gap = 1, flexWrap = "wrap").asInstanceOf[SxProps[Theme]],
                                 ).asInstanceOf[Box.Props],
                             )(
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => openEdit(user).runNow())("Edit"),
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => openPerms(user).runNow())("Capabilities"),
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => openRoles(user).runNow())("Roles"),
-                              MuiButton
-                                .variant("outlined")
-                                .size("small")
-                                .onClick(() => openIdentities(user).runNow())("Identities"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .size(MuiStrings.small)
+                                .onClick(_ => openEdit(user))("Edit"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .size(MuiStrings.small)
+                                .onClick(_ => openPerms(user))("Capabilities"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .size(MuiStrings.small)
+                                .onClick(_ => openRoles(user))("Roles"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .size(MuiStrings.small)
+                                .onClick(_ => openIdentities(user))("Identities"),
                               if (user.active)
-                                MuiButton
-                                  .variant("outlined")
-                                  .size("small")
-                                  .color("error")
-                                  .onClick(() => handleDeactivate(user).runNow())("Deactivate")
+                                Button
+                                  .variant(MuiStrings.outlined)
+                                  .size(MuiStrings.small)
+                                  .color(MuiStrings.error)
+                                  .onClick(_ => handleDeactivate(user))("Deactivate")
                               else
-                                MuiButton
-                                  .variant("outlined")
-                                  .size("small")
-                                  .color("success")
-                                  .onClick(() => handleReactivate(user).runNow())("Reactivate"),
+                                Button
+                                  .variant(MuiStrings.outlined)
+                                  .size(MuiStrings.small)
+                                  .color(MuiStrings.success)
+                                  .onClick(_ => handleReactivate(user))("Reactivate"),
                             ),
                           ),
                         )
@@ -507,84 +511,76 @@ object UsersPage {
                     ),
                   ),
                 ),
-                MuiTablePagination
-                  .component("div")
-                  .count(state.value.users.size)
-                  .page(state.value.page)
-                  .rowsPerPage(state.value.rowsPerPage)
-                  .rowsPerPageOptions(js.Array(5, 10, 25, 50))
-                  .onPageChange(
-                    (
-                      _,
-                      p,
-                    ) => state.modState(_.copy(page = p)).runNow(),
-                  )
-                  .onRowsPerPageChange(e =>
-                    state
-                      .modState(_.copy(rowsPerPage = e.target.value.asInstanceOf[String].toInt, page = 0))
-                      .runNow(),
-                  )(),
+                TablePagination(
+                  count = state.value.users.size,
+                  onPageChange = (
+                    _,
+                    p,
+                  ) => state.modState(_.copy(page = p.toInt)),
+                  page = state.value.page,
+                  rowsPerPage = state.value.rowsPerPage,
+                ).component("div")
+                  .rowsPerPageOptionsVarargs(5.0, 10.0, 25.0, 50.0)
+                  .onRowsPerPageChange(e => state.modState(_.copy(rowsPerPage = e.target.value.toInt, page = 0)))(),
               ),
             Dialog(isEditOpen)(
               DialogTitle()("Edit User"),
               DialogContent()(
-                MuiTextField
+                TextField
                   .label("Display Name")
                   .value(editDisplayName)
                   .fullWidth(true)
-                  .variant("outlined")
+                  .variant(MuiStrings.outlined)
                   .onChange(e =>
                     state
                       .modState(
                         _.copy(editState = Some(EditState(e.target.value.asInstanceOf[String], editEmail))),
-                      )
-                      .runNow(),
+                      ),
                   ),
-                MuiTextField
+                TextField
                   .label("Email")
                   .value(editEmail)
                   .fullWidth(true)
-                  .variant("outlined")
+                  .variant(MuiStrings.outlined)
                   .onChange(e =>
                     state
                       .modState(
                         _.copy(
                           editState = Some(EditState(editDisplayName, e.target.value.asInstanceOf[String])),
                         ),
-                      )
-                      .runNow(),
+                      ),
                   ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closeEdit().runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
+                Button.variant(MuiStrings.text).onClick(_ => closeEdit())("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.saving)
-                  .onClick(() => saveEdit().runNow())("Save"),
+                  .onClick(_ => saveEdit())("Save"),
               ),
             ),
             Dialog(state.value.createOpen)(
               DialogTitle()("Create User"),
               DialogContent()(
-                MuiTextField
+                TextField
                   .label("Display Name")
                   .value(state.value.createName)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String])).runNow()),
-                MuiTextField
+                  .variant(MuiStrings.outlined)
+                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String]))),
+                TextField
                   .label("Email")
                   .value(state.value.createEmail)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .onChange(e => state.modState(_.copy(createEmail = e.target.value.asInstanceOf[String])).runNow()),
+                  .variant(MuiStrings.outlined)
+                  .onChange(e => state.modState(_.copy(createEmail = e.target.value.asInstanceOf[String]))),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closeCreate().runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
+                Button.variant(MuiStrings.text).onClick(_ => closeCreate())("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.saving)
-                  .onClick(() => saveCreate().runNow())("Create"),
+                  .onClick(_ => saveCreate())("Create"),
               ),
             ),
             Dialog(state.value.permsUser.isDefined)(
@@ -594,21 +590,21 @@ object UsersPage {
               DialogContent()(
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Existing grants:"),
                 if (state.value.grants.isEmpty)
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("body2").setSx(
+                      .setVariant(MuiStrings.body2).setSx(
                         js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Typography.Props],
                   )(
                     "No capability grants.",
                   )
                 else
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Capability"),
@@ -622,10 +618,10 @@ object UsersPage {
                           TableCell()(g.capability.value),
                           TableCell()(g.approvalMode.toString),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .color("error")
-                              .onClick(() => revokeGrant(g.id).runNow())("Revoke"),
+                            Button
+                              .size(MuiStrings.small)
+                              .color(MuiStrings.error)
+                              .onClick(_ => revokeGrant(g.id))("Revoke"),
                           ),
                         )
                       }*,
@@ -633,7 +629,7 @@ object UsersPage {
                   ),
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mt = 2, mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Grant capability:"),
@@ -643,17 +639,21 @@ object UsersPage {
                       js.Dynamic.literal(display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Box.Props],
                 )(
-                  MuiSelect
+                  OutlinedSelect
                     .value(state.value.newMode)
-                    .size("small")
-                    .onChange { e =>
-                      state
-                        .modState(
-                          _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
-                        ).runNow()
+                    .size(MuiStrings.small)
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        state
+                          .modState(
+                            _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                          )
                     }(
                       ApprovalMode.values
-                        .map(m => MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
+                        .map(m => MenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
                     ),
                 ),
                 Box.withProps(
@@ -662,19 +662,19 @@ object UsersPage {
                       js.Dynamic.literal(mt = 1, maxHeight = 300, overflowY = "auto").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Box.Props],
                 )(
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableBody()(
                       state.value.allKnownCapabilities.map { cap =>
                         val alreadyGranted = state.value.grants.exists(_.capability == cap)
                         TableRow.withKey(cap.value)(
                           TableCell()(cap.value),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .variant(if (alreadyGranted) "outlined" else "contained")
-                              .color(if (alreadyGranted) "error" else "primary")
+                            Button
+                              .size(MuiStrings.small)
+                              .variant(if (alreadyGranted) MuiStrings.outlined else MuiStrings.contained)
+                              .color(if (alreadyGranted) MuiStrings.error else MuiStrings.primary)
                               .disabled(alreadyGranted)
-                              .onClick(() => grantCapability(cap).runNow())(
+                              .onClick(_ => grantCapability(cap))(
                                 if (alreadyGranted) "Granted" else "Grant",
                               ),
                           ),
@@ -685,7 +685,7 @@ object UsersPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closePerms().runNow())("Close"),
+                Button.variant(MuiStrings.text).onClick(_ => closePerms())("Close"),
               ),
             ),
             Dialog(state.value.rolesUser.isDefined)(
@@ -695,21 +695,21 @@ object UsersPage {
               DialogContent()(
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Assigned roles:"),
                 if (state.value.userRoles.isEmpty)
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("body2").setSx(
+                      .setVariant(MuiStrings.body2).setSx(
                         js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Typography.Props],
                   )(
                     "No roles assigned.",
                   )
                 else
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Role"),
@@ -721,10 +721,10 @@ object UsersPage {
                         TableRow.withKey(r.id.value.toString)(
                           TableCell()(r.name),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .color("error")
-                              .onClick(() => removeRole(r.id).runNow())("Remove"),
+                            Button
+                              .size(MuiStrings.small)
+                              .color(MuiStrings.error)
+                              .onClick(_ => removeRole(r.id))("Remove"),
                           ),
                         )
                       }*,
@@ -739,34 +739,39 @@ object UsersPage {
                           ]],
                       ).asInstanceOf[Box.Props],
                   )(
-                    Typography.withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])(
-                      "Assign role:",
-                    ),
-                    MuiSelect
+                    Typography
+                      .withProps(TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props])(
+                        "Assign role:",
+                      ),
+                    OutlinedSelect
                       .value(state.value.assignRoleId)
-                      .size("small")
+                      .size(MuiStrings.small)
                       .displayEmpty(true)
-                      .onChange { e =>
-                        state
-                          .modState(
-                            _.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
-                          ).runNow()
+                      .onChange {
+                        (
+                          e,
+                          _,
+                        ) =>
+                          state
+                            .modState(
+                              _.copy(assignRoleId = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                            )
                       }(
-                        ((MuiMenuItem.value("")("— Select a role —"): VdomNode) ::
+                        ((MenuItem.value("")("— Select a role —"): VdomNode) ::
                           state.value.allRoles.map { r =>
-                            MuiMenuItem.withKey(r.id.value.toString).value(r.id.value.toString)(r.name): VdomNode
+                            MenuItem.withKey(r.id.value.toString).value(r.id.value.toString)(r.name): VdomNode
                           })*,
                       ),
-                    MuiButton
-                      .variant("contained")
-                      .size("small")
+                    Button
+                      .variant(MuiStrings.contained)
+                      .size(MuiStrings.small)
                       .disabled(state.value.assignRoleId.trim.isEmpty)
-                      .onClick(() => assignRole().runNow())("Assign"),
+                      .onClick(_ => assignRole())("Assign"),
                   )
                 },
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closeRoles().runNow())("Close"),
+                Button.variant(MuiStrings.text).onClick(_ => closeRoles())("Close"),
               ),
             ),
             Dialog(state.value.identsUser.isDefined)(
@@ -774,24 +779,24 @@ object UsersPage {
                 s"Channel Identities — ${state.value.identsUser.map(_.displayName).getOrElse("")}",
               ),
               DialogContent()(
-                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+                state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Linked identities:"),
                 if (state.value.identities.isEmpty)
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("body2").setSx(
+                      .setVariant(MuiStrings.body2).setSx(
                         js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Typography.Props],
                   )(
                     "No channel identities.",
                   )
                 else
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Channel"),
@@ -807,10 +812,10 @@ object UsersPage {
                           TableCell()(ci.channelUserId),
                           TableCell()(if (ci.verified) "Yes" else "No"),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .color("error")
-                              .onClick(() => unlinkIdentity(ci.id).runNow())("Unlink"),
+                            Button
+                              .size(MuiStrings.small)
+                              .color(MuiStrings.error)
+                              .onClick(_ => unlinkIdentity(ci.id))("Unlink"),
                           ),
                         )
                       }*,
@@ -838,23 +843,21 @@ object UsersPage {
                       },
                       chTypeOpts,
                     ),
-                    MuiTextField
+                    TextField
                       .label("Channel User ID")
                       .value(state.value.newChUserId)
-                      .size("small")
-                      .onChange(e =>
-                        state.modState(_.copy(newChUserId = e.target.value.asInstanceOf[String])).runNow(),
-                      ),
-                    MuiButton
-                      .variant("contained")
-                      .size("small")
+                      .size(MuiStrings.small)
+                      .onChange(e => state.modState(_.copy(newChUserId = e.target.value.asInstanceOf[String]))),
+                    Button
+                      .variant(MuiStrings.contained)
+                      .size(MuiStrings.small)
                       .disabled(state.value.newChUserId.trim.isEmpty)
-                      .onClick(() => linkIdentity().runNow())("Link"),
+                      .onClick(_ => linkIdentity())("Link"),
                   )
                 },
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closeIdentities().runNow())("Close"),
+                Button.variant(MuiStrings.text).onClick(_ => closeIdentities())("Close"),
               ),
             ),
           )

@@ -6,6 +6,9 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, MenuItem, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
@@ -231,31 +234,34 @@ object RolesPage {
                     .asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Roles"),
-              MuiButton
-                .variant("contained")
-                .onClick(() =>
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Roles"),
+              Button
+                .variant(MuiStrings.contained)
+                .onClick(_ =>
                   state
                     .modState(
                       _.copy(showCreate = true, createName = "", createDesc = "", error = None),
-                    ).runNow(),
+                    ),
                 )(
                   "+ New Role",
                 ),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading) {
               Typography
-                .withProps(TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props])("Loading...")
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props])(
+                  "Loading...",
+                )
             } else if (state.value.roles.isEmpty) {
               Typography.withProps(
                 TypographyOwnProps()
-                  .setVariant("body2").setSx(
+                  .setVariant(MuiStrings.body2).setSx(
                     js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                   ).asInstanceOf[Typography.Props],
               )("No roles defined.")
             } else {
-              Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+              Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                 TableHead()(
                   TableRow()(
                     TableCell()("Name"),
@@ -269,9 +275,9 @@ object RolesPage {
                       TableCell()(r.name),
                       TableCell()(r.description.getOrElse("—")),
                       TableCell()(
-                        MuiButton
-                          .size("small")
-                          .onClick(() =>
+                        Button
+                          .size(MuiStrings.small)
+                          .onClick(_ =>
                             state
                               .modState(
                                 _.copy(
@@ -280,15 +286,15 @@ object RolesPage {
                                   editDesc = r.description.getOrElse(""),
                                   error = None,
                                 ),
-                              ).runNow(),
+                              ),
                           )("Edit"),
-                        MuiButton
-                          .size("small")
-                          .onClick(() => openCaps(r).runNow())("Capabilities"),
-                        MuiButton
-                          .size("small")
-                          .color("error")
-                          .onClick(() => state.modState(_.copy(deleteTarget = Some(r))).runNow())("Delete"),
+                        Button
+                          .size(MuiStrings.small)
+                          .onClick(_ => openCaps(r))("Capabilities"),
+                        Button
+                          .size(MuiStrings.small)
+                          .color(MuiStrings.error)
+                          .onClick(_ => state.modState(_.copy(deleteTarget = Some(r))))("Delete"),
                       ),
                     )
                   }*,
@@ -298,97 +304,97 @@ object RolesPage {
             Dialog(state.value.showCreate)(
               DialogTitle()("New Role"),
               DialogContent()(
-                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
-                MuiTextField
+                state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
+                TextField
                   .label("Name")
                   .value(state.value.createName)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String])).runNow()),
-                MuiTextField
+                  .variant(MuiStrings.outlined)
+                  .sxStyle(js.Dynamic.literal(mt = 1, mb = 1))
+                  .onChange(e => state.modState(_.copy(createName = e.target.value.asInstanceOf[String]))),
+                TextField
                   .label("Description")
                   .value(state.value.createDesc)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .onChange(e => state.modState(_.copy(createDesc = e.target.value.asInstanceOf[String])).runNow()),
+                  .variant(MuiStrings.outlined)
+                  .onChange(e => state.modState(_.copy(createDesc = e.target.value.asInstanceOf[String]))),
               ),
               DialogActions()(
-                MuiButton
-                  .variant("text").onClick(() => state.modState(_.copy(showCreate = false)).runNow())(
+                Button
+                  .variant(MuiStrings.text).onClick(_ => state.modState(_.copy(showCreate = false)))(
                     "Cancel",
                   ),
-                MuiButton
-                  .variant("contained")
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.saving || state.value.createName.trim.isEmpty)
-                  .onClick(() => saveCreate().runNow())("Create"),
+                  .onClick(_ => saveCreate())("Create"),
               ),
             ),
             Dialog(state.value.editRole.isDefined)(
               DialogTitle()(s"Edit Role — ${state.value.editRole.map(_.name).getOrElse("")}"),
               DialogContent()(
-                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
-                MuiTextField
+                state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
+                TextField
                   .label("Name")
                   .value(state.value.editName)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .sx(js.Dynamic.literal(mt = 1, mb = 1))
-                  .onChange(e => state.modState(_.copy(editName = e.target.value.asInstanceOf[String])).runNow()),
-                MuiTextField
+                  .variant(MuiStrings.outlined)
+                  .sxStyle(js.Dynamic.literal(mt = 1, mb = 1))
+                  .onChange(e => state.modState(_.copy(editName = e.target.value.asInstanceOf[String]))),
+                TextField
                   .label("Description")
                   .value(state.value.editDesc)
                   .fullWidth(true)
-                  .variant("outlined")
-                  .onChange(e => state.modState(_.copy(editDesc = e.target.value.asInstanceOf[String])).runNow()),
+                  .variant(MuiStrings.outlined)
+                  .onChange(e => state.modState(_.copy(editDesc = e.target.value.asInstanceOf[String]))),
               ),
               DialogActions()(
-                MuiButton
-                  .variant("text").onClick(() => state.modState(_.copy(editRole = None)).runNow())("Cancel"),
-                MuiButton
-                  .variant("contained")
+                Button
+                  .variant(MuiStrings.text).onClick(_ => state.modState(_.copy(editRole = None)))("Cancel"),
+                Button
+                  .variant(MuiStrings.contained)
                   .disabled(state.value.saving || state.value.editName.trim.isEmpty)
-                  .onClick(() => saveEdit().runNow())("Save"),
+                  .onClick(_ => saveEdit())("Save"),
               ),
             ),
             Dialog(state.value.deleteTarget.isDefined)(
               DialogTitle()("Delete Role"),
               DialogContent()(
-                Typography.withProps(TypographyOwnProps().setVariant("body1").asInstanceOf[Typography.Props])(
+                Typography.withProps(TypographyOwnProps().setVariant(MuiStrings.body1).asInstanceOf[Typography.Props])(
                   s"Delete role '${state.value.deleteTarget.map(_.name).getOrElse("")}'? This cannot be undone.",
                 ),
               ),
               DialogActions()(
-                MuiButton
-                  .variant("text").onClick(() => state.modState(_.copy(deleteTarget = None)).runNow())(
+                Button
+                  .variant(MuiStrings.text).onClick(_ => state.modState(_.copy(deleteTarget = None)))(
                     "Cancel",
                   ),
-                MuiButton
-                  .variant("contained")
-                  .color("error")
+                Button
+                  .variant(MuiStrings.contained)
+                  .color(MuiStrings.error)
                   .disabled(state.value.deleting)
-                  .onClick(() => state.value.deleteTarget.fold(Callback.empty)(deleteRole).runNow())("Delete"),
+                  .onClick(_ => state.value.deleteTarget.fold(Callback.empty)(deleteRole))("Delete"),
               ),
             ),
             Dialog(state.value.capRole.isDefined)(
               DialogTitle()(s"Capabilities — ${state.value.capRole.map(_.name).getOrElse("")}"),
               DialogContent()(
-                state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+                state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Existing grants:"),
                 if (state.value.roleGrants.isEmpty)
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("body2").setSx(
+                      .setVariant(MuiStrings.body2).setSx(
                         js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Typography.Props],
                   )("No capability grants.")
                 else
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableHead()(
                       TableRow()(
                         TableCell()("Capability"),
@@ -402,10 +408,10 @@ object RolesPage {
                           TableCell()(g.capability.value),
                           TableCell()(g.approvalMode.toString),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .color("error")
-                              .onClick(() => revokeRoleGrant(g.id).runNow())("Revoke"),
+                            Button
+                              .size(MuiStrings.small)
+                              .color(MuiStrings.error)
+                              .onClick(_ => revokeRoleGrant(g.id))("Revoke"),
                           ),
                         )
                       }*,
@@ -413,7 +419,7 @@ object RolesPage {
                   ),
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(mt = 2, mb = 1).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )("Grant capability:"),
@@ -423,17 +429,21 @@ object RolesPage {
                       js.Dynamic.literal(display = "flex", gap = 1, alignItems = "center").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Box.Props],
                 )(
-                  MuiSelect
+                  OutlinedSelect
                     .value(state.value.newMode)
-                    .size("small")
-                    .onChange { e =>
-                      state
-                        .modState(
-                          _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
-                        ).runNow()
+                    .size(MuiStrings.small)
+                    .onChange {
+                      (
+                        e,
+                        _,
+                      ) =>
+                        state
+                          .modState(
+                            _.copy(newMode = e.target.asInstanceOf[org.scalajs.dom.html.Select].value),
+                          )
                     }(
                       ApprovalMode.values
-                        .map(m => MuiMenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
+                        .map(m => MenuItem.withKey(m.toString).value(m.toString)(m.toString): VdomNode)*,
                     ),
                 ),
                 Box.withProps(
@@ -442,19 +452,19 @@ object RolesPage {
                       js.Dynamic.literal(mt = 1, maxHeight = 300, overflowY = "auto").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Box.Props],
                 )(
-                  Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                  Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                     TableBody()(
                       state.value.allKnownCapabilities.map { cap =>
                         val alreadyGranted = state.value.roleGrants.exists(_.capability == cap)
                         TableRow.withKey(cap.value)(
                           TableCell()(cap.value),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .variant(if (alreadyGranted) "outlined" else "contained")
-                              .color(if (alreadyGranted) "error" else "primary")
+                            Button
+                              .size(MuiStrings.small)
+                              .variant(if (alreadyGranted) MuiStrings.outlined else MuiStrings.contained)
+                              .color(if (alreadyGranted) MuiStrings.error else MuiStrings.primary)
                               .disabled(alreadyGranted)
-                              .onClick(() => grantCapability(cap).runNow())(
+                              .onClick(_ => grantCapability(cap))(
                                 if (alreadyGranted) "Granted" else "Grant",
                               ),
                           ),
@@ -465,7 +475,7 @@ object RolesPage {
                 ),
               ),
               DialogActions()(
-                MuiButton.variant("text").onClick(() => closeCaps().runNow())("Close"),
+                Button.variant(MuiStrings.text).onClick(_ => closeCaps())("Close"),
               ),
             ),
           )

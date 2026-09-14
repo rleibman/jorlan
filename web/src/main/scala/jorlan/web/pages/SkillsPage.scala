@@ -6,12 +6,15 @@
 
 package jorlan.web.pages
 
+import net.leibman.jorlan.marked.anon.MarkedOptionsasyncfalse
+import net.leibman.jorlan.marked.mod as markedMod
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.Button
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.Marked
-import jorlan.web.components.{MuiButton, Toast, ToastMessage, ToastSeverity}
+import jorlan.web.components.{Toast, ToastMessage, ToastSeverity}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 import net.leibman.jorlan.muiMaterial.internalSwitchBaseMod.SwitchBaseProps
@@ -238,9 +241,9 @@ object SkillsPage {
               case None           => <.span()
               case Some(jsModule) =>
                 if (!state.value.configuring.contains(skill.name)) {
-                  MuiButton
-                    .size("small")
-                    .onClick(() => openConfigure(skill).runNow())("Configure")
+                  Button
+                    .size(MuiStrings.small)
+                    .onClick(_ => openConfigure(skill))("Configure")
                 } else {
                   val loadedReg: js.UndefOr[js.Dynamic] =
                     if (state.value.loadedModules.contains(jsModule))
@@ -261,7 +264,7 @@ object SkillsPage {
                         CircularProgress.size(20)(),
                         Typography.withProps(
                           TypographyOwnProps()
-                            .setVariant("body2").setSx(
+                            .setVariant(MuiStrings.body2).setSx(
                               js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                             ).asInstanceOf[Typography.Props],
                         )(
@@ -302,7 +305,7 @@ object SkillsPage {
                             ).asInstanceOf[Box.Props],
                         )(
                           Typography.withProps(
-                            TypographyOwnProps().setVariant("subtitle2").asInstanceOf[Typography.Props],
+                            TypographyOwnProps().setVariant(MuiStrings.subtitle2).asInstanceOf[Typography.Props],
                           )("Configuration"),
                           if (state.value.configSaving.contains(skill.name))
                             CircularProgress.size(18)()
@@ -311,7 +314,10 @@ object SkillsPage {
                         state.value.configError
                           .get(skill.name)
                           .fold(EmptyVdom)(err =>
-                            Alert.severity("error").sx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])(err),
+                            Alert
+                              .severity(MuiStrings.error).sx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])(
+                                err,
+                              ),
                           ),
                         element,
                         Box.withProps(
@@ -327,12 +333,12 @@ object SkillsPage {
                           )
                             CircularProgress.size(18)()
                           else
-                            MuiButton
-                              .size("small")
-                              .variant("outlined")
-                              .onClick { () =>
+                            Button
+                              .size(MuiStrings.small)
+                              .variant(MuiStrings.outlined)
+                              .onClick { _ =>
                                 val json = state.value.configJson.get(skill.name).flatten.getOrElse("{}")
-                                saveConfig(skill, json).runNow()
+                                saveConfig(skill, json)
                               }("Validate"),
                           state.value.validationResult
                             .get(skill.name)
@@ -365,7 +371,7 @@ object SkillsPage {
                 )(
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("caption").setSx(
+                      .setVariant(MuiStrings.caption).setSx(
                         js.Dynamic
                           .literal(mr = 0.5, alignSelf = "center", color = "text.secondary").asInstanceOf[SxProps[
                             Theme,
@@ -378,7 +384,10 @@ object SkillsPage {
                     tool.requiredCapabilities.map(cap =>
                       Chip
                         .withProps(
-                          ChipOwnProps().setLabel(cap).setSize("small").setVariant("outlined").asInstanceOf[Chip.Props],
+                          ChipOwnProps()
+                            .setLabel(cap).setSize(MuiStrings.small).setVariant(MuiStrings.outlined).asInstanceOf[
+                              Chip.Props,
+                            ],
                         ).withKey(cap)(),
                     )*,
                   ),
@@ -393,7 +402,7 @@ object SkillsPage {
                 )(
                   Typography.withProps(
                     TypographyOwnProps()
-                      .setVariant("caption").setSx(
+                      .setVariant(MuiStrings.caption).setSx(
                         js.Dynamic
                           .literal(color = "text.secondary", display = "block", mb = 0.5).asInstanceOf[SxProps[Theme]],
                       ).asInstanceOf[Typography.Props],
@@ -405,7 +414,7 @@ object SkillsPage {
                       Typography
                         .withProps(
                           TypographyOwnProps()
-                            .setVariant("body2").setSx(
+                            .setVariant(MuiStrings.body2).setSx(
                               js.Dynamic
                                 .literal(fontStyle = "italic", color = "text.secondary", pl = 1).asInstanceOf[SxProps[
                                   Theme,
@@ -435,13 +444,13 @@ object SkillsPage {
               ).withKey(tool.name)(
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("subtitle2").setSx(
+                    .setVariant(MuiStrings.subtitle2).setSx(
                       js.Dynamic.literal(fontFamily = "monospace", mb = 0.5).asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )(tool.name),
                 Typography.withProps(
                   TypographyOwnProps()
-                    .setVariant("body2").setSx(
+                    .setVariant(MuiStrings.body2).setSx(
                       js.Dynamic.literal(mb = 1, color = "text.secondary").asInstanceOf[SxProps[Theme]],
                     ).asInstanceOf[Typography.Props],
                 )(tool.description),
@@ -459,16 +468,18 @@ object SkillsPage {
                 ).asInstanceOf[Box.Props],
             )(
               Typography
-                .withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Skill Registry"),
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])(
+                  "Skill Registry",
+                ),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.skills.isEmpty)
-              Alert.severity("info")("No skills registered.")
+              Alert.severity(MuiStrings.info)("No skills registered.")
             else
               TableContainer()(
-                Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                   TableHead()(
                     TableRow()(
                       TableCell()(),
@@ -490,9 +501,9 @@ object SkillsPage {
                         TableRow
                           .withKey(skill.name)(
                             TableCell.sx(js.Dynamic.literal(width = "40px").asInstanceOf[SxProps[Theme]])(
-                              MuiButton
-                                .size("small")
-                                .onClick(() => toggleExpand(skill.name).runNow())(if (isExpanded) "▲" else "▼"),
+                              Button
+                                .size(MuiStrings.small)
+                                .onClick(_ => toggleExpand(skill.name))(if (isExpanded) "▲" else "▼"),
                             ),
                             TableCell()(
                               Box.withProps(
@@ -505,7 +516,7 @@ object SkillsPage {
                               )(
                                 Typography.withProps(
                                   TypographyOwnProps()
-                                    .setVariant("body2")
+                                    .setVariant(MuiStrings.body2)
                                     .setSx(
                                       js.Dynamic
                                         .literal(
@@ -521,9 +532,9 @@ object SkillsPage {
                                       .setLabel(
                                         s"Connect ${skill.oauthProvider.fold("account")(_.toString)} to enable",
                                       )
-                                      .setSize("small")
-                                      .setColor("warning")
-                                      .setVariant("outlined")
+                                      .setSize(MuiStrings.small)
+                                      .setColor(MuiStrings.warning)
+                                      .setVariant(MuiStrings.outlined)
                                       .asInstanceOf[Chip.Props],
                                   )()
                                 else EmptyVdom,
@@ -531,13 +542,14 @@ object SkillsPage {
                             ),
                             TableCell()(
                               Chip.withProps(
-                                ChipOwnProps().setLabel(skill.tier.toString).setSize("small").asInstanceOf[Chip.Props],
+                                ChipOwnProps()
+                                  .setLabel(skill.tier.toString).setSize(MuiStrings.small).asInstanceOf[Chip.Props],
                               )(),
                             ),
                             TableCell()(
                               Typography.withProps(
                                 TypographyOwnProps()
-                                  .setVariant("body2").setSx(
+                                  .setVariant(MuiStrings.body2).setSx(
                                     js.Dynamic.literal(color = "text.secondary").asInstanceOf[SxProps[Theme]],
                                   ).asInstanceOf[Typography.Props],
                               )(
@@ -570,10 +582,10 @@ object SkillsPage {
                                   ).asInstanceOf[Box.Props],
                               )(
                                 skill.configJsModule.fold[VdomNode](EmptyVdom) { _ =>
-                                  MuiButton
-                                    .size("small")
-                                    .variant("outlined")
-                                    .onClick(() => openConfigure(skill).runNow())("Configure")
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .variant(MuiStrings.outlined)
+                                    .onClick(_ => openConfigure(skill))("Configure")
                                 },
                               ),
                             ),
@@ -598,7 +610,7 @@ object SkillsPage {
                                 )(
                                   Typography.withProps(
                                     TypographyOwnProps()
-                                      .setVariant("caption").setSx(
+                                      .setVariant(MuiStrings.caption).setSx(
                                         js.Dynamic
                                           .literal(
                                             color = "text.secondary",
@@ -614,7 +626,9 @@ object SkillsPage {
                                       Chip
                                         .withProps(
                                           ChipOwnProps()
-                                            .setLabel(kw).setSize("small").setVariant("outlined").setSx(
+                                            .setLabel(kw).setSize(MuiStrings.small).setVariant(
+                                              MuiStrings.outlined,
+                                            ).setSx(
                                               js.Dynamic.literal(fontFamily = "monospace").asInstanceOf[SxProps[Theme]],
                                             ).asInstanceOf[Chip.Props],
                                         ).withKey(kw)(),
@@ -644,10 +658,10 @@ object SkillsPage {
                                     .setSx(js.Dynamic.literal(mb = 1).asInstanceOf[SxProps[Theme]])
                                     .asInstanceOf[Box.Props],
                                 )(
-                                  MuiButton
-                                    .size("small")
-                                    .variant("outlined")
-                                    .onClick(() => state.modState(_.copy(showDocFor = Some(skill.name))).runNow())(
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .variant(MuiStrings.outlined)
+                                    .onClick(_ => state.modState(_.copy(showDocFor = Some(skill.name))))(
                                       "Docs",
                                     ),
                                 ),
@@ -683,7 +697,7 @@ object SkillsPage {
                 .find(_.name == skillName)
                 .flatMap(_.doc)
                 .getOrElse("")
-              val renderedHtml = Marked.parse(docContent)
+              val renderedHtml = markedMod.parse(docContent, MarkedOptionsasyncfalse().setAsync(false))
               Dialog(true)(
                 DialogTitle()(s"$skillName — Documentation"),
                 DialogContent()(
@@ -706,7 +720,7 @@ object SkillsPage {
                   ),
                 ),
                 DialogActions()(
-                  MuiButton.onClick(() => state.modState(_.copy(showDocFor = None)).runNow())("Close"),
+                  Button.onClick(_ => state.modState(_.copy(showDocFor = None)))("Close"),
                 ),
               )
             },

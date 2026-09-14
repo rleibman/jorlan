@@ -6,12 +6,15 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, TextField}
 import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTextField, ToolSelector}
+import jorlan.web.components.ToolSelector
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import net.leibman.jorlan.muiMaterial.stylesCreateThemeNoVarsMod.Theme
@@ -306,20 +309,16 @@ object ChatPage {
             }
           }
 
-          def handleKeyDown(e: js.Dynamic): Unit = {
-            val key = e.key.asInstanceOf[String]
-            val shift = e.shiftKey.asInstanceOf[Boolean]
-            if (key == "Enter" && !shift && state.value.sessionId.isDefined) {
-              e.preventDefault()
-              sendMessage().runNow()
-            }
-          }
+          def handleKeyDown(e: ReactKeyboardEventFromInput): Callback =
+            Callback.when(e.key == "Enter" && !e.shiftKey && state.value.sessionId.isDefined)(
+              e.preventDefaultCB >> sendMessage(),
+            )
 
           val queueCount = state.value.pendingQueue.size
 
           <.div(
             ^.style := js.Dynamic.literal(height = "calc(100vh - 128px)", display = "flex", flexDirection = "column"),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             Box.withProps(
               BoxOwnProps[Theme]()
                 .setSx(
@@ -327,7 +326,8 @@ object ChatPage {
                     .literal(display = "flex", alignItems = "center", mb = 1, gap = 1).asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Chat"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Chat"),
               state.value.session.flatMap(_.modelId).fold[VdomNode](EmptyVdom) { m =>
                 Chip.withProps(
                   js.Dynamic
@@ -398,16 +398,16 @@ object ChatPage {
                 )
                 .asInstanceOf[Box.Props],
             )(
-              MuiTextField
+              TextField
                 .value(state.value.input)
                 .fullWidth(true)
                 .multiline(true)
                 .maxRows(6)
                 .placeholder("Type a message… (Enter to send, Shift+Enter for newline)")
-                .variant("outlined")
-                .size("small")
-                .onChange(e => state.modState(_.copy(input = e.target.value.asInstanceOf[String])).runNow())
-                .onKeyDown(e => handleKeyDown(e))
+                .variant(MuiStrings.outlined)
+                .size(MuiStrings.small)
+                .onChange(e => state.modState(_.copy(input = e.target.value.asInstanceOf[String])))
+                .onKeyDown(handleKeyDown)
                 .disabled(state.value.sessionId.isEmpty),
               if (hasSpeechRecognition)
                 Tooltip.withProps(
@@ -415,10 +415,10 @@ object ChatPage {
                     .literal(title = if (state.value.micActive) "Stop listening" else "Dictate message")
                     .asInstanceOf[Tooltip.Props],
                 )(
-                  MuiButton
-                    .variant(if (state.value.micActive) "contained" else "outlined")
-                    .size("small")
-                    .onClick(() => toggleMic().runNow())(
+                  Button
+                    .variant(if (state.value.micActive) MuiStrings.contained else MuiStrings.outlined)
+                    .size(MuiStrings.small)
+                    .onClick(_ => toggleMic())(
                       if (state.value.micActive) "⏹" else "🎤",
                     ),
                 )
@@ -429,10 +429,10 @@ object ChatPage {
                     .literal(title = if (state.value.ttsEnabled) "Mute responses" else "Read responses aloud")
                     .asInstanceOf[Tooltip.Props],
                 )(
-                  MuiButton
-                    .variant(if (state.value.ttsEnabled) "contained" else "outlined")
-                    .size("small")
-                    .onClick(() => toggleTts().runNow())(
+                  Button
+                    .variant(if (state.value.ttsEnabled) MuiStrings.contained else MuiStrings.outlined)
+                    .size(MuiStrings.small)
+                    .onClick(_ => toggleTts())(
                       if (state.value.ttsEnabled) "🔊" else "🔇",
                     ),
                 )
@@ -442,17 +442,17 @@ object ChatPage {
                   .literal(title = "Choose which tools the agent may use for your messages")
                   .asInstanceOf[Tooltip.Props],
               )(
-                MuiButton
-                  .variant(if (state.value.allowedTools.isDefined) "contained" else "outlined")
-                  .size("small")
-                  .onClick(() => state.modState(_.copy(showToolsDialog = true)).runNow())(
+                Button
+                  .variant(if (state.value.allowedTools.isDefined) MuiStrings.contained else MuiStrings.outlined)
+                  .size(MuiStrings.small)
+                  .onClick(_ => state.modState(_.copy(showToolsDialog = true)))(
                     state.value.allowedTools.fold("🛠 All")(ts => s"🛠 ${ts.size}"),
                   ),
               ),
-              MuiButton
-                .variant("contained")
+              Button
+                .variant(MuiStrings.contained)
                 .disabled(state.value.input.trim.isEmpty || state.value.sessionId.isEmpty)
-                .onClick(() => sendMessage().runNow())(
+                .onClick(_ => sendMessage())(
                   if (queueCount > 0) s"Queue ($queueCount)" else "Send",
                 ),
             ),
@@ -491,9 +491,9 @@ object ChatPage {
                     },
                   ),
                   DialogActions()(
-                    MuiButton
-                      .variant("contained")
-                      .onClick(() => state.modState(_.copy(showToolsDialog = false)).runNow())("Done"),
+                    Button
+                      .variant(MuiStrings.contained)
+                      .onClick(_ => state.modState(_.copy(showToolsDialog = false)))("Done"),
                   ),
                 )
             else EmptyVdom,

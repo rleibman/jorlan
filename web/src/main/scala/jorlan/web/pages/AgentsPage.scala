@@ -6,11 +6,13 @@
 
 package jorlan.web.pages
 
+import jorlan.web.components.MuiExtensions.*
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.{Button, TextField}
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.{MuiButton, MuiTextField}
 import jorlan.web.pages.PageUtils
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
@@ -146,7 +148,7 @@ object AgentsPage {
               Dialog(true)(
                 DialogTitle()(s"Edit Agent: ${agent.name}"),
                 DialogContent()(
-                  state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+                  state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
                   Box.withProps(
                     BoxOwnProps[Theme]()
                       .setSx(
@@ -156,17 +158,17 @@ object AgentsPage {
                       ).asInstanceOf[Box.Props],
                   )(
                     Typography.withProps(
-                      TypographyOwnProps().setVariant("subtitle1").asInstanceOf[Typography.Props],
+                      TypographyOwnProps().setVariant(MuiStrings.subtitle1).asInstanceOf[Typography.Props],
                     )("Invariants"),
                     Typography.withProps(
-                      TypographyOwnProps().setVariant("body2").asInstanceOf[Typography.Props],
+                      TypographyOwnProps().setVariant(MuiStrings.body2).asInstanceOf[Typography.Props],
                     )(
                       "Key-value facts injected into every pipeline step for this agent. These override memory and are never skipped.",
                     ),
                     if (agent.invariants.isEmpty)
                       <.span("No invariants defined yet.")
                     else
-                      Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                      Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                         TableHead()(
                           TableRow()(
                             TableCell()("Key"),
@@ -180,20 +182,20 @@ object AgentsPage {
                               .withKey(k)(
                                 TableCell()(<.code(k)),
                                 TableCell()(
-                                  MuiTextField
+                                  TextField
                                     .value(v)
                                     .fullWidth(true)
-                                    .size("small")
+                                    .size(MuiStrings.small)
                                     .onChange { e =>
                                       val nv = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                                      editInvariantValue(k, nv).runNow()
+                                      editInvariantValue(k, nv)
                                     }(),
                                 ),
                                 TableCell()(
-                                  MuiButton
-                                    .size("small")
-                                    .color("error")
-                                    .onClick(() => deleteInvariant(k).runNow())("×"),
+                                  Button
+                                    .size(MuiStrings.small)
+                                    .color(MuiStrings.error)
+                                    .onClick(_ => deleteInvariant(k))("×"),
                                 ),
                               ).build
                           }*,
@@ -207,36 +209,36 @@ object AgentsPage {
                             .asInstanceOf[SxProps[Theme]],
                         ).asInstanceOf[Box.Props],
                     )(
-                      MuiTextField
+                      TextField
                         .label("Key")
                         .value(state.value.newKey)
-                        .size("small")
+                        .size(MuiStrings.small)
                         .onChange { e =>
                           val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                          state.modState(_.copy(newKey = v)).runNow()
+                          state.modState(_.copy(newKey = v))
                         }(),
-                      MuiTextField
+                      TextField
                         .label("Value")
                         .value(state.value.newValue)
-                        .size("small")
+                        .size(MuiStrings.small)
                         .fullWidth(true)
                         .onChange { e =>
                           val v = e.target.asInstanceOf[org.scalajs.dom.html.Input].value
-                          state.modState(_.copy(newValue = v)).runNow()
+                          state.modState(_.copy(newValue = v))
                         }(),
-                      MuiButton
-                        .variant("outlined")
-                        .size("small")
-                        .onClick(() => addInvariant().runNow())("+ Add"),
+                      Button
+                        .variant(MuiStrings.outlined)
+                        .size(MuiStrings.small)
+                        .onClick(_ => addInvariant())("+ Add"),
                     ),
                   ),
                 ),
                 DialogActions()(
-                  MuiButton.onClick(() => closeEdit().runNow())("Cancel"),
-                  MuiButton
-                    .variant("contained")
+                  Button.onClick(_ => closeEdit())("Cancel"),
+                  Button
+                    .variant(MuiStrings.contained)
                     .disabled(state.value.saving)
-                    .onClick(() => saveAgent().runNow())("Save"),
+                    .onClick(_ => saveAgent())("Save"),
                 ),
               )
             },
@@ -248,20 +250,21 @@ object AgentsPage {
                     .asInstanceOf[SxProps[Theme]],
                 ).asInstanceOf[Box.Props],
             )(
-              Typography.withProps(TypographyOwnProps().setVariant("h5").asInstanceOf[Typography.Props])("Agents"),
-              MuiButton
-                .variant("outlined")
-                .size("small")
-                .onClick(() => loadAgents().runNow())("Refresh"),
+              Typography
+                .withProps(TypographyOwnProps().setVariant(MuiStrings.h5).asInstanceOf[Typography.Props])("Agents"),
+              Button
+                .variant(MuiStrings.outlined)
+                .size(MuiStrings.small)
+                .onClick(_ => loadAgents())("Refresh"),
             ),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.agents.isEmpty)
-              Alert.severity("info")("No agents found.")
+              Alert.severity(MuiStrings.info)("No agents found.")
             else
               TableContainer()(
-                Table.withProps(TableOwnProps().setSize("small").asInstanceOf[Table.Props])(
+                Table.withProps(TableOwnProps().setSize(MuiStrings.small).asInstanceOf[Table.Props])(
                   TableHead()(
                     TableRow()(
                       TableCell()("Name"),
@@ -285,15 +288,15 @@ object AgentsPage {
                                 .withProps(
                                   ChipOwnProps()
                                     .setLabel(s"${agent.invariants.size} key(s)")
-                                    .setSize("small")
+                                    .setSize(MuiStrings.small)
                                     .asInstanceOf[Chip.Props],
                                 )(),
                           ),
                           TableCell()(
-                            MuiButton
-                              .size("small")
-                              .variant("outlined")
-                              .onClick(() => openEdit(agent).runNow())("Edit Invariants"),
+                            Button
+                              .size(MuiStrings.small)
+                              .variant(MuiStrings.outlined)
+                              .onClick(_ => openEdit(agent))("Edit Invariants"),
                           ),
                         ).build
                     }*,

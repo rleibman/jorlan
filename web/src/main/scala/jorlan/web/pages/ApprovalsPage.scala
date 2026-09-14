@@ -6,12 +6,13 @@
 
 package jorlan.web.pages
 
+import net.leibman.jorlan.muiMaterial.muiMaterialStrings as MuiStrings
+import net.leibman.jorlan.muiMaterial.components.Button
 import caliban.WebSocketHandler
 import japgolly.scalajs.react.*
 import japgolly.scalajs.react.vdom.html_<^.*
 import jorlan.*
 import jorlan.web.AsyncCallbackRepositories
-import jorlan.web.components.MuiButton
 import net.leibman.jorlan.muiMaterial.components.{List as MuiList, *}
 
 import net.leibman.jorlan.muiMaterial.chipChipMod.ChipOwnProps
@@ -102,15 +103,15 @@ object ApprovalsPage {
           <.div(
             Typography.withProps(
               TypographyOwnProps()
-                .setVariant("h5").setSx(js.Dynamic.literal(mb = 2).asInstanceOf[SxProps[Theme]]).asInstanceOf[
+                .setVariant(MuiStrings.h5).setSx(js.Dynamic.literal(mb = 2).asInstanceOf[SxProps[Theme]]).asInstanceOf[
                   Typography.Props,
                 ],
             )("Pending Approvals"),
-            state.value.error.fold(EmptyVdom)(err => Alert.severity("error")(err)),
+            state.value.error.fold(EmptyVdom)(err => Alert.severity(MuiStrings.error)(err)),
             if (state.value.loading)
               CircularProgress()
             else if (state.value.approvals.isEmpty)
-              Alert.severity("info")("No pending approvals.")
+              Alert.severity(MuiStrings.info)("No pending approvals.")
             else
               TableContainer()(
                 Table()(
@@ -135,12 +136,12 @@ object ApprovalsPage {
                                 .setLabel(approval.riskClass.toString)
                                 .setColor(
                                   approval.riskClass match {
-                                    case RiskClass.ReadOnly | RiskClass.WorkspaceWrite      => "success"
-                                    case RiskClass.Destructive | RiskClass.ExternalEffect   => "warning"
-                                    case RiskClass.Privileged | RiskClass.SecuritySensitive => "error"
+                                    case RiskClass.ReadOnly | RiskClass.WorkspaceWrite      => MuiStrings.success
+                                    case RiskClass.Destructive | RiskClass.ExternalEffect   => MuiStrings.warning
+                                    case RiskClass.Privileged | RiskClass.SecuritySensitive => MuiStrings.error
                                   },
                                 )
-                                .setSize("small")
+                                .setSize(MuiStrings.small)
                                 .asInstanceOf[Chip.Props],
                             )(),
                           ),
@@ -153,16 +154,16 @@ object ApprovalsPage {
                                   js.Dynamic.literal(display = "flex", gap = 1).asInstanceOf[SxProps[Theme]],
                                 ).asInstanceOf[Box.Props],
                             )(
-                              MuiButton
-                                .variant("contained")
-                                .color("success")
-                                .size("small")
-                                .onClick(() => decide(approval.id, approve = true).runNow())("Approve"),
-                              MuiButton
-                                .variant("outlined")
-                                .color("error")
-                                .size("small")
-                                .onClick(() => decide(approval.id, approve = false).runNow())("Deny"),
+                              Button
+                                .variant(MuiStrings.contained)
+                                .color(MuiStrings.success)
+                                .size(MuiStrings.small)
+                                .onClick(_ => decide(approval.id, approve = true))("Approve"),
+                              Button
+                                .variant(MuiStrings.outlined)
+                                .color(MuiStrings.error)
+                                .size(MuiStrings.small)
+                                .onClick(_ => decide(approval.id, approve = false))("Deny"),
                             ),
                           ),
                         )
